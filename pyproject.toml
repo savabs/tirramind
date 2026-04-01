@@ -1,0 +1,88 @@
+[project]
+name = "tirramind-agent"
+version = "0.1.0"
+description = "Machine intelligence system — SOTA math, ML, and engineering fused into an autonomous agent that discovers predictive structure across heterogeneous data domains"
+requires-python = ">=3.11"
+dependencies = [
+    "openai>=1.0",
+    "httpx>=0.25",
+    "chromadb>=0.4",
+    "pydantic>=2.0",
+    "rich>=13.0",
+    "python-dotenv>=1.0",
+    "yfinance>=0.2",
+    "jsonschema>=4.0",
+    "apscheduler>=3.10,<4.0",
+]
+
+[project.optional-dependencies]
+quant = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "statsmodels>=0.14",
+    "hmmlearn>=0.3",
+    "filterpy>=1.4",
+    "pgmpy>=0.1",
+    "cvxpy>=1.4",
+]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "ruff>=0.4",
+    "pre-commit>=3.5",
+]
+local = ["ollama>=0.1"]
+
+[project.scripts]
+tirra-agent = "agent.cli:main"
+tirra-workflow-check = "agent.workflow_guard:main"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+# ---------------------------------------------------------------------------
+# Tool configuration
+# ---------------------------------------------------------------------------
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short -q"
+markers = [
+    "slow: marks tests that take >10s (deselect with -m 'not slow')",
+    "integration: marks tests requiring network or real API (deselect with -m 'not integration')",
+    "live: marks tests hitting real external endpoints",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "W",   # pycodestyle warnings
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "SIM", # flake8-simplify
+    "S",   # flake8-bandit (security)
+]
+ignore = [
+    "S101",  # assert used (fine in tests)
+    "S603",  # subprocess call (we sandbox)
+    "S607",  # partial path (we validate)
+    "E501",  # line too long (ruff format handles this)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S106", "S108"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

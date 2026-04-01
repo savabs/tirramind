@@ -1,0 +1,32 @@
+"""
+TirraMind — Built-in DAG Definitions
+
+Each module in this package defines one or more DAGs. The get_default_dags()
+function collects them all for the DAGRegistry.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from agent.pipeline.dag import DAG
+
+
+def get_default_dags(tool_registry: Any) -> list[DAG]:
+    """Return all built-in DAGs.
+
+    tool_registry is available for DAG builders that need to verify
+    tool existence, but DAG nodes reference tools by string name —
+    resolution happens at execution time in the operator layer.
+    """
+    from agent.pipeline.dags.daily_collection import build_daily_collection_dag
+    from agent.pipeline.dags.whale_tracking import (
+        build_whale_tracking_dag,
+        build_whale_scoring_dag,
+    )
+
+    return [
+        build_daily_collection_dag(),
+        build_whale_tracking_dag(),
+        build_whale_scoring_dag(),
+    ]

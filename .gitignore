@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Environment
+.env
+.venv/
+venv/
+
+# TirraMind memory persistence
+.tirra_memory/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local runtime/cache artifacts
+.pytest_cache/
+.tirra_cache/
+.tirra_pipeline/
+
+# Documentation and workflow artifacts
+*.md
+docs/
+tasks/
+.github/
+
+# Media and miscellaneous local files
+*.jpeg
+*.jpg
+*.png
+<MagicMock*
+=0.2

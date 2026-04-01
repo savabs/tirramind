@@ -1,0 +1,323 @@
+"""
+Tool: Polymarket — Prediction Market Data
+
+Fetches active prediction markets from Polymarket's Gamma API.
+Returns current prices (implied probabilities), volume, liquidity,
+and price changes. Zero cost — public REST API, no auth required.
+
+Why this matters: prediction markets aggregate informed-money views
+faster than polls, news, or traditional markets. When whale wallets
+pile into a position, it often precedes real-world outcomes. This
+tool gives the agent a read on what the smart money expects.
+
+Gamma API base: https://gamma-api.polymarket.com
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+from typing import Any
+
+import httpx
+
+from agent.data.dns_bypass import ensure_polymarket_dns
+from agent.data.cache import DataCache
+from agent.tools.base import Tool, ToolResult
+
+ensure_polymarket_dns()
+
+log = logging.getLogger(__name__)
+
+_GAMMA_BASE = "https://gamma-api.polymarket.com"
+
+# Map Polymarket tag slugs → our normalized categories.
+# Events can have multiple tags; first match wins.
+_TAG_CATEGORIES: dict[str, str] = {
+    "politics": "politics",
+    "elections": "politics",
+    "geopolitics": "geopolitics",
+    "world": "geopolitics",
+    "crypto": "crypto",
+    "bitcoin": "crypto",
+    "ethereum": "crypto",
+    "finance": "finance",
+    "economy": "finance",
+    "stocks": "finance",
+    "ipos": "finance",
+    "interest-rates": "finance",
+    "tech": "tech",
+    "ai": "tech",
+    "science": "science",
+    "climate": "science",
+    "sports": "sports",
+}
+
+_VALID_CATEGORIES = {
+    "politics",
+    "crypto",
+    "finance",
+    "geopolitics",
+    "tech",
+    "science",
+    "sports",
+    "all",
+}
+
+
+class PolymarketTool(Tool):
+
+    name = "polymarket"
+
+    description = (
+        "Fetch active prediction markets from Polymarket. Returns current prices "
+        "(implied probabilities), trading volume, liquidity, and recent price changes. "
+        "Use this to see what informed money expects on elections, crypto events, "
+        "geopolitics, macro policy, and more. Prediction markets often lead "
+        "mainstream indicators."
+    )
+
+    parameters: dict[str, Any] = {
+        "type": "object",
+        "properties": {
+            "category": {
+                "type": "string",
+                "description": (
+                    "Filter by category. Options: politics, crypto, finance, "
+                    "geopolitics, tech, science, sports, all. Default: all."
+                ),
+                "default": "all",
+            },
+            "limit": {
+                "type": "integer",
+                "description": "Max number of markets to return. Default: 20.",
+                "default": 20,
+            },
+            "search": {
+                "type": "string",
+                "description": (
+                    "Optional search term to filter markets by title. "
+                    "E.g., 'Fed rate cut', 'Bitcoin', 'Trump'."
+                ),
+                "default": "",
+            },
+        },
+        "required": [],
+    }
+
+    def __init__(self, cache: DataCache | None = None) -> None:
+        self._cache = cache
+
+    # ------------------------------------------------------------------
+    # Core execution
+    # ------------------------------------------------------------------
+
+    def execute(
+        self,
+        *,
+        category: str = "all",
+        limit: int = 20,
+        search: str = "",
+        **_: Any,
+    ) -> ToolResult:
+        category = category.lower().strip()
+        if category not in _VALID_CATEGORIES:
+            return ToolResult(
+                success=False,
+                output=f"Invalid category '{category}'. Must be one of: {', '.join(sorted(_VALID_CATEGORIES))}",
+            )
+        limit = max(1, min(limit, 100))  # clamp
+
+        try:
+            raw_events = self._fetch_events(limit=100)  # fetch more, filter after
+        except Exception as exc:
+            log.exception("Polymarket fetch failed")
+            return ToolResult(success=False, output=f"Polymarket API error: {exc}")
+
+        if not raw_events:
+            return ToolResult(
+                success=True, output="No active markets found.", data={"markets": []}
+            )
+
+        markets = self._parse_markets(raw_events)
+
+        # Filter by search term
+        if search:
+            term = search.lower()
+            markets = [m for m in markets if term in m["question"].lower()]
+
+        # Filter by category
+        if category != "all":
+            markets = [m for m in markets if m["category"] == category]
+
+        # Sort by 24h volume descending (most active = most signal)
+        markets.sort(key=lambda m: m["volume_24h"], reverse=True)
+
+        # Apply limit
+        markets = markets[:limit]
+
+        if not markets:
+            return ToolResult(
+                success=True,
+                output=f"No markets found for category='{category}'"
+                + (f", search='{search}'" if search else "")
+                + ".",
+                data={"markets": []},
+            )
+
+        # Format human-readable output
+        lines = [f"Polymarket — {len(markets)} active markets:\n"]
+        for i, m in enumerate(markets, 1):
+            price_str = f"YES {m['yes_price']:.0%} / NO {m['no_price']:.0%}"
+            vol_str = (
+                f"${m['volume_24h']:,.0f} (24h)" if m["volume_24h"] else "no volume"
+            )
+            change_parts = []
+            if m["price_change_24h"] is not None:
+                sign = "+" if m["price_change_24h"] >= 0 else ""
+                change_parts.append(f"24h: {sign}{m['price_change_24h']:.1%}")
+            if m["price_change_1wk"] is not None:
+                sign = "+" if m["price_change_1wk"] >= 0 else ""
+                change_parts.append(f"1wk: {sign}{m['price_change_1wk']:.1%}")
+            change_str = " | ".join(change_parts) if change_parts else ""
+            lines.append(
+                f"  {i}. {m['question']}\n"
+                f"     {price_str} | Vol: {vol_str}"
+                + (f" | {change_str}" if change_str else "")
+                + (f" | [{m['category']}]" if m["category"] else "")
+            )
+
+        output = "\n".join(lines)
+        data = {"markets": markets, "total": len(markets)}
+        return ToolResult(success=True, output=output, data=data)
+
+    # ------------------------------------------------------------------
+    # Fetching
+    # ------------------------------------------------------------------
+
+    def _fetch_events(self, limit: int = 100) -> list[dict[str, Any]]:
+        """Fetch active events from Gamma API. Returns raw event dicts."""
+        cache_params = {"closed": False, "limit": limit}
+        if self._cache:
+            cached = self._cache.get("polymarket_events", cache_params)
+            if cached is not None:
+                log.debug("Cache hit for polymarket events")
+                return cached
+
+        with httpx.Client(timeout=15) as client:
+            resp = client.get(
+                f"{_GAMMA_BASE}/events",
+                params={"closed": "false", "limit": str(limit), "active": "true"},
+            )
+            resp.raise_for_status()
+            events = resp.json()
+
+        if self._cache and events:
+            self._cache.put("polymarket_events", cache_params, events)
+
+        return events
+
+    # ------------------------------------------------------------------
+    # Parsing
+    # ------------------------------------------------------------------
+
+    def _parse_markets(self, events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Extract structured market data from Gamma API events."""
+        markets: list[dict[str, Any]] = []
+
+        for event in events:
+            # Determine category from tags
+            category = self._categorize_event(event)
+
+            for mkt in event.get("markets", []):
+                # Skip markets with no price data (not yet deployed)
+                prices_raw = mkt.get("outcomePrices", "")
+                if not prices_raw:
+                    continue
+
+                yes_price, no_price = self._parse_prices(prices_raw)
+                if yes_price is None:
+                    continue
+
+                # Skip closed/resolved markets
+                if mkt.get("closed") or mkt.get("umaResolutionStatus") == "resolved":
+                    continue
+
+                question = mkt.get("question", event.get("title", "Unknown"))
+                slug = mkt.get("slug", "")
+
+                # Volume and liquidity — these are numeric or string fields
+                volume_total = _safe_float(mkt.get("volumeNum") or mkt.get("volume"))
+                volume_24h = _safe_float(mkt.get("volume24hr"))
+                liquidity = _safe_float(mkt.get("liquidityNum") or mkt.get("liquidity"))
+
+                # Spread from best bid/ask
+                best_bid = _safe_float(mkt.get("bestBid"))
+                best_ask = _safe_float(mkt.get("bestAsk"))
+                spread = (
+                    (best_ask - best_bid)
+                    if (best_bid is not None and best_ask is not None)
+                    else None
+                )
+
+                # Price changes
+                price_change_24h = _safe_float(mkt.get("oneDayPriceChange"))
+                price_change_1wk = _safe_float(mkt.get("oneWeekPriceChange"))
+
+                end_date = mkt.get("endDateIso", "")
+
+                markets.append(
+                    {
+                        "question": question,
+                        "slug": slug,
+                        "yes_price": yes_price,
+                        "no_price": no_price,
+                        "volume_total": volume_total or 0.0,
+                        "volume_24h": volume_24h or 0.0,
+                        "liquidity": liquidity or 0.0,
+                        "spread": spread,
+                        "price_change_24h": price_change_24h,
+                        "price_change_1wk": price_change_1wk,
+                        "end_date": end_date,
+                        "category": category,
+                    }
+                )
+
+        return markets
+
+    def _categorize_event(self, event: dict[str, Any]) -> str:
+        """Map event tags to one of our normalized categories."""
+        for tag in event.get("tags", []):
+            slug = tag.get("slug", "").lower()
+            if slug in _TAG_CATEGORIES:
+                return _TAG_CATEGORIES[slug]
+        return ""
+
+    @staticmethod
+    def _parse_prices(prices_raw: str) -> tuple[float | None, float | None]:
+        """Parse outcomePrices JSON string like '["0.42", "0.58"]'."""
+        try:
+            prices = (
+                json.loads(prices_raw) if isinstance(prices_raw, str) else prices_raw
+            )
+            if isinstance(prices, list) and len(prices) >= 2:
+                return float(prices[0]), float(prices[1])
+        except (json.JSONDecodeError, ValueError, TypeError):
+            pass
+        return None, None
+
+
+# ------------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------------
+
+
+def _safe_float(val: Any) -> float | None:
+    """Convert value to float, returning None on failure."""
+    if val is None:
+        return None
+    try:
+        f = float(val)
+        return f if f == f else None  # NaN check
+    except (ValueError, TypeError):
+        return None
