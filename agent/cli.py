@@ -76,6 +76,12 @@ from agent.tools.internet_outages import InternetOutagesTool
 from agent.tools.labor_disruptions import LaborDisruptionsTool
 from agent.tools.migration_flows import MigrationFlowsTool
 from agent.tools.energy_supply import EnergySupplyTool
+from agent.tools.treasury_receipts import TreasuryReceiptsTool
+from agent.tools.drug_regulatory import DrugRegulatoryTool
+from agent.tools.global_pmi import GlobalPmiTool
+from agent.tools.consumer_sentiment import ConsumerSentimentTool
+from agent.tools.supply_chain_monitor import SupplyChainMonitorTool
+from agent.tools.internet_infrastructure import InternetInfrastructureTool
 from agent.tools.pipeline_query import PipelineQueryTool
 
 console = Console()
@@ -146,6 +152,12 @@ def build_tool_registry(config: AgentConfig | None = None) -> ToolRegistry:
     registry.register(LaborDisruptionsTool(cache=cache))
     registry.register(MigrationFlowsTool(cache=cache))
     registry.register(EnergySupplyTool(cache=cache))
+    registry.register(TreasuryReceiptsTool(cache=cache))
+    registry.register(DrugRegulatoryTool(cache=cache))
+    registry.register(GlobalPmiTool(cache=cache))
+    registry.register(ConsumerSentimentTool(cache=cache))
+    registry.register(SupplyChainMonitorTool(cache=cache))
+    registry.register(InternetInfrastructureTool(cache=cache))
     pipeline_store = PipelineStore(
         db_path=config.pipeline.db_path if config else ".tirra_pipeline/pipeline.db"
     )

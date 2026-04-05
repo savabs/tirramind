@@ -20,6 +20,9 @@ def get_default_dags(tool_registry: Any) -> list[DAG]:
     resolution happens at execution time in the operator layer.
     """
     from agent.pipeline.dags.daily_collection import build_daily_collection_dag
+    from agent.pipeline.dags.convergence_detection import (
+        build_convergence_detection_dag,
+    )
     from agent.pipeline.dags.whale_tracking import (
         build_whale_tracking_dag,
         build_whale_scoring_dag,
@@ -29,4 +32,5 @@ def get_default_dags(tool_registry: Any) -> list[DAG]:
         build_daily_collection_dag(),
         build_whale_tracking_dag(),
         build_whale_scoring_dag(),
+        build_convergence_detection_dag(),
     ]

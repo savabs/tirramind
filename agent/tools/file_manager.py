@@ -25,12 +25,25 @@ class FileReadTool(Tool):
     parameters = {
         "type": "object",
         "properties": {
-            "path": {"type": "string", "description": "Absolute or relative file path."},
+            "path": {
+                "type": "string",
+                "description": "Absolute or relative file path.",
+            },
         },
         "required": ["path"],
     }
 
     def execute(self, *, path: str, **_: Any) -> ToolResult:
+        # Path sandboxing check
+        try:
+            from agent.security.tool_policy import is_safe_path
+
+            safe, reason = is_safe_path(path)
+            if not safe:
+                return ToolResult(success=False, output=f"Path blocked: {reason}")
+        except ImportError:
+            pass
+
         p = Path(path).expanduser().resolve()
         if not p.exists():
             return ToolResult(success=False, output=f"File not found: {p}")
@@ -51,18 +64,33 @@ class FileWriteTool(Tool):
     parameters = {
         "type": "object",
         "properties": {
-            "path": {"type": "string", "description": "Absolute or relative file path."},
+            "path": {
+                "type": "string",
+                "description": "Absolute or relative file path.",
+            },
             "content": {"type": "string", "description": "Content to write."},
         },
         "required": ["path", "content"],
     }
 
     def execute(self, *, path: str, content: str, **_: Any) -> ToolResult:
+        # Path sandboxing check
+        try:
+            from agent.security.tool_policy import is_safe_path
+
+            safe, reason = is_safe_path(path)
+            if not safe:
+                return ToolResult(success=False, output=f"Path blocked: {reason}")
+        except ImportError:
+            pass
+
         p = Path(path).expanduser().resolve()
         try:
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(content)
-            return ToolResult(success=True, output=f"Written {len(content)} chars to {p}")
+            return ToolResult(
+                success=True, output=f"Written {len(content)} chars to {p}"
+            )
         except Exception as exc:
             return ToolResult(success=False, output=f"Write error: {exc}")
 

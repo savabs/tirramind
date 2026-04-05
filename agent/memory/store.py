@@ -23,14 +23,16 @@ log = logging.getLogger(__name__)
 # Episodic Memory — what happened
 # =====================================================================
 
+
 @dataclass
 class Episode:
     """A single step in the agent's history."""
+
     timestamp: float
     step: int
-    action: str            # tool name or "plan" / "think"
-    input_summary: str     # what was asked / parameters
-    output_summary: str    # what came back
+    action: str  # tool name or "plan" / "think"
+    input_summary: str  # what was asked / parameters
+    output_summary: str  # what came back
     success: bool
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -60,7 +62,9 @@ class EpisodicMemory:
         lines = []
         for ep in self.recent(n):
             status = "✓" if ep.success else "✗"
-            lines.append(f"  [{status}] Step {ep.step}: {ep.action}({ep.input_summary[:60]}) → {ep.output_summary[:80]}")
+            lines.append(
+                f"  [{status}] Step {ep.step}: {ep.action}({ep.input_summary[:60]}) → {ep.output_summary[:80]}"
+            )
         return "\n".join(lines) or "(no history)"
 
     def _append_to_disk(self, episode: Episode) -> None:
@@ -82,27 +86,31 @@ class EpisodicMemory:
 # Semantic Memory — what things mean (lightweight in-memory for now)
 # =====================================================================
 
+
 @dataclass
 class Fact:
     """A piece of knowledge extracted from agent activity."""
+
     key: str
     content: str
-    source: str          # which episode / tool produced this
-    confidence: float    # 0-1
+    source: str  # which episode / tool produced this
+    confidence: float  # 0-1
     timestamp: float = field(default_factory=time.time)
     tags: list[str] = field(default_factory=list)
+    tainted: bool = False  # True if sourced from untrusted content (web, etc.)
 
 
 @dataclass
 class LearningEntry:
     """Structured record of a goal attempt and its outcome."""
+
     goal: str
-    score: float              # 0-1 evaluation score
+    score: float  # 0-1 evaluation score
     success: bool
     dead_end: bool = False
     lessons: list[str] = field(default_factory=list)
-    arm: str = ""             # bandit arm that was chosen (RL layer)
-    reward: float = 0.0       # scalar reward fed to bandit (RL layer)
+    arm: str = ""  # bandit arm that was chosen (RL layer)
+    reward: float = 0.0  # scalar reward fed to bandit (RL layer)
     timestamp: float = field(default_factory=time.time)
 
 
@@ -148,7 +156,10 @@ class SemanticMemory:
     def summary(self) -> str:
         if not self._facts:
             return "(no facts stored)"
-        lines = [f"  [{f.key}] {f.content[:80]} (conf={f.confidence:.1f})" for f in self._facts.values()]
+        lines = [
+            f"  [{f.key}] {f.content[:80]} (conf={f.confidence:.1f})"
+            for f in self._facts.values()
+        ]
         return "\n".join(lines[-10:])
 
     # ------------------------------------------------------------------
@@ -207,6 +218,7 @@ class SemanticMemory:
 # Working Memory — current conversation context for the LLM
 # =====================================================================
 
+
 class WorkingMemory:
     """Manages the rolling message list sent to the LLM.
 
@@ -227,7 +239,7 @@ class WorkingMemory:
         self._messages.append(message)
         # Trim if over budget — keep system prompt + recent messages
         if len(self._messages) > self._max_messages:
-            self._messages = self._messages[-self._max_messages:]
+            self._messages = self._messages[-self._max_messages :]
 
     def add_user(self, content: str) -> None:
         self.add({"role": "user", "content": content})

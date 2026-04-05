@@ -20,9 +20,13 @@ log = logging.getLogger(__name__)
 @dataclass
 class ToolResult:
     """Standard return from any tool execution."""
+
     success: bool
     output: str
     data: Any = None  # structured data for downstream processing
+    trust_level: str = (
+        "tool_trusted"  # provenance tag (see security.tool_policy.TrustLevel)
+    )
 
 
 class Tool(ABC):
@@ -67,6 +71,11 @@ class ToolRegistry:
 
     def __init__(self) -> None:
         self._tools: dict[str, Tool] = {}
+        self._policy_guard: Any = None  # Optional ToolPolicyGuard
+
+    def set_policy_guard(self, guard: Any) -> None:
+        """Attach a ToolPolicyGuard for security enforcement."""
+        self._policy_guard = guard
 
     def register(self, tool: Tool) -> None:
         if tool.name in self._tools:
@@ -107,6 +116,12 @@ class ToolRegistry:
         if tool is None:
             return ToolResult(success=False, output=f"Unknown tool: {name}")
 
+        # Security: policy guard check before execution
+        if self._policy_guard is not None:
+            allowed, reason = self._policy_guard.check_execution(name, kwargs)
+            if not allowed:
+                return ToolResult(success=False, output=reason)
+
         # Validate arguments against tool's JSON Schema
         errors = self.validate_args(name, kwargs)
         if errors:
@@ -115,7 +130,15 @@ class ToolRegistry:
             return ToolResult(success=False, output=msg)
 
         try:
-            return tool.execute(**kwargs)
+            result = tool.execute(**kwargs)
+            # Tag result with trust level based on tool classification
+            try:
+                from agent.security.tool_policy import get_trust_level_for_tool
+
+                result.trust_level = get_trust_level_for_tool(name)
+            except ImportError:
+                pass
+            return result
         except Exception as exc:
             log.exception("Tool %s failed", name)
             return ToolResult(success=False, output=f"Tool {name} error: {exc}")

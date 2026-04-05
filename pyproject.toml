@@ -24,6 +24,7 @@ quant = [
     "filterpy>=1.4",
     "pgmpy>=0.1",
     "cvxpy>=1.4",
+    "networkx>=3.0",
 ]
 dev = [
     "pytest>=7.0",
@@ -36,6 +37,7 @@ local = ["ollama>=0.1"]
 [project.scripts]
 tirra-agent = "agent.cli:main"
 tirra-workflow-check = "agent.workflow_guard:main"
+tirra-wiki-catalog = "agent.wiki.catalog:main"
 
 [build-system]
 requires = ["setuptools>=68.0"]
