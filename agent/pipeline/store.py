@@ -5,9 +5,15 @@ SQLite-based persistent storage for pipeline run metadata and structured data.
 WAL mode for concurrent read/write safety.
 
 Schema:
-    dag_runs       — execution metadata (run_id, dag_name, status, timing)
-    pipeline_data  — tool output rows (source, params, data, timestamp)
-    signals        — computed signal values (name, value, timestamp, metadata)
+    dag_runs             — execution metadata (run_id, dag_name, status, timing)
+    pipeline_data        — tool output rows (source, params, data, timestamp)
+    signals              — computed signal values (name, value, timestamp, metadata)
+    features             — engineered feature records (EngineeredFeature protocol)
+    beliefs              — world model posteriors
+    entities             — canonical entity registry (cross-source)
+    entity_aliases       — mappings from source-specific IDs to canonical entities
+    entity_observations  — timestamped entity data points with depth level
+    depth_evaluations    — depth measurement metrics (MI gain, KL divergence)
 
 Usage:
     store = PipelineStore(Path(".tirra_pipeline/pipeline.db"))
@@ -24,6 +30,9 @@ import time
 import uuid
 from pathlib import Path
 from typing import Any
+
+from agent.features.protocol import EngineeredFeature, validate_feature
+from agent.models.belief import BeliefState, validate_belief
 
 log = logging.getLogger(__name__)
 
@@ -61,6 +70,126 @@ CREATE TABLE IF NOT EXISTS signals (
 
 CREATE INDEX IF NOT EXISTS idx_signals_name
     ON signals(signal_name, computed_at);
+
+CREATE TABLE IF NOT EXISTS features (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    feature_name TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    effective_at REAL NOT NULL,
+    computed_at REAL NOT NULL,
+    horizon TEXT NOT NULL,
+    value REAL,
+    quality REAL NOT NULL,
+    missing_reason TEXT,
+    source_signals_json TEXT NOT NULL,
+    builder TEXT NOT NULL,
+    unit TEXT NOT NULL DEFAULT 'raw',
+    metadata_json TEXT
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_features_unique
+    ON features(feature_name, version, effective_at);
+
+CREATE INDEX IF NOT EXISTS idx_features_lookup
+    ON features(feature_name, effective_at);
+
+CREATE TABLE IF NOT EXISTS beliefs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    variable_name TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    effective_at REAL NOT NULL,
+    computed_at REAL NOT NULL,
+    dist_type TEXT NOT NULL,
+    mean REAL,
+    variance REAL,
+    probabilities_json TEXT,
+    evidence_count INTEGER NOT NULL,
+    model_graph_hash TEXT NOT NULL,
+    confidence REAL NOT NULL,
+    stale INTEGER NOT NULL DEFAULT 0,
+    metadata_json TEXT
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_beliefs_unique
+    ON beliefs(variable_name, version, effective_at);
+
+CREATE INDEX IF NOT EXISTS idx_beliefs_lookup
+    ON beliefs(variable_name, effective_at);
+
+-- Entity registry (Phase 10a)
+
+CREATE TABLE IF NOT EXISTS entities (
+    entity_id TEXT PRIMARY KEY,
+    entity_type TEXT NOT NULL,
+    canonical_name TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    metadata_json TEXT
+);
+
+CREATE TABLE IF NOT EXISTS entity_aliases (
+    alias_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_id TEXT NOT NULL REFERENCES entities(entity_id),
+    source TEXT NOT NULL,
+    external_id TEXT NOT NULL,
+    confidence REAL NOT NULL DEFAULT 1.0,
+    created_at REAL NOT NULL,
+    UNIQUE(source, external_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_entity_aliases_lookup
+    ON entity_aliases(source, external_id);
+
+CREATE TABLE IF NOT EXISTS entity_observations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_id TEXT NOT NULL REFERENCES entities(entity_id),
+    source_tool TEXT NOT NULL,
+    observed_at REAL NOT NULL,
+    ingested_at REAL NOT NULL,
+    observation_type TEXT NOT NULL,
+    depth_level INTEGER NOT NULL DEFAULT 1,
+    value_json TEXT NOT NULL,
+    metadata_json TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_entity_obs_lookup
+    ON entity_observations(entity_id, source_tool, observed_at);
+
+-- Depth evaluation metrics (Phase 10a)
+
+CREATE TABLE IF NOT EXISTS depth_evaluations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tool_name TEXT NOT NULL,
+    depth_level INTEGER NOT NULL,
+    evaluated_at REAL NOT NULL,
+    target_variable TEXT NOT NULL,
+    mi_gain REAL,
+    kl_divergence REAL,
+    sharpe_delta REAL,
+    sample_size INTEGER NOT NULL,
+    metadata_json TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_depth_eval_lookup
+    ON depth_evaluations(tool_name, depth_level, evaluated_at);
+
+-- Entity links (Phase 11a – cross-entity infrastructure)
+
+CREATE TABLE IF NOT EXISTS entity_links (
+    link_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_id_a TEXT NOT NULL REFERENCES entities(entity_id),
+    entity_id_b TEXT NOT NULL REFERENCES entities(entity_id),
+    link_type TEXT NOT NULL,
+    confidence REAL NOT NULL DEFAULT 1.0,
+    source TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    metadata_json TEXT,
+    UNIQUE(entity_id_a, entity_id_b, link_type)
+);
+
+CREATE INDEX IF NOT EXISTS idx_entity_links_a
+    ON entity_links(entity_id_a, link_type);
+CREATE INDEX IF NOT EXISTS idx_entity_links_b
+    ON entity_links(entity_id_b, link_type);
 """
 
 
@@ -279,7 +408,850 @@ class PipelineStore:
         ).fetchall()
         return [self._signal_row_to_dict(r) for r in rows]
 
+    # ── engineered features ─────────────────────────────────────
+
+    def store_feature(self, feature: EngineeredFeature) -> int:
+        """Validate and persist a single engineered feature.
+
+        Uses INSERT OR REPLACE on the unique constraint
+        ``(feature_name, version, effective_at)`` so duplicate
+        recomputation is idempotent.
+
+        Returns the row ID.
+
+        Raises:
+            ValueError: if the feature fails validation.
+        """
+        errors = validate_feature(feature)
+        if errors:
+            raise ValueError(
+                f"Feature '{feature.feature_name}' failed validation: "
+                + "; ".join(errors)
+            )
+        conn = self._get_conn()
+        cursor = conn.execute(
+            "INSERT OR REPLACE INTO features "
+            "(feature_name, version, effective_at, computed_at, horizon, "
+            " value, quality, missing_reason, source_signals_json, builder, "
+            " unit, metadata_json) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                feature.feature_name,
+                feature.version,
+                feature.effective_at,
+                feature.computed_at,
+                feature.horizon,
+                feature.value,
+                feature.quality,
+                feature.missing_reason,
+                json.dumps(list(feature.source_signals)),
+                feature.builder,
+                feature.unit,
+                json.dumps(feature.metadata, default=str) if feature.metadata else None,
+            ),
+        )
+        conn.commit()
+        row_id: int = cursor.lastrowid  # type: ignore[assignment]
+        log.debug(
+            "Stored feature: %s v%d effective_at=%.0f row_id=%s",
+            feature.feature_name,
+            feature.version,
+            feature.effective_at,
+            row_id,
+        )
+        return row_id
+
+    def store_features_batch(self, features: list[EngineeredFeature]) -> list[int]:
+        """Validate and persist a batch of features in one transaction.
+
+        Returns a list of row IDs (one per feature).
+
+        Raises:
+            ValueError: if *any* feature in the batch fails validation.
+                No rows are written when this happens.
+        """
+        # Validate entire batch up-front so we don't partial-write.
+        all_errors: list[str] = []
+        for idx, feat in enumerate(features):
+            errs = validate_feature(feat)
+            if errs:
+                all_errors.append(f"[{idx}] {feat.feature_name}: {'; '.join(errs)}")
+        if all_errors:
+            raise ValueError(
+                f"Batch validation failed ({len(all_errors)} feature(s)): "
+                + " | ".join(all_errors)
+            )
+
+        conn = self._get_conn()
+        row_ids: list[int] = []
+        try:
+            for feat in features:
+                cursor = conn.execute(
+                    "INSERT OR REPLACE INTO features "
+                    "(feature_name, version, effective_at, computed_at, horizon, "
+                    " value, quality, missing_reason, source_signals_json, builder, "
+                    " unit, metadata_json) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        feat.feature_name,
+                        feat.version,
+                        feat.effective_at,
+                        feat.computed_at,
+                        feat.horizon,
+                        feat.value,
+                        feat.quality,
+                        feat.missing_reason,
+                        json.dumps(list(feat.source_signals)),
+                        feat.builder,
+                        feat.unit,
+                        (
+                            json.dumps(feat.metadata, default=str)
+                            if feat.metadata
+                            else None
+                        ),
+                    ),
+                )
+                row_ids.append(cursor.lastrowid)  # type: ignore[arg-type]
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        log.debug("Stored %d features in batch", len(row_ids))
+        return row_ids
+
+    def query_features(
+        self,
+        feature_name: str,
+        *,
+        since: float | None = None,
+        until: float | None = None,
+        version: int | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Query stored features by name, time range, and optional version."""
+        conn = self._get_conn()
+        clauses = ["feature_name=?"]
+        params: list[Any] = [feature_name]
+
+        if since is not None:
+            clauses.append("effective_at>=?")
+            params.append(since)
+        if until is not None:
+            clauses.append("effective_at<=?")
+            params.append(until)
+        if version is not None:
+            clauses.append("version=?")
+            params.append(version)
+
+        where = " AND ".join(clauses)
+        params.append(limit)
+        rows = conn.execute(
+            f"SELECT * FROM features WHERE {where} "  # noqa: S608
+            "ORDER BY effective_at DESC LIMIT ?",
+            params,
+        ).fetchall()
+        return [self._feature_row_to_dict(r) for r in rows]
+
+    def get_latest_feature(
+        self,
+        feature_name: str,
+        version: int | None = None,
+    ) -> dict[str, Any] | None:
+        """Return the single most-recent feature record, or None."""
+        results = self.query_features(feature_name, version=version, limit=1)
+        return results[0] if results else None
+
+    # ── beliefs ────────────────────────────────────────────────
+
+    def store_belief(self, belief: BeliefState) -> int:
+        """Validate and persist a single belief record.
+
+        Uses INSERT OR REPLACE on the unique constraint
+        ``(variable_name, version, effective_at)`` so duplicate
+        recomputation is idempotent.
+
+        Returns the row ID.
+
+        Raises:
+            ValueError: if the belief fails validation.
+        """
+        errors = validate_belief(belief)
+        if errors:
+            raise ValueError(
+                f"Belief '{belief.variable_name}' failed validation: "
+                + "; ".join(errors)
+            )
+        conn = self._get_conn()
+        cursor = conn.execute(
+            "INSERT OR REPLACE INTO beliefs "
+            "(variable_name, version, effective_at, computed_at, dist_type, "
+            " mean, variance, probabilities_json, evidence_count, "
+            " model_graph_hash, confidence, stale, metadata_json) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                belief.variable_name,
+                belief.version,
+                belief.effective_at,
+                belief.computed_at,
+                belief.dist_type,
+                belief.mean,
+                belief.variance,
+                (
+                    json.dumps(belief.probabilities)
+                    if belief.probabilities is not None
+                    else None
+                ),
+                belief.evidence_count,
+                belief.model_graph_hash,
+                belief.confidence,
+                1 if belief.stale else 0,
+                (json.dumps(belief.metadata, default=str) if belief.metadata else None),
+            ),
+        )
+        conn.commit()
+        row_id: int = cursor.lastrowid  # type: ignore[assignment]
+        log.debug(
+            "Stored belief: %s v%d effective_at=%.0f row_id=%s",
+            belief.variable_name,
+            belief.version,
+            belief.effective_at,
+            row_id,
+        )
+        return row_id
+
+    def store_beliefs_batch(self, beliefs: list[BeliefState]) -> list[int]:
+        """Validate and persist a batch of beliefs atomically.
+
+        Returns a list of row IDs.
+
+        Raises:
+            ValueError: if *any* belief fails validation (no rows written).
+        """
+        all_errors: list[str] = []
+        for idx, b in enumerate(beliefs):
+            errs = validate_belief(b)
+            if errs:
+                all_errors.append(f"[{idx}] {b.variable_name}: {'; '.join(errs)}")
+        if all_errors:
+            raise ValueError(
+                f"Batch validation failed ({len(all_errors)} belief(s)): "
+                + " | ".join(all_errors)
+            )
+
+        conn = self._get_conn()
+        row_ids: list[int] = []
+        try:
+            for b in beliefs:
+                cursor = conn.execute(
+                    "INSERT OR REPLACE INTO beliefs "
+                    "(variable_name, version, effective_at, computed_at, dist_type, "
+                    " mean, variance, probabilities_json, evidence_count, "
+                    " model_graph_hash, confidence, stale, metadata_json) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        b.variable_name,
+                        b.version,
+                        b.effective_at,
+                        b.computed_at,
+                        b.dist_type,
+                        b.mean,
+                        b.variance,
+                        (
+                            json.dumps(b.probabilities)
+                            if b.probabilities is not None
+                            else None
+                        ),
+                        b.evidence_count,
+                        b.model_graph_hash,
+                        b.confidence,
+                        1 if b.stale else 0,
+                        (json.dumps(b.metadata, default=str) if b.metadata else None),
+                    ),
+                )
+                row_ids.append(cursor.lastrowid)  # type: ignore[arg-type]
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        log.debug("Stored %d beliefs in batch", len(row_ids))
+        return row_ids
+
+    def query_beliefs(
+        self,
+        variable_name: str,
+        *,
+        since: float | None = None,
+        until: float | None = None,
+        version: int | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Query stored beliefs by variable name, time range, and version."""
+        conn = self._get_conn()
+        clauses = ["variable_name=?"]
+        params: list[Any] = [variable_name]
+
+        if since is not None:
+            clauses.append("effective_at>=?")
+            params.append(since)
+        if until is not None:
+            clauses.append("effective_at<=?")
+            params.append(until)
+        if version is not None:
+            clauses.append("version=?")
+            params.append(version)
+
+        where = " AND ".join(clauses)
+        params.append(limit)
+        rows = conn.execute(
+            f"SELECT * FROM beliefs WHERE {where} "  # noqa: S608
+            "ORDER BY effective_at DESC LIMIT ?",
+            params,
+        ).fetchall()
+        return [self._belief_row_to_dict(r) for r in rows]
+
+    def get_latest_belief(
+        self,
+        variable_name: str,
+        version: int | None = None,
+    ) -> dict[str, Any] | None:
+        """Return the single most-recent belief record, or None."""
+        results = self.query_beliefs(variable_name, version=version, limit=1)
+        return results[0] if results else None
+
+    # ── entities ───────────────────────────────────────────────
+
+    def register_entity(
+        self,
+        entity_type: str,
+        canonical_name: str,
+        entity_id: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> str:
+        """Register a canonical entity. Returns entity_id.
+
+        Uses INSERT OR IGNORE so re-registration is idempotent.
+        """
+        if not canonical_name or not canonical_name.strip():
+            raise ValueError("canonical_name must be non-empty")
+        conn = self._get_conn()
+        conn.execute(
+            "INSERT OR IGNORE INTO entities "
+            "(entity_id, entity_type, canonical_name, created_at, metadata_json) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (
+                entity_id,
+                entity_type,
+                canonical_name.strip(),
+                time.time(),
+                json.dumps(metadata, default=str) if metadata else None,
+            ),
+        )
+        conn.commit()
+        log.debug(
+            "Registered entity: %s type=%s name=%s",
+            entity_id,
+            entity_type,
+            canonical_name,
+        )
+        return entity_id
+
+    def add_entity_alias(
+        self,
+        entity_id: str,
+        source: str,
+        external_id: str,
+        confidence: float = 1.0,
+    ) -> None:
+        """Add a source-specific alias for an entity.
+
+        Uses INSERT OR IGNORE so duplicate aliases are idempotent.
+        """
+        conn = self._get_conn()
+        conn.execute(
+            "INSERT OR IGNORE INTO entity_aliases "
+            "(entity_id, source, external_id, confidence, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (entity_id, source, external_id, confidence, time.time()),
+        )
+        conn.commit()
+
+    def resolve_entity(self, source: str, external_id: str) -> str | None:
+        """Resolve a source-specific ID to a canonical entity_id.
+
+        Returns None if no alias matches.
+        """
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT entity_id FROM entity_aliases " "WHERE source=? AND external_id=?",
+            (source, external_id),
+        ).fetchone()
+        return row["entity_id"] if row else None
+
+    def query_entity_aliases(self, entity_id: str) -> list[dict[str, Any]]:
+        """Return all aliases for a given entity_id."""
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT * FROM entity_aliases WHERE entity_id=?",
+            (entity_id,),
+        ).fetchall()
+        return [
+            {
+                "alias_id": r["alias_id"],
+                "entity_id": r["entity_id"],
+                "source": r["source"],
+                "external_id": r["external_id"],
+                "confidence": r["confidence"],
+                "created_at": r["created_at"],
+            }
+            for r in rows
+        ]
+
+    def get_entity(self, entity_id: str) -> dict[str, Any] | None:
+        """Get a single entity record by ID."""
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT * FROM entities WHERE entity_id=?", (entity_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        return self._entity_row_to_dict(row)
+
+    def store_entity_observation(
+        self,
+        entity_id: str,
+        source_tool: str,
+        observed_at: float,
+        observation_type: str,
+        value: Any,
+        depth_level: int = 1,
+        metadata: dict[str, Any] | None = None,
+    ) -> int:
+        """Store a timestamped observation for an entity. Returns row ID."""
+        conn = self._get_conn()
+        cursor = conn.execute(
+            "INSERT INTO entity_observations "
+            "(entity_id, source_tool, observed_at, ingested_at, "
+            " observation_type, depth_level, value_json, metadata_json) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                entity_id,
+                source_tool,
+                observed_at,
+                time.time(),
+                observation_type,
+                depth_level,
+                json.dumps(value, default=str),
+                json.dumps(metadata, default=str) if metadata else None,
+            ),
+        )
+        conn.commit()
+        row_id = cursor.lastrowid
+        log.debug(
+            "Stored entity observation: entity=%s tool=%s depth=%d row_id=%s",
+            entity_id,
+            source_tool,
+            depth_level,
+            row_id,
+        )
+        return row_id  # type: ignore[return-value]
+
+    def query_entity_observations(
+        self,
+        entity_id: str,
+        *,
+        source_tool: str | None = None,
+        since: float | None = None,
+        until: float | None = None,
+        depth_level: int | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Query entity observations with optional filters."""
+        conn = self._get_conn()
+        clauses = ["entity_id=?"]
+        params: list[Any] = [entity_id]
+
+        if source_tool is not None:
+            clauses.append("source_tool=?")
+            params.append(source_tool)
+        if since is not None:
+            clauses.append("observed_at>=?")
+            params.append(since)
+        if until is not None:
+            clauses.append("observed_at<=?")
+            params.append(until)
+        if depth_level is not None:
+            clauses.append("depth_level=?")
+            params.append(depth_level)
+
+        where = " AND ".join(clauses)
+        params.append(limit)
+        rows = conn.execute(
+            f"SELECT * FROM entity_observations WHERE {where} "  # noqa: S608
+            "ORDER BY observed_at DESC LIMIT ?",
+            params,
+        ).fetchall()
+        return [self._entity_obs_row_to_dict(r) for r in rows]
+
+    # ── entity links ───────────────────────────────────────────
+
+    def link_entities(
+        self,
+        entity_id_a: str,
+        entity_id_b: str,
+        link_type: str,
+        source: str,
+        confidence: float = 1.0,
+        metadata: dict[str, Any] | None = None,
+    ) -> int | None:
+        """Create a typed link between two entities.
+
+        Idempotent via INSERT OR IGNORE.  Returns the link_id on
+        insertion, or ``None`` when the (a, b, link_type) tuple
+        already exists.
+
+        Raises ``ValueError`` for self-links (entity_id_a == entity_id_b).
+        """
+        if entity_id_a == entity_id_b:
+            raise ValueError("Cannot link an entity to itself")
+        conn = self._get_conn()
+        cursor = conn.execute(
+            "INSERT OR IGNORE INTO entity_links "
+            "(entity_id_a, entity_id_b, link_type, confidence, "
+            " source, created_at, metadata_json) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                entity_id_a,
+                entity_id_b,
+                link_type,
+                confidence,
+                source,
+                time.time(),
+                json.dumps(metadata, default=str) if metadata else None,
+            ),
+        )
+        conn.commit()
+        if cursor.lastrowid and cursor.rowcount:
+            log.debug(
+                "Linked entities: %s -> %s type=%s",
+                entity_id_a,
+                entity_id_b,
+                link_type,
+            )
+            return cursor.lastrowid
+        return None  # already existed
+
+    def query_entity_links(
+        self,
+        entity_id: str,
+        *,
+        link_type: str | None = None,
+        direction: str = "both",
+        min_confidence: float = 0.0,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Query links for an entity.
+
+        *direction* controls which side of the link to match:
+        ``"outgoing"`` — entity is *entity_id_a* (source),
+        ``"incoming"`` — entity is *entity_id_b* (target),
+        ``"both"`` (default) — either side.
+        """
+        if direction not in ("outgoing", "incoming", "both"):
+            raise ValueError(
+                f"direction must be outgoing/incoming/both, got {direction!r}"
+            )
+
+        conn = self._get_conn()
+        parts: list[str] = []
+        params: list[Any] = []
+
+        if direction in ("outgoing", "both"):
+            clauses = ["entity_id_a=?", "confidence>=?"]
+            p: list[Any] = [entity_id, min_confidence]
+            if link_type is not None:
+                clauses.append("link_type=?")
+                p.append(link_type)
+            parts.append(f"SELECT * FROM entity_links WHERE {' AND '.join(clauses)}")
+            params.extend(p)
+
+        if direction in ("incoming", "both"):
+            clauses = ["entity_id_b=?", "confidence>=?"]
+            p = [entity_id, min_confidence]
+            if link_type is not None:
+                clauses.append("link_type=?")
+                p.append(link_type)
+            parts.append(f"SELECT * FROM entity_links WHERE {' AND '.join(clauses)}")
+            params.extend(p)
+
+        sql = " UNION ".join(parts) + " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+        rows = conn.execute(sql, params).fetchall()  # noqa: S608
+        return [self._entity_link_row_to_dict(r) for r in rows]
+
+    def query_co_occurrences(
+        self,
+        entity_id_a: str,
+        entity_id_b: str,
+        *,
+        window_seconds: float = 72 * 3600,
+        source_tool_a: str | None = None,
+        source_tool_b: str | None = None,
+        since: float | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Find temporal co-occurrences between two entities.
+
+        Returns observation pairs where
+        ``abs(obs_a.observed_at - obs_b.observed_at) <= window_seconds``.
+
+        Each result dict contains ``obs_a``, ``obs_b``, and
+        ``time_delta_seconds`` (signed: positive means a comes after b).
+        """
+        conn = self._get_conn()
+
+        # Build WHERE clauses for each side (params must match SQL
+        # placeholder order: all ``a`` clauses first, then ``b``).
+        clauses_a = ["a.entity_id=?"]
+        clauses_b = ["b.entity_id=?"]
+        params_a: list[Any] = [entity_id_a]
+        params_b: list[Any] = [entity_id_b]
+
+        if source_tool_a is not None:
+            clauses_a.append("a.source_tool=?")
+            params_a.append(source_tool_a)
+        if source_tool_b is not None:
+            clauses_b.append("b.source_tool=?")
+            params_b.append(source_tool_b)
+        if since is not None:
+            clauses_a.append("a.observed_at>=?")
+            params_a.append(since)
+            clauses_b.append("b.observed_at>=?")
+            params_b.append(since)
+
+        where_a = " AND ".join(clauses_a)
+        where_b = " AND ".join(clauses_b)
+
+        params: list[Any] = params_a + params_b + [window_seconds, limit]
+
+        sql = (
+            "SELECT "
+            "  a.id AS a_id, a.entity_id AS a_entity_id, "
+            "  a.source_tool AS a_source_tool, a.observed_at AS a_observed_at, "
+            "  a.ingested_at AS a_ingested_at, "
+            "  a.observation_type AS a_observation_type, "
+            "  a.depth_level AS a_depth_level, "
+            "  a.value_json AS a_value_json, a.metadata_json AS a_metadata_json, "
+            "  b.id AS b_id, b.entity_id AS b_entity_id, "
+            "  b.source_tool AS b_source_tool, b.observed_at AS b_observed_at, "
+            "  b.ingested_at AS b_ingested_at, "
+            "  b.observation_type AS b_observation_type, "
+            "  b.depth_level AS b_depth_level, "
+            "  b.value_json AS b_value_json, b.metadata_json AS b_metadata_json "
+            "FROM entity_observations a "
+            "INNER JOIN entity_observations b "
+            f"ON ({where_a}) AND ({where_b}) "
+            "   AND ABS(a.observed_at - b.observed_at) <= ? "
+            "ORDER BY ABS(a.observed_at - b.observed_at) ASC "
+            "LIMIT ?"
+        )
+
+        rows = conn.execute(sql, params).fetchall()
+
+        results: list[dict[str, Any]] = []
+        for row in rows:
+            d = dict(row)
+            obs_a = self._co_occ_half(d, "a")
+            obs_b = self._co_occ_half(d, "b")
+            results.append(
+                {
+                    "obs_a": obs_a,
+                    "obs_b": obs_b,
+                    "time_delta_seconds": obs_a["observed_at"] - obs_b["observed_at"],
+                }
+            )
+        return results
+
+    @staticmethod
+    def _co_occ_half(row_dict: dict[str, Any], prefix: str) -> dict[str, Any]:
+        """Extract one side of a co-occurrence join row into an obs dict."""
+        d: dict[str, Any] = {
+            "id": row_dict[f"{prefix}_id"],
+            "entity_id": row_dict[f"{prefix}_entity_id"],
+            "source_tool": row_dict[f"{prefix}_source_tool"],
+            "observed_at": row_dict[f"{prefix}_observed_at"],
+            "ingested_at": row_dict[f"{prefix}_ingested_at"],
+            "observation_type": row_dict[f"{prefix}_observation_type"],
+            "depth_level": row_dict[f"{prefix}_depth_level"],
+        }
+        try:
+            d["value"] = json.loads(row_dict.get(f"{prefix}_value_json", "{}"))
+        except (json.JSONDecodeError, TypeError):
+            d["value"] = {}
+        try:
+            d["metadata"] = json.loads(row_dict.get(f"{prefix}_metadata_json", "null"))
+        except (json.JSONDecodeError, TypeError):
+            d["metadata"] = None
+        return d
+
+    # ── bulk graph queries (Phase 12a) ─────────────────────────
+
+    def query_all_entities(
+        self,
+        *,
+        entity_type: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return all entities, optionally filtered by type."""
+        conn = self._get_conn()
+        if entity_type is not None:
+            rows = conn.execute(
+                "SELECT * FROM entities WHERE entity_type=? " "ORDER BY created_at",
+                (entity_type,),
+            ).fetchall()
+        else:
+            rows = conn.execute("SELECT * FROM entities ORDER BY created_at").fetchall()
+        return [self._entity_row_to_dict(r) for r in rows]
+
+    def query_all_observations(
+        self,
+        *,
+        since: float | None = None,
+        until: float | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return all observations ordered by observed_at.
+
+        Optional *since* / *until* narrow the time window.
+        """
+        conn = self._get_conn()
+        clauses: list[str] = []
+        params: list[Any] = []
+        if since is not None:
+            clauses.append("observed_at >= ?")
+            params.append(since)
+        if until is not None:
+            clauses.append("observed_at <= ?")
+            params.append(until)
+        where = " AND ".join(clauses) if clauses else "1=1"
+        rows = conn.execute(
+            f"SELECT * FROM entity_observations WHERE {where} "  # noqa: S608
+            "ORDER BY observed_at",
+            params,
+        ).fetchall()
+        return [self._entity_obs_row_to_dict(r) for r in rows]
+
+    def query_all_entity_links(
+        self,
+        *,
+        link_type: str | None = None,
+        min_confidence: float = 0.0,
+    ) -> list[dict[str, Any]]:
+        """Return all entity links, optionally filtered by type and confidence."""
+        conn = self._get_conn()
+        clauses: list[str] = []
+        params: list[Any] = []
+        if link_type is not None:
+            clauses.append("link_type=?")
+            params.append(link_type)
+        if min_confidence > 0.0:
+            clauses.append("confidence >= ?")
+            params.append(min_confidence)
+        where = " AND ".join(clauses) if clauses else "1=1"
+        rows = conn.execute(
+            f"SELECT * FROM entity_links WHERE {where} "  # noqa: S608
+            "ORDER BY created_at",
+            params,
+        ).fetchall()
+        return [self._entity_link_row_to_dict(r) for r in rows]
+
+    # ── depth evaluations ──────────────────────────────────────
+
+    def store_depth_evaluation(
+        self,
+        tool_name: str,
+        depth_level: int,
+        target_variable: str,
+        sample_size: int,
+        *,
+        mi_gain: float | None = None,
+        kl_divergence: float | None = None,
+        sharpe_delta: float | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> int:
+        """Store a depth evaluation result. Returns row ID."""
+        conn = self._get_conn()
+        cursor = conn.execute(
+            "INSERT INTO depth_evaluations "
+            "(tool_name, depth_level, evaluated_at, target_variable, "
+            " mi_gain, kl_divergence, sharpe_delta, sample_size, metadata_json) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                tool_name,
+                depth_level,
+                time.time(),
+                target_variable,
+                mi_gain,
+                kl_divergence,
+                sharpe_delta,
+                sample_size,
+                json.dumps(metadata, default=str) if metadata else None,
+            ),
+        )
+        conn.commit()
+        row_id = cursor.lastrowid
+        log.debug(
+            "Stored depth evaluation: tool=%s depth=%d target=%s row_id=%s",
+            tool_name,
+            depth_level,
+            target_variable,
+            row_id,
+        )
+        return row_id  # type: ignore[return-value]
+
+    def query_depth_evaluations(
+        self,
+        tool_name: str | None = None,
+        *,
+        depth_level: int | None = None,
+        target_variable: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Query depth evaluation records with optional filters."""
+        conn = self._get_conn()
+        clauses: list[str] = []
+        params: list[Any] = []
+
+        if tool_name is not None:
+            clauses.append("tool_name=?")
+            params.append(tool_name)
+        if depth_level is not None:
+            clauses.append("depth_level=?")
+            params.append(depth_level)
+        if target_variable is not None:
+            clauses.append("target_variable=?")
+            params.append(target_variable)
+
+        where = " AND ".join(clauses) if clauses else "1=1"
+        params.append(limit)
+        rows = conn.execute(
+            f"SELECT * FROM depth_evaluations WHERE {where} "  # noqa: S608
+            "ORDER BY evaluated_at DESC LIMIT ?",
+            params,
+        ).fetchall()
+        return [self._depth_eval_row_to_dict(r) for r in rows]
+
     # ── helpers ────────────────────────────────────────────────
+
+    @staticmethod
+    def _feature_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+        d = dict(row)
+        try:
+            d["source_signals"] = tuple(json.loads(d.pop("source_signals_json", "[]")))
+        except (json.JSONDecodeError, TypeError):
+            d["source_signals"] = ()
+        try:
+            d["metadata"] = json.loads(d.pop("metadata_json", "null"))
+        except (json.JSONDecodeError, TypeError):
+            d["metadata"] = None
+        return d
 
     @staticmethod
     def _row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
@@ -309,6 +1281,60 @@ class PipelineStore:
 
     @staticmethod
     def _signal_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+        d = dict(row)
+        try:
+            d["metadata"] = json.loads(d.pop("metadata_json", "null"))
+        except (json.JSONDecodeError, TypeError):
+            d["metadata"] = None
+        return d
+
+    @staticmethod
+    def _belief_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+        d = dict(row)
+        try:
+            d["probabilities"] = json.loads(d.pop("probabilities_json", "null"))
+        except (json.JSONDecodeError, TypeError):
+            d["probabilities"] = None
+        try:
+            d["metadata"] = json.loads(d.pop("metadata_json", "null"))
+        except (json.JSONDecodeError, TypeError):
+            d["metadata"] = None
+        d["stale"] = bool(d.get("stale", 0))
+        return d
+
+    @staticmethod
+    def _entity_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+        d = dict(row)
+        try:
+            d["metadata"] = json.loads(d.pop("metadata_json", "null"))
+        except (json.JSONDecodeError, TypeError):
+            d["metadata"] = None
+        return d
+
+    @staticmethod
+    def _entity_obs_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+        d = dict(row)
+        try:
+            d["value"] = json.loads(d.pop("value_json", "{}"))
+        except (json.JSONDecodeError, TypeError):
+            d["value"] = {}
+        try:
+            d["metadata"] = json.loads(d.pop("metadata_json", "null"))
+        except (json.JSONDecodeError, TypeError):
+            d["metadata"] = None
+        return d
+
+    @staticmethod
+    def _depth_eval_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+        d = dict(row)
+        try:
+            d["metadata"] = json.loads(d.pop("metadata_json", "null"))
+        except (json.JSONDecodeError, TypeError):
+            d["metadata"] = None
+        return d
+
+    @staticmethod
+    def _entity_link_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
         d = dict(row)
         try:
             d["metadata"] = json.loads(d.pop("metadata_json", "null"))

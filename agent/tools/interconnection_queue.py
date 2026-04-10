@@ -35,12 +35,22 @@ from __future__ import annotations
 import logging
 import os
 import re
-from typing import Any
+import time
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from agent.data.cache import DataCache
 from agent.tools.base import Tool, ToolResult
+
+if TYPE_CHECKING:
+    from agent.pipeline.store import PipelineStore
+
+try:
+    from agent.pipeline.entity import entity_id_from_key, normalize_company_name
+except ImportError:  # pragma: no cover
+    entity_id_from_key = None  # type: ignore[assignment]
+    normalize_company_name = None  # type: ignore[assignment]
 
 log = logging.getLogger(__name__)
 
@@ -286,14 +296,99 @@ class InterconnectionQueueTool(Tool):
         "required": ["mode"],
     }
 
-    def __init__(self, *, cache: DataCache | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        cache: DataCache | None = None,
+        pipeline_store: PipelineStore | None = None,
+    ) -> None:
         self._cache = cache
+        self._store = pipeline_store
         self._api_key = self._get_api_key()
 
     @staticmethod
     def _get_api_key() -> str | None:
         key = os.environ.get("TIRRA_EIA_API_KEY", "").strip()
         return key if key else None
+
+    # ------------------------------------------------------------------
+    # Entity persistence (L2)
+    # ------------------------------------------------------------------
+
+    def _persist_entities(self, records: list[dict[str, Any]]) -> None:
+        """Register company entities and store L2 project observations."""
+        if self._store is None or entity_id_from_key is None:
+            return
+        if not records:
+            return
+        try:
+            self._persist_entities_inner(records)
+        except Exception:
+            log.exception("Entity persistence failed (non-fatal)")
+
+    def _persist_entities_inner(self, records: list[dict[str, Any]]) -> None:
+        assert self._store is not None  # noqa: S101
+        store = self._store
+
+        seen_companies: set[str] = set()
+        now = time.time()
+        for rec in records:
+            entity_name = rec.get("entityName", rec.get("entity_name", ""))
+            if not entity_name or entity_name in seen_companies:
+                continue
+            seen_companies.add(entity_name)
+
+            try:
+                canon = (
+                    normalize_company_name(entity_name)
+                    if normalize_company_name
+                    else entity_name
+                )
+            except ValueError:
+                canon = entity_name
+
+            company_eid = entity_id_from_key("company", canon)
+            store.register_entity(
+                entity_type="company",
+                canonical_name=canon,
+                entity_id=company_eid,
+            )
+
+            mw = rec.get("nameplate-capacity-mw", rec.get("nameplate_capacity_mw", 0))
+            src = rec.get("energy-source-code", rec.get("energy_source_code", ""))
+            state = rec.get("stateid", rec.get("state", ""))
+
+            store.store_entity_observation(
+                entity_id=company_eid,
+                source_tool="interconnection_queue",
+                observed_at=now,
+                observation_type="project_status",
+                depth_level=2,
+                value={
+                    "plant_name": rec.get("plantName", rec.get("plant_name", "")),
+                    "nameplate_capacity_mw": mw,
+                    "energy_source_code": src,
+                    "state": state,
+                    "status": rec.get("status", ""),
+                    "technology": rec.get("technology", ""),
+                },
+            )
+
+            # ── Link company → US country ──
+            us_eid = entity_id_from_key("country", "US")
+            store.register_entity(
+                entity_type="country",
+                canonical_name="US",
+                entity_id=us_eid,
+            )
+            store.link_entities(
+                entity_id_a=company_eid,
+                entity_id_b=us_eid,
+                link_type="located_in",
+                source="interconnection_queue",
+                confidence=1.0,
+                metadata={"state": state},
+            )
 
     def execute(self, **kwargs: Any) -> ToolResult:
         mode = (kwargs.get("mode") or "").strip().lower()
@@ -362,6 +457,8 @@ class InterconnectionQueueTool(Tool):
                 )
                 >= min_mw
             ]
+
+        self._persist_entities(records)
 
         if not records:
             result = f"No {status_str} generators found"

@@ -173,8 +173,8 @@ class TestCausalTemplate:
 
 
 class TestTemplateLibrary:
-    def test_has_12_templates(self):
-        assert len(TEMPLATE_LIBRARY) == 12
+    def test_has_50_templates(self):
+        assert len(TEMPLATE_LIBRARY) == 50
 
     def test_unique_names(self):
         names = [t.name for t in TEMPLATE_LIBRARY]
@@ -209,6 +209,45 @@ class TestTemplateLibrary:
             "trade_war_escalation",
             "construction_cycle",
             "digital_infrastructure_crisis",
+            "silent_nationalization",
+            "defi_canary",
+            "pandemic_physical_evidence",
+            "capital_flight_crypto",
+            "infrastructure_decay_cascade",
+            "commodity_hoarding",
+            "smart_money_divergence",
+            "sanctions_evasion_network",
+            "carry_trade_unwind",
+            "stealth_accumulation",
+            # Batch 2 (#23–#50)
+            "currency_crisis_em",
+            "dollar_squeeze",
+            "twin_deficit_crisis",
+            "sovereign_debt_spiral",
+            "fiscal_dominance",
+            "real_estate_bubble",
+            "construction_bust_banking",
+            "inflation_persistence",
+            "deflation_trap",
+            "chokepoint_disruption",
+            "dark_fleet_expansion",
+            "shipping_regime_change",
+            "liquidity_freeze",
+            "bank_run_digital",
+            "contagion_cascade",
+            "climate_insurance_cascade",
+            "water_stress_food_crisis",
+            "stablecoin_depeg",
+            "crypto_energy_nexus",
+            "drug_safety_crisis",
+            "pharma_pipeline_collapse",
+            "election_positioning",
+            "regime_change_market",
+            "critical_mineral_bottleneck",
+            "supply_chain_decoupling",
+            "bond_equity_divergence",
+            "commodity_demand_collapse",
+            "internet_censorship_escalation",
         }
         actual = {t.name for t in TEMPLATE_LIBRARY}
         assert actual == expected
@@ -439,7 +478,7 @@ class TestMatchAllTemplates:
             _ev("pmi.germany.manufacturing", "macro_momentum", t0 + 25 * _DAY, -1),
         ]
         results = match_all_templates(clique, timeline)
-        assert len(results) == 12
+        assert len(results) == 50
         # Scores should be descending
         for i in range(len(results) - 1):
             assert results[i].match_score >= results[i + 1].match_score

@@ -2952,11 +2952,521 @@ def _stub_extractor(tool_name: str, data: Any) -> list[Evidence]:
     return []
 
 
-register_extractor("satellite_activity", _stub_extractor)
 register_extractor("foia_requests", _stub_extractor)
 register_extractor("interconnection_queue", _stub_extractor)
-register_extractor("internet_infrastructure", _stub_extractor)
 register_extractor("electricity_monitor", _stub_extractor)
+
+
+# ══════════════════════════════════════════════════════════════
+#  Satellite Activity (NASA FIRMS fire, MODIS NDVI, EONET events)
+# ══════════════════════════════════════════════════════════════
+
+# NDVI health classification → ordinal for Evidence.value
+_NDVI_HEALTH_ORDINAL: dict[str, float] = {
+    "water_or_barren": 0.0,
+    "bare_soil": 1.0,
+    "sparse": 2.0,
+    "moderate": 3.0,
+    "healthy": 4.0,
+    "dense": 5.0,
+}
+
+
+def _extract_satellite_activity(tool_name: str, data: Any) -> list[Evidence]:
+    """Extract fire, vegetation, and natural-event signals from satellite data.
+
+    Modes handled:
+      - fire: hotspot count, aggregate FRP, cluster count
+            → category physical_disruption
+      - vegetation: latest NDVI, anomaly %, health ordinal
+            → category supply_chain (crop stress proxy)
+      - events: active event count, per-category counts
+            → category physical_disruption
+
+    Data source: NASA FIRMS (fire), ORNL MODIS (vegetation), NASA EONET (events).
+    """
+    if not isinstance(data, dict):
+        return []
+
+    mode = data.get("mode", "")
+    if mode == "fire":
+        return _extract_satellite_fire(tool_name, data)
+    if mode == "vegetation":
+        return _extract_satellite_vegetation(tool_name, data)
+    if mode == "events":
+        return _extract_satellite_events(tool_name, data)
+    return []
+
+
+def _extract_satellite_fire(tool_name: str, data: dict) -> list[Evidence]:
+    """Fire mode: hotspot count, aggregate FRP, peak FRP, cluster count.
+
+    All signals are physical_disruption — fire activity near infrastructure
+    or crop regions is a direct physical disruption indicator.
+
+    Thresholds:
+      - hotspot_count > 100  → direction=1 (elevated fire activity)
+      - frp_total > 1000 MW  → direction=1 (significant fire energy)
+      - frp_max > 100 MW     → direction=1 (intense single point)
+      - cluster_count > 5    → direction=1 (widespread spatial distribution)
+
+    TTL = 21600s (6 hours) — fire data is near-real-time, stales quickly.
+    """
+    results: list[Evidence] = []
+    ts = _now_ts()
+    ttl = 21_600  # 6 hours — NRT fire data
+
+    hotspot_count = data.get("hotspot_count")
+    if hotspot_count is None:
+        return []
+    hotspot_count = _safe_float(hotspot_count)
+
+    results.append(
+        Evidence(
+            source=tool_name,
+            signal_id="satellite.fire.hotspot_count",
+            timestamp=ts,
+            value=hotspot_count,
+            direction=1 if hotspot_count > 100 else 0,
+            confidence=0.8,
+            category="physical_disruption",
+            tags=("satellite", "fire", "hotspot", "count"),
+            ttl=ttl,
+        )
+    )
+
+    frp_total = _safe_float(data.get("frp_total"))
+    results.append(
+        Evidence(
+            source=tool_name,
+            signal_id="satellite.fire.frp_total",
+            timestamp=ts,
+            value=frp_total,
+            direction=1 if frp_total > 1000.0 else 0,
+            confidence=0.75,
+            category="physical_disruption",
+            tags=("satellite", "fire", "frp", "total"),
+            ttl=ttl,
+        )
+    )
+
+    frp_max = _safe_float(data.get("frp_max"))
+    results.append(
+        Evidence(
+            source=tool_name,
+            signal_id="satellite.fire.frp_max",
+            timestamp=ts,
+            value=frp_max,
+            direction=1 if frp_max > 100.0 else 0,
+            confidence=0.7,
+            category="physical_disruption",
+            tags=("satellite", "fire", "frp", "peak"),
+            ttl=ttl,
+        )
+    )
+
+    cluster_count = _safe_float(data.get("cluster_count"))
+    results.append(
+        Evidence(
+            source=tool_name,
+            signal_id="satellite.fire.cluster_count",
+            timestamp=ts,
+            value=cluster_count,
+            direction=1 if cluster_count > 5 else 0,
+            confidence=0.75,
+            category="physical_disruption",
+            tags=("satellite", "fire", "cluster", "spatial"),
+            ttl=ttl,
+        )
+    )
+
+    return results
+
+
+def _extract_satellite_vegetation(tool_name: str, data: dict) -> list[Evidence]:
+    """Vegetation mode: latest NDVI, anomaly %, health ordinal.
+
+    All signals are supply_chain — vegetation health is a leading indicator
+    for crop stress → food/commodity prices → supply chain pressure.
+
+    NDVI ranges from approximately -0.2 (water/barren) to 1.0 (dense vegetation).
+    The anomaly percentage measures latest vs historical mean:
+      - Negative anomaly = vegetation decline = crop stress
+      - Positive anomaly = above-average health
+
+    Direction semantics:
+      - ndvi_latest: direction=0 (neutral — absolute value, not directional)
+      - anomaly_pct: direction=-1 if < -10% (stress), +1 if > +10% (boom)
+      - health_class_ordinal: direction=0
+
+    TTL = 604800s (7 days) — MODIS NDVI updates every 16 days;
+    7-day TTL gives overlap without excessive staleness.
+    """
+    results: list[Evidence] = []
+    ts = _now_ts()
+    ttl = 604_800  # 7 days — MODIS 16-day cycle
+
+    observation_count = data.get("observation_count", 0)
+    if not isinstance(observation_count, (int, float)) or observation_count == 0:
+        # No observations → can still emit if latest_ndvi is present
+        # (e.g. single-observation case), but if truly empty, bail
+        if data.get("latest_ndvi") is None and data.get("avg_ndvi") is None:
+            return []
+
+    latest_ndvi = _safe_float(data.get("latest_ndvi"))
+    results.append(
+        Evidence(
+            source=tool_name,
+            signal_id="satellite.vegetation.ndvi_latest",
+            timestamp=ts,
+            value=latest_ndvi,
+            direction=0,
+            confidence=0.85,
+            category="supply_chain",
+            tags=("satellite", "vegetation", "ndvi", "latest"),
+            ttl=ttl,
+        )
+    )
+
+    # Anomaly: safe against division by zero (tool already handles this —
+    # if avg_ndvi==0, anomaly_pct is set to 0.0 in the tool)
+    anomaly_pct = _safe_float(data.get("anomaly_pct"))
+    anom_direction = 0
+    if anomaly_pct < -10.0:
+        anom_direction = -1  # crop stress
+    elif anomaly_pct > 10.0:
+        anom_direction = 1  # above-average growth
+
+    results.append(
+        Evidence(
+            source=tool_name,
+            signal_id="satellite.vegetation.anomaly_pct",
+            timestamp=ts,
+            value=anomaly_pct,
+            direction=anom_direction,
+            confidence=0.8,
+            category="supply_chain",
+            tags=("satellite", "vegetation", "ndvi", "anomaly"),
+            ttl=ttl,
+        )
+    )
+
+    # Health classification as ordinal (0=water/barren .. 5=dense)
+    health_str = data.get("latest_health", "")
+    health_ordinal = _NDVI_HEALTH_ORDINAL.get(
+        str(health_str).lower(), 1.0  # default to bare_soil if unknown
+    )
+    results.append(
+        Evidence(
+            source=tool_name,
+            signal_id="satellite.vegetation.health_class_ordinal",
+            timestamp=ts,
+            value=health_ordinal,
+            direction=0,
+            confidence=0.85,
+            category="supply_chain",
+            tags=("satellite", "vegetation", "ndvi", "health"),
+            ttl=ttl,
+        )
+    )
+
+    return results
+
+
+def _extract_satellite_events(tool_name: str, data: dict) -> list[Evidence]:
+    """Events mode: total active natural events, per-category counts.
+
+    All signals are physical_disruption — natural events (wildfires, storms,
+    volcanoes, earthquakes) are direct physical disruptions.
+
+    Special per-category counts for highest-impact event types:
+      - wildfires: supply chain and infrastructure damage
+      - severeStorms: shipping/logistics disruption
+
+    Direction: 1 if count exceeds threshold (elevated activity).
+      - active_count > 20 → direction=1
+      - wildfire_count > 5 → direction=1
+      - severe_storm_count > 3 → direction=1
+
+    TTL = 43200s (12 hours) — EONET updates roughly daily.
+    """
+    results: list[Evidence] = []
+    ts = _now_ts()
+    ttl = 43_200  # 12 hours
+
+    event_count = data.get("event_count")
+    if event_count is None:
+        return []
+    event_count = _safe_float(event_count)
+
+    results.append(
+        Evidence(
+            source=tool_name,
+            signal_id="satellite.events.active_count",
+            timestamp=ts,
+            value=event_count,
+            direction=1 if event_count > 20 else 0,
+            confidence=0.8,
+            category="physical_disruption",
+            tags=("satellite", "events", "eonet", "count"),
+            ttl=ttl,
+        )
+    )
+
+    cat_counts = data.get("category_counts", {})
+    if not isinstance(cat_counts, dict):
+        cat_counts = {}
+
+    wildfire_count = _safe_float(cat_counts.get("wildfires"))
+    results.append(
+        Evidence(
+            source=tool_name,
+            signal_id="satellite.events.wildfire_count",
+            timestamp=ts,
+            value=wildfire_count,
+            direction=1 if wildfire_count > 5 else 0,
+            confidence=0.8,
+            category="physical_disruption",
+            tags=("satellite", "events", "wildfire", "count"),
+            ttl=ttl,
+        )
+    )
+
+    storm_count = _safe_float(cat_counts.get("severeStorms"))
+    results.append(
+        Evidence(
+            source=tool_name,
+            signal_id="satellite.events.severe_storm_count",
+            timestamp=ts,
+            value=storm_count,
+            direction=1 if storm_count > 3 else 0,
+            confidence=0.8,
+            category="physical_disruption",
+            tags=("satellite", "events", "storm", "count"),
+            ttl=ttl,
+        )
+    )
+
+    return results
+
+
+register_extractor("satellite_activity", _extract_satellite_activity)
+
+
+# ══════════════════════════════════════════════════════════════
+#  Internet Infrastructure (IODA outages + OONI censorship)
+# ══════════════════════════════════════════════════════════════
+
+
+def _extract_internet_infrastructure(tool_name: str, data: Any) -> list[Evidence]:
+    """Extract outage, censorship, and connectivity signals.
+
+    Modes handled:
+      - outages: country-level alert severity and event breadth
+      - censorship: anomaly rate and trend from OONI measurements
+      - signals: real-time gtr-norm connectivity level
+      - incidents: ongoing censorship incident count and breadth
+    """
+    if not isinstance(data, dict):
+        return []
+
+    results: list[Evidence] = []
+    ts = _now_ts()
+    mode = data.get("mode", "")
+
+    if mode == "outages":
+        alerts = data.get("alerts")
+        events = data.get("events")
+
+        if isinstance(alerts, list):
+            critical = [
+                a
+                for a in alerts
+                if isinstance(a, dict) and a.get("level") == "critical"
+            ]
+            critical_countries = {a.get("country", "??") for a in critical}
+            results.append(
+                Evidence(
+                    source=tool_name,
+                    signal_id="internet.outage.critical_count",
+                    timestamp=ts,
+                    value=float(len(critical_countries)),
+                    direction=1 if critical_countries else 0,
+                    confidence=0.85,
+                    category="physical_disruption",
+                    tags=("internet", "outage", "critical"),
+                    ttl=3600,
+                )
+            )
+
+        if isinstance(events, list):
+            scores = [
+                _safe_float(e.get("score")) for e in events if isinstance(e, dict)
+            ]
+            event_countries = {
+                e.get("country", "??") for e in events if isinstance(e, dict)
+            }
+            if scores:
+                max_score = max(scores)
+                results.append(
+                    Evidence(
+                        source=tool_name,
+                        signal_id="internet.outage.event_max_score",
+                        timestamp=ts,
+                        value=max_score,
+                        direction=1 if max_score > 50 else 0,
+                        confidence=0.8,
+                        category="physical_disruption",
+                        tags=("internet", "outage", "severity"),
+                        ttl=3600,
+                    )
+                )
+            results.append(
+                Evidence(
+                    source=tool_name,
+                    signal_id="internet.outage.event_breadth",
+                    timestamp=ts,
+                    value=float(len(event_countries)),
+                    direction=1 if len(event_countries) > 2 else 0,
+                    confidence=0.8,
+                    category="physical_disruption",
+                    tags=("internet", "outage", "breadth"),
+                    ttl=3600,
+                )
+            )
+
+    elif mode == "censorship":
+        avg_rate = _safe_float(data.get("avg_rate"))
+        max_rate = _safe_float(data.get("max_rate"))
+        trend = data.get("trend", "stable")
+        rows = data.get("rows")
+
+        results.append(
+            Evidence(
+                source=tool_name,
+                signal_id="internet.censorship.anomaly_rate",
+                timestamp=ts,
+                value=avg_rate,
+                direction=1 if avg_rate > 0.1 else 0,
+                confidence=0.75,
+                category="geopolitical",
+                tags=("internet", "censorship", "anomaly_rate"),
+                ttl=86_400,
+            )
+        )
+        results.append(
+            Evidence(
+                source=tool_name,
+                signal_id="internet.censorship.trend_rising",
+                timestamp=ts,
+                value=1.0 if trend == "rising" else 0.0,
+                direction=1 if trend == "rising" else (-1 if trend == "falling" else 0),
+                confidence=0.7,
+                category="geopolitical",
+                tags=("internet", "censorship", "trend"),
+                ttl=86_400,
+            )
+        )
+        # Total confirmed blocks across all rows
+        if isinstance(rows, list):
+            confirmed_total = sum(
+                r.get("confirmed", 0) for r in rows if isinstance(r, dict)
+            )
+            results.append(
+                Evidence(
+                    source=tool_name,
+                    signal_id="internet.censorship.confirmed_total",
+                    timestamp=ts,
+                    value=float(confirmed_total),
+                    direction=1 if confirmed_total > 0 else 0,
+                    confidence=0.8,
+                    category="geopolitical",
+                    tags=("internet", "censorship", "confirmed"),
+                    ttl=86_400,
+                )
+            )
+
+    elif mode == "signals":
+        current = _safe_float(data.get("current"), 1.0)
+        severity = data.get("severity", "normal")
+        drops = data.get("drops")
+
+        # Connectivity level: lower = worse (inverted signal)
+        results.append(
+            Evidence(
+                source=tool_name,
+                signal_id="internet.signals.connectivity_level",
+                timestamp=ts,
+                value=current,
+                direction=(
+                    -1
+                    if severity == "critical"
+                    else (-1 if severity == "warning" else 0)
+                ),
+                confidence=0.85,
+                category="physical_disruption",
+                tags=("internet", "connectivity", severity),
+                ttl=1800,
+            )
+        )
+        if isinstance(drops, list):
+            results.append(
+                Evidence(
+                    source=tool_name,
+                    signal_id="internet.signals.drop_count",
+                    timestamp=ts,
+                    value=float(len(drops)),
+                    direction=1 if len(drops) > 3 else 0,
+                    confidence=0.8,
+                    category="physical_disruption",
+                    tags=("internet", "connectivity", "drops"),
+                    ttl=1800,
+                )
+            )
+
+    elif mode == "incidents":
+        incidents = data.get("incidents")
+        country_freq = data.get("country_frequency")
+
+        if isinstance(incidents, list):
+            results.append(
+                Evidence(
+                    source=tool_name,
+                    signal_id="internet.incidents.active_count",
+                    timestamp=ts,
+                    value=float(len(incidents)),
+                    direction=1 if len(incidents) > 3 else 0,
+                    confidence=0.75,
+                    category="geopolitical",
+                    tags=("internet", "censorship", "incidents"),
+                    ttl=3600,
+                )
+            )
+            # Country breadth from incidents
+            all_countries: set[str] = set()
+            for inc in incidents:
+                if isinstance(inc, dict):
+                    ccs = inc.get("countries", [])
+                    if isinstance(ccs, list):
+                        all_countries.update(ccs)
+            results.append(
+                Evidence(
+                    source=tool_name,
+                    signal_id="internet.incidents.country_breadth",
+                    timestamp=ts,
+                    value=float(len(all_countries)),
+                    direction=1 if len(all_countries) > 5 else 0,
+                    confidence=0.75,
+                    category="geopolitical",
+                    tags=("internet", "censorship", "breadth"),
+                    ttl=3600,
+                )
+            )
+
+    return results
+
+
+register_extractor("internet_infrastructure", _extract_internet_infrastructure)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -3334,3 +3844,802 @@ def _extract_political_risk(tool_name: str, data: Any) -> list[Evidence]:
 
 
 register_extractor("political_risk", _extract_political_risk)
+
+
+# ══════════════════════════════════════════════════════════════
+#  Power Grid (NYISO demand, fuel mix, pricing, forecast)
+# ══════════════════════════════════════════════════════════════
+
+_RENEWABLE_FUELS = frozenset({"wind", "solar", "hydro", "other renewables"})
+
+
+def _extract_power_grid(tool_name: str, data: Any) -> list[Evidence]:
+    """Extract grid stress, fuel mix, and pricing spread signals.
+
+    Modes handled:
+      - demand: total peak MW and reporting zone count
+      - fuel_mix: gas share and renewable share as % of total
+      - pricing: stressed zone count, max DA-RT spread, avg DA price
+      - forecast: persistent deviation zone count, max significant deviations
+    """
+    if not isinstance(data, dict):
+        return []
+
+    results: list[Evidence] = []
+    ts = _now_ts()
+    mode = data.get("mode", "")
+    # PowerGridTool doesn't include a "mode" key in its data dict.
+    # Infer mode from the keys present.
+    if not mode:
+        if "total_peak_mw" in data:
+            mode = "demand"
+        elif "fuels" in data:
+            mode = "fuel_mix"
+        elif "stressed_zones" in data:
+            mode = "pricing"
+        elif "persistent_deviation_zones" in data:
+            mode = "forecast"
+
+    if mode == "demand":
+        total_peak = _safe_float(data.get("total_peak_mw"))
+        zones = data.get("zones")
+        zone_count = len(zones) if isinstance(zones, list) else 0
+
+        results.append(
+            Evidence(
+                source=tool_name,
+                signal_id="power_grid.demand.total_peak_mw",
+                timestamp=ts,
+                value=total_peak,
+                direction=0,
+                confidence=0.8,
+                category="physical_flow",
+                tags=("power_grid", "demand", "peak"),
+                ttl=86_400,
+            )
+        )
+        results.append(
+            Evidence(
+                source=tool_name,
+                signal_id="power_grid.demand.zone_count",
+                timestamp=ts,
+                value=float(zone_count),
+                direction=0,
+                confidence=0.9,
+                category="physical_flow",
+                tags=("power_grid", "demand", "zones"),
+                ttl=86_400,
+            )
+        )
+
+    elif mode == "fuel_mix":
+        fuels = data.get("fuels")
+        total_mw = _safe_float(data.get("total_mw"))
+        if isinstance(fuels, list) and total_mw > 0:
+            gas_mw = sum(
+                _safe_float(f.get("mw"))
+                for f in fuels
+                if isinstance(f, dict) and "gas" in str(f.get("fuel_type", "")).lower()
+            )
+            renewable_mw = sum(
+                _safe_float(f.get("mw"))
+                for f in fuels
+                if isinstance(f, dict)
+                and str(f.get("fuel_type", "")).lower() in _RENEWABLE_FUELS
+            )
+            gas_pct = (gas_mw / total_mw) * 100
+            renewable_pct = (renewable_mw / total_mw) * 100
+
+            results.append(
+                Evidence(
+                    source=tool_name,
+                    signal_id="power_grid.fuel.gas_share_pct",
+                    timestamp=ts,
+                    value=round(gas_pct, 1),
+                    direction=1 if gas_pct > 50 else 0,
+                    confidence=0.85,
+                    category="physical_flow",
+                    tags=("power_grid", "fuel_mix", "gas"),
+                    ttl=86_400,
+                )
+            )
+            results.append(
+                Evidence(
+                    source=tool_name,
+                    signal_id="power_grid.fuel.renewable_share_pct",
+                    timestamp=ts,
+                    value=round(renewable_pct, 1),
+                    direction=0,
+                    confidence=0.85,
+                    category="physical_flow",
+                    tags=("power_grid", "fuel_mix", "renewable"),
+                    ttl=86_400,
+                )
+            )
+
+    elif mode == "pricing":
+        zones = data.get("zones")
+        stressed = data.get("stressed_zones")
+        stressed_count = len(stressed) if isinstance(stressed, list) else 0
+
+        results.append(
+            Evidence(
+                source=tool_name,
+                signal_id="power_grid.pricing.stressed_zone_count",
+                timestamp=ts,
+                value=float(stressed_count),
+                direction=1 if stressed_count > 0 else 0,
+                confidence=0.8,
+                category="financial_stress",
+                tags=("power_grid", "pricing", "stress"),
+                ttl=86_400,
+            )
+        )
+
+        if isinstance(zones, list):
+            spreads = [
+                abs(_safe_float(z.get("spread")))
+                for z in zones
+                if isinstance(z, dict) and z.get("spread") is not None
+            ]
+            da_prices = [
+                _safe_float(z.get("da_lbmp"))
+                for z in zones
+                if isinstance(z, dict) and z.get("da_lbmp") is not None
+            ]
+            if spreads:
+                max_spread = max(spreads)
+                results.append(
+                    Evidence(
+                        source=tool_name,
+                        signal_id="power_grid.pricing.max_spread",
+                        timestamp=ts,
+                        value=max_spread,
+                        direction=1 if max_spread > 5.0 else 0,
+                        confidence=0.8,
+                        category="financial_stress",
+                        tags=("power_grid", "pricing", "spread"),
+                        ttl=86_400,
+                    )
+                )
+            if da_prices:
+                avg_da = sum(da_prices) / len(da_prices)
+                results.append(
+                    Evidence(
+                        source=tool_name,
+                        signal_id="power_grid.pricing.avg_da_lbmp",
+                        timestamp=ts,
+                        value=round(avg_da, 2),
+                        direction=1 if avg_da > 100 else 0,
+                        confidence=0.8,
+                        category="financial_stress",
+                        tags=("power_grid", "pricing", "day_ahead"),
+                        ttl=86_400,
+                    )
+                )
+
+    elif mode == "forecast":
+        zones = data.get("zones")
+        persistent = data.get("persistent_deviation_zones")
+        persistent_count = len(persistent) if isinstance(persistent, list) else 0
+
+        results.append(
+            Evidence(
+                source=tool_name,
+                signal_id="power_grid.forecast.persistent_deviation_count",
+                timestamp=ts,
+                value=float(persistent_count),
+                direction=1 if persistent_count > 0 else 0,
+                confidence=0.75,
+                category="physical_disruption",
+                tags=("power_grid", "forecast", "deviation"),
+                ttl=86_400,
+            )
+        )
+
+        if isinstance(zones, list):
+            sig_devs = [
+                z.get("significant_deviations", 0) for z in zones if isinstance(z, dict)
+            ]
+            if sig_devs:
+                max_sig = max(sig_devs)
+                results.append(
+                    Evidence(
+                        source=tool_name,
+                        signal_id="power_grid.forecast.max_significant_deviations",
+                        timestamp=ts,
+                        value=float(max_sig),
+                        direction=1 if max_sig > 5 else 0,
+                        confidence=0.7,
+                        category="physical_disruption",
+                        tags=("power_grid", "forecast", "significant"),
+                        ttl=86_400,
+                    )
+                )
+
+    return results
+
+
+register_extractor("power_grid", _extract_power_grid)
+
+
+# ══════════════════════════════════════════════════════════════
+#  DeFi Flows (DefiLlama TVL, stablecoins, DEX volume, chains)
+# ══════════════════════════════════════════════════════════════
+
+
+def _extract_defi_flows(tool_name: str, data: Any) -> list[Evidence]:
+    """Extract DeFi liquidity, stablecoin supply, and DEX stress signals.
+
+    Modes handled:
+      - tvl: total TVL, drawdown breadth, top concentration
+      - stablecoins: total supply, top stablecoin share
+      - dex_volume: total 24h volume, panic breadth
+      - chain: total chain TVL, top chain concentration
+    """
+    if not isinstance(data, dict):
+        return []
+
+    results: list[Evidence] = []
+    ts = _now_ts()
+    mode = data.get("mode", "")
+    # DefiFlowsTool doesn't include "mode" either. Infer.
+    if not mode:
+        if "protocols" in data and "total_tvl" in data:
+            mode = "tvl"
+        elif "stablecoins" in data:
+            mode = "stablecoins"
+        elif "dexes" in data:
+            mode = "dex_volume"
+        elif "chains" in data and "grand_total_tvl" in data:
+            mode = "chain"
+
+    if mode == "tvl":
+        total_tvl = _safe_float(data.get("total_tvl"))
+        protocols = data.get("protocols")
+
+        results.append(
+            Evidence(
+                source=tool_name,
+                signal_id="defi.tvl.total_usd",
+                timestamp=ts,
+                value=total_tvl,
+                direction=0,
+                confidence=0.8,
+                category="financial_stress",
+                tags=("defi", "tvl", "total"),
+                ttl=3600,
+            )
+        )
+
+        if isinstance(protocols, list):
+            # Drawdown breadth: protocols with 1d change < -5%
+            drawdown_count = sum(
+                1
+                for p in protocols
+                if isinstance(p, dict)
+                and p.get("change_1d_pct") is not None
+                and _safe_float(p.get("change_1d_pct")) < -5.0
+            )
+            results.append(
+                Evidence(
+                    source=tool_name,
+                    signal_id="defi.tvl.drawdown_breadth",
+                    timestamp=ts,
+                    value=float(drawdown_count),
+                    direction=1 if drawdown_count > 3 else 0,
+                    confidence=0.75,
+                    category="financial_stress",
+                    tags=("defi", "tvl", "drawdown"),
+                    ttl=3600,
+                )
+            )
+            # Top concentration
+            if protocols and total_tvl > 0:
+                top_tvl = _safe_float(
+                    protocols[0].get("tvl_usd") if isinstance(protocols[0], dict) else 0
+                )
+                top_pct = (top_tvl / total_tvl) * 100
+                results.append(
+                    Evidence(
+                        source=tool_name,
+                        signal_id="defi.tvl.top_concentration_pct",
+                        timestamp=ts,
+                        value=round(top_pct, 2),
+                        direction=1 if top_pct > 30 else 0,
+                        confidence=0.7,
+                        category="positioning",
+                        tags=("defi", "tvl", "concentration"),
+                        ttl=3600,
+                    )
+                )
+
+    elif mode == "stablecoins":
+        total_supply = _safe_float(data.get("total_supply"))
+        stablecoins = data.get("stablecoins")
+
+        results.append(
+            Evidence(
+                source=tool_name,
+                signal_id="defi.stablecoin.total_supply",
+                timestamp=ts,
+                value=total_supply,
+                direction=0,
+                confidence=0.85,
+                category="financial_stress",
+                tags=("defi", "stablecoin", "supply"),
+                ttl=3600,
+            )
+        )
+
+        if isinstance(stablecoins, list) and stablecoins and total_supply > 0:
+            top = stablecoins[0]
+            if isinstance(top, dict):
+                top_circ = _safe_float(top.get("circulating_usd"))
+                top_pct = (top_circ / total_supply) * 100
+                results.append(
+                    Evidence(
+                        source=tool_name,
+                        signal_id="defi.stablecoin.top_share_pct",
+                        timestamp=ts,
+                        value=round(top_pct, 2),
+                        direction=1 if top_pct > 60 else 0,
+                        confidence=0.8,
+                        category="positioning",
+                        tags=("defi", "stablecoin", "concentration"),
+                        ttl=3600,
+                    )
+                )
+
+    elif mode == "dex_volume":
+        total_vol = _safe_float(data.get("total_volume_24h"))
+        dexes = data.get("dexes")
+
+        results.append(
+            Evidence(
+                source=tool_name,
+                signal_id="defi.dex.total_volume_24h",
+                timestamp=ts,
+                value=total_vol,
+                direction=0,
+                confidence=0.75,
+                category="positioning",
+                tags=("defi", "dex", "volume"),
+                ttl=3600,
+            )
+        )
+
+        if isinstance(dexes, list):
+            # Panic breadth: DEXes with 1d volume spike > +50%
+            panic_count = sum(
+                1
+                for d in dexes
+                if isinstance(d, dict)
+                and d.get("change_1d_pct") is not None
+                and _safe_float(d.get("change_1d_pct")) > 50.0
+            )
+            results.append(
+                Evidence(
+                    source=tool_name,
+                    signal_id="defi.dex.panic_breadth",
+                    timestamp=ts,
+                    value=float(panic_count),
+                    direction=1 if panic_count > 2 else 0,
+                    confidence=0.7,
+                    category="financial_stress",
+                    tags=("defi", "dex", "panic"),
+                    ttl=3600,
+                )
+            )
+
+    elif mode == "chain":
+        grand_total = _safe_float(data.get("grand_total_tvl"))
+        chains = data.get("chains")
+
+        results.append(
+            Evidence(
+                source=tool_name,
+                signal_id="defi.chain.total_tvl",
+                timestamp=ts,
+                value=grand_total,
+                direction=0,
+                confidence=0.8,
+                category="financial_stress",
+                tags=("defi", "chain", "tvl"),
+                ttl=3600,
+            )
+        )
+
+        if isinstance(chains, list) and chains and grand_total > 0:
+            top = chains[0]
+            if isinstance(top, dict):
+                top_tvl = _safe_float(top.get("tvl_usd"))
+                top_pct = (top_tvl / grand_total) * 100
+                results.append(
+                    Evidence(
+                        source=tool_name,
+                        signal_id="defi.chain.top_concentration_pct",
+                        timestamp=ts,
+                        value=round(top_pct, 2),
+                        direction=1 if top_pct > 50 else 0,
+                        confidence=0.75,
+                        category="positioning",
+                        tags=("defi", "chain", "concentration"),
+                        ttl=3600,
+                    )
+                )
+
+    return results
+
+
+register_extractor("defi_flows", _extract_defi_flows)
+
+
+# ══════════════════════════════════════════════════════════════
+#  EXTRACTOR IMPLEMENTATIONS — Batch 3 (uncovered tools)
+# ══════════════════════════════════════════════════════════════
+
+
+# ── 47. Labor Disruptions ─────────────────────────────────────
+
+
+def _extract_labor_disruptions(tool_name: str, data: Any) -> list[Evidence]:
+    """Extract strike/work-stoppage signals from BLS labor disruptions data.
+
+    Handles two modes:
+      - Overview: data["signals"] has nested "workers" and "idle_days" sub-dicts
+        plus "intensity_ratio" and "consecutive_active_months".
+      - Single-series: data["label"] == "workers" or "idle_days", with flat
+        data["signals"] containing trend/latest_value directly.
+    """
+    if not isinstance(data, dict):
+        return []
+
+    signals = data.get("signals")
+    if not isinstance(signals, dict):
+        return []
+
+    results: list[Evidence] = []
+    ts = _now_ts()
+
+    def _trend_direction(trend: str | None) -> int:
+        if trend in ("ESCALATING", "RISING", "NEW_ACTIVITY"):
+            return 1
+        if trend == "DECLINING":
+            return -1
+        return 0
+
+    label = data.get("label")
+
+    if label is not None:
+        # ── Single-series mode ──
+        raw_val = signals.get("latest_value")
+        if raw_val is None:
+            return results
+        val = _safe_float(raw_val)
+        trend = signals.get("trend")
+        direction = _trend_direction(trend)
+
+        if label == "workers":
+            results.append(
+                Evidence(
+                    source=tool_name,
+                    signal_id="strike.us.workers_involved",
+                    timestamp=ts,
+                    value=val,
+                    direction=direction,
+                    confidence=0.75,
+                    category="behavioral_intent",
+                    tags=("labor", "strike", "workers"),
+                    ttl=2_592_000,
+                )
+            )
+        elif label == "idle_days":
+            results.append(
+                Evidence(
+                    source=tool_name,
+                    signal_id="strike.us.idle_days",
+                    timestamp=ts,
+                    value=val,
+                    direction=direction,
+                    confidence=0.70,
+                    category="macro_momentum",
+                    tags=("labor", "strike", "idle_days"),
+                    ttl=2_592_000,
+                )
+            )
+    else:
+        # ── Overview mode (nested sub-dicts) ──
+        w_sub = signals.get("workers")
+        if isinstance(w_sub, dict) and w_sub.get("latest_value") is not None:
+            results.append(
+                Evidence(
+                    source=tool_name,
+                    signal_id="strike.us.workers_involved",
+                    timestamp=ts,
+                    value=_safe_float(w_sub["latest_value"]),
+                    direction=_trend_direction(w_sub.get("trend")),
+                    confidence=0.75,
+                    category="behavioral_intent",
+                    tags=("labor", "strike", "workers"),
+                    ttl=2_592_000,
+                )
+            )
+
+        i_sub = signals.get("idle_days")
+        if isinstance(i_sub, dict) and i_sub.get("latest_value") is not None:
+            results.append(
+                Evidence(
+                    source=tool_name,
+                    signal_id="strike.us.idle_days",
+                    timestamp=ts,
+                    value=_safe_float(i_sub["latest_value"]),
+                    direction=_trend_direction(i_sub.get("trend")),
+                    confidence=0.70,
+                    category="macro_momentum",
+                    tags=("labor", "strike", "idle_days"),
+                    ttl=2_592_000,
+                )
+            )
+
+        # Intensity ratio (overview only)
+        raw_intensity = signals.get("intensity_ratio")
+        if raw_intensity is not None:
+            intensity = _safe_float(raw_intensity)
+            results.append(
+                Evidence(
+                    source=tool_name,
+                    signal_id="strike.us.intensity",
+                    timestamp=ts,
+                    value=intensity,
+                    direction=1 if intensity > 1.5 else (-1 if intensity < 0.5 else 0),
+                    confidence=0.65,
+                    category="macro_momentum",
+                    tags=("labor", "strike", "intensity"),
+                    ttl=2_592_000,
+                )
+            )
+
+        # Consecutive active months (overview only)
+        consec = signals.get("consecutive_active_months")
+        if isinstance(consec, (int, float)) and consec > 0:
+            results.append(
+                Evidence(
+                    source=tool_name,
+                    signal_id="strike.us.consecutive_months",
+                    timestamp=ts,
+                    value=float(consec),
+                    direction=1 if consec >= 3 else 0,
+                    confidence=0.70,
+                    category="behavioral_intent",
+                    tags=("labor", "strike", "persistence"),
+                    ttl=2_592_000,
+                )
+            )
+
+    return results
+
+
+register_extractor("labor_disruptions", _extract_labor_disruptions)
+
+
+# ── 48. Government Contracts ──────────────────────────────────
+
+
+_GOV_DEFENSE_KEYWORDS = frozenset((
+    "defense", "defence", "dod", "mod", "military", "army", "navy",
+    "air force", "pentagon", "armed forces",
+))
+
+
+def _extract_gov_contracts(tool_name: str, data: Any) -> list[Evidence]:
+    """Extract fiscal-intent signals from USASpending / UK Contracts Finder data.
+
+    Signals: award count, total value, defense spending share.
+    Region is 'us' (default) or 'uk' (from data["region"]).
+    """
+    if not isinstance(data, dict):
+        return []
+
+    awards = data.get("awards")
+    if not isinstance(awards, list) or not awards:
+        return []
+
+    results: list[Evidence] = []
+    ts = _now_ts()
+    region = str(data.get("region", "us")).lower()
+
+    # ── Award count ──
+    count = data.get("count")
+    if count is None:
+        count = len(awards)
+    count_val = _safe_float(count)
+    if count_val is not None and count_val > 0:
+        results.append(
+            Evidence(
+                source=tool_name,
+                signal_id=f"gov_contract.{region}.award_count",
+                timestamp=ts,
+                value=count_val,
+                direction=1,
+                confidence=0.65,
+                category="regulatory_action",
+                tags=("gov", "contracts", region, "count"),
+                ttl=21_600,
+            )
+        )
+
+    # ── Total value ──
+    # US awards use "amount_usd"; UK awards use "amount"
+    total = 0.0
+    for a in awards:
+        if not isinstance(a, dict):
+            continue
+        amt = a.get("amount_usd") or a.get("amount")
+        v = _safe_float(amt)
+        if v is not None:
+            total += v
+
+    if total > 0:
+        results.append(
+            Evidence(
+                source=tool_name,
+                signal_id=f"gov_contract.{region}.total_value",
+                timestamp=ts,
+                value=round(total, 2),
+                direction=1,
+                confidence=0.70,
+                category="regulatory_action",
+                tags=("gov", "contracts", region, "value"),
+                ttl=21_600,
+            )
+        )
+
+    # ── Defense share ──
+    defense_count = 0
+    for a in awards:
+        if not isinstance(a, dict):
+            continue
+        agency = str(a.get("agency") or "").lower()
+        desc = str(a.get("description") or "").lower()
+        combined = f"{agency} {desc}"
+        if any(kw in combined for kw in _GOV_DEFENSE_KEYWORDS):
+            defense_count += 1
+
+    if len(awards) > 0:
+        defense_share = defense_count / len(awards)
+        results.append(
+            Evidence(
+                source=tool_name,
+                signal_id=f"gov_contract.{region}.defense_share",
+                timestamp=ts,
+                value=round(defense_share, 4),
+                direction=1 if defense_share > 0.3 else 0,
+                confidence=0.75,
+                category="geopolitical",
+                tags=("gov", "contracts", region, "defense"),
+                ttl=21_600,
+            )
+        )
+
+    return results
+
+
+register_extractor("gov_contracts", _extract_gov_contracts)
+
+
+# ── 49. Academic Preprints ────────────────────────────────────
+
+_TRIAL_ACTIVE_STATUSES = frozenset((
+    "Recruiting",
+    "Active, not recruiting",
+    "Not yet recruiting",
+    "Enrolling by invitation",
+))
+
+
+def _extract_academic_preprints(tool_name: str, data: Any) -> list[Evidence]:
+    """Extract research frontier signals from arXiv / ClinicalTrials.gov data.
+
+    Detect mode from keys: "trials" → clinical trials, "papers" → arXiv.
+    """
+    if not isinstance(data, dict):
+        return []
+
+    results: list[Evidence] = []
+    ts = _now_ts()
+
+    trials = data.get("trials")
+    papers = data.get("papers")
+
+    if isinstance(trials, list):
+        # ── Clinical trials mode ──
+        active_count = 0
+        completed_count = 0
+        industry_count = 0
+        valid_sponsor = 0
+
+        for s in trials:
+            if not isinstance(s, dict):
+                continue
+            status = s.get("status") or ""
+            if status in _TRIAL_ACTIVE_STATUSES:
+                active_count += 1
+            elif status == "Completed":
+                completed_count += 1
+
+            sc = s.get("sponsor_class")
+            if sc is not None:
+                valid_sponsor += 1
+                if sc == "INDUSTRY":
+                    industry_count += 1
+
+        if active_count > 0:
+            results.append(
+                Evidence(
+                    source=tool_name,
+                    signal_id="trials.active_count",
+                    timestamp=ts,
+                    value=float(active_count),
+                    direction=1,
+                    confidence=0.60,
+                    category="biological",
+                    tags=("pharma", "trials", "active"),
+                    ttl=86_400,
+                )
+            )
+
+        if completed_count > 0:
+            results.append(
+                Evidence(
+                    source=tool_name,
+                    signal_id="trials.completed_count",
+                    timestamp=ts,
+                    value=float(completed_count),
+                    direction=1,
+                    confidence=0.75,
+                    category="regulatory_action",
+                    tags=("pharma", "trials", "completed"),
+                    ttl=86_400,
+                )
+            )
+
+        if valid_sponsor > 0:
+            ratio = industry_count / valid_sponsor
+            results.append(
+                Evidence(
+                    source=tool_name,
+                    signal_id="trials.industry_ratio",
+                    timestamp=ts,
+                    value=round(ratio, 4),
+                    direction=1 if ratio > 0.5 else 0,
+                    confidence=0.60,
+                    category="behavioral_intent",
+                    tags=("pharma", "trials", "industry"),
+                    ttl=86_400,
+                )
+            )
+
+    elif isinstance(papers, list):
+        # ── arXiv mode ──
+        volume = data.get("count") or data.get("total") or len(papers)
+        vol_val = _safe_float(volume)
+        if vol_val is not None and vol_val > 0:
+            results.append(
+                Evidence(
+                    source=tool_name,
+                    signal_id="arxiv.volume",
+                    timestamp=ts,
+                    value=vol_val,
+                    direction=1,
+                    confidence=0.50,
+                    category="behavioral_intent",
+                    tags=("research", "arxiv", "volume"),
+                    ttl=86_400,
+                )
+            )
+
+    return results
+
+
+register_extractor("academic_preprints", _extract_academic_preprints)

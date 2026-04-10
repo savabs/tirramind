@@ -23,9 +23,15 @@ def get_default_dags(tool_registry: Any) -> list[DAG]:
     from agent.pipeline.dags.convergence_detection import (
         build_convergence_detection_dag,
     )
+    from agent.pipeline.dags.feature_generation import (
+        build_feature_generation_dag,
+    )
     from agent.pipeline.dags.whale_tracking import (
         build_whale_tracking_dag,
         build_whale_scoring_dag,
+    )
+    from agent.pipeline.dags.world_model_update import (
+        build_world_model_dag,
     )
 
     return [
@@ -33,4 +39,6 @@ def get_default_dags(tool_registry: Any) -> list[DAG]:
         build_whale_tracking_dag(),
         build_whale_scoring_dag(),
         build_convergence_detection_dag(),
+        build_feature_generation_dag(),
+        build_world_model_dag(),
     ]

@@ -30,12 +30,21 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from agent.data.cache import DataCache
 from agent.tools.base import Tool, ToolResult
+
+if TYPE_CHECKING:
+    from agent.pipeline.store import PipelineStore
+
+try:
+    from agent.pipeline.entity import entity_id_from_key, normalize_company_name
+except ImportError:  # pragma: no cover
+    entity_id_from_key = None  # type: ignore[assignment]
+    normalize_company_name = None  # type: ignore[assignment]
 
 log = logging.getLogger(__name__)
 
@@ -211,8 +220,102 @@ class PatentFilingsTool(Tool):
         "required": ["mode"],
     }
 
-    def __init__(self, *, cache: DataCache | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        cache: DataCache | None = None,
+        pipeline_store: PipelineStore | None = None,
+    ) -> None:
         self._cache = cache
+        self._store = pipeline_store
+
+    # ------------------------------------------------------------------
+    # Entity persistence (L2)
+    # ------------------------------------------------------------------
+
+    def _persist_entities(self, patents: list[dict[str, Any]]) -> None:
+        """Register company entities and store L2 patent observations."""
+        if self._store is None or entity_id_from_key is None:
+            return
+        if not patents:
+            return
+        try:
+            self._persist_entities_inner(patents)
+        except Exception:
+            log.exception("Entity persistence failed (non-fatal)")
+
+    def _persist_entities_inner(self, patents: list[dict[str, Any]]) -> None:
+        assert self._store is not None  # noqa: S101
+        store = self._store
+
+        seen_assignees: set[str] = set()
+        for patent in patents:
+            assignee = patent.get("assignee_organization", "")
+            if isinstance(assignee, list):
+                assignee = assignee[0] if assignee else ""
+            if not assignee or assignee in seen_assignees:
+                continue
+            seen_assignees.add(assignee)
+
+            try:
+                canon = (
+                    normalize_company_name(assignee)
+                    if normalize_company_name
+                    else assignee
+                )
+            except ValueError:
+                canon = assignee
+
+            company_eid = entity_id_from_key("company", canon)
+            store.register_entity(
+                entity_type="company",
+                canonical_name=canon,
+                entity_id=company_eid,
+            )
+
+            # Parse patent date
+            pdate = patent.get("patent_date", "")
+            try:
+                ts = (
+                    datetime.strptime(pdate, "%Y-%m-%d")
+                    .replace(tzinfo=timezone.utc)
+                    .timestamp()
+                )
+            except (ValueError, AttributeError):
+                ts = datetime.now(tz=timezone.utc).timestamp()
+
+            cpc = patent.get("cpc_subgroup_id", "")
+            if isinstance(cpc, list):
+                cpc = cpc[0] if cpc else ""
+
+            store.store_entity_observation(
+                entity_id=company_eid,
+                source_tool="patent_filings",
+                observed_at=ts,
+                observation_type="patent_filing",
+                depth_level=2,
+                value={
+                    "patent_number": patent.get("patent_number", ""),
+                    "patent_title": patent.get("patent_title", ""),
+                    "cpc_subgroup_id": cpc,
+                },
+            )
+
+            # ── Link company → US country ──
+            us_eid = entity_id_from_key("country", "US")
+            store.register_entity(
+                entity_type="country",
+                canonical_name="US",
+                entity_id=us_eid,
+            )
+            store.link_entities(
+                entity_id_a=company_eid,
+                entity_id_b=us_eid,
+                link_type="patents_in",
+                source="patent_filings",
+                confidence=1.0,
+                metadata={"patent_number": patent.get("patent_number", "")},
+            )
 
     def execute(self, **kwargs: Any) -> ToolResult:
         mode = (kwargs.get("mode") or "").strip().lower()
@@ -314,6 +417,8 @@ class PatentFilingsTool(Tool):
                 cpc = cpc[0] if cpc else ""
             lines.append(f"**{num}** ({date}) — {title}")
             lines.append(f"  Assignee: {assignee} | CPC: {cpc}")
+
+        self._persist_entities(patents)
 
         return ToolResult(
             success=True,

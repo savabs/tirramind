@@ -27,12 +27,21 @@ Modes:
 from __future__ import annotations
 
 import logging
-from typing import Any
+import time
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from agent.data.cache import DataCache
 from agent.tools.base import Tool, ToolResult
+
+if TYPE_CHECKING:
+    from agent.pipeline.store import PipelineStore
+
+try:
+    from agent.pipeline.entity import entity_id_from_key
+except ImportError:  # pragma: no cover
+    entity_id_from_key = None  # type: ignore[assignment]
 
 log = logging.getLogger(__name__)
 
@@ -63,8 +72,14 @@ _MARKET_CATEGORIES = {
 class DefiFlowsTool(Tool):
     """Query DeFi protocol TVL, stablecoin supply, and DEX volumes from DefiLlama."""
 
-    def __init__(self, cache: DataCache | None = None) -> None:
+    def __init__(
+        self,
+        cache: DataCache | None = None,
+        *,
+        pipeline_store: PipelineStore | None = None,
+    ) -> None:
         self._cache = cache
+        self._store = pipeline_store
 
     @property
     def name(self) -> str:
@@ -106,6 +121,57 @@ class DefiFlowsTool(Tool):
             },
             "required": ["mode"],
         }
+
+    # ------------------------------------------------------------------
+    # Entity persistence (L2)
+    # ------------------------------------------------------------------
+
+    def _persist_entities(self, protocols: list[dict[str, Any]]) -> None:
+        """Register protocol entities and store L2 TVL observations."""
+        if self._store is None or entity_id_from_key is None:
+            return
+        if not protocols:
+            return
+        try:
+            self._persist_entities_inner(protocols)
+        except Exception:
+            log.exception("Entity persistence failed (non-fatal)")
+
+    def _persist_entities_inner(self, protocols: list[dict[str, Any]]) -> None:
+        assert self._store is not None  # noqa: S101
+        store = self._store
+
+        seen: set[str] = set()
+        now = time.time()
+        for proto in protocols:
+            name = proto.get("name", "")
+            if not name or name.lower() in seen:
+                continue
+            seen.add(name.lower())
+
+            protocol_eid = entity_id_from_key("protocol", name.lower())
+            store.register_entity(
+                entity_type="protocol",
+                canonical_name=name,
+                entity_id=protocol_eid,
+            )
+            store.add_entity_alias(protocol_eid, "protocol_name", name)
+
+            store.store_entity_observation(
+                entity_id=protocol_eid,
+                source_tool="defi_flows",
+                observed_at=now,
+                observation_type="tvl_change",
+                depth_level=2,
+                value={
+                    "tvl_usd": proto.get("tvl_usd", 0.0),
+                    "chain": proto.get("chain", ""),
+                    "chains": proto.get("chains", []),
+                    "category": proto.get("category", ""),
+                    "change_1d_pct": proto.get("change_1d_pct"),
+                    "change_7d_pct": proto.get("change_7d_pct"),
+                },
+            )
 
     def execute(self, **kwargs: Any) -> ToolResult:
         mode = kwargs.get("mode", "")
@@ -186,6 +252,9 @@ class DefiFlowsTool(Tool):
             f"{f' in {category_filter}' if category_filter else ''}"
             f". Total TVL: ${total_tvl:,.0f}"
         )
+
+        self._persist_entities(results)
+
         return ToolResult(
             success=True,
             output=summary,

@@ -24,12 +24,20 @@ import time
 import zipfile
 from collections import Counter
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from agent.data.cache import DataCache
 from agent.tools.base import Tool, ToolResult
+
+if TYPE_CHECKING:
+    from agent.pipeline.store import PipelineStore
+
+try:
+    from agent.pipeline.entity import entity_id_from_key
+except ImportError:  # pragma: no cover
+    entity_id_from_key = None  # type: ignore[assignment]
 
 log = logging.getLogger(__name__)
 
@@ -188,8 +196,14 @@ class GDELTTool(Tool):
         "required": [],
     }
 
-    def __init__(self, cache: DataCache | None = None) -> None:
+    def __init__(
+        self,
+        cache: DataCache | None = None,
+        *,
+        pipeline_store: PipelineStore | None = None,
+    ) -> None:
         self._cache = cache
+        self._store = pipeline_store
 
     # ------------------------------------------------------------------
     # Core execution
@@ -270,13 +284,13 @@ class GDELTTool(Tool):
 
         if country_filter:
             events = [
-                e for e in events
-                if e["location"]["country"].upper() == country_filter
+                e for e in events if e["location"]["country"].upper() == country_filter
             ]
 
         if min_goldstein is not None:
             events = [
-                e for e in events
+                e
+                for e in events
                 if e["goldstein"] is not None and e["goldstein"] <= min_goldstein
             ]
 
@@ -297,9 +311,7 @@ class GDELTTool(Tool):
 
         # ── Summary stats ────────────────────────────────────────────
         country_counts = Counter(
-            e["location"]["country"]
-            for e in events
-            if e["location"]["country"]
+            e["location"]["country"] for e in events if e["location"]["country"]
         )
         top_countries = country_counts.most_common(10)
 
@@ -343,16 +355,8 @@ class GDELTTool(Tool):
         for i, e in enumerate(events[:30], 1):
             actor1 = e["actor1"]["name"] or "UNKNOWN"
             actor2 = e["actor2"]["name"] or "UNKNOWN"
-            gs = (
-                f"G={e['goldstein']:+.1f}"
-                if e["goldstein"] is not None
-                else "G=?"
-            )
-            loc = (
-                e["location"]["name"]
-                or e["location"]["country"]
-                or "?"
-            )
+            gs = f"G={e['goldstein']:+.1f}" if e["goldstein"] is not None else "G=?"
+            loc = e["location"]["name"] or e["location"]["country"] or "?"
             lines.append(
                 f"  {i}. {actor1} → {actor2} | "
                 f"{e['event_description']} | {gs} | "
@@ -365,6 +369,22 @@ class GDELTTool(Tool):
                 f"\n  ... and {len(events) - 30} more events "
                 f"(see data for full list)"
             )
+
+        # L2: entity persistence
+        try:
+            self._persist_entities(events)
+        except Exception:
+            log.exception("Entity persistence failed in events mode (non-fatal)")
+
+        # L2: entity_ids in actor sub-dicts
+        if entity_id_from_key is not None:
+            for e in events:
+                a1c = e["actor1"]["country"]
+                a2c = e["actor2"]["country"]
+                if a1c:
+                    e["actor1"]["entity_id"] = entity_id_from_key("country", a1c)
+                if a2c:
+                    e["actor2"]["entity_id"] = entity_id_from_key("country", a2c)
 
         return ToolResult(
             success=True,
@@ -396,9 +416,7 @@ class GDELTTool(Tool):
                 try:
                     resp = client.get(url)
                     if resp.status_code == 404:
-                        log.debug(
-                            "GDELT batch %s not yet published — skipping", ts
-                        )
+                        log.debug("GDELT batch %s not yet published — skipping", ts)
                         continue
                     resp.raise_for_status()
                 except httpx.HTTPError as exc:
@@ -411,9 +429,7 @@ class GDELTTool(Tool):
                         names = zf.namelist()
                         if not names:
                             continue
-                        csv_text = zf.read(names[0]).decode(
-                            "utf-8", errors="replace"
-                        )
+                        csv_text = zf.read(names[0]).decode("utf-8", errors="replace")
                 except (zipfile.BadZipFile, KeyError, UnicodeDecodeError) as exc:
                     log.warning("GDELT batch %s bad zip: %s", ts, exc)
                     continue
@@ -488,31 +504,21 @@ class GDELTTool(Tool):
                         "quad_class": quad,
                         "quad_label": QUAD_LABELS.get(quad, "Unknown"),
                         "goldstein": goldstein,
-                        "num_mentions": _safe_int(cols[_COL["num_mentions"]])
-                        or 0,
-                        "num_sources": _safe_int(cols[_COL["num_sources"]])
-                        or 0,
+                        "num_mentions": _safe_int(cols[_COL["num_mentions"]]) or 0,
+                        "num_sources": _safe_int(cols[_COL["num_sources"]]) or 0,
                         "avg_tone": _safe_float(cols[_COL["avg_tone"]]),
                         "location": {
-                            "name": cols[
-                                _COL["action_geo_fullname"]
-                            ].strip(),
-                            "country": cols[
-                                _COL["action_geo_country"]
-                            ].strip(),
-                            "lat": _safe_float(
-                                cols[_COL["action_geo_lat"]]
-                            ),
-                            "lon": _safe_float(
-                                cols[_COL["action_geo_long"]]
-                            ),
+                            "name": cols[_COL["action_geo_fullname"]].strip(),
+                            "country": cols[_COL["action_geo_country"]].strip(),
+                            "lat": _safe_float(cols[_COL["action_geo_lat"]]),
+                            "lon": _safe_float(cols[_COL["action_geo_long"]]),
                         },
                         "source_url": cols[_COL["source_url"]].strip(),
                     }
                 )
 
         return events
-            
+
     # ------------------------------------------------------------------
     # Articles mode
     # ------------------------------------------------------------------
@@ -562,9 +568,7 @@ class GDELTTool(Tool):
             data={"articles": articles},
         )
 
-    def _fetch_articles(
-        self, query: str, limit: int
-    ) -> list[dict[str, Any]]:
+    def _fetch_articles(self, query: str, limit: int) -> list[dict[str, Any]]:
         """Search GDELT DOC API. Returns list of article dicts."""
         cache_key = {"query": query, "limit": limit}
         if self._cache:
@@ -586,9 +590,7 @@ class GDELTTool(Tool):
                 },
             )
             if resp.status_code == 429:
-                raise RuntimeError(
-                    "GDELT rate limited (429). Try again in a minute."
-                )
+                raise RuntimeError("GDELT rate limited (429). Try again in a minute.")
             resp.raise_for_status()
             data = resp.json()
 
@@ -610,6 +612,84 @@ class GDELTTool(Tool):
             self._cache.put("gdelt_articles", cache_key, articles)
 
         return articles
+
+    # ------------------------------------------------------------------
+    # L2 Entity Persistence
+    # ------------------------------------------------------------------
+
+    def _persist_entities(self, events: list[dict[str, Any]]) -> None:
+        """Persist country entities from GDELT event actor pairs."""
+        if self._store is None or entity_id_from_key is None:
+            return
+        self._persist_entities_inner(events)
+
+    def _persist_entities_inner(self, events: list[dict[str, Any]]) -> None:
+        seen: set[str] = set()
+        now = datetime.now(timezone.utc).isoformat()
+        for ev in events:
+            event_id = ev.get("id", "")
+            date_str = ev.get("date") or now
+
+            for role, actor_key, counterpart_key in [
+                ("initiator", "actor1", "actor2"),
+                ("target", "actor2", "actor1"),
+            ]:
+                actor = ev.get(actor_key, {})
+                counterpart = ev.get(counterpart_key, {})
+                country = actor.get("country", "").strip()
+                if not country:
+                    continue
+
+                eid = entity_id_from_key("country", country)
+
+                if eid not in seen:
+                    seen.add(eid)
+                    name = actor.get("name") or country
+                    self._store.register_entity(
+                        entity_type="country",
+                        canonical_name=name,
+                        entity_id=eid,
+                        metadata={
+                            "fips_code": country,
+                            "actor_type": actor.get("type", ""),
+                        },
+                    )
+                    self._store.add_entity_alias(eid, "fips", country)
+
+                self._store.store_entity_observation(
+                    entity_id=eid,
+                    source_tool="gdelt",
+                    observed_at=date_str,
+                    observation_type="geopolitical_event",
+                    value={
+                        "event_id": event_id,
+                        "counterpart_country": counterpart.get("country", ""),
+                        "event_root": ev.get("event_root", ""),
+                        "event_description": ev.get("event_description", ""),
+                        "goldstein": ev.get("goldstein"),
+                        "quad_class": ev.get("quad_class"),
+                        "role": role,
+                        "num_mentions": ev.get("num_mentions", 0),
+                        "location": ev.get("location", {}).get("country", ""),
+                    },
+                    depth_level=2,
+                )
+
+            # ── Link actor1 ↔ actor2 countries ──
+            c1 = ev.get("actor1", {}).get("country", "").strip()
+            c2 = ev.get("actor2", {}).get("country", "").strip()
+            if c1 and c2 and c1 != c2:
+                self._store.link_entities(
+                    entity_id_a=entity_id_from_key("country", c1),
+                    entity_id_b=entity_id_from_key("country", c2),
+                    link_type="event_involves",
+                    source="gdelt",
+                    confidence=0.9,
+                    metadata={
+                        "event_id": event_id,
+                        "event_root": ev.get("event_root", ""),
+                    },
+                )
 
 
 # ------------------------------------------------------------------

@@ -32,14 +32,116 @@ from __future__ import annotations
 import logging
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from agent.data.cache import DataCache
 from agent.tools.base import Tool, ToolResult
 
+if TYPE_CHECKING:
+    from agent.pipeline.store import PipelineStore
+
+try:
+    from agent.pipeline.entity import entity_id_from_key
+except ImportError:  # pragma: no cover — entity module always available
+    entity_id_from_key = None  # type: ignore[assignment]
+
 log = logging.getLogger(__name__)
+
+# Destination string → ISO-2 country code for common Baltic/global ports.
+# AIS destination is free-text entered by crew; this maps the most frequent
+# values seen in Digitraffic data to countries for the port_call_to edge.
+_DEST_COUNTRY: dict[str, str] = {
+    # Nordic / Baltic
+    "HELSINKI": "FI",
+    "TURKU": "FI",
+    "KOTKA": "FI",
+    "HAMINA": "FI",
+    "RAUMA": "FI",
+    "PORI": "FI",
+    "OULU": "FI",
+    "KOKKOLA": "FI",
+    "STOCKHOLM": "SE",
+    "GOTHENBURG": "SE",
+    "GOTEBORG": "SE",
+    "MALMO": "SE",
+    "LULEA": "SE",
+    "TALLINN": "EE",
+    "MUUGA": "EE",
+    "RIGA": "LV",
+    "VENTSPILS": "LV",
+    "KLAIPEDA": "LT",
+    "GDANSK": "PL",
+    "GDYNIA": "PL",
+    "SZCZECIN": "PL",
+    "COPENHAGEN": "DK",
+    "AARHUS": "DK",
+    "FREDERICIA": "DK",
+    "OSLO": "NO",
+    "BERGEN": "NO",
+    "STAVANGER": "NO",
+    # Russia
+    "ST PETERSBURG": "RU",
+    "SAINT PETERSBURG": "RU",
+    "SPB": "RU",
+    "PRIMORSK": "RU",
+    "UST LUGA": "RU",
+    "KALININGRAD": "RU",
+    "MURMANSK": "RU",
+    "NOVOROSSIYSK": "RU",
+    # Western Europe
+    "ROTTERDAM": "NL",
+    "AMSTERDAM": "NL",
+    "ANTWERP": "BE",
+    "ZEEBRUGGE": "BE",
+    "HAMBURG": "DE",
+    "BREMERHAVEN": "DE",
+    "WILHELMSHAVEN": "DE",
+    "KIEL": "DE",
+    "LE HAVRE": "FR",
+    "MARSEILLE": "FR",
+    "DUNKIRK": "FR",
+    "FELIXSTOWE": "GB",
+    "LONDON": "GB",
+    "SOUTHAMPTON": "GB",
+    "IMMINGHAM": "GB",
+    "TILBURY": "GB",
+    # Mediterranean
+    "ALGECIRAS": "ES",
+    "BARCELONA": "ES",
+    "VALENCIA": "ES",
+    "GENOA": "IT",
+    "TRIESTE": "IT",
+    "GIOIA TAURO": "IT",
+    "PIRAEUS": "GR",
+    "PORT SAID": "EG",
+    "SUEZ": "EG",
+    "ISTANBUL": "TR",
+    "MERSIN": "TR",
+    # Middle East / Asia
+    "JEDDAH": "SA",
+    "RAS TANURA": "SA",
+    "FUJAIRAH": "AE",
+    "JEBEL ALI": "AE",
+    "SINGAPORE": "SG",
+    "SHANGHAI": "CN",
+    "NINGBO": "CN",
+    "SHENZHEN": "CN",
+    "QINGDAO": "CN",
+    "BUSAN": "KR",
+    "TOKYO": "JP",
+    "YOKOHAMA": "JP",
+    # Americas
+    "HOUSTON": "US",
+    "NEW YORK": "US",
+    "LOS ANGELES": "US",
+    "LONG BEACH": "US",
+    "SAVANNAH": "US",
+    "NORFOLK": "US",
+    "SANTOS": "BR",
+    "COLON": "PA",
+}
 
 _BASE = "https://meri.digitraffic.fi/api"
 _UA = "TirraMind/0.1 (research; https://github.com/tirramind)"
@@ -206,8 +308,27 @@ class AISVesselTool(Tool):
         "required": ["mode"],
     }
 
-    def __init__(self, cache: DataCache | None = None) -> None:
+    def __init__(
+        self,
+        cache: DataCache | None = None,
+        *,
+        pipeline_store: PipelineStore | None = None,
+    ) -> None:
         self._cache = cache
+        self._store = pipeline_store
+
+    # ------------------------------------------------------------------
+    # Entity ID helper
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _vessel_entity_id(mmsi: int, imo: int | None = None) -> str | None:
+        """Compute entity_id: IMO-first (stable hull ID), MMSI-fallback."""
+        if entity_id_from_key is None:
+            return None
+        if imo:
+            return entity_id_from_key("vessel", str(imo))
+        return entity_id_from_key("vessel", f"mmsi:{mmsi}")
 
     # ------------------------------------------------------------------
     # HTTP helpers
@@ -476,6 +597,16 @@ class AISVesselTool(Tool):
                 f"{v.get('nav_status', '?')}{dest_str}"
             )
 
+        # L2: entity_ids + persistence
+        if entity_id_from_key is not None:
+            for v in matched:
+                v["entity_id"] = self._vessel_entity_id(v["mmsi"], v.get("imo"))
+
+        try:
+            self._persist_entities(matched[:limit])
+        except Exception:
+            log.exception("Entity persistence failed in area mode (non-fatal)")
+
         return ToolResult(
             success=True,
             output="\n".join(lines),
@@ -577,6 +708,17 @@ class AISVesselTool(Tool):
         else:
             lines.append("  Position: not in current AIS coverage")
 
+        # L2: entity_id + persistence
+        if entity_id_from_key is not None:
+            result["entity_id"] = self._vessel_entity_id(
+                result["mmsi"], result.get("imo")
+            )
+
+        try:
+            self._persist_entities([result])
+        except Exception:
+            log.exception("Entity persistence failed in vessel mode (non-fatal)")
+
         return ToolResult(success=True, output="\n".join(lines), data=result)
 
     def _mode_port_calls(self, **kw: Any) -> ToolResult:
@@ -622,6 +764,20 @@ class AISVesselTool(Tool):
             next_port = c.get("nextPort", "?")
             cargo = "cargo" if c.get("arrivalWithCargo") else "ballast"
             lines.append(f"  {name} | {prev_port} → {port} → {next_port} | {cargo}")
+
+        # L2: entity persistence for port calls
+        try:
+            self._persist_port_call_entities(calls[:limit])
+        except Exception:
+            log.exception("Entity persistence failed in port_calls mode (non-fatal)")
+
+        # L2: entity_ids
+        if entity_id_from_key is not None:
+            for c in calls[:limit]:
+                mmsi = c.get("mmsi")
+                imo = c.get("imoLloyds")
+                if mmsi or imo:
+                    c["entity_id"] = self._vessel_entity_id(mmsi, imo)
 
         return ToolResult(
             success=True,
@@ -713,6 +869,152 @@ class AISVesselTool(Tool):
                 },
             },
         )
+
+    # ------------------------------------------------------------------
+    # L2 Entity Persistence
+    # ------------------------------------------------------------------
+
+    def _persist_entities(self, vessels: list[dict[str, Any]]) -> None:
+        """Persist vessel entities from area/vessel mode (position observations)."""
+        if self._store is None or entity_id_from_key is None:
+            return
+        self._persist_entities_inner(vessels)
+
+    def _persist_entities_inner(self, vessels: list[dict[str, Any]]) -> None:
+        seen: set[str] = set()
+        now = datetime.now(timezone.utc).isoformat()
+        for v in vessels:
+            mmsi = v.get("mmsi")
+            imo = v.get("imo")
+            if not mmsi and not imo:
+                continue
+            eid = self._vessel_entity_id(mmsi, imo)
+            if eid in seen:
+                continue
+            seen.add(eid)
+
+            name = v.get("name") or v.get("vessel_name") or str(mmsi or imo)
+            self._store.register_entity(
+                entity_type="vessel",
+                canonical_name=name,
+                entity_id=eid,
+                metadata={
+                    k: v.get(k)
+                    for k in ("ship_type", "ship_type_code", "destination", "draught")
+                    if v.get(k) is not None
+                },
+            )
+
+            if mmsi:
+                self._store.add_entity_alias(eid, "mmsi", str(mmsi))
+            if imo:
+                self._store.add_entity_alias(eid, "imo", str(imo))
+
+            # Position observation
+            lat = v.get("lat")
+            lon = v.get("lon")
+            if lat is not None and lon is not None:
+                self._store.store_entity_observation(
+                    entity_id=eid,
+                    source_tool="ais_vessel",
+                    observed_at=v.get("timestamp") or now,
+                    observation_type="vessel_position",
+                    value={
+                        "lat": lat,
+                        "lon": lon,
+                        "sog": v.get("sog"),
+                        "cog": v.get("cog"),
+                        "heading": v.get("heading"),
+                        "nav_status": v.get("nav_status"),
+                    },
+                    depth_level=2,
+                )
+
+            # ── Link vessel → destination country ──
+            dest = (v.get("destination") or "").strip().upper()
+            country_code = _DEST_COUNTRY.get(dest)
+            if country_code and eid:
+                country_eid = entity_id_from_key("country", country_code)
+                self._store.register_entity(
+                    entity_type="country",
+                    canonical_name=country_code,
+                    entity_id=country_eid,
+                )
+                self._store.link_entities(
+                    entity_id_a=eid,
+                    entity_id_b=country_eid,
+                    link_type="port_call_to",
+                    source="ais_vessel",
+                    confidence=0.8,
+                    metadata={"destination_raw": dest},
+                )
+
+    def _persist_port_call_entities(self, calls: list[dict[str, Any]]) -> None:
+        """Persist vessel entities from port_calls mode."""
+        if self._store is None or entity_id_from_key is None:
+            return
+        self._persist_port_call_entities_inner(calls)
+
+    def _persist_port_call_entities_inner(self, calls: list[dict[str, Any]]) -> None:
+        seen: set[str] = set()
+        now = datetime.now(timezone.utc).isoformat()
+        for c in calls:
+            mmsi = c.get("mmsi")
+            imo = c.get("imoLloyds")
+            if not mmsi and not imo:
+                continue
+            eid = self._vessel_entity_id(mmsi, imo)
+
+            name = c.get("vesselName") or str(mmsi or imo)
+            if eid not in seen:
+                seen.add(eid)
+                self._store.register_entity(
+                    entity_type="vessel",
+                    canonical_name=name.strip(),
+                    entity_id=eid,
+                    metadata={
+                        k: c.get(k)
+                        for k in ("vesselTypeCode", "nationality")
+                        if c.get(k) is not None
+                    },
+                )
+                if mmsi:
+                    self._store.add_entity_alias(eid, "mmsi", str(mmsi))
+                if imo:
+                    self._store.add_entity_alias(eid, "imo", str(imo))
+
+            self._store.store_entity_observation(
+                entity_id=eid,
+                source_tool="ais_vessel",
+                observed_at=c.get("eta") or now,
+                observation_type="port_call",
+                value={
+                    "port": c.get("portToVisit"),
+                    "prev_port": c.get("prevPort"),
+                    "next_port": c.get("nextPort"),
+                    "arrival_with_cargo": c.get("arrivalWithCargo"),
+                },
+                depth_level=2,
+            )
+
+            # ── Link vessel → port country ──
+            port_name = (c.get("portToVisit") or "").strip().upper()
+            country_code = _DEST_COUNTRY.get(port_name)
+            if country_code and eid:
+                country_eid = entity_id_from_key("country", country_code)
+                self._store.register_entity(
+                    entity_type="country",
+                    canonical_name=country_code,
+                    entity_id=country_eid,
+                )
+                self._store.link_entities(
+                    entity_id_a=eid,
+                    entity_id_b=country_eid,
+                    link_type="port_call_to",
+                    source="ais_vessel",
+                    confidence=0.8,
+                    metadata={"destination_raw": port_name},
+                )
 
     # ------------------------------------------------------------------
     # Dispatch

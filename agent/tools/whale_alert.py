@@ -13,12 +13,20 @@ Cost: $0 — no API key required for either source.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from agent.data.cache import DataCache
 from agent.tools.base import Tool, ToolResult
+
+if TYPE_CHECKING:
+    from agent.pipeline.store import PipelineStore
+
+try:
+    from agent.pipeline.entity import entity_id_from_key
+except ImportError:  # pragma: no cover — entity module always available
+    entity_id_from_key = None  # type: ignore[assignment]
 
 log = logging.getLogger(__name__)
 
@@ -63,8 +71,14 @@ class WhaleAlertTool(Tool):
         },
     }
 
-    def __init__(self, cache: DataCache | None = None) -> None:
+    def __init__(
+        self,
+        cache: DataCache | None = None,
+        *,
+        pipeline_store: PipelineStore | None = None,
+    ) -> None:
         self._cache = cache
+        self._store = pipeline_store
 
     # ── Public execute ───────────────────────────────────────────────
 
@@ -92,6 +106,13 @@ class WhaleAlertTool(Tool):
             return ToolResult(success=False, output=f"Fetch error: {exc}")
 
         txs = txs[:limit]
+
+        # L2: persist wallet entities + observations when PipelineStore available
+        try:
+            self._persist_entities(txs)
+        except Exception:
+            log.exception("Entity persistence failed in execute (non-fatal)")
+
         summary = self._compute_summary(txs, mode)
         output = self._format_output(txs, summary, mode)
 
@@ -112,9 +133,7 @@ class WhaleAlertTool(Tool):
                 return self._filter_txs(cached, min_btc)
 
         with httpx.Client(timeout=15, follow_redirects=True) as client:
-            resp = client.get(
-                _MEMPOOL_URL, headers={"User-Agent": _USER_AGENT}
-            )
+            resp = client.get(_MEMPOOL_URL, headers={"User-Agent": _USER_AGENT})
             resp.raise_for_status()
 
         data = resp.json()
@@ -148,9 +167,7 @@ class WhaleAlertTool(Tool):
                 raise RuntimeError("No block hash in latestblock response")
 
             # Get full block with transactions
-            resp2 = client.get(
-                _RAW_BLOCK_URL.format(hash=block_hash), headers=headers
-            )
+            resp2 = client.get(_RAW_BLOCK_URL.format(hash=block_hash), headers=headers)
             resp2.raise_for_status()
             block = resp2.json()
 
@@ -211,6 +228,17 @@ class WhaleAlertTool(Tool):
             if confirmed:
                 entry["block_height"] = block_height
 
+            # L2: entity_ids mapping for all addresses
+            if entity_id_from_key is not None:
+                eid_map: dict[str, str] = {}
+                for inp in inputs:
+                    eid_map[inp["addr"]] = entity_id_from_key("wallet", inp["addr"])
+                for out in outputs:
+                    eid_map[out["addr"]] = entity_id_from_key("wallet", out["addr"])
+                entry["entity_ids"] = eid_map
+            else:
+                entry["entity_ids"] = {}
+
             parsed.append(entry)
 
         return parsed
@@ -224,9 +252,7 @@ class WhaleAlertTool(Tool):
 
     # ── Summary computation ──────────────────────────────────────────
 
-    def _compute_summary(
-        self, txs: list[dict[str, Any]], mode: str
-    ) -> dict[str, Any]:
+    def _compute_summary(self, txs: list[dict[str, Any]], mode: str) -> dict[str, Any]:
         if not txs:
             return {
                 "count": 0,
@@ -261,7 +287,9 @@ class WhaleAlertTool(Tool):
             lines.append(f"BTC Whale Transactions (mempool) — {summary['count']} found")
         else:
             bh = txs[0].get("block_height", "?") if txs else "?"
-            lines.append(f"BTC Whale Transactions (block #{bh}) — {summary['count']} found")
+            lines.append(
+                f"BTC Whale Transactions (block #{bh}) — {summary['count']} found"
+            )
 
         lines.append(
             f"Total: {summary['total_value']:,.2f} BTC  "
@@ -279,3 +307,116 @@ class WhaleAlertTool(Tool):
             lines.append(f"  {status} {h}... {val:>12.4f} BTC  t={ts}")
 
         return "\n".join(lines)
+
+    # ── L2: Entity persistence ───────────────────────────────────────
+
+    def _persist_entities(self, txs: list[dict[str, Any]]) -> None:
+        """Register wallet entities and store L2 observations.
+
+        Skips silently if no PipelineStore is configured or if entity
+        helpers are unavailable. Any persistence error is caught and
+        logged — it must never prevent the tool from returning results.
+        """
+        if self._store is None or entity_id_from_key is None:
+            return
+        if not txs:
+            return
+        try:
+            self._persist_entities_inner(txs)
+        except Exception:
+            log.exception("Entity persistence failed (non-fatal)")
+
+    def _persist_entities_inner(self, txs: list[dict[str, Any]]) -> None:
+        """Inner persistence logic, separated for testability."""
+        assert self._store is not None  # noqa: S101 — guarded by caller
+        store = self._store
+
+        seen_wallets: set[str] = set()
+
+        for tx in txs:
+            tx_hash = tx.get("hash", "")
+            tx_time = tx.get("time", 0)
+            confirmed = tx.get("confirmed", False)
+            block_height = tx.get("block_height")
+            inputs = tx.get("inputs", [])
+            outputs = tx.get("outputs", [])
+
+            # ── Register + observe sender wallets ──
+            for inp in inputs:
+                addr = inp.get("addr", "")
+                if not addr:
+                    continue
+                wallet_eid = entity_id_from_key("wallet", addr)
+                if addr not in seen_wallets:
+                    seen_wallets.add(addr)
+                    store.register_entity(
+                        entity_type="wallet",
+                        canonical_name=addr,
+                        entity_id=wallet_eid,
+                    )
+                    store.add_entity_alias(wallet_eid, "btc_address", addr)
+
+                store.store_entity_observation(
+                    entity_id=wallet_eid,
+                    source_tool="whale_alert",
+                    observed_at=tx_time,
+                    observation_type="btc_transfer",
+                    depth_level=2,
+                    value={
+                        "tx_hash": tx_hash,
+                        "value_btc": inp.get("value_btc", 0),
+                        "direction": "out",
+                        "counterparty_count": len(outputs),
+                        "confirmed": confirmed,
+                        "block_height": block_height,
+                    },
+                )
+
+            # ── Register + observe receiver wallets ──
+            for out in outputs:
+                addr = out.get("addr", "")
+                if not addr:
+                    continue
+                wallet_eid = entity_id_from_key("wallet", addr)
+                if addr not in seen_wallets:
+                    seen_wallets.add(addr)
+                    store.register_entity(
+                        entity_type="wallet",
+                        canonical_name=addr,
+                        entity_id=wallet_eid,
+                    )
+                    store.add_entity_alias(wallet_eid, "btc_address", addr)
+
+                store.store_entity_observation(
+                    entity_id=wallet_eid,
+                    source_tool="whale_alert",
+                    observed_at=tx_time,
+                    observation_type="btc_transfer",
+                    depth_level=2,
+                    value={
+                        "tx_hash": tx_hash,
+                        "value_btc": out.get("value_btc", 0),
+                        "direction": "in",
+                        "counterparty_count": len(inputs),
+                        "confirmed": confirmed,
+                        "block_height": block_height,
+                    },
+                )
+
+            # ── Link sender → receiver wallets ──
+            sender_addrs = [inp.get("addr", "") for inp in inputs]
+            receiver_addrs = [out.get("addr", "") for out in outputs]
+            for s_addr in sender_addrs:
+                if not s_addr:
+                    continue
+                for r_addr in receiver_addrs:
+                    if not r_addr or s_addr == r_addr:
+                        continue
+                    store.link_entities(
+                        entity_id_a=entity_id_from_key("wallet", s_addr),
+                        entity_id_b=entity_id_from_key("wallet", r_addr),
+                        link_type="transacts_with",
+                        source="whale_alert",
+                        confidence=1.0,
+                        metadata={"tx_hash": tx_hash},
+                    )

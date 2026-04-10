@@ -48,6 +48,7 @@ class TestSchemaInit:
         assert "dag_runs" in tables
         assert "pipeline_data" in tables
         assert "signals" in tables
+        assert "features" in tables
 
     def test_indexes_created(self, store: PipelineStore):
         conn = store._get_conn()
@@ -59,6 +60,8 @@ class TestSchemaInit:
         ]
         assert "idx_pipeline_data_source" in indexes
         assert "idx_signals_name" in indexes
+        assert "idx_features_unique" in indexes
+        assert "idx_features_lookup" in indexes
 
     def test_wal_mode(self, file_store):
         store, _ = file_store
@@ -384,8 +387,7 @@ class TestConcurrency:
                 errors.append(e)
 
         threads = [
-            threading.Thread(target=writer, args=(f"src_{i}", 20))
-            for i in range(5)
+            threading.Thread(target=writer, args=(f"src_{i}", 20)) for i in range(5)
         ]
         for t in threads:
             t.start()

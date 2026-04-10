@@ -833,9 +833,9 @@ class TestExtractorRegistryIntegrity:
         tools = registered_tools()
         assert len(tools) == len(set(tools))
 
-    def test_registry_count_is_44(self):
-        """44 extractors as of pre-WM fixes."""
-        assert len(registered_tools()) == 44
+    def test_registry_count_is_49(self):
+        """49 extractors after batch 3 (uncovered tools)."""
+        assert len(registered_tools()) == 49
 
     def test_all_registered_tools_callable(self):
         for tool_name in registered_tools():

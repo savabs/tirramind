@@ -33,12 +33,21 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from agent.data.cache import DataCache
 from agent.tools.base import Tool, ToolResult
+
+if TYPE_CHECKING:
+    from agent.pipeline.store import PipelineStore
+
+try:
+    from agent.pipeline.entity import entity_id_from_key, normalize_company_name
+except ImportError:  # pragma: no cover
+    entity_id_from_key = None  # type: ignore[assignment]
+    normalize_company_name = None  # type: ignore[assignment]
 
 log = logging.getLogger(__name__)
 
@@ -227,8 +236,14 @@ class LobbyingTool(Tool):
         "required": ["mode"],
     }
 
-    def __init__(self, *, cache: DataCache | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        cache: DataCache | None = None,
+        pipeline_store: PipelineStore | None = None,
+    ) -> None:
         self._cache = cache
+        self._store = pipeline_store
         self._api_key = self._get_api_key()
 
     @staticmethod
@@ -237,6 +252,107 @@ class LobbyingTool(Tool):
 
         key = os.environ.get("TIRRA_LDA_API_KEY", "").strip()
         return key if key else None
+
+    # ------------------------------------------------------------------
+    # Entity persistence (L2)
+    # ------------------------------------------------------------------
+
+    def _persist_entities(self, filings: list[dict[str, Any]]) -> None:
+        """Register company entities and store L2 lobbying observations."""
+        if self._store is None or entity_id_from_key is None:
+            return
+        if not filings:
+            return
+        try:
+            self._persist_entities_inner(filings)
+        except Exception:
+            log.exception("Entity persistence failed (non-fatal)")
+
+    def _persist_entities_inner(self, filings: list[dict[str, Any]]) -> None:
+        assert self._store is not None  # noqa: S101
+        store = self._store
+
+        seen_companies: set[str] = set()
+        for filing in filings:
+            registrant = filing.get("registrant_name", "")
+            if not registrant:
+                continue
+
+            try:
+                canon = (
+                    normalize_company_name(registrant)
+                    if normalize_company_name
+                    else registrant
+                )
+            except ValueError:
+                canon = registrant
+
+            company_eid = entity_id_from_key("company", canon)
+
+            if registrant not in seen_companies:
+                seen_companies.add(registrant)
+                store.register_entity(
+                    entity_type="company",
+                    canonical_name=canon,
+                    entity_id=company_eid,
+                )
+                if filing.get("registrant_id"):
+                    store.add_entity_alias(
+                        company_eid, "lda_registrant_id", str(filing["registrant_id"])
+                    )
+
+            # Parse posted date
+            dt_posted = filing.get("dt_posted", "")
+            try:
+                ts = datetime.fromisoformat(
+                    dt_posted.replace("Z", "+00:00")
+                ).timestamp()
+            except (ValueError, AttributeError):
+                ts = datetime.now(tz=timezone.utc).timestamp()
+
+            store.store_entity_observation(
+                entity_id=company_eid,
+                source_tool="lobbying",
+                observed_at=ts,
+                observation_type="lobbying_spend",
+                depth_level=2,
+                value={
+                    "client_name": filing.get("client_name", ""),
+                    "amount": filing.get("amount", 0),
+                    "filing_year": filing.get("filing_year"),
+                    "filing_period": filing.get("filing_period", ""),
+                    "issue_codes": filing.get("issue_codes", []),
+                },
+            )
+
+            # ── Link registrant → client company ──
+            client_name = (filing.get("client_name") or "").strip()
+            if (
+                client_name
+                and client_name != registrant
+                and client_name.lower() != "self"
+            ):
+                try:
+                    client_canon = (
+                        normalize_company_name(client_name)
+                        if normalize_company_name
+                        else client_name
+                    )
+                except (ValueError, TypeError):
+                    client_canon = client_name
+                client_eid = entity_id_from_key("company", client_canon)
+                store.register_entity(
+                    entity_type="company",
+                    canonical_name=client_canon,
+                    entity_id=client_eid,
+                )
+                store.link_entities(
+                    entity_id_a=company_eid,
+                    entity_id_b=client_eid,
+                    link_type="lobbies_for",
+                    source="lobbying",
+                    confidence=0.9,
+                )
 
     def execute(self, **kwargs: Any) -> ToolResult:
         mode = (kwargs.get("mode") or "").strip().lower()
@@ -338,6 +454,8 @@ class LobbyingTool(Tool):
                     f"{c} ({ISSUE_AREAS.get(c, '?')})" for c in f["issue_codes"][:5]
                 ]
                 lines.append(f"  Issues: {', '.join(issue_labels)}")
+
+        self._persist_entities(filings)
 
         return ToolResult(
             success=True,

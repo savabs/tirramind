@@ -31,12 +31,20 @@ from __future__ import annotations
 import logging
 import re
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from agent.data.cache import DataCache
 from agent.tools.base import Tool, ToolResult
+
+if TYPE_CHECKING:
+    from agent.pipeline.store import PipelineStore
+
+try:
+    from agent.pipeline.entity import entity_id_from_key
+except ImportError:  # pragma: no cover
+    entity_id_from_key = None  # type: ignore[assignment]
 
 log = logging.getLogger(__name__)
 
@@ -813,8 +821,14 @@ class DnsMonitorTool(Tool):
         "required": ["mode"],
     }
 
-    def __init__(self, cache: DataCache | None = None) -> None:
+    def __init__(
+        self,
+        cache: DataCache | None = None,
+        *,
+        pipeline_store: PipelineStore | None = None,
+    ) -> None:
         self._cache = cache
+        self._store = pipeline_store
 
     def execute(
         self,
@@ -911,6 +925,8 @@ class DnsMonitorTool(Tool):
             "record_count": analysis["record_count"],
         }
 
+        self._persist_entities(domain, analysis)
+
         if self._cache:
             self._cache.set(
                 "dns_monitor",
@@ -920,6 +936,49 @@ class DnsMonitorTool(Tool):
             )
 
         return ToolResult(success=True, output=output, data=data)
+
+    # ------------------------------------------------------------------
+    # Entity persistence (L2)
+    # ------------------------------------------------------------------
+
+    def _persist_entities(self, domain: str, analysis: dict[str, Any]) -> None:
+        """Register domain entity and store L2 DNS observations."""
+        if self._store is None or entity_id_from_key is None:
+            return
+        if not domain:
+            return
+        try:
+            self._persist_entities_inner(domain, analysis)
+        except Exception:
+            log.exception("Entity persistence failed (non-fatal)")
+
+    def _persist_entities_inner(self, domain: str, analysis: dict[str, Any]) -> None:
+        assert self._store is not None  # noqa: S101
+        store = self._store
+
+        domain_eid = entity_id_from_key("domain", domain)
+        store.register_entity(
+            entity_type="domain",
+            canonical_name=domain,
+            entity_id=domain_eid,
+        )
+        store.add_entity_alias(domain_eid, "domain_name", domain)
+
+        store.store_entity_observation(
+            entity_id=domain_eid,
+            source_tool="dns_monitor",
+            observed_at=time.time(),
+            observation_type="dns_change",
+            depth_level=2,
+            value={
+                "cloud_providers": analysis.get("cloud_providers", []),
+                "mx_provider": analysis.get("mx_provider"),
+                "ns_provider": analysis.get("ns_provider"),
+                "min_ttl": analysis.get("min_ttl"),
+                "low_ttl_warning": analysis.get("low_ttl_warning", False),
+                "record_count": analysis.get("record_count", 0),
+            },
+        )
 
     # ------------------------------------------------------------------
     # diff mode
@@ -1080,6 +1139,9 @@ class DnsMonitorTool(Tool):
             lines.append("Errors:")
             for e in errors:
                 lines.append(f"  {e}")
+
+        for r in results:
+            self._persist_entities(r["domain"], r.get("analysis", {}))
 
         return ToolResult(
             success=True,

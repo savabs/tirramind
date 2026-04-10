@@ -446,7 +446,24 @@ class SatelliteActivityTool(Tool):
             result = f"No thermal hotspots detected in {area} (last {days} day(s), source={source})."
             if self._cache:
                 self._cache.put(cache_ns, cache_key, result)
-            return ToolResult(success=True, output=result)
+            return ToolResult(
+                success=True,
+                output=result,
+                data={
+                    "mode": "fire",
+                    "area": area,
+                    "source": source,
+                    "days": days,
+                    "hotspot_count": 0,
+                    "frp_avg": 0.0,
+                    "frp_max": 0.0,
+                    "frp_total": 0.0,
+                    "confidence_counts": {},
+                    "daynight_counts": {},
+                    "cluster_count": 0,
+                    "clusters": [],
+                },
+            )
 
         # Compute stats
         frps = [_safe_float(h.get("frp")) for h in hotspots]
@@ -485,7 +502,26 @@ class SatelliteActivityTool(Tool):
         result = "\n".join(lines)
         if self._cache:
             self._cache.put(cache_ns, cache_key, result)
-        return ToolResult(success=True, output=result)
+        return ToolResult(
+            success=True,
+            output=result,
+            data={
+                "mode": "fire",
+                "area": area,
+                "source": source,
+                "days": days,
+                "hotspot_count": len(hotspots),
+                "frp_avg": (
+                    round(sum(frps_valid) / len(frps_valid), 2) if frps_valid else 0.0
+                ),
+                "frp_max": round(max(frps_valid), 2) if frps_valid else 0.0,
+                "frp_total": round(sum(frps_valid), 2) if frps_valid else 0.0,
+                "confidence_counts": confs,
+                "daynight_counts": daynight,
+                "cluster_count": len(clusters),
+                "clusters": clusters[:10],
+            },
+        )
 
     # ------------------------------------------------------------------
     # Mode: vegetation
@@ -550,7 +586,26 @@ class SatelliteActivityTool(Tool):
             result = f"No NDVI data available for ({lat}, {lon}) from {start} to {end}."
             if self._cache:
                 self._cache.put(cache_ns, cache_key, result)
-            return ToolResult(success=True, output=result)
+            return ToolResult(
+                success=True,
+                output=result,
+                data={
+                    "mode": "vegetation",
+                    "latitude": lat,
+                    "longitude": lon,
+                    "start_date": start,
+                    "end_date": end,
+                    "observation_count": 0,
+                    "latest_ndvi": 0.0,
+                    "latest_date": "",
+                    "latest_health": "bare_soil",
+                    "avg_ndvi": 0.0,
+                    "min_ndvi": 0.0,
+                    "max_ndvi": 0.0,
+                    "anomaly_pct": 0.0,
+                    "series": [],
+                },
+            )
 
         # Extract time series
         series: list[dict] = []
@@ -576,7 +631,26 @@ class SatelliteActivityTool(Tool):
             result = f"No valid NDVI observations for ({lat}, {lon}) in date range."
             if self._cache:
                 self._cache.put(cache_ns, cache_key, result)
-            return ToolResult(success=True, output=result)
+            return ToolResult(
+                success=True,
+                output=result,
+                data={
+                    "mode": "vegetation",
+                    "latitude": lat,
+                    "longitude": lon,
+                    "start_date": start,
+                    "end_date": end,
+                    "observation_count": 0,
+                    "latest_ndvi": 0.0,
+                    "latest_date": "",
+                    "latest_health": "bare_soil",
+                    "avg_ndvi": 0.0,
+                    "min_ndvi": 0.0,
+                    "max_ndvi": 0.0,
+                    "anomaly_pct": 0.0,
+                    "series": [],
+                },
+            )
 
         ndvi_values = [s["ndvi"] for s in series]
         avg_ndvi = sum(ndvi_values) / len(ndvi_values)
@@ -603,7 +677,26 @@ class SatelliteActivityTool(Tool):
         result = "\n".join(lines)
         if self._cache:
             self._cache.put(cache_ns, cache_key, result)
-        return ToolResult(success=True, output=result)
+        return ToolResult(
+            success=True,
+            output=result,
+            data={
+                "mode": "vegetation",
+                "latitude": lat,
+                "longitude": lon,
+                "start_date": start,
+                "end_date": end,
+                "observation_count": len(series),
+                "latest_ndvi": round(latest["ndvi"], 4),
+                "latest_date": latest["date"],
+                "latest_health": latest["health"],
+                "avg_ndvi": round(avg_ndvi, 4),
+                "min_ndvi": round(min(ndvi_values), 4),
+                "max_ndvi": round(max(ndvi_values), 4),
+                "anomaly_pct": round(anomaly_pct, 2),
+                "series": series,
+            },
+        )
 
     # ------------------------------------------------------------------
     # Mode: events
@@ -655,7 +748,19 @@ class SatelliteActivityTool(Tool):
             result += "."
             if self._cache:
                 self._cache.put(cache_ns, cache_key, result)
-            return ToolResult(success=True, output=result)
+            return ToolResult(
+                success=True,
+                output=result,
+                data={
+                    "mode": "events",
+                    "days": days,
+                    "status": status,
+                    "category_filter": category,
+                    "event_count": 0,
+                    "category_counts": {},
+                    "events": [],
+                },
+            )
 
         # Categorize
         cat_counts: dict[str, int] = {}
@@ -690,7 +795,43 @@ class SatelliteActivityTool(Tool):
         if len(events) > 20:
             lines.append(f"  ... and {len(events) - 20} more events")
 
+        # Build structured event list for data= dict
+        structured_events = []
+        for ev in events:
+            title = ev.get("title", "Unknown")
+            cats = [c.get("id", "unknown") for c in ev.get("categories", [])]
+            ev_lat, ev_lon, ev_date = None, None, None
+            geom = ev.get("geometry", [])
+            if geom:
+                last_geom = geom[-1]
+                coords = last_geom.get("coordinates", [])
+                if isinstance(coords, list) and len(coords) >= 2:
+                    ev_lon = coords[0]
+                    ev_lat = coords[1]
+                ev_date = (last_geom.get("date") or "")[:10] or None
+            structured_events.append(
+                {
+                    "title": title,
+                    "categories": cats,
+                    "lat": ev_lat,
+                    "lon": ev_lon,
+                    "date": ev_date,
+                }
+            )
+
         result = "\n".join(lines)
         if self._cache:
             self._cache.put(cache_ns, cache_key, result)
-        return ToolResult(success=True, output=result)
+        return ToolResult(
+            success=True,
+            output=result,
+            data={
+                "mode": "events",
+                "days": days,
+                "status": status,
+                "category_filter": category,
+                "event_count": len(events),
+                "category_counts": cat_counts,
+                "events": structured_events,
+            },
+        )

@@ -24,12 +24,21 @@ import time
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from agent.data.cache import DataCache
 from agent.tools.base import Tool, ToolResult
+
+if TYPE_CHECKING:
+    from agent.pipeline.store import PipelineStore
+
+try:
+    from agent.pipeline.entity import entity_id_from_key, normalize_company_name
+except ImportError:  # pragma: no cover — entity module always available
+    entity_id_from_key = None  # type: ignore[assignment]
+    normalize_company_name = None  # type: ignore[assignment]
 
 log = logging.getLogger(__name__)
 
@@ -85,8 +94,14 @@ class Form144Tool(Tool):
         "required": [],
     }
 
-    def __init__(self, cache: DataCache | None = None) -> None:
+    def __init__(
+        self,
+        cache: DataCache | None = None,
+        *,
+        pipeline_store: PipelineStore | None = None,
+    ) -> None:
         self._cache = cache
+        self._store = pipeline_store
 
     # ------------------------------------------------------------------
     # Core execution
@@ -123,6 +138,12 @@ class Form144Tool(Tool):
         # Parse each filing
         filings = self._parse_filings(raw_hits)
 
+        # Persist entities (L2) — non-fatal
+        try:
+            self._persist_entities(filings)
+        except Exception:
+            log.debug("Entity persistence failed (non-fatal)", exc_info=True)
+
         if not filings:
             return ToolResult(
                 success=True,
@@ -158,9 +179,15 @@ class Form144Tool(Tool):
             )
 
         # Format output
-        lines = [f"Insider Sell-Intent Clusters — {len(clusters)} found (last {days_back} days):\n"]
+        lines = [
+            f"Insider Sell-Intent Clusters — {len(clusters)} found (last {days_back} days):\n"
+        ]
         for i, c in enumerate(clusters, 1):
-            pct = f"{c['pct_of_outstanding']:.3f}%" if c["pct_of_outstanding"] > 0 else "N/A"
+            pct = (
+                f"{c['pct_of_outstanding']:.3f}%"
+                if c["pct_of_outstanding"] > 0
+                else "N/A"
+            )
             lines.append(
                 f"  {i}. {c['ticker']} ({c['company']}) — {c['insider_count']} insiders, "
                 f"${c['total_value']:,.0f} total ({pct} of outstanding)\n"
@@ -168,7 +195,11 @@ class Form144Tool(Tool):
                 f"Urgency: {c['urgency']} | Conviction: {c['conviction']}"
             )
             for fil in c["filings"][:5]:
-                acq_tag = f" [{fil['acquisition_type']}]" if fil["acquisition_type"] != "other" else ""
+                acq_tag = (
+                    f" [{fil['acquisition_type']}]"
+                    if fil["acquisition_type"] != "other"
+                    else ""
+                )
                 lines.append(
                     f"       ⊖ {fil['insider_name']}"
                     + (f" ({fil['relationship']})" if fil["relationship"] else "")
@@ -189,9 +220,7 @@ class Form144Tool(Tool):
     # EFTS fetching
     # ------------------------------------------------------------------
 
-    def _fetch_recent_144s(
-        self, start_dt: date, end_dt: date
-    ) -> list[dict[str, Any]]:
+    def _fetch_recent_144s(self, start_dt: date, end_dt: date) -> list[dict[str, Any]]:
         """Fetch Form 144 filing metadata from EDGAR full-text search."""
         cache_params = {"form": "144", "start": str(start_dt), "end": str(end_dt)}
         if self._cache:
@@ -227,7 +256,11 @@ class Form144Tool(Tool):
                         time.sleep(2)
                         continue
                     if hasattr(exc, "response") and exc.response.status_code >= 500:
-                        log.warning("SEC server error at offset %d, returning %d hits collected", page_from, len(all_hits))
+                        log.warning(
+                            "SEC server error at offset %d, returning %d hits collected",
+                            page_from,
+                            len(all_hits),
+                        )
                         break  # Return what we have instead of failing
                     raise
 
@@ -247,7 +280,9 @@ class Form144Tool(Tool):
 
         return all_hits
 
-    def _fetch_filing_xml(self, cik: str, accession: str, primary_doc: str) -> str | None:
+    def _fetch_filing_xml(
+        self, cik: str, accession: str, primary_doc: str
+    ) -> str | None:
         """Fetch a single Form 144 XML from EDGAR archives."""
         accession_clean = accession.replace("-", "")
         url = f"{_EDGAR_ARCHIVES}/{cik}/{accession_clean}/{primary_doc}"
@@ -304,7 +339,9 @@ class Form144Tool(Tool):
             # Find the display name with a ticker (issuer)
             issuer_display = names[0]
             issuer_cik = ciks[0]
-            filer_name = _clean_name(names[1].split("(CIK")[0]) if len(names) > 1 else ""
+            filer_name = (
+                _clean_name(names[1].split("(CIK")[0]) if len(names) > 1 else ""
+            )
             ticker = _extract_ticker(issuer_display)
 
             if not ticker and len(names) > 1:
@@ -327,15 +364,21 @@ class Form144Tool(Tool):
             if not primary_doc:
                 primary_doc = "primary_doc.xml"
 
-            metadata_by_ticker[ticker].append({
-                "ticker": ticker,
-                "company": company,
-                "filer_name": filer_name,
-                "issuer_cik": issuer_cik,
-                "accession": accession,
-                "primary_doc": primary_doc,
-                "file_date": file_date,
-            })
+            # Derive reporter_cik: the CIK that is NOT the issuer
+            reporter_cik = next((c for c in ciks if c != issuer_cik), ciks[-1])
+
+            metadata_by_ticker[ticker].append(
+                {
+                    "ticker": ticker,
+                    "company": company,
+                    "filer_name": filer_name,
+                    "issuer_cik": issuer_cik,
+                    "reporter_cik": reporter_cik,
+                    "accession": accession,
+                    "primary_doc": primary_doc,
+                    "file_date": file_date,
+                }
+            )
 
         # Phase 2: Only fetch XMLs for tickers with 2+ filings (cluster candidates)
         filings: list[dict[str, Any]] = []
@@ -347,25 +390,29 @@ class Form144Tool(Tool):
                 # Still include a metadata-only record for single filers
                 # (useful for ticker-specific queries)
                 for m in metas:
-                    filings.append({
-                        "ticker": ticker,
-                        "company": m["company"],
-                        "insider_name": m["filer_name"],
-                        "relationship": "",
-                        "shares_to_sell": 0,
-                        "dollar_value": 0.0,
-                        "shares_outstanding": 0,
-                        "approx_sale_date": "",
-                        "filing_date": m["file_date"],
-                        "exchange": "",
-                        "broker": "",
-                        "acquisition_type": "other",
-                        "acquisition_details": [],
-                        "is_gift": False,
-                        "has_10b5_1_plan": False,
-                        "urgency": "unknown",
-                        "_metadata_only": True,
-                    })
+                    filings.append(
+                        {
+                            "ticker": ticker,
+                            "company": m["company"],
+                            "insider_name": m["filer_name"],
+                            "issuer_cik": m["issuer_cik"],
+                            "reporter_cik": m["reporter_cik"],
+                            "relationship": "",
+                            "shares_to_sell": 0,
+                            "dollar_value": 0.0,
+                            "shares_outstanding": 0,
+                            "approx_sale_date": "",
+                            "filing_date": m["file_date"],
+                            "exchange": "",
+                            "broker": "",
+                            "acquisition_type": "other",
+                            "acquisition_details": [],
+                            "is_gift": False,
+                            "has_10b5_1_plan": False,
+                            "urgency": "unknown",
+                            "_metadata_only": True,
+                        }
+                    )
                 continue
 
             # Cluster candidate — fetch full XML for rich data
@@ -380,25 +427,29 @@ class Form144Tool(Tool):
                 fetched += 1
                 if not xml_text:
                     # Fallback to metadata-only record
-                    filings.append({
-                        "ticker": ticker,
-                        "company": m["company"],
-                        "insider_name": m["filer_name"],
-                        "relationship": "",
-                        "shares_to_sell": 0,
-                        "dollar_value": 0.0,
-                        "shares_outstanding": 0,
-                        "approx_sale_date": "",
-                        "filing_date": m["file_date"],
-                        "exchange": "",
-                        "broker": "",
-                        "acquisition_type": "other",
-                        "acquisition_details": [],
-                        "is_gift": False,
-                        "has_10b5_1_plan": False,
-                        "urgency": "unknown",
-                        "_metadata_only": True,
-                    })
+                    filings.append(
+                        {
+                            "ticker": ticker,
+                            "company": m["company"],
+                            "insider_name": m["filer_name"],
+                            "issuer_cik": m["issuer_cik"],
+                            "reporter_cik": m["reporter_cik"],
+                            "relationship": "",
+                            "shares_to_sell": 0,
+                            "dollar_value": 0.0,
+                            "shares_outstanding": 0,
+                            "approx_sale_date": "",
+                            "filing_date": m["file_date"],
+                            "exchange": "",
+                            "broker": "",
+                            "acquisition_type": "other",
+                            "acquisition_details": [],
+                            "is_gift": False,
+                            "has_10b5_1_plan": False,
+                            "urgency": "unknown",
+                            "_metadata_only": True,
+                        }
+                    )
                     continue
 
                 parsed = _parse_form144_xml(
@@ -406,9 +457,101 @@ class Form144Tool(Tool):
                 )
                 if parsed and not parsed.get("is_gift"):
                     parsed["ticker"] = ticker
+                    parsed["issuer_cik"] = m["issuer_cik"]
+                    parsed["reporter_cik"] = m["reporter_cik"]
                     filings.append(parsed)
 
         return filings
+
+    # ------------------------------------------------------------------
+    # Entity persistence (L2)
+    # ------------------------------------------------------------------
+
+    def _persist_entities(self, filings: list[dict[str, Any]]) -> None:
+        """Persist entities and observations. No-op when store is None."""
+        if self._store is None or not filings:
+            return
+        if entity_id_from_key is None:
+            log.debug("Entity helpers unavailable, skipping persistence")
+            return
+        try:
+            self._persist_entities_inner(filings)
+        except Exception:
+            log.debug("Entity persistence error (non-fatal)", exc_info=True)
+
+    def _persist_entities_inner(self, filings: list[dict[str, Any]]) -> None:
+        """Inner persistence logic, separated for testability."""
+        assert self._store is not None  # guarded by caller
+        store = self._store
+
+        seen_companies: set[str] = set()
+        seen_insiders: set[str] = set()
+
+        for f in filings:
+            issuer_cik = f.get("issuer_cik", "")
+            reporter_cik = f.get("reporter_cik", "")
+            company = f.get("company", "")
+            ticker = f.get("ticker", "")
+
+            # ── Register company ──
+            if issuer_cik and issuer_cik not in seen_companies:
+                seen_companies.add(issuer_cik)
+                company_eid = entity_id_from_key("company", issuer_cik)
+                try:
+                    canon = normalize_company_name(company) if company else company
+                except (ValueError, TypeError):
+                    canon = company
+                store.register_entity(
+                    entity_type="company",
+                    canonical_name=canon or issuer_cik,
+                    entity_id=company_eid,
+                )
+                store.add_entity_alias(company_eid, "sec_cik", issuer_cik)
+                if ticker:
+                    store.add_entity_alias(company_eid, "ticker", ticker)
+
+            # ── Register insider ──
+            if reporter_cik and reporter_cik not in seen_insiders:
+                seen_insiders.add(reporter_cik)
+                insider_eid = entity_id_from_key("person", reporter_cik)
+                store.register_entity(
+                    entity_type="person",
+                    canonical_name=f.get("insider_name", reporter_cik),
+                    entity_id=insider_eid,
+                )
+                store.add_entity_alias(insider_eid, "sec_cik", reporter_cik)
+
+            # ── Store observation ──
+            if reporter_cik:
+                insider_eid = entity_id_from_key("person", reporter_cik)
+                observed_at = _date_to_timestamp(f.get("filing_date", ""))
+                store.store_entity_observation(
+                    entity_id=insider_eid,
+                    source_tool="form144",
+                    observed_at=observed_at,
+                    observation_type="sell_intent",
+                    depth_level=2,
+                    value={
+                        "ticker": ticker,
+                        "company": company,
+                        "shares_to_sell": f.get("shares_to_sell", 0),
+                        "dollar_value": f.get("dollar_value", 0),
+                        "acquisition_type": f.get("acquisition_type", ""),
+                        "urgency": f.get("urgency", ""),
+                        "relationship": f.get("relationship", ""),
+                    },
+                )
+
+            # ── Link person → company ──
+            if issuer_cik and reporter_cik:
+                store.link_entities(
+                    entity_id_a=entity_id_from_key("person", reporter_cik),
+                    entity_id_b=entity_id_from_key("company", issuer_cik),
+                    link_type="works_for",
+                    source="form144",
+                    confidence=1.0,
+                    metadata={"relationship": f.get("relationship", "")},
+                )
 
     def _detect_sell_clusters(
         self, filings: list[dict[str, Any]], min_size: int = 2
@@ -425,7 +568,9 @@ class Form144Tool(Tool):
                 continue
 
             ticker_filings.sort(key=lambda f: f["filing_date"])
-            best = self._find_best_sell_cluster(ticker_filings, window_days=14, min_size=min_size)
+            best = self._find_best_sell_cluster(
+                ticker_filings, window_days=14, min_size=min_size
+            )
             if best:
                 clusters.append(best)
 
@@ -452,6 +597,8 @@ class Form144Tool(Tool):
             window_filings: list[dict[str, Any]] = []
             seen_names: set[str] = set()
 
+            cik_to_name: dict[str, str] = {}
+
             for j in range(i, len(filings)):
                 f_date = _parse_date_iso(filings[j]["filing_date"])
                 if f_date is None:
@@ -459,16 +606,21 @@ class Form144Tool(Tool):
                 if f_date > window_end:
                     break
 
-                name_key = _normalize_name(filings[j]["insider_name"])
-                if name_key not in seen_names:
-                    seen_names.add(name_key)
+                rcik = filings[j].get("reporter_cik", "")
+                if rcik:
+                    dedup_key = rcik
+                else:
+                    dedup_key = _normalize_name(filings[j]["insider_name"])
+                if dedup_key not in seen_names:
+                    seen_names.add(dedup_key)
                     window_filings.append(filings[j])
+                    if rcik:
+                        cik_to_name[rcik] = filings[j]["insider_name"]
 
             if len(seen_names) >= min_size:
                 total_value = sum(f["dollar_value"] for f in window_filings)
                 max_acq_weight = max(
-                    _ACQ_WEIGHTS.get(f["acquisition_type"], 1.0)
-                    for f in window_filings
+                    _ACQ_WEIGHTS.get(f["acquisition_type"], 1.0) for f in window_filings
                 )
                 score = len(seen_names) * total_value * max_acq_weight
 
@@ -483,7 +635,8 @@ class Form144Tool(Tool):
                     # Pct of outstanding
                     total_shares = sum(f["shares_to_sell"] for f in window_filings)
                     outstanding = max(
-                        (f.get("shares_outstanding", 0) for f in window_filings), default=0
+                        (f.get("shares_outstanding", 0) for f in window_filings),
+                        default=0,
                     )
                     pct = (total_shares / outstanding * 100) if outstanding > 0 else 0.0
 
@@ -493,19 +646,44 @@ class Form144Tool(Tool):
                         for f in window_filings
                     )
                     has_officer = any(
-                        any(r in f.get("relationship", "").upper()
-                            for r in ("OFFICER", "DIRECTOR", "CEO", "CFO", "COO", "PRESIDENT", "CHIEF"))
+                        any(
+                            r in f.get("relationship", "").upper()
+                            for r in (
+                                "OFFICER",
+                                "DIRECTOR",
+                                "CEO",
+                                "CFO",
+                                "COO",
+                                "PRESIDENT",
+                                "CHIEF",
+                            )
+                        )
                         for f in window_filings
                     )
 
                     conviction = (
-                        "high" if (has_voluntary and len(seen_names) >= 3) else
-                        "high" if (has_officer and has_voluntary) else
-                        "medium-high" if has_voluntary else
-                        "medium-high" if (has_officer and len(seen_names) >= 3) else
-                        "medium" if has_officer else
-                        "moderate"
+                        "high"
+                        if (has_voluntary and len(seen_names) >= 3)
+                        else (
+                            "high"
+                            if (has_officer and has_voluntary)
+                            else (
+                                "medium-high"
+                                if has_voluntary
+                                else (
+                                    "medium-high"
+                                    if (has_officer and len(seen_names) >= 3)
+                                    else "medium" if has_officer else "moderate"
+                                )
+                            )
+                        )
                     )
+
+                    # Build entity_ids mapping
+                    ent_ids: dict[str, str] = {}
+                    if entity_id_from_key is not None:
+                        for rc, nm in cik_to_name.items():
+                            ent_ids[nm] = entity_id_from_key("person", rc)
 
                     best = {
                         "ticker": filings[0]["ticker"],
@@ -517,14 +695,17 @@ class Form144Tool(Tool):
                         "cluster_start": window_filings[0]["filing_date"],
                         "cluster_end": window_filings[-1]["filing_date"],
                         "urgency": (
-                            "immediate" if has_immediate else
-                            "near_term" if has_near else
-                            "planned"
+                            "immediate"
+                            if has_immediate
+                            else "near_term" if has_near else "planned"
                         ),
                         "conviction": conviction,
                         "has_voluntary_sells": has_voluntary,
                         "score": score,
-                        "filings": sorted(window_filings, key=lambda f: f["filing_date"]),
+                        "entity_ids": ent_ids,
+                        "filings": sorted(
+                            window_filings, key=lambda f: f["filing_date"]
+                        ),
                     }
 
         return best
@@ -533,6 +714,7 @@ class Form144Tool(Tool):
 # ------------------------------------------------------------------
 # Form 144 XML parsing
 # ------------------------------------------------------------------
+
 
 def _parse_form144_xml(
     xml_text: str,
@@ -603,7 +785,9 @@ def _parse_form144_xml(
         dollar_value = _safe_float(value_el.text if value_el is not None else None)
 
         outstanding_el = sec_info.find(f"{ns}noOfUnitsOutstanding")
-        shares_outstanding = _safe_int(outstanding_el.text if outstanding_el is not None else None)
+        shares_outstanding = _safe_int(
+            outstanding_el.text if outstanding_el is not None else None
+        )
 
         date_el = sec_info.find(f"{ns}approxSaleDate")
         if date_el is not None and date_el.text:
@@ -629,10 +813,16 @@ def _parse_form144_xml(
 
     for stbs in form_data.findall(f"{ns}securitiesToBeSold"):
         nature_el = stbs.find(f"{ns}natureOfAcquisitionTransaction")
-        nature_text = nature_el.text.strip() if nature_el is not None and nature_el.text else ""
+        nature_text = (
+            nature_el.text.strip() if nature_el is not None and nature_el.text else ""
+        )
 
         gift_el = stbs.find(f"{ns}isGiftTransaction")
-        gift_flag = gift_el.text.strip().upper() if gift_el is not None and gift_el.text else "N"
+        gift_flag = (
+            gift_el.text.strip().upper()
+            if gift_el is not None and gift_el.text
+            else "N"
+        )
         if gift_flag == "Y":
             is_gift = True
 
@@ -647,13 +837,15 @@ def _parse_form144_xml(
         amount_el = stbs.find(f"{ns}amountOfSecuritiesAcquired")
         amount = _safe_int(amount_el.text if amount_el is not None else None)
 
-        acquisition_details.append({
-            "nature": nature_text,
-            "type": acq_type,
-            "acquired_date": acquired_date,
-            "amount": amount,
-            "is_gift": gift_flag == "Y",
-        })
+        acquisition_details.append(
+            {
+                "nature": nature_text,
+                "type": acq_type,
+                "acquired_date": acquired_date,
+                "amount": amount,
+                "is_gift": gift_flag == "Y",
+            }
+        )
 
     # If ALL acquisition lots are gifts, skip
     if is_gift and all(a["is_gift"] for a in acquisition_details):
@@ -706,6 +898,7 @@ def _parse_form144_xml(
 # Classification helpers
 # ------------------------------------------------------------------
 
+
 def _classify_acquisition(nature_text: str, is_gift: bool) -> str:
     """Classify acquisition type from natureOfAcquisitionTransaction text."""
     if is_gift:
@@ -715,10 +908,22 @@ def _classify_acquisition(nature_text: str, is_gift: bool) -> str:
         return "open_market"
     if "private" in lower or "placement" in lower:
         return "private_placement"
-    if any(kw in lower for kw in (
-        "stock unit", "rsu", "psu", "restricted", "performance",
-        "option", "incentive", "vest", "award", "bonus", "compensation",
-    )):
+    if any(
+        kw in lower
+        for kw in (
+            "stock unit",
+            "rsu",
+            "psu",
+            "restricted",
+            "performance",
+            "option",
+            "incentive",
+            "vest",
+            "award",
+            "bonus",
+            "compensation",
+        )
+    ):
         return "vesting"
     return "other"
 
@@ -740,6 +945,7 @@ def _classify_urgency(filing_date: str, approx_sale_date: str) -> str:
 # ------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------
+
 
 def _extract_ticker(display_name: str) -> str:
     """Extract ticker from EFTS display name: 'Apple Inc.  (AAPL)  (CIK ...)'."""
@@ -808,3 +1014,11 @@ def _safe_int(val: str | None) -> int:
         return int(float(val.replace(",", "")))
     except (ValueError, TypeError):
         return 0
+
+
+def _date_to_timestamp(date_str: str) -> float:
+    """Convert YYYY-MM-DD to Unix timestamp. Returns 0.0 on failure."""
+    try:
+        return datetime.strptime(date_str[:10], "%Y-%m-%d").timestamp()
+    except (ValueError, TypeError):
+        return 0.0

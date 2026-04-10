@@ -368,9 +368,16 @@ class InternetInfrastructureTool(Tool):
             lines[0] += f" ({country})"
         lines.append(f"Source: IODA (Georgia Tech)\n")
 
+        _outage_data = {
+            "mode": "outages",
+            "alerts": alerts,
+            "events": events,
+            "country": country,
+        }
+
         if not alerts and not events:
             lines.append("No outage alerts or events detected in this window.")
-            return ToolResult(success=True, output="\n".join(lines))
+            return ToolResult(success=True, output="\n".join(lines), data=_outage_data)
 
         if alerts:
             lines.append(f"### Active Alerts ({len(alerts)})")
@@ -398,7 +405,7 @@ class InternetInfrastructureTool(Tool):
         if critical_countries:
             lines.append(f"\n⚠ CRITICAL: {', '.join(sorted(critical_countries))}")
 
-        return ToolResult(success=True, output="\n".join(lines))
+        return ToolResult(success=True, output="\n".join(lines), data=_outage_data)
 
     # ------------------------------------------------------------------
     # Mode: censorship (OONI)
@@ -505,7 +512,19 @@ class InternetInfrastructureTool(Tool):
                 f"{marker}"
             )
 
-        return ToolResult(success=True, output="\n".join(lines))
+        return ToolResult(
+            success=True,
+            output="\n".join(lines),
+            data={
+                "mode": "censorship",
+                "country": country,
+                "test": test,
+                "rows": rows,
+                "trend": trend,
+                "avg_rate": avg_rate,
+                "max_rate": max_rate,
+            },
+        )
 
     # ------------------------------------------------------------------
     # Mode: signals (IODA)
@@ -624,7 +643,21 @@ class InternetInfrastructureTool(Tool):
                 f"\n✓ {country} connectivity nominal ({current:.1%} of normal)"
             )
 
-        return ToolResult(success=True, output="\n".join(lines))
+        return ToolResult(
+            success=True,
+            output="\n".join(lines),
+            data={
+                "mode": "signals",
+                "country": country,
+                "current": current,
+                "avg": avg_val,
+                "min": min_val,
+                "max": max_val,
+                "severity": severity,
+                "drops": drops,
+                "data_points": len(valid_values),
+            },
+        )
 
     # ------------------------------------------------------------------
     # Mode: incidents (OONI)
@@ -676,12 +709,36 @@ class InternetInfrastructureTool(Tool):
                 ccs = inc.get("CCs", [])
                 if isinstance(ccs, list):
                     all_ccs.extend(ccs)
+        country_frequency: dict[str, int] = {}
         if all_ccs:
             from collections import Counter
 
             freq = Counter(all_ccs).most_common(10)
+            country_frequency = dict(freq)
             lines.append(f"\n### Most Affected Countries")
             for cc, count in freq:
                 lines.append(f"  {cc}: {count} ongoing incidents")
 
-        return ToolResult(success=True, output="\n".join(lines))
+        structured_incidents = []
+        for inc in incidents[:limit]:
+            if not isinstance(inc, dict):
+                continue
+            structured_incidents.append(
+                {
+                    "title": inc.get("title", "Unknown incident"),
+                    "countries": (
+                        inc.get("CCs", []) if isinstance(inc.get("CCs"), list) else []
+                    ),
+                    "start": inc.get("start_time", inc.get("create_time", "unknown")),
+                }
+            )
+
+        return ToolResult(
+            success=True,
+            output="\n".join(lines),
+            data={
+                "mode": "incidents",
+                "incidents": structured_incidents,
+                "country_frequency": country_frequency,
+            },
+        )

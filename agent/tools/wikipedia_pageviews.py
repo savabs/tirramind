@@ -24,13 +24,21 @@ import logging
 import math
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
 
 import httpx
 
 from agent.data.cache import DataCache
 from agent.tools.base import Tool, ToolResult
+
+if TYPE_CHECKING:
+    from agent.pipeline.store import PipelineStore
+
+try:
+    from agent.pipeline.entity import entity_id_from_key
+except ImportError:  # pragma: no cover
+    entity_id_from_key = None  # type: ignore[assignment]
 
 log = logging.getLogger(__name__)
 
@@ -179,8 +187,14 @@ class WikipediaPageviewsTool(Tool):
         "required": [],
     }
 
-    def __init__(self, cache: DataCache | None = None) -> None:
+    def __init__(
+        self,
+        cache: DataCache | None = None,
+        *,
+        pipeline_store: PipelineStore | None = None,
+    ) -> None:
         self._cache = cache
+        self._store = pipeline_store
 
     def execute(
         self,
@@ -316,6 +330,8 @@ class WikipediaPageviewsTool(Tool):
         if errors:
             lines.append(f"\n  ({len(errors)} articles failed to fetch)")
 
+        self._persist_entities(spikes)
+
         return ToolResult(
             success=True,
             output="\n".join(lines),
@@ -325,6 +341,66 @@ class WikipediaPageviewsTool(Tool):
                 "watchlist_size": len(watchlist),
             },
         )
+
+    # ------------------------------------------------------------------
+    # Entity persistence (L2)
+    # ------------------------------------------------------------------
+
+    def _persist_entities(self, spikes: list[dict[str, Any]]) -> None:
+        """Register topic entities and store L2 pageview spike observations."""
+        if self._store is None or entity_id_from_key is None:
+            return
+        if not spikes:
+            return
+        try:
+            self._persist_entities_inner(spikes)
+        except Exception:
+            log.exception("Entity persistence failed (non-fatal)")
+
+    def _persist_entities_inner(self, spikes: list[dict[str, Any]]) -> None:
+        assert self._store is not None  # noqa: S101
+        store = self._store
+
+        seen: set[str] = set()
+        for spike in spikes:
+            article = spike.get("article", "")
+            if not article or article in seen:
+                continue
+            seen.add(article)
+
+            topic_eid = entity_id_from_key("topic", article)
+            store.register_entity(
+                entity_type="topic",
+                canonical_name=article.replace("_", " "),
+                entity_id=topic_eid,
+            )
+            store.add_entity_alias(topic_eid, "wikipedia_article", article)
+
+            # Parse date string (YYYYMMDD) to timestamp
+            date_str = spike.get("date", "")
+            try:
+                ts = (
+                    datetime.strptime(date_str, "%Y%m%d")
+                    .replace(tzinfo=timezone.utc)
+                    .timestamp()
+                )
+            except (ValueError, AttributeError):
+                ts = time.time()
+
+            store.store_entity_observation(
+                entity_id=topic_eid,
+                source_tool="wikipedia_pageviews",
+                observed_at=ts,
+                observation_type="pageview_spike",
+                depth_level=2,
+                value={
+                    "z_score": spike.get("z_score", 0.0),
+                    "latest_views": spike.get("latest_views", 0),
+                    "mean_views": spike.get("mean_views", 0.0),
+                    "spike_ratio": spike.get("spike_ratio", 0.0),
+                    "project": spike.get("project", ""),
+                },
+            )
 
     # ------------------------------------------------------------------
     # Top trending articles

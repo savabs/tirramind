@@ -25,13 +25,22 @@ Signal theory:
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from agent.data.cache import DataCache
 from agent.tools.base import Tool, ToolResult
+
+if TYPE_CHECKING:
+    from agent.pipeline.store import PipelineStore
+
+try:
+    from agent.pipeline.entity import entity_id_from_key
+except ImportError:  # pragma: no cover
+    entity_id_from_key = None  # type: ignore[assignment]
 
 log = logging.getLogger(__name__)
 
@@ -164,8 +173,14 @@ class CertTransparencyTool(Tool):
         "required": ["domain"],
     }
 
-    def __init__(self, cache: DataCache | None = None) -> None:
+    def __init__(
+        self,
+        cache: DataCache | None = None,
+        *,
+        pipeline_store: PipelineStore | None = None,
+    ) -> None:
         self._cache = cache
+        self._store = pipeline_store
 
     def execute(
         self,
@@ -256,6 +271,8 @@ class CertTransparencyTool(Tool):
         for cert in certs:
             lines.append(_format_cert(cert))
             lines.append("")
+
+        self._persist_entities(domain, certs)
 
         return ToolResult(
             success=True,
@@ -427,6 +444,8 @@ class CertTransparencyTool(Tool):
             lines.append(_format_cert(cert))
             lines.append("")
 
+        self._persist_entities(domain, deduped)
+
         return ToolResult(
             success=True,
             output="\n".join(lines),
@@ -438,6 +457,53 @@ class CertTransparencyTool(Tool):
                 "days_back": days_back,
             },
         )
+
+    # ------------------------------------------------------------------
+    # Entity persistence (L2)
+    # ------------------------------------------------------------------
+
+    def _persist_entities(self, domain: str, certs: list[dict[str, Any]]) -> None:
+        """Register domain entity and store L2 cert observations."""
+        if self._store is None or entity_id_from_key is None:
+            return
+        if not domain:
+            return
+        try:
+            self._persist_entities_inner(domain, certs)
+        except Exception:
+            log.exception("Entity persistence failed (non-fatal)")
+
+    def _persist_entities_inner(self, domain: str, certs: list[dict[str, Any]]) -> None:
+        assert self._store is not None  # noqa: S101
+        store = self._store
+
+        domain_eid = entity_id_from_key("domain", domain)
+        store.register_entity(
+            entity_type="domain",
+            canonical_name=domain,
+            entity_id=domain_eid,
+        )
+        store.add_entity_alias(domain_eid, "domain_name", domain)
+
+        for cert in certs:
+            ts_str = cert.get("entry_timestamp", "")
+            try:
+                ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00")).timestamp()
+            except (ValueError, AttributeError):
+                ts = time.time()
+
+            store.store_entity_observation(
+                entity_id=domain_eid,
+                source_tool="cert_transparency",
+                observed_at=ts,
+                observation_type="cert_issued",
+                depth_level=2,
+                value={
+                    "is_expired": cert.get("is_expired", False),
+                    "common_name": cert.get("common_name", ""),
+                    "issuer_name": cert.get("issuer_name", ""),
+                },
+            )
 
     # ------------------------------------------------------------------
     # crt.sh fetch

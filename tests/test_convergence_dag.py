@@ -79,6 +79,55 @@ def _make_detection_result(
     )
 
 
+def _store_tier1_payloads(store: PipelineStore) -> None:
+    """Store representative Tier 1 payloads for real extractor loading."""
+    store.store_data(
+        source="internet_infrastructure",
+        params={"mode": "outages"},
+        data={
+            "mode": "outages",
+            "alerts": [{"level": "critical", "country": "IR"}],
+            "events": [{"country": "IR", "score": 87.5}],
+            "country": "IR",
+        },
+    )
+    store.store_data(
+        source="power_grid",
+        params={"mode": "pricing"},
+        data={
+            "stressed_zones": ["N.Y.C."],
+            "zones": [
+                {
+                    "zone": "N.Y.C.",
+                    "da_lbmp": 48.0,
+                    "rt_lbmp": 61.0,
+                    "spread": 13.0,
+                }
+            ],
+        },
+    )
+    store.store_data(
+        source="defi_flows",
+        params={"mode": "tvl"},
+        data={
+            "total_tvl": 50_000_000_000.0,
+            "protocols": [
+                {
+                    "name": "Lido",
+                    "tvl_usd": 20_000_000_000.0,
+                    "change_1d_pct": -8.0,
+                },
+                {
+                    "name": "Aave",
+                    "tvl_usd": 10_000_000_000.0,
+                    "change_1d_pct": -6.0,
+                },
+            ],
+            "count": 2,
+        },
+    )
+
+
 # ═══════════════════════════════════════════════════════════════
 #  DAG Structure Tests
 # ═══════════════════════════════════════════════════════════════
@@ -266,6 +315,19 @@ class TestLoadEvidenceFromStore:
         # Store data then verify basic loading works
         evidence = _load_evidence_from_store(store)
         assert isinstance(evidence, list)
+
+    def test_loads_tier1_evidence_from_real_store_payloads(self):
+        """Tier 1 tool payloads should produce real evidence via extractors."""
+        store = _make_store()
+        _store_tier1_payloads(store)
+
+        as_of = time.time() + 1.0
+        evidence = _load_evidence_from_store(store, as_of=as_of)
+        signal_ids = {ev.signal_id for ev in evidence}
+
+        assert "internet.outage.critical_count" in signal_ids
+        assert "power_grid.pricing.max_spread" in signal_ids
+        assert "defi.tvl.total_usd" in signal_ids
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -467,6 +529,77 @@ class TestRunConvergenceDetection:
         assert sig["value"] == 0.9123
         assert "signal_name" in sig
         assert "categories" in sig
+
+    def test_tier1_store_backed_smoke_path_emits_signal(self, tmp_path):
+        """Real Tier 1 store payloads should reach emitted convergence signals."""
+        store = PipelineStore(tmp_path / "pipeline.db")
+        _store_tier1_payloads(store)
+        as_of = time.time() + 1.0
+
+        clique = _make_clique(
+            signals=(
+                "internet.outage.critical_count",
+                "power_grid.pricing.max_spread",
+                "defi.tvl.total_usd",
+            ),
+            categories=("physical_disruption", "financial_stress"),
+            score=0.88,
+        )
+        detection = DetectionResult(
+            clique=clique,
+            event_type="liquidity_infrastructure_stress",
+            template_match=0.6,
+            boosted_score=0.91,
+            lead_signal="internet.outage.critical_count",
+            lag_signals=["power_grid.pricing.max_spread", "defi.tvl.total_usd"],
+        )
+
+        with (
+            patch(
+                "agent.pipeline.dags.convergence_detection.PipelineStore",
+                return_value=store,
+            ),
+            patch(
+                "agent.pipeline.dags.convergence_detection.ConvergenceDetector"
+            ) as mock_detector_cls,
+        ):
+            detector = mock_detector_cls.return_value
+            detector.detect.return_value = [detection]
+            detector.persistence_history = {clique.fingerprint(): 2}
+
+            result = run_convergence_detection(
+                {"db_path": ":memory:", "as_of": as_of},
+                {},
+            )
+
+        assert result["detected"] == 1
+        assert result["emitted"] == 1
+        assert result["signals"][0]["event_type"] == "liquidity_infrastructure_stress"
+        assert result["signals"][0]["categories"] == [
+            "physical_disruption",
+            "financial_stress",
+        ]
+
+        registry = mock_detector_cls.call_args.args[1]
+        assert registry.get("internet.outage.critical_count") is not None
+        assert registry.get("power_grid.pricing.max_spread") is not None
+        assert registry.get("defi.tvl.total_usd") is not None
+
+        emitted_signal_name = result["signals"][0]["signal_name"]
+        emitted_rows = store.query_signals(
+            emitted_signal_name,
+            limit=5,
+        )
+        assert len(emitted_rows) == 1
+        metadata = emitted_rows[0]["metadata"]
+        assert metadata["event_type"] == "liquidity_infrastructure_stress"
+        assert metadata["lead_signal"] == "internet.outage.critical_count"
+        assert metadata["persistence_days"] == 2
+        assert set(metadata["signals_involved"]) == {
+            "internet.outage.critical_count",
+            "power_grid.pricing.max_spread",
+            "defi.tvl.total_usd",
+        }
 
 
 # ═══════════════════════════════════════════════════════════════

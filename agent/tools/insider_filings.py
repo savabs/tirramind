@@ -19,12 +19,21 @@ import time
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from agent.data.cache import DataCache
 from agent.tools.base import Tool, ToolResult
+
+if TYPE_CHECKING:
+    from agent.pipeline.store import PipelineStore
+
+try:
+    from agent.pipeline.entity import entity_id_from_key, normalize_company_name
+except ImportError:  # pragma: no cover — entity module always available
+    entity_id_from_key = None  # type: ignore[assignment]
+    normalize_company_name = None  # type: ignore[assignment]
 
 log = logging.getLogger(__name__)
 
@@ -72,8 +81,14 @@ class InsiderFilingsTool(Tool):
         "required": [],
     }
 
-    def __init__(self, cache: DataCache | None = None) -> None:
+    def __init__(
+        self,
+        cache: DataCache | None = None,
+        *,
+        pipeline_store: PipelineStore | None = None,
+    ) -> None:
         self._cache = cache
+        self._store = pipeline_store
 
     # ------------------------------------------------------------------
     # Core execution
@@ -110,6 +125,12 @@ class InsiderFilingsTool(Tool):
         # Parse each filing to extract transactions
         transactions = self._parse_filings(raw_filings)
 
+        # L2: persist entities + observations when PipelineStore available
+        try:
+            self._persist_entities(transactions)
+        except Exception:
+            log.exception("Entity persistence failed in execute (non-fatal)")
+
         if not transactions:
             return ToolResult(
                 success=True,
@@ -134,11 +155,17 @@ class InsiderFilingsTool(Tool):
             return ToolResult(
                 success=True,
                 output=f"Scanned {len(raw_filings)} filings, found {len(transactions)} purchases. No clusters of {min_cluster_size}+ insiders detected.",
-                data={"clusters": [], "total_filings": len(raw_filings), "total_purchases": len(transactions)},
+                data={
+                    "clusters": [],
+                    "total_filings": len(raw_filings),
+                    "total_purchases": len(transactions),
+                },
             )
 
         # Format output
-        lines = [f"Insider Buying Clusters — {len(clusters)} found (last {days_back} days):\n"]
+        lines = [
+            f"Insider Buying Clusters — {len(clusters)} found (last {days_back} days):\n"
+        ]
         for i, c in enumerate(clusters, 1):
             lines.append(
                 f"  {i}. {c['ticker']} ({c['company']}) — {c['insider_count']} insiders, "
@@ -222,7 +249,9 @@ class InsiderFilingsTool(Tool):
 
         return all_hits
 
-    def _fetch_filing_xml(self, cik: str, accession: str, primary_doc: str) -> str | None:
+    def _fetch_filing_xml(
+        self, cik: str, accession: str, primary_doc: str
+    ) -> str | None:
         """Fetch a single Form 4 XML from EDGAR archives."""
         # Normalize accession: remove dashes for URL path
         accession_clean = accession.replace("-", "")
@@ -238,7 +267,9 @@ class InsiderFilingsTool(Tool):
         time.sleep(_SEC_REQUEST_DELAY)
 
         try:
-            with httpx.Client(timeout=15, headers={"User-Agent": _USER_AGENT}, follow_redirects=True) as client:
+            with httpx.Client(
+                timeout=15, headers={"User-Agent": _USER_AGENT}, follow_redirects=True
+            ) as client:
                 resp = client.get(url)
                 resp.raise_for_status()
                 xml_text = resp.text
@@ -289,22 +320,130 @@ class InsiderFilingsTool(Tool):
             # Ticker comes from the XML (issuerTradingSymbol). Pass empty here.
             company = _extract_company_name(company_display)
             issuer_cik = ciks[1] if len(ciks) > 1 else ciks[0]
+            reporter_cik = ciks[0]
 
             if not accession:
                 continue
 
             # Determine primary document name from the hit
-            primary_doc = hit.get("_id", "").split(":", 1)[-1] if ":" in hit.get("_id", "") else ""
+            primary_doc = (
+                hit.get("_id", "").split(":", 1)[-1]
+                if ":" in hit.get("_id", "")
+                else ""
+            )
             if not primary_doc:
                 primary_doc = "form4.xml"  # fallback
 
             # Try to get transaction details from XML
             xml_text = self._fetch_filing_xml(issuer_cik, accession, primary_doc)
             if xml_text:
-                txns = _parse_form4_xml(xml_text, reporter_name, "", company, file_date)
+                txns = _parse_form4_xml(
+                    xml_text,
+                    reporter_name,
+                    "",
+                    company,
+                    file_date,
+                    reporter_cik=reporter_cik,
+                    issuer_cik=issuer_cik,
+                )
                 transactions.extend(txns)
 
         return transactions
+
+    # ------------------------------------------------------------------
+    # Entity persistence (L2)
+    # ------------------------------------------------------------------
+
+    def _persist_entities(self, transactions: list[dict[str, Any]]) -> None:
+        """Register entities and store L2 observations.
+
+        Skips silently if no PipelineStore is configured or if entity
+        helpers are unavailable. Any persistence error is caught and
+        logged — it must never prevent the tool from returning results.
+        """
+        if self._store is None or entity_id_from_key is None:
+            return
+        if not transactions:
+            return
+
+        try:
+            self._persist_entities_inner(transactions)
+        except Exception:
+            log.exception("Entity persistence failed (non-fatal)")
+
+    def _persist_entities_inner(self, transactions: list[dict[str, Any]]) -> None:
+        """Inner persistence logic, separated for testability."""
+        assert self._store is not None  # noqa: S101 — guarded by caller
+        store = self._store
+
+        # Deduplicate companies by issuer_cik
+        seen_companies: set[str] = set()
+        # Deduplicate insiders by reporter_cik
+        seen_insiders: set[str] = set()
+
+        for txn in transactions:
+            issuer_cik = txn.get("issuer_cik", "")
+            reporter_cik = txn.get("reporter_cik", "")
+            company = txn.get("company", "")
+            ticker = txn.get("ticker", "")
+
+            # ── Register company ──
+            if issuer_cik and issuer_cik not in seen_companies:
+                seen_companies.add(issuer_cik)
+                company_eid = entity_id_from_key("company", issuer_cik)
+                try:
+                    canon = normalize_company_name(company) if company else company
+                except ValueError:
+                    canon = company  # normalization failed, use raw
+                store.register_entity(
+                    entity_type="company",
+                    canonical_name=canon or issuer_cik,
+                    entity_id=company_eid,
+                )
+                store.add_entity_alias(company_eid, "sec_cik", issuer_cik)
+                if ticker:
+                    store.add_entity_alias(company_eid, "ticker", ticker)
+
+            # ── Register insider ──
+            if reporter_cik and reporter_cik not in seen_insiders:
+                seen_insiders.add(reporter_cik)
+                insider_eid = entity_id_from_key("person", reporter_cik)
+                store.register_entity(
+                    entity_type="person",
+                    canonical_name=txn.get("name", reporter_cik),
+                    entity_id=insider_eid,
+                )
+                store.add_entity_alias(insider_eid, "sec_cik", reporter_cik)
+
+            # ── Store observation ──
+            if reporter_cik:
+                insider_eid = entity_id_from_key("person", reporter_cik)
+                observed_at = _date_to_timestamp(txn.get("date", ""))
+                store.store_entity_observation(
+                    entity_id=insider_eid,
+                    source_tool="insider_filings",
+                    observed_at=observed_at,
+                    observation_type="insider_trade",
+                    depth_level=2,
+                    value={
+                        "ticker": ticker,
+                        "company": company,
+                        "shares": txn.get("shares", 0),
+                        "price": txn.get("price", 0),
+                        "role": txn.get("role", ""),
+                    },
+                )
+
+            # ── Link person → company ──
+            if issuer_cik and reporter_cik:
+                store.link_entities(
+                    entity_id_a=entity_id_from_key("person", reporter_cik),
+                    entity_id_b=entity_id_from_key("company", issuer_cik),
+                    link_type="works_for",
+                    source="insider_filings",
+                    confidence=1.0,
+                    metadata={"relationship": txn.get("role", "")},
+                )
 
     def _detect_clusters(
         self, transactions: list[dict[str, Any]], min_size: int = 3
@@ -327,7 +466,9 @@ class InsiderFilingsTool(Tool):
             buys.sort(key=lambda t: t["date"])
 
             # Sliding window: find maximal clusters of distinct insiders within 14 days
-            best_cluster = self._find_best_cluster(buys, window_days=14, min_size=min_size)
+            best_cluster = self._find_best_cluster(
+                buys, window_days=14, min_size=min_size
+            )
             if best_cluster:
                 clusters.append(best_cluster)
 
@@ -362,13 +503,17 @@ class InsiderFilingsTool(Tool):
                 if buy_date > window_end:
                     break
 
-                name_key = buys[j]["name"].upper().strip()
+                # CIK-based dedup when available, fall back to name
+                cik = buys[j].get("reporter_cik", "")
+                name_key = cik if cik else buys[j]["name"].upper().strip()
                 if name_key not in seen_names:
                     seen_names.add(name_key)
                     window_buys.append(buys[j])
 
             if len(seen_names) >= min_size:
-                total_value = sum(b["shares"] * b["price"] for b in window_buys if b["price"] > 0)
+                total_value = sum(
+                    b["shares"] * b["price"] for b in window_buys if b["price"] > 0
+                )
                 score = len(seen_names) * total_value
 
                 if score > best_score:
@@ -376,9 +521,21 @@ class InsiderFilingsTool(Tool):
                     # Classify conviction
                     roles = [b.get("role", "").upper() for b in window_buys]
                     has_csuite = any(
-                        r for r in roles
-                        if any(title in r for title in ("CEO", "CFO", "COO", "PRESIDENT", "CHIEF"))
+                        r
+                        for r in roles
+                        if any(
+                            title in r
+                            for title in ("CEO", "CFO", "COO", "PRESIDENT", "CHIEF")
+                        )
                     )
+
+                    # Build entity_ids mapping for L2 traceability
+                    eid_map: dict[str, str] = {}
+                    if entity_id_from_key is not None:
+                        for b in window_buys:
+                            rcik = b.get("reporter_cik", "")
+                            if rcik:
+                                eid_map[b["name"]] = entity_id_from_key("person", rcik)
 
                     best = {
                         "ticker": buys[0]["ticker"],
@@ -389,11 +546,15 @@ class InsiderFilingsTool(Tool):
                         "total_value": total_value,
                         "insider_count": len(seen_names),
                         "conviction": (
-                            "high" if (has_csuite and len(seen_names) >= 4) else
-                            "medium-high" if has_csuite else
-                            "medium" if len(seen_names) >= 4 else
-                            "moderate"
+                            "high"
+                            if (has_csuite and len(seen_names) >= 4)
+                            else (
+                                "medium-high"
+                                if has_csuite
+                                else "medium" if len(seen_names) >= 4 else "moderate"
+                            )
                         ),
+                        "entity_ids": eid_map,
                     }
 
         return best
@@ -403,12 +564,16 @@ class InsiderFilingsTool(Tool):
 # Form 4 XML parsing
 # ------------------------------------------------------------------
 
+
 def _parse_form4_xml(
     xml_text: str,
     fallback_name: str,
     fallback_ticker: str,
     fallback_company: str,
     fallback_date: str,
+    *,
+    reporter_cik: str = "",
+    issuer_cik: str = "",
 ) -> list[dict[str, Any]]:
     """Parse a Form 4 XML document. Returns list of transaction dicts.
 
@@ -442,6 +607,9 @@ def _parse_form4_xml(
         c = issuer.find(f"{ns}issuerName")
         if c is not None and c.text:
             company = c.text.strip()
+        cik_elem = issuer.find(f"{ns}issuerCik")
+        if cik_elem is not None and cik_elem.text:
+            issuer_cik = cik_elem.text.strip()
 
     # Reporter info
     reporter_name = fallback_name
@@ -453,6 +621,9 @@ def _parse_form4_xml(
             name_elem = id_elem.find(f"{ns}rptOwnerName")
             if name_elem is not None and name_elem.text:
                 reporter_name = _clean_name_raw(name_elem.text)
+            cik_elem = id_elem.find(f"{ns}rptOwnerCik")
+            if cik_elem is not None and cik_elem.text:
+                reporter_cik = cik_elem.text.strip()
         if rel is not None:
             title_elem = rel.find(f"{ns}officerTitle")
             if title_elem is not None and title_elem.text:
@@ -466,34 +637,50 @@ def _parse_form4_xml(
             continue
         for txn in txn_group.findall(f"{ns}nonDerivativeTransaction"):
             code_elem = txn.find(f".//{ns}transactionCode")
-            code = code_elem.text.strip() if code_elem is not None and code_elem.text else ""
+            code = (
+                code_elem.text.strip()
+                if code_elem is not None and code_elem.text
+                else ""
+            )
 
             if code != "P":
                 continue  # only open-market purchases
 
             # Shares
             shares_elem = txn.find(f".//{ns}transactionShares/{ns}value")
-            shares = _safe_float_or_zero(shares_elem.text if shares_elem is not None else None)
+            shares = _safe_float_or_zero(
+                shares_elem.text if shares_elem is not None else None
+            )
 
             # Price
             price_elem = txn.find(f".//{ns}transactionPricePerShare/{ns}value")
-            price = _safe_float_or_zero(price_elem.text if price_elem is not None else None)
+            price = _safe_float_or_zero(
+                price_elem.text if price_elem is not None else None
+            )
 
             # Date
             date_elem = txn.find(f".//{ns}transactionDate/{ns}value")
-            txn_date = date_elem.text.strip() if date_elem is not None and date_elem.text else fallback_date
+            txn_date = (
+                date_elem.text.strip()
+                if date_elem is not None and date_elem.text
+                else fallback_date
+            )
 
             if shares > 0:
-                transactions.append({
-                    "ticker": ticker,
-                    "company": company,
-                    "name": reporter_name,
-                    "role": role,
-                    "type": "P",
-                    "shares": shares,
-                    "price": price,
-                    "date": txn_date,
-                })
+                transactions.append(
+                    {
+                        "ticker": ticker,
+                        "company": company,
+                        "name": reporter_name,
+                        "role": role,
+                        "type": "P",
+                        "shares": shares,
+                        "price": price,
+                        "date": txn_date,
+                        "reporter_cik": reporter_cik,
+                        "issuer_cik": issuer_cik,
+                    }
+                )
 
     return transactions
 
@@ -502,9 +689,11 @@ def _parse_form4_xml(
 # Helpers
 # ------------------------------------------------------------------
 
+
 def _extract_ticker(display_name: str) -> str:
     """Extract ticker from EDGAR display name like 'Apple Inc.  (AAPL)  (CIK ...)'."""
     import re
+
     # Match first parenthesized token that looks like a ticker (1-5 uppercase + optional suffix)
     m = re.search(r"\(([A-Z][A-Z0-9\-\.]{0,9})(?:,\s*[A-Z0-9\-\.]+)*\)", display_name)
     return m.group(1) if m else ""
@@ -548,3 +737,11 @@ def _parse_date(date_str: str) -> date | None:
         return datetime.strptime(date_str[:10], "%Y-%m-%d").date()
     except (ValueError, TypeError):
         return None
+
+
+def _date_to_timestamp(date_str: str) -> float:
+    """Convert YYYY-MM-DD to Unix timestamp. Returns 0.0 on failure."""
+    try:
+        return datetime.strptime(date_str[:10], "%Y-%m-%d").timestamp()
+    except (ValueError, TypeError):
+        return 0.0
