@@ -118,7 +118,12 @@ def backfill(
 
     if raw.empty:
         log.error("yfinance returned empty DataFrame — aborting")
-        return {"instruments": 0, "days_total": 0, "observations_stored": 0, "days_skipped": 0}
+        return {
+            "instruments": 0,
+            "days_total": 0,
+            "observations_stored": 0,
+            "days_skipped": 0,
+        }
 
     log.info("Downloaded %d rows × %d columns", len(raw), len(raw.columns))
 
@@ -156,7 +161,11 @@ def backfill(
             continue
 
         closes = df["Close"].values.astype(float)
-        volumes = df["Volume"].values.astype(float) if "Volume" in df.columns else np.zeros(len(closes))
+        volumes = (
+            df["Volume"].values.astype(float)
+            if "Volume" in df.columns
+            else np.zeros(len(closes))
+        )
         highs = df["High"].values.astype(float) if "High" in df.columns else closes
         lows = df["Low"].values.astype(float) if "Low" in df.columns else closes
         dates = df.index

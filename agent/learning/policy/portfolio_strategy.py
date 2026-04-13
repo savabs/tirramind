@@ -30,8 +30,8 @@ import torch
 
 from agent.learning.policy.asset_mapper import AssetMapper
 from agent.learning.policy.sac import SACTrainer
-from agent.learning.policy.state_assembler import StateAssembler
-from agent.quant.backtest import Strategy
+from agent.learning.policy.state_assembler import InstrumentStateAssembler, StateAssembler
+from agent.quant.backtest import MultiAssetStrategy, Strategy
 
 log = logging.getLogger(__name__)
 
@@ -178,5 +178,76 @@ class SACPortfolioStrategy(Strategy):
 
             # Conviction level = mean absolute position
             weights[t] = float(np.abs(action).mean())
+
+        return weights
+
+
+class MultiAssetSACStrategy(MultiAssetStrategy):
+    """Multi-asset SAC policy producing per-instrument weight vectors.
+
+    For each test timestep, assembles the instrument-augmented state tensor
+    and queries SAC for an N-dimensional deterministic action, where each
+    action dimension corresponds to one instrument.
+
+    test_extra must contain:
+        'instrument_surprises': list[dict[str, tuple]] — per-timestep
+        'entity_alerts': list[list[EntityAlert]] — per-timestep
+        'beliefs': list[list[BeliefState]] — per-timestep
+        'market_features': list[dict[str, float]] — per-timestep
+    """
+
+    def __init__(
+        self,
+        trainer: SACTrainer,
+        state_assembler: InstrumentStateAssembler,
+    ) -> None:
+        self._trainer = trainer
+        self._assembler = state_assembler
+
+    @property
+    def name(self) -> str:
+        return "multi_asset_sac"
+
+    def generate_weights(
+        self,
+        train_returns: np.ndarray,
+        test_length: int,
+        instrument_names: list[str],
+        *,
+        train_extra: dict[str, Any] | None = None,
+        test_extra: dict[str, Any] | None = None,
+    ) -> np.ndarray:
+        N = len(instrument_names)
+        weights = np.zeros((test_length, N))
+
+        if test_extra is None:
+            return weights
+
+        inst_surprises_list = test_extra.get("instrument_surprises", [])
+        alerts_list = test_extra.get("entity_alerts", [])
+        beliefs_list = test_extra.get("beliefs", [])
+        market_list = test_extra.get("market_features", [])
+
+        for t in range(test_length):
+            inst_surp = (
+                inst_surprises_list[t] if t < len(inst_surprises_list) else {}
+            )
+            alerts = alerts_list[t] if t < len(alerts_list) else []
+            beliefs = beliefs_list[t] if t < len(beliefs_list) else []
+            market = market_list[t] if t < len(market_list) else {}
+
+            state, meta = self._assembler.assemble(
+                instrument_surprises=inst_surp,
+                entity_alerts=alerts,
+                beliefs=beliefs,
+                market_features=market,
+            )
+
+            # SAC deterministic action → N-dim weight vector
+            action = self._trainer.select_action(state, deterministic=True)
+
+            # Truncate or pad to match instrument count
+            a_len = min(len(action), N)
+            weights[t, :a_len] = action[:a_len]
 
         return weights

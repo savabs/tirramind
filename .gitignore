@@ -47,4 +47,5 @@ tasks/
 *.json
 *.log
 *.csv
+*.pkl
 *.txt

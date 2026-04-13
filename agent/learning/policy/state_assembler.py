@@ -183,3 +183,161 @@ class StateAssembler:
         block[3] = min(len(flags) / 10.0, 1.0)
 
         return block
+
+
+class InstrumentStateAssembler:
+    """Assemble multi-asset state tensor with per-instrument surprise block.
+
+    State layout (contiguous float32):
+        [0 : N*5]                  → instrument surprise vectors (fixed ordering)
+        [N*5 : N*5 + E*5]         → top-E entity surprise vectors
+        [... : ... + E*4]          → entity belief features
+        [... : ... + M]            → global market features
+        [... : ... + 1]            → normalised entity count
+        [... : ... + 4]            → adversarial summary
+
+    where N = n_instruments, E = max_entities, M = market_dim.
+
+    The instrument block uses a fixed ordering matching the constructor's
+    ``instrument_tickers`` list, so SAC action dimension i maps to
+    instrument i.  Missing instruments get zero-padded surprise.
+    """
+
+    def __init__(
+        self,
+        instrument_tickers: list[str],
+        max_entities: int = 50,
+        surprise_dim: int = 5,
+        belief_dim: int = 4,
+        market_dim: int = 8,
+    ) -> None:
+        self._tickers = list(instrument_tickers)
+        self._n_instruments = len(instrument_tickers)
+        self._ticker_index = {t: i for i, t in enumerate(instrument_tickers)}
+        self._max_entities = max_entities
+        self._surprise_dim = surprise_dim
+        self._belief_dim = belief_dim
+        self._market_dim = market_dim
+
+    @property
+    def n_instruments(self) -> int:
+        return self._n_instruments
+
+    @property
+    def state_dim(self) -> int:
+        N = self._n_instruments
+        E = self._max_entities
+        return (
+            N * self._surprise_dim
+            + E * self._surprise_dim
+            + E * self._belief_dim
+            + self._market_dim
+            + 1
+            + _ADVERSARIAL_DIM
+        )
+
+    def assemble(
+        self,
+        instrument_surprises: dict[str, tuple[float, ...]],
+        entity_alerts: list[EntityAlert],
+        beliefs: list[BeliefState],
+        market_features: dict[str, float],
+        asset_map: dict[str, str] | None = None,
+        adversarial_flags: list[AdversarialFlag] | None = None,
+    ) -> tuple[torch.Tensor, dict[str, Any]]:
+        """Build a fixed-size state tensor for multi-asset SAC.
+
+        Parameters
+        ----------
+        instrument_surprises : {ticker → 5-tuple surprise_vector} for instruments.
+        entity_alerts : EntityAlerts from the current timestep.
+        beliefs : BeliefStates from the world model.
+        market_features : global features.
+        asset_map : optional {entity_id → ticker} for entity filtering.
+        adversarial_flags : optional adversarial flags.
+
+        Returns
+        -------
+        (state_tensor, metadata)
+        """
+        N = self._n_instruments
+        E = self._max_entities
+
+        # ── Instrument surprise block (N, 5) ──
+        inst_block = np.zeros((N, self._surprise_dim), dtype=np.float32)
+        n_instruments_active = 0
+        for ticker, sv in instrument_surprises.items():
+            idx = self._ticker_index.get(ticker)
+            if idx is not None:
+                inst_block[idx] = sv[:self._surprise_dim]
+                n_instruments_active += 1
+
+        # ── Entity surprise block (E, 5) — top-E by composite ──
+        if asset_map:
+            tradeable_alerts = [
+                a for a in entity_alerts if a.entity_id in asset_map
+            ]
+        else:
+            tradeable_alerts = list(entity_alerts)
+        tradeable_alerts.sort(key=lambda a: a.composite_surprise, reverse=True)
+        selected = tradeable_alerts[:E]
+        n_entities_active = len(selected)
+
+        entity_surprise = np.zeros((E, self._surprise_dim), dtype=np.float32)
+        for i, alert in enumerate(selected):
+            entity_surprise[i] = [
+                alert.obs_type_surprise,
+                alert.temporal_surprise,
+                alert.value_surprise,
+                alert.neighborhood_surprise,
+                alert.memory_drift,
+            ]
+
+        # ── Belief block (E, 4) ──
+        belief_by_entity: dict[str, BeliefState] = {}
+        for b in beliefs:
+            if b.entity_id is not None:
+                belief_by_entity[b.entity_id] = b
+
+        belief_block = np.zeros((E, self._belief_dim), dtype=np.float32)
+        for i, alert in enumerate(selected):
+            b = belief_by_entity.get(alert.entity_id)
+            if b is not None:
+                belief_block[i] = [
+                    b.mean if b.mean is not None else 0.0,
+                    b.variance if b.variance is not None else 0.0,
+                    b.confidence,
+                    1.0 if b.stale else 0.0,
+                ]
+
+        # ── Market block (M,) ──
+        market_block = np.zeros(self._market_dim, dtype=np.float32)
+        market_keys = sorted(market_features.keys())[: self._market_dim]
+        for j, key in enumerate(market_keys):
+            market_block[j] = market_features.get(key, 0.0)
+
+        # ── Entity count + adversarial ──
+        entity_count = np.array(
+            [n_entities_active / max(E, 1)], dtype=np.float32
+        )
+        adv_block = StateAssembler._adversarial_block(adversarial_flags)
+
+        state = np.concatenate(
+            [
+                inst_block.ravel(),
+                entity_surprise.ravel(),
+                belief_block.ravel(),
+                market_block,
+                entity_count,
+                adv_block,
+            ]
+        )
+
+        metadata = {
+            "n_instruments_active": n_instruments_active,
+            "n_entities_active": n_entities_active,
+            "instrument_tickers": list(self._tickers),
+            "entity_order": [a.entity_id for a in selected],
+        }
+
+        return torch.from_numpy(state), metadata
