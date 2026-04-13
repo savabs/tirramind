@@ -45,6 +45,9 @@ def get_default_dags(tool_registry: Any) -> list[DAG]:
     from agent.pipeline.dags.adversarial_scan import (
         build_adversarial_scan_dag,
     )
+    from agent.pipeline.dags.inference import (
+        build_inference_dag,
+    )
 
     return [
         build_daily_collection_dag(),
@@ -57,4 +60,5 @@ def get_default_dags(tool_registry: Any) -> list[DAG]:
         build_world_model_dag(),
         build_adversarial_scan_dag(),
         build_rl_training_dag(),
+        build_inference_dag(),
     ]

@@ -30,7 +30,10 @@ import torch
 
 from agent.learning.policy.asset_mapper import AssetMapper
 from agent.learning.policy.sac import SACTrainer
-from agent.learning.policy.state_assembler import InstrumentStateAssembler, StateAssembler
+from agent.learning.policy.state_assembler import (
+    InstrumentStateAssembler,
+    StateAssembler,
+)
 from agent.quant.backtest import MultiAssetStrategy, Strategy
 
 log = logging.getLogger(__name__)
@@ -229,9 +232,7 @@ class MultiAssetSACStrategy(MultiAssetStrategy):
         market_list = test_extra.get("market_features", [])
 
         for t in range(test_length):
-            inst_surp = (
-                inst_surprises_list[t] if t < len(inst_surprises_list) else {}
-            )
+            inst_surp = inst_surprises_list[t] if t < len(inst_surprises_list) else {}
             alerts = alerts_list[t] if t < len(alerts_list) else []
             beliefs = beliefs_list[t] if t < len(beliefs_list) else []
             market = market_list[t] if t < len(market_list) else {}
@@ -249,5 +250,71 @@ class MultiAssetSACStrategy(MultiAssetStrategy):
             # Truncate or pad to match instrument count
             a_len = min(len(action), N)
             weights[t, :a_len] = action[:a_len]
+
+        return weights
+
+
+class MultiAssetWeightedSurpriseStrategy(MultiAssetStrategy):
+    """Multi-asset surprise-weighted strategy (Phase 24e adaptation).
+
+    For each test timestep, computes a composite surprise per instrument
+    using learned weights.  Instruments whose composite surprise exceeds
+    a z-threshold receive equal-weight long allocation (1/K where K is
+    the number of triggered instruments).  Others receive weight 0.
+
+    test_extra must contain:
+        'instrument_surprises': list[dict[str, tuple[float, ...]]]
+            Per-timestep mapping ticker → surprise vector (e.g. 5 floats).
+    """
+
+    def __init__(
+        self,
+        surprise_weights: tuple[float, ...] = (1.0, 1.0, 1.0, 1.0, 1.0),
+        threshold: float = 2.0,
+    ) -> None:
+        self._weights = np.array(surprise_weights, dtype=np.float64)
+        self._threshold = threshold
+
+    @property
+    def name(self) -> str:
+        return "multi_asset_weighted_surprise"
+
+    def generate_weights(
+        self,
+        train_returns: np.ndarray,
+        test_length: int,
+        instrument_names: list[str],
+        *,
+        train_extra: dict[str, Any] | None = None,
+        test_extra: dict[str, Any] | None = None,
+    ) -> np.ndarray:
+        N = len(instrument_names)
+        weights = np.zeros((test_length, N))
+
+        if test_extra is None:
+            return weights
+
+        inst_surprises_list = test_extra.get("instrument_surprises", [])
+        name_to_idx = {n: i for i, n in enumerate(instrument_names)}
+
+        for t in range(test_length):
+            if t >= len(inst_surprises_list):
+                continue
+            surp_map = inst_surprises_list[t]
+            triggered: list[int] = []
+            for ticker, surp_vec in surp_map.items():
+                idx = name_to_idx.get(ticker)
+                if idx is None:
+                    continue
+                sv = np.array(surp_vec, dtype=np.float64)
+                # Composite surprise: dot product of learned weights × surprise
+                w = self._weights[: len(sv)]
+                composite = float(np.dot(w, sv))
+                if composite > self._threshold:
+                    triggered.append(idx)
+            if triggered:
+                k = len(triggered)
+                for idx in triggered:
+                    weights[t, idx] = 1.0 / k
 
         return weights

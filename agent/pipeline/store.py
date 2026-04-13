@@ -14,6 +14,8 @@ Schema:
     entity_aliases       — mappings from source-specific IDs to canonical entities
     entity_observations  — timestamped entity data points with depth level
     depth_evaluations    — depth measurement metrics (MI gain, KL divergence)
+    portfolio_weights    — per-instrument weights emitted by inference DAG
+    paper_trade_pnl      — daily paper-trade P&L records
 
 Usage:
     store = PipelineStore(Path(".tirra_pipeline/pipeline.db"))
@@ -263,6 +265,38 @@ CREATE TABLE IF NOT EXISTS rl_policy_checkpoints (
 );
 CREATE INDEX IF NOT EXISTS idx_rl_checkpoints_type
     ON rl_policy_checkpoints(policy_type, saved_at);
+
+-- Portfolio weights (Phase 24d – inference DAG)
+
+CREATE TABLE IF NOT EXISTS portfolio_weights (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date TEXT NOT NULL,
+    ticker TEXT NOT NULL,
+    weight REAL NOT NULL,
+    metadata_json TEXT,
+    created_at REAL NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_portfolio_weights_unique
+    ON portfolio_weights(date, ticker);
+
+CREATE INDEX IF NOT EXISTS idx_portfolio_weights_date
+    ON portfolio_weights(date);
+
+-- Paper trade P&L (Phase 24d – inference DAG)
+
+CREATE TABLE IF NOT EXISTS paper_trade_pnl (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date TEXT NOT NULL UNIQUE,
+    portfolio_return REAL NOT NULL,
+    benchmark_return REAL NOT NULL,
+    cumulative_return REAL NOT NULL,
+    metadata_json TEXT,
+    created_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_paper_trade_pnl_date
+    ON paper_trade_pnl(date);
 """
 
 
@@ -1746,4 +1780,157 @@ class PipelineStore:
         except (json.JSONDecodeError, TypeError):
             d["metrics"] = None
         d["is_best"] = bool(d["is_best"])
+        return d
+
+    # ── portfolio weights (Phase 24d) ─────────────────────────
+
+    def store_portfolio_weights(
+        self,
+        date: str,
+        weights: dict[str, float],
+        metadata: dict[str, Any] | None = None,
+    ) -> list[int]:
+        """Store portfolio weights for a given date.
+
+        One row per ticker. Uses INSERT OR REPLACE so re-runs for the
+        same date are idempotent.
+
+        Parameters
+        ----------
+        date : Calendar date string, e.g. ``"2026-04-14"``.
+        weights : ``{ticker: weight}`` mapping.
+        metadata : Optional per-date metadata (stored identically on each row).
+
+        Returns
+        -------
+        List of row IDs for stored rows.
+        """
+        if not date or not date.strip():
+            raise ValueError("date must be non-empty")
+        if not weights:
+            raise ValueError("weights must be non-empty")
+        conn = self._get_conn()
+        meta_json = json.dumps(metadata, default=str) if metadata else None
+        now = time.time()
+        row_ids: list[int] = []
+        try:
+            for ticker, weight in weights.items():
+                cur = conn.execute(
+                    "INSERT OR REPLACE INTO portfolio_weights "
+                    "(date, ticker, weight, metadata_json, created_at) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (date.strip(), ticker, float(weight), meta_json, now),
+                )
+                if cur.lastrowid:
+                    row_ids.append(cur.lastrowid)
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        log.debug("Stored %d portfolio weights for %s", len(row_ids), date)
+        return row_ids
+
+    def query_portfolio_weights(self, date: str) -> dict[str, float]:
+        """Query portfolio weights for a specific date.
+
+        Returns
+        -------
+        ``{ticker: weight}`` dict.  Empty dict if no weights for that date.
+        """
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT ticker, weight FROM portfolio_weights WHERE date=?",
+            (date.strip(),),
+        ).fetchall()
+        return {r["ticker"]: r["weight"] for r in rows}
+
+    # ── paper trade P&L (Phase 24d) ───────────────────────────
+
+    def store_paper_pnl(
+        self,
+        date: str,
+        portfolio_return: float,
+        benchmark_return: float,
+        cumulative_return: float,
+        metadata: dict[str, Any] | None = None,
+    ) -> int:
+        """Store one day of paper-trade P&L.
+
+        Uses INSERT OR REPLACE keyed on the UNIQUE date column, so
+        re-runs for the same date overwrite the previous row.
+
+        Returns
+        -------
+        Row ID.
+        """
+        if not date or not date.strip():
+            raise ValueError("date must be non-empty")
+        conn = self._get_conn()
+        cur = conn.execute(
+            "INSERT OR REPLACE INTO paper_trade_pnl "
+            "(date, portfolio_return, benchmark_return, cumulative_return, "
+            " metadata_json, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                date.strip(),
+                float(portfolio_return),
+                float(benchmark_return),
+                float(cumulative_return),
+                json.dumps(metadata, default=str) if metadata else None,
+                time.time(),
+            ),
+        )
+        conn.commit()
+        row_id = cur.lastrowid
+        log.debug(
+            "Stored paper P&L for %s: port=%.6f bench=%.6f",
+            date,
+            portfolio_return,
+            benchmark_return,
+        )
+        return row_id  # type: ignore[return-value]
+
+    def query_paper_pnl(
+        self,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        limit: int = 365,
+    ) -> list[dict[str, Any]]:
+        """Query paper-trade P&L records.
+
+        Parameters
+        ----------
+        start_date, end_date : Calendar date strings for range filtering.
+        limit : Maximum records to return.
+
+        Returns
+        -------
+        List of dicts with ``date``, ``portfolio_return``, ``benchmark_return``,
+        ``cumulative_return``, and ``metadata`` keys.
+        """
+        conn = self._get_conn()
+        clauses: list[str] = []
+        params: list[Any] = []
+        if start_date is not None:
+            clauses.append("date >= ?")
+            params.append(start_date.strip())
+        if end_date is not None:
+            clauses.append("date <= ?")
+            params.append(end_date.strip())
+        where = " AND ".join(clauses) if clauses else "1=1"
+        params.append(limit)
+        rows = conn.execute(
+            f"SELECT * FROM paper_trade_pnl WHERE {where} "  # noqa: S608
+            "ORDER BY date ASC LIMIT ?",
+            params,
+        ).fetchall()
+        return [self._pnl_row_to_dict(r) for r in rows]
+
+    @staticmethod
+    def _pnl_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+        d = dict(row)
+        try:
+            d["metadata"] = json.loads(d.pop("metadata_json", "null"))
+        except (json.JSONDecodeError, TypeError):
+            d["metadata"] = None
         return d
