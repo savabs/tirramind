@@ -97,6 +97,10 @@ class BeliefState:
     stale: bool = False
     """True if no fresh evidence was available when this belief was computed."""
 
+    # ── Entity linkage (Phase 20) ──
+    entity_id: str | None = None
+    """Optional entity ID to link the belief to a specific entity."""
+
     # ── Optional metadata ──
     metadata: dict[str, Any] | None = field(default=None, hash=False)
     """Free-form JSON-serializable context for debugging / provenance."""
@@ -118,6 +122,7 @@ class BeliefState:
             "model_graph_hash": self.model_graph_hash,
             "confidence": self.confidence,
             "stale": self.stale,
+            "entity_id": self.entity_id,
             "metadata": self.metadata,
         }
 
@@ -137,6 +142,7 @@ class BeliefState:
             model_graph_hash=d.get("model_graph_hash", ""),
             confidence=d.get("confidence", 1.0),
             stale=d.get("stale", False),
+            entity_id=d.get("entity_id"),
             metadata=d.get("metadata"),
         )
 

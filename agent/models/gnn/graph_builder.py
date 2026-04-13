@@ -46,6 +46,7 @@ ENTITY_TYPES: list[str] = [
     "company",
     "country",
     "domain",
+    "instrument",
     "organization",
     "person",
     "protocol",
@@ -57,17 +58,26 @@ ENTITY_TYPES: list[str] = [
 OBSERVATION_TYPES: list[str] = [
     "btc_transfer",
     "cert_issued",
+    "contract_award",
+    "creditor_filing",
     "cross_entity_pattern",
     "dns_change",
+    "drug_approval",
     "form144_filing",
     "geopolitical_event",
     "insider_trade",
+    "instrument_return",
+    "instrument_volatility",
+    "instrument_volume",
     "lobbying_spend",
     "pageview_spike",
     "patent_filing",
     "port_call",
+    "price_movement",
     "project_status",
+    "sanctions_listing",
     "sell_intent",
+    "short_interest",
     "tvl_change",
     "vessel_position",
 ]
@@ -168,23 +178,110 @@ def _compute_obs_stats(
 # ── Node feature builder ──────────────────────────────────────
 
 
+# ── Enrichment feature dimensions ──────────────────────────────
+# When enrichment is provided, these extra features are appended:
+#   cusum_state (1) + hawkes_intensity (1) + event_study_score (1) +
+#   bocpd_prob (1) + value_variance (1) + value_min (1) + value_max (1) +
+#   value_iqr (1) + num_source_tools (1) + obs_type_dist (21) = 30
+ENRICHMENT_DIM = 33
+BASE_FEAT_DIM = len(ENTITY_TYPES) + 3  # one-hot type + count + recency + mean_val
+
+
+def _compute_distributional_features(
+    observations: list[dict[str, Any]],
+) -> dict[str, float]:
+    """Extract distributional features from an entity's observations.
+
+    Returns: variance, min, max, iqr of observation values, number of
+    distinct source tools, and obs_type frequency distribution.
+    """
+    import math
+
+    values: list[float] = []
+    tools: set[str] = set()
+    obs_type_counts: dict[str, int] = {}
+
+    for o in observations:
+        # Collect value
+        v = o.get("value", {})
+        if isinstance(v, dict):
+            for k in (
+                "usd_amount",
+                "btc_amount",
+                "value",
+                "estimated_value",
+                "goldstein_scale",
+                "num_articles",
+            ):
+                if k in v:
+                    try:
+                        values.append(float(v[k]))
+                    except (TypeError, ValueError):
+                        pass
+                    break
+        # Collect source tool
+        tool = o.get("source_tool", "")
+        if tool:
+            tools.add(tool)
+        # Collect obs_type
+        ot = o.get("obs_type", "")
+        obs_type_counts[ot] = obs_type_counts.get(ot, 0) + 1
+
+    # Value distribution
+    if len(values) >= 2:
+        mean_v = sum(values) / len(values)
+        variance = sum((x - mean_v) ** 2 for x in values) / (len(values) - 1)
+        val_min = min(values)
+        val_max = max(values)
+        sorted_v = sorted(values)
+        q1 = sorted_v[len(sorted_v) // 4]
+        q3 = sorted_v[3 * len(sorted_v) // 4]
+        iqr = q3 - q1
+    elif len(values) == 1:
+        variance = 0.0
+        val_min = val_max = values[0]
+        iqr = 0.0
+    else:
+        variance = val_min = val_max = iqr = 0.0
+
+    # Obs type distribution (normalized to sum=1)
+    total_obs = sum(obs_type_counts.values()) or 1
+    obs_type_dist: dict[str, float] = {}
+    for ot in OBSERVATION_TYPES:
+        obs_type_dist[ot] = obs_type_counts.get(ot, 0) / total_obs
+
+    return {
+        "variance": variance,
+        "min": val_min if math.isfinite(val_min) else 0.0,
+        "max": val_max if math.isfinite(val_max) else 0.0,
+        "iqr": iqr,
+        "num_tools": float(len(tools)),
+        "obs_type_dist": obs_type_dist,  # type: ignore[dict-item]
+    }
+
+
 def _build_node_features(
     entity_type: str,
     entity_ids: list[str],
     observations: list[dict[str, Any]],
     current_time: float,
+    enrichment: dict[str, dict[str, float]] | None = None,
 ) -> torch.Tensor:
     """Build feature matrix for one node type.
 
-    Features per node (dim = len(ENTITY_TYPES) + 3):
+    Base features per node (dim = len(ENTITY_TYPES) + 3):
         [one_hot_entity_type..., obs_count, recency, mean_value]
+
+    When enrichment is provided, additional features are appended:
+        [cusum, hawkes, event_study, bocpd, variance, min, max, iqr,
+         num_tools, obs_type_dist(18)] → 27 extra dims.
     """
     type_idx = _ENTITY_TYPE_TO_IDX.get(entity_type)
     if type_idx is None:
         log.warning("Unknown entity type %r — defaulting to index 0", entity_type)
         type_idx = 0
     type_dim = len(ENTITY_TYPES)
-    feat_dim = type_dim + 3  # +count, recency, mean_value
+    feat_dim = BASE_FEAT_DIM + (ENRICHMENT_DIM if enrichment is not None else 0)
 
     if not entity_ids:
         return torch.zeros(0, feat_dim)
@@ -205,6 +302,28 @@ def _build_node_features(
         features[local_idx, type_dim] = stats["count"]
         features[local_idx, type_dim + 1] = stats["recency"]
         features[local_idx, type_dim + 2] = stats["mean_value"]
+
+        # Enrichment features (when provided)
+        if enrichment is not None:
+            offset = BASE_FEAT_DIM
+            ent_enrich = enrichment.get(eid, {})
+            # Statistical monitor states
+            features[local_idx, offset] = ent_enrich.get("cusum", 0.0)
+            features[local_idx, offset + 1] = ent_enrich.get("hawkes", 0.0)
+            features[local_idx, offset + 2] = ent_enrich.get("event_study", 0.0)
+            features[local_idx, offset + 3] = ent_enrich.get("bocpd", 0.0)
+            # Distributional features from observations
+            dist_feats = _compute_distributional_features(ent_obs)
+            features[local_idx, offset + 4] = dist_feats["variance"]
+            features[local_idx, offset + 5] = dist_feats["min"]
+            features[local_idx, offset + 6] = dist_feats["max"]
+            features[local_idx, offset + 7] = dist_feats["iqr"]
+            features[local_idx, offset + 8] = dist_feats["num_tools"]
+            # Obs type distribution (18 dims)
+            for ot_idx, ot_name in enumerate(OBSERVATION_TYPES):
+                features[local_idx, offset + 9 + ot_idx] = dist_feats["obs_type_dist"][
+                    ot_name
+                ]
 
     return features
 
@@ -299,12 +418,17 @@ class GraphBuilder:
         *,
         since: float | None = None,
         until: float | None = None,
+        enrichment: dict[str, dict[str, float]] | None = None,
     ) -> tuple[HeteroData, IDMap, list[dict[str, Any]]]:
         """Build the full heterogeneous graph.
 
         Args:
             since: Only include observations from this timestamp onward.
             until: Only include observations up to this timestamp.
+            enrichment: Optional per-entity enrichment features.
+                Maps entity_id → {"cusum": float, "hawkes": float,
+                "event_study": float, "bocpd": float}.
+                When provided, node features expand from 12d to 39d.
 
         Returns:
             (HeteroData, IDMap, events) where events is a time-sorted list
@@ -341,7 +465,11 @@ class GraphBuilder:
             for eid, lidx in local_map.items():
                 ordered_ids[lidx] = eid
             features = _build_node_features(
-                etype, ordered_ids, observations, current_time
+                etype,
+                ordered_ids,
+                observations,
+                current_time,
+                enrichment=enrichment,
             )
             data[etype].x = features
             data[etype].node_ids = ordered_ids

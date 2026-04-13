@@ -36,19 +36,34 @@ _FEATURE_NAMES = [
 
 # Kalman filter configuration (initial expert setup)
 _STATE_DIM = 3
-_OBS_DIM = 6
+_OBS_DIM = 17
 _CONTINUOUS_STATE_NAMES = [
     "latent.stress_level",
     "latent.macro_momentum",
     "latent.liquidity_state",
 ]
 _FEATURE_TO_OBS_INDEX = {
+    # Original 6 macro/convergence features
     "macro.rate_momentum.30d": 0,
     "macro.yield_curve_slope.spot": 1,
     "macro.liquidity_pressure.30d": 2,
     "convergence.stress_breadth.7d": 3,
     "convergence.stress_intensity.7d": 4,
     "convergence.regime_persistence.7d": 5,
+    # GNN entity anomaly features (Phase 19c)
+    "gnn.person_anomaly.spot": 6,
+    "gnn.company_anomaly.spot": 7,
+    "gnn.wallet_anomaly.spot": 8,
+    "gnn.country_anomaly.spot": 9,
+    "gnn.vessel_anomaly.spot": 10,
+    # GNN entity activity features
+    "gnn.person_activity.spot": 11,
+    "gnn.company_activity.spot": 12,
+    "gnn.wallet_activity.spot": 13,
+    "gnn.country_activity.spot": 14,
+    "gnn.vessel_activity.spot": 15,
+    # GNN cross-entity correlation
+    "gnn.cross_entity.spot": 16,
 }
 
 _REGIME_CONFIGS = {
@@ -76,13 +91,29 @@ def _build_world_model() -> WorldModel:
     propagator = BeliefPropagator(graph)
 
     H = np.zeros((_OBS_DIM, _STATE_DIM))
-    H[0, 0] = 1.0
-    H[1, 0] = 1.0
-    H[2, 1] = 1.0
-    H[3, 1] = 1.0
-    H[4, 2] = 1.0
-    H[5, 2] = 1.0
-    R = np.diag([0.1] * _OBS_DIM)
+    # Original macro/convergence features
+    H[0, 0] = 1.0  # rate_momentum → stress_level
+    H[1, 0] = 1.0  # yield_curve_slope → stress_level
+    H[2, 1] = 1.0  # liquidity_pressure → macro_momentum
+    H[3, 1] = 1.0  # stress_breadth → macro_momentum
+    H[4, 2] = 1.0  # stress_intensity → liquidity_state
+    H[5, 2] = 1.0  # regime_persistence → liquidity_state
+    # GNN anomaly features → stress_level (column 0)
+    H[6, 0] = 0.5  # person_anomaly
+    H[7, 0] = 0.5  # company_anomaly
+    H[8, 0] = 0.5  # wallet_anomaly
+    H[9, 0] = 0.5  # country_anomaly
+    H[10, 0] = 0.5  # vessel_anomaly
+    # GNN activity features → macro_momentum (column 1)
+    H[11, 1] = 0.3  # person_activity
+    H[12, 1] = 0.3  # company_activity
+    H[13, 1] = 0.3  # wallet_activity
+    H[14, 1] = 0.3  # country_activity
+    H[15, 1] = 0.3  # vessel_activity
+    # GNN cross_entity → liquidity_state (column 2)
+    H[16, 2] = 0.4  # cross_entity
+    # Higher noise for GNN features (0.3) vs established features (0.1)
+    R = np.diag([0.1] * 6 + [0.3] * 11)
 
     state_filter = ContinuousStateFilter(
         state_dim=_STATE_DIM,

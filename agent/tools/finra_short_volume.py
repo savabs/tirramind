@@ -15,13 +15,22 @@ from __future__ import annotations
 
 import logging
 import statistics
-from datetime import datetime, timedelta
-from typing import Any
+from datetime import datetime, timedelta, timezone
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from agent.data.cache import DataCache
 from agent.tools.base import Tool, ToolResult
+
+if TYPE_CHECKING:
+    from agent.pipeline.store import PipelineStore
+
+try:
+    from agent.pipeline.entity import entity_id_from_key, normalize_company_name
+except ImportError:  # pragma: no cover
+    entity_id_from_key = None  # type: ignore[assignment]
+    normalize_company_name = None  # type: ignore[assignment]
 
 log = logging.getLogger(__name__)
 
@@ -37,8 +46,93 @@ _PAGE_SIZE = 5000
 class FinraShortVolumeTool(Tool):
     """FINRA Reg SHO short volume and consolidated short interest."""
 
-    def __init__(self, cache: DataCache | None = None) -> None:
+    def __init__(
+        self,
+        cache: DataCache | None = None,
+        *,
+        pipeline_store: PipelineStore | None = None,
+    ) -> None:
         self._cache = cache
+        self._store = pipeline_store
+
+    # ------------------------------------------------------------------
+    # Entity persistence (L2)
+    # ------------------------------------------------------------------
+
+    def _persist_entities(self, records: list[dict[str, Any]]) -> None:
+        """Register company entities and store short-interest observations."""
+        if self._store is None or entity_id_from_key is None:
+            return
+        if not records:
+            return
+        try:
+            self._persist_entities_inner(records)
+        except Exception:
+            log.exception("Entity persistence failed (non-fatal)")
+
+    def _persist_entities_inner(self, records: list[dict[str, Any]]) -> None:
+        assert self._store is not None  # noqa: S101
+        store = self._store
+
+        seen: set[str] = set()
+        for rec in records:
+            ticker = (rec.get("ticker") or rec.get("symbol") or "").strip().upper()
+            if not ticker:
+                continue
+
+            eid = entity_id_from_key("company", ticker)
+
+            if eid not in seen:
+                seen.add(eid)
+                store.register_entity(
+                    entity_type="company",
+                    canonical_name=ticker,
+                    entity_id=eid,
+                    metadata={"source": "finra", "ticker": ticker},
+                )
+
+            # Determine timestamp from date field or settlement_date
+            date_str = rec.get("date") or rec.get("settlement_date") or ""
+            try:
+                ts = (
+                    datetime.strptime(date_str, "%Y-%m-%d")
+                    .replace(tzinfo=timezone.utc)
+                    .timestamp()
+                )
+            except (ValueError, TypeError):
+                ts = datetime.now(tz=timezone.utc).timestamp()
+
+            # Build value dict from available fields
+            value: dict[str, Any] = {}
+            for key in (
+                "short_ratio",
+                "total_volume",
+                "short_volume",
+                "exempt_volume",
+                "zscore",
+                "trend",
+                "is_anomaly",
+                "days_to_cover",
+                "current_short_position",
+                "previous_short_position",
+                "change_percent",
+                "avg_daily_volume",
+                "facility_count",
+            ):
+                if key in rec:
+                    value[key] = rec[key]
+
+            if not value:
+                continue
+
+            store.store_entity_observation(
+                entity_id=eid,
+                source_tool="finra_short_volume",
+                observed_at=ts,
+                observation_type="short_interest",
+                depth_level=2,
+                value=value,
+            )
 
     @property
     def name(self) -> str:
@@ -92,7 +186,9 @@ class FinraShortVolumeTool(Tool):
     def execute(self, **kwargs: Any) -> ToolResult:
         mode = kwargs.get("mode", "")
         if mode not in ("short_volume", "short_interest"):
-            return ToolResult(False, f"Invalid mode '{mode}'. Use 'short_volume' or 'short_interest'.")
+            return ToolResult(
+                False, f"Invalid mode '{mode}'. Use 'short_volume' or 'short_interest'."
+            )
 
         ticker = (kwargs.get("ticker") or "").strip().upper() or None
         date_str = kwargs.get("date") or ""
@@ -103,11 +199,15 @@ class FinraShortVolumeTool(Tool):
         # Parse or default the date
         target_date = self._parse_date(date_str)
         if target_date is None:
-            return ToolResult(False, f"Invalid date format: '{date_str}'. Use YYYY-MM-DD.")
+            return ToolResult(
+                False, f"Invalid date format: '{date_str}'. Use YYYY-MM-DD."
+            )
 
         try:
             if mode == "short_volume":
-                return self._execute_short_volume(ticker, target_date, days_back, min_vol, limit)
+                return self._execute_short_volume(
+                    ticker, target_date, days_back, min_vol, limit
+                )
             else:
                 return self._execute_short_interest(ticker, target_date)
         except httpx.TimeoutException:
@@ -121,8 +221,12 @@ class FinraShortVolumeTool(Tool):
     # ------------------------------------------------------------------
 
     def _execute_short_volume(
-        self, ticker: str | None, target_date: datetime,
-        days_back: int, min_vol: int, limit: int,
+        self,
+        ticker: str | None,
+        target_date: datetime,
+        days_back: int,
+        min_vol: int,
+        limit: int,
     ) -> ToolResult:
         """Fetch daily short volume for one ticker or scan all."""
         if ticker:
@@ -131,7 +235,10 @@ class FinraShortVolumeTool(Tool):
             return self._short_volume_scan(target_date, min_vol, limit)
 
     def _short_volume_ticker(
-        self, ticker: str, target_date: datetime, days_back: int,
+        self,
+        ticker: str,
+        target_date: datetime,
+        days_back: int,
     ) -> ToolResult:
         """Multi-day short volume for a single ticker."""
         dates = self._trading_dates(target_date, days_back)
@@ -163,7 +270,11 @@ class FinraShortVolumeTool(Tool):
         for entry in daily_data:
             flag = ""
             if entry.get("is_anomaly"):
-                flag = " ⚠ ANOMALY" if entry["short_ratio"] > entry.get("avg_ratio", 0.5) else " ↓ COVERING"
+                flag = (
+                    " ⚠ ANOMALY"
+                    if entry["short_ratio"] > entry.get("avg_ratio", 0.5)
+                    else " ↓ COVERING"
+                )
             lines.append(
                 f"  {entry['date']}  total={entry['total_volume']:>14,.0f}  "
                 f"short={entry['short_volume']:>14,.0f}  "
@@ -175,21 +286,37 @@ class FinraShortVolumeTool(Tool):
         if signals:
             lines.append(f"Short ratio (latest): {signals['latest_ratio']:.1%}")
             if signals.get("avg_ratio") is not None:
-                lines.append(f"Short ratio ({len(daily_data)}-day avg): {signals['avg_ratio']:.1%}")
+                lines.append(
+                    f"Short ratio ({len(daily_data)}-day avg): {signals['avg_ratio']:.1%}"
+                )
             if signals.get("zscore") is not None:
                 lines.append(f"Z-score: {signals['zscore']:+.2f}")
             lines.append(f"Trend: {signals.get('trend', 'n/a')}")
             if signals.get("is_anomaly"):
-                lines.append(f"⚠ ANOMALY DETECTED: short ratio z-score {signals['zscore']:+.2f}")
+                lines.append(
+                    f"⚠ ANOMALY DETECTED: short ratio z-score {signals['zscore']:+.2f}"
+                )
 
-        return ToolResult(True, "\n".join(lines), data={
-            "ticker": ticker,
-            "records": daily_data,
-            "signals": signals,
-        })
+        # Persist entities (L2)
+        for entry in daily_data:
+            entry.setdefault("ticker", ticker)
+        self._persist_entities(daily_data)
+
+        return ToolResult(
+            True,
+            "\n".join(lines),
+            data={
+                "ticker": ticker,
+                "records": daily_data,
+                "signals": signals,
+            },
+        )
 
     def _short_volume_scan(
-        self, target_date: datetime, min_vol: int, limit: int,
+        self,
+        target_date: datetime,
+        min_vol: int,
+        limit: int,
     ) -> ToolResult:
         """Scan all tickers for a single day, rank by short ratio."""
         date_str = target_date.strftime("%Y-%m-%d")
@@ -197,13 +324,16 @@ class FinraShortVolumeTool(Tool):
 
         # Paginate to get all records
         for page in range(_MAX_PAGES):
-            records = self._fetch_reg_sho(date_str, ticker=None, offset=page * _PAGE_SIZE)
+            records = self._fetch_reg_sho(
+                date_str, ticker=None, offset=page * _PAGE_SIZE
+            )
             if not records:
                 break
             all_records.extend(records)
             if len(records) < _PAGE_SIZE:
                 break
             import time
+
             time.sleep(_REQUEST_DELAY)
 
         if not all_records:
@@ -240,18 +370,27 @@ class FinraShortVolumeTool(Tool):
                 f"exempt={entry.get('exempt_volume', 0):>8,.0f}"
             )
 
-        return ToolResult(True, "\n".join(lines), data={
-            "date": date_str,
-            "total_tickers": len(filtered),
-            "results": top,
-        })
+        # Persist entities (L2)
+        self._persist_entities(top)
+
+        return ToolResult(
+            True,
+            "\n".join(lines),
+            data={
+                "date": date_str,
+                "total_tickers": len(filtered),
+                "results": top,
+            },
+        )
 
     # ------------------------------------------------------------------
     # Short Interest Mode
     # ------------------------------------------------------------------
 
     def _execute_short_interest(
-        self, ticker: str | None, target_date: datetime,
+        self,
+        ticker: str | None,
+        target_date: datetime,
     ) -> ToolResult:
         if not ticker:
             return ToolResult(False, "short_interest mode requires a ticker parameter.")
@@ -304,24 +443,41 @@ class FinraShortVolumeTool(Tool):
 
         lines.append("")
         if signals["squeeze_risk"]:
-            lines.append(f"⚠ SQUEEZE RISK: days-to-cover = {signals['days_to_cover']:.1f}")
+            lines.append(
+                f"⚠ SQUEEZE RISK: days-to-cover = {signals['days_to_cover']:.1f}"
+            )
         if signals["building_short"]:
-            lines.append(f"↑ SHORT BUILDING: +{signals['change_percent']:.1f}% from previous period")
+            lines.append(
+                f"↑ SHORT BUILDING: +{signals['change_percent']:.1f}% from previous period"
+            )
         if signals["covering"]:
-            lines.append(f"↓ SHORT COVERING: {signals['change_percent']:.1f}% from previous period")
+            lines.append(
+                f"↓ SHORT COVERING: {signals['change_percent']:.1f}% from previous period"
+            )
 
-        return ToolResult(True, "\n".join(lines), data={
-            "ticker": ticker,
-            "records": [self._si_record_to_dict(r) for r in records],
-            "signals": signals,
-        })
+        # Persist entities (L2)
+        si_records = [self._si_record_to_dict(r) for r in records]
+        self._persist_entities(si_records)
+
+        return ToolResult(
+            True,
+            "\n".join(lines),
+            data={
+                "ticker": ticker,
+                "records": si_records,
+                "signals": signals,
+            },
+        )
 
     # ------------------------------------------------------------------
     # API Fetching
     # ------------------------------------------------------------------
 
     def _fetch_reg_sho(
-        self, date: str, ticker: str | None = None, offset: int = 0,
+        self,
+        date: str,
+        ticker: str | None = None,
+        offset: int = 0,
     ) -> list[dict]:
         """Fetch Reg SHO daily short volume from FINRA API."""
         cache_params = {"date": date, "ticker": ticker or "ALL", "offset": offset}
@@ -331,14 +487,20 @@ class FinraShortVolumeTool(Tool):
                 return cached
 
         filters = [
-            {"fieldName": "tradeReportDate", "fieldValue": date, "compareType": "EQUAL"},
+            {
+                "fieldName": "tradeReportDate",
+                "fieldValue": date,
+                "compareType": "EQUAL",
+            },
         ]
         if ticker:
-            filters.append({
-                "fieldName": "securitiesInformationProcessorSymbolIdentifier",
-                "fieldValue": ticker,
-                "compareType": "EQUAL",
-            })
+            filters.append(
+                {
+                    "fieldName": "securitiesInformationProcessorSymbolIdentifier",
+                    "fieldValue": ticker,
+                    "compareType": "EQUAL",
+                }
+            )
 
         body: dict[str, Any] = {
             "fields": [
@@ -371,14 +533,27 @@ class FinraShortVolumeTool(Tool):
 
         body: dict[str, Any] = {
             "fields": [
-                "symbolCode", "settlementDate", "currentShortPositionQuantity",
-                "previousShortPositionQuantity", "changePercent",
-                "daysToCoverQuantity", "averageDailyVolumeQuantity",
-                "marketClassCode", "issueName",
+                "symbolCode",
+                "settlementDate",
+                "currentShortPositionQuantity",
+                "previousShortPositionQuantity",
+                "changePercent",
+                "daysToCoverQuantity",
+                "averageDailyVolumeQuantity",
+                "marketClassCode",
+                "issueName",
             ],
             "compareFilters": [
-                {"fieldName": "symbolCode", "fieldValue": ticker, "compareType": "EQUAL"},
-                {"fieldName": "settlementDate", "fieldValue": settlement_date, "compareType": "EQUAL"},
+                {
+                    "fieldName": "symbolCode",
+                    "fieldValue": ticker,
+                    "compareType": "EQUAL",
+                },
+                {
+                    "fieldName": "settlementDate",
+                    "fieldValue": settlement_date,
+                    "compareType": "EQUAL",
+                },
             ],
             "limit": 5,
         }
@@ -392,7 +567,10 @@ class FinraShortVolumeTool(Tool):
         return r
 
     def _fetch_short_interest_recent(
-        self, ticker: str, target_date: datetime, max_lookback: int = 90,
+        self,
+        ticker: str,
+        target_date: datetime,
+        max_lookback: int = 90,
     ) -> list[dict]:
         """Search backwards for the most recent settlement dates with data."""
         # Standard FINRA SI settlement dates: 15th and end of month
@@ -406,6 +584,7 @@ class FinraShortVolumeTool(Tool):
                 if len(results) >= 4:  # get 2-4 most recent periods
                     break
             import time
+
             time.sleep(_REQUEST_DELAY)
 
         return results
@@ -472,14 +651,22 @@ class FinraShortVolumeTool(Tool):
                     "exempt_volume": 0.0,
                     "facility_count": 0,
                 }
-            by_ticker[sym]["total_volume"] += _safe_float(rec.get("totalParQuantity", 0))
-            by_ticker[sym]["short_volume"] += _safe_float(rec.get("shortParQuantity", 0))
-            by_ticker[sym]["exempt_volume"] += _safe_float(rec.get("shortExemptParQuantity", 0))
+            by_ticker[sym]["total_volume"] += _safe_float(
+                rec.get("totalParQuantity", 0)
+            )
+            by_ticker[sym]["short_volume"] += _safe_float(
+                rec.get("shortParQuantity", 0)
+            )
+            by_ticker[sym]["exempt_volume"] += _safe_float(
+                rec.get("shortExemptParQuantity", 0)
+            )
             by_ticker[sym]["facility_count"] += 1
 
         # Compute ratios
         for sym, v in by_ticker.items():
-            v["short_ratio"] = v["short_volume"] / v["total_volume"] if v["total_volume"] > 0 else 0.0
+            v["short_ratio"] = (
+                v["short_volume"] / v["total_volume"] if v["total_volume"] > 0 else 0.0
+            )
 
         return by_ticker
 

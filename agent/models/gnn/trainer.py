@@ -1,6 +1,6 @@
 """
 TirraMind — Self-Supervised Training & Outcome Fine-Tuning for HetTGN
-(Phases 12d, 15a–c)
+(Phases 12d, 15a–c, 19a)
 
 Provides:
     SyntheticGraphGenerator — Generates realistic entity graphs with
@@ -11,6 +11,8 @@ Provides:
                               (1) next-event obs_type prediction (CE)
                               (2) next-event time_delta prediction (MSE)
                               (3) contrastive link loss (margin)
+                              Plus: infer(), save_model(), load_model()
+                              for production inference (Phase 19a).
     evaluate()              — Walk-forward evaluation (no leakage).
     OutcomeLabel            — Binary co-occurrence label for fine-tuning.
     generate_outcome_labels — Create outcome labels from CrystallizedPatterns.
@@ -37,9 +39,11 @@ References:
 
 from __future__ import annotations
 
+import json
 import logging
 import random
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -301,6 +305,7 @@ class TrainerConfig:
     contrastive_weight: float = 0.5
     contrastive_margin: float = 1.0
     num_negative_samples: int = 5
+    value_weight: float = 0.3
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -314,11 +319,12 @@ class Trainer:
     Training signal:
         For each temporal window W_t, build graph snapshot, run forward,
         then predict what observation types occur in W_{t+1} for each
-        entity that has activity. Three loss components:
+        entity that has activity. Four loss components:
 
         1. obs_type CE:    cross-entropy on next observation type per entity
         2. time_delta MSE: mean squared error on time-to-next-event
         3. contrastive:    linked pairs should be closer than random pairs
+        4. value Huber:    Huber loss on predicted vs actual observation value
     """
 
     def __init__(
@@ -413,15 +419,16 @@ class Trainer:
         current_window_obs: list[dict],
         next_window_obs: list[dict],
         id_map: IDMap,
-    ) -> tuple[list[int], torch.Tensor, torch.Tensor]:
+    ) -> tuple[list[int], torch.Tensor, torch.Tensor, torch.Tensor]:
         """Build supervision targets from next-window observations.
 
         For each entity that appears in next_window_obs, the target is:
             - obs_type index (for CE loss)
             - time delta from current window end (for MSE loss)
+            - observation value magnitude (for Huber loss)
 
         Returns:
-            (global_ids, obs_type_targets, time_delta_targets)
+            (global_ids, obs_type_targets, time_delta_targets, value_targets)
         """
         # Group by entity — take first obs per entity in next window
         entity_next: dict[str, dict] = {}
@@ -437,6 +444,7 @@ class Trainer:
         global_ids = []
         obs_types = []
         time_deltas = []
+        values = []
 
         # Current window end
         if current_window_obs:
@@ -465,6 +473,26 @@ class Trainer:
             obs_types.append(obs_idx)
             time_deltas.append(dt)
 
+            # Extract value for value prediction target
+            val = 0.0
+            v = o.get("value", {})
+            if isinstance(v, dict):
+                for k in (
+                    "usd_amount",
+                    "btc_amount",
+                    "value",
+                    "estimated_value",
+                    "goldstein_scale",
+                    "num_articles",
+                ):
+                    if k in v:
+                        try:
+                            val = float(v[k])
+                        except (TypeError, ValueError):
+                            pass
+                        break
+            values.append(val)
+
         return (
             global_ids,
             (
@@ -477,6 +505,7 @@ class Trainer:
                 if time_deltas
                 else torch.zeros(0)
             ),
+            (torch.tensor(values, dtype=torch.float) if values else torch.zeros(0)),
         )
 
     def _contrastive_loss(
@@ -565,6 +594,7 @@ class Trainer:
             "obs_type": [],
             "time_delta": [],
             "contrastive": [],
+            "value": [],
         }
 
         for epoch in range(cfg.epochs):
@@ -574,6 +604,7 @@ class Trainer:
                 "obs_type": 0.0,
                 "time_delta": 0.0,
                 "contrastive": 0.0,
+                "value": 0.0,
             }
             n_windows = 0
 
@@ -593,10 +624,12 @@ class Trainer:
                 embeddings = model(data, id_map)
 
                 # Supervision targets from next window
-                global_ids, obs_targets, dt_targets = self._compute_targets(
-                    curr_obs,
-                    next_obs,
-                    id_map,
+                global_ids, obs_targets, dt_targets, val_targets = (
+                    self._compute_targets(
+                        curr_obs,
+                        next_obs,
+                        id_map,
+                    )
                 )
 
                 # ── obs_type loss ────────────────────────
@@ -636,6 +669,13 @@ class Trainer:
                     valid_dt = dt_targets[valid_indices]
                     dt_loss = F.mse_loss(dt_pred, valid_dt)
 
+                # ── value prediction loss ────────────────
+                val_loss = torch.tensor(0.0)
+                if target_embs:
+                    val_pred = model.value_pred_head(target_emb_tensor).squeeze(-1)
+                    valid_val = val_targets[valid_indices]
+                    val_loss = F.huber_loss(val_pred, valid_val)
+
                 # ── contrastive loss ─────────────────────
                 c_loss = self._contrastive_loss(embeddings, id_map)
 
@@ -644,6 +684,7 @@ class Trainer:
                     cfg.obs_type_weight * obs_loss
                     + cfg.time_delta_weight * dt_loss
                     + cfg.contrastive_weight * c_loss
+                    + cfg.value_weight * val_loss
                 )
 
                 if total.requires_grad:
@@ -662,6 +703,7 @@ class Trainer:
                 epoch_losses["obs_type"] += obs_loss.item()
                 epoch_losses["time_delta"] += dt_loss.item()
                 epoch_losses["contrastive"] += c_loss.item()
+                epoch_losses["value"] += val_loss.item()
                 n_windows += 1
 
             # Average over windows
@@ -680,6 +722,151 @@ class Trainer:
             )
 
         return history
+
+    # ── Inference (Phase 19a) ─────────────────────────────────
+
+    def infer(
+        self,
+        *,
+        until: float | None = None,
+    ) -> tuple[dict[str, torch.Tensor], IDMap]:
+        """Run a forward pass on the entity graph and return embeddings.
+
+        If the model has not been trained, returns embeddings from a
+        randomly-initialized model (useful for testing the downstream
+        pipeline before real training data accumulates).
+
+        Args:
+            until: Optional cutoff time for point-in-time graph building.
+                   Entities/observations after this time are excluded.
+
+        Returns:
+            (embeddings, id_map) where embeddings is
+            dict[entity_type → Tensor[N_type, hidden_dim]] and id_map
+            maps entity IDs to node indices.
+        """
+        if self._model is None:
+            self.build_model()
+
+        model = self.model
+        model.eval()
+
+        with torch.no_grad():
+            data, id_map, _ = self._graph_builder.build(until=until)
+            if not data.node_types:
+                return {}, id_map
+            embeddings = model(data, id_map)
+
+        return embeddings, id_map
+
+    def save_model(self, path: str | Path) -> None:
+        """Persist trained model state to disk.
+
+        Saves both the model state_dict and the config/metadata needed
+        to reconstruct it. Creates parent directories if needed.
+
+        Args:
+            path: File path for the saved checkpoint.
+        """
+        if self._model is None:
+            raise RuntimeError(
+                "No model to save — call build_model() or train() first."
+            )
+
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Build graph once to capture metadata for reconstruction
+        data, id_map, _ = self._graph_builder.build()
+        metadata = data.metadata()
+        in_channels: dict[str, int] = {}
+        for ntype in metadata[0]:
+            if ntype in data.node_types and hasattr(data[ntype], "x"):
+                in_channels[ntype] = data[ntype].x.size(1)
+            else:
+                in_channels[ntype] = self.config.hidden_dim
+
+        checkpoint = {
+            "model_state_dict": self._model.state_dict(),
+            "config": {
+                "hidden_dim": self.config.hidden_dim,
+                "memory_dim": self.config.memory_dim,
+                "message_dim": self.config.message_dim,
+                "time_dim": self.config.time_dim,
+                "num_heads": self.config.num_heads,
+                "num_layers": self.config.num_layers,
+                "epochs": self.config.epochs,
+                "learning_rate": self.config.learning_rate,
+                "window_size": self.config.window_size,
+                "train_ratio": self.config.train_ratio,
+                "val_ratio": self.config.val_ratio,
+                "obs_type_weight": self.config.obs_type_weight,
+                "time_delta_weight": self.config.time_delta_weight,
+                "contrastive_weight": self.config.contrastive_weight,
+                "contrastive_margin": self.config.contrastive_margin,
+                "num_negative_samples": self.config.num_negative_samples,
+            },
+            "metadata_node_types": metadata[0],
+            "metadata_edge_types": [list(t) for t in metadata[1]],
+            "in_channels": in_channels,
+            "num_nodes": id_map.num_nodes,
+        }
+        torch.save(checkpoint, path)
+        log.info("Model saved to %s (%d nodes).", path, id_map.num_nodes)
+
+    @classmethod
+    def load_model(cls, path: str | Path, store: PipelineStore) -> "Trainer":
+        """Load a previously saved model checkpoint.
+
+        Reconstructs the HetTGN from saved metadata and loads the
+        state_dict. The returned Trainer is ready for infer() calls.
+
+        Args:
+            path: File path to the saved checkpoint.
+            store: PipelineStore (needed for GraphBuilder and future ops).
+
+        Returns:
+            Trainer with loaded model.
+
+        Raises:
+            FileNotFoundError: If path does not exist.
+            RuntimeError: If checkpoint is corrupt or incompatible.
+        """
+        path = Path(path)
+        if not path.exists():
+            raise FileNotFoundError(f"Model checkpoint not found: {path}")
+
+        checkpoint = torch.load(path, weights_only=False)
+
+        config = TrainerConfig(**checkpoint["config"])
+        trainer = cls(store, config)
+
+        metadata = (
+            checkpoint["metadata_node_types"],
+            [tuple(t) for t in checkpoint["metadata_edge_types"]],
+        )
+        in_channels = checkpoint["in_channels"]
+        num_nodes = checkpoint["num_nodes"]
+
+        trainer._model = HetTGN(
+            metadata=metadata,
+            in_channels=in_channels,
+            hidden_dim=config.hidden_dim,
+            time_dim=config.time_dim,
+            memory_dim=config.memory_dim,
+            message_dim=config.message_dim,
+            num_heads=config.num_heads,
+            num_layers=config.num_layers,
+            num_nodes=num_nodes,
+        )
+
+        trainer._model.load_state_dict(checkpoint["model_state_dict"])
+        trainer._optimizer = torch.optim.Adam(
+            trainer._model.parameters(), lr=config.learning_rate
+        )
+
+        log.info("Model loaded from %s.", path)
+        return trainer
 
 
 # ═══════════════════════════════════════════════════════════════

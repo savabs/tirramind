@@ -36,11 +36,11 @@ class TestBuildInitialGraph:
 
     def test_node_count(self) -> None:
         graph = build_initial_graph()
-        assert len(graph.node_names) == 9
+        assert len(graph.node_names) == 20
 
     def test_edge_count(self) -> None:
         graph = build_initial_graph()
-        assert len(graph.edges) == 11
+        assert len(graph.edges) == 19
 
     def test_validates_clean(self) -> None:
         graph = build_initial_graph()
@@ -75,6 +75,18 @@ class TestNodeStructure:
             "obs.stress_breadth",
             "obs.stress_intensity",
             "obs.regime_persistence",
+            # GNN entity-derived (Phase 19c)
+            "obs.person_anomaly",
+            "obs.company_anomaly",
+            "obs.wallet_anomaly",
+            "obs.country_anomaly",
+            "obs.vessel_anomaly",
+            "obs.person_activity",
+            "obs.company_activity",
+            "obs.wallet_activity",
+            "obs.country_activity",
+            "obs.vessel_activity",
+            "obs.cross_entity",
         }
         assert names == expected
 
@@ -126,11 +138,27 @@ class TestEdgeStructure:
 
     def test_risk_appetite_children(self, graph: WorldModelGraph) -> None:
         children = set(graph.get_children("latent.risk_appetite"))
-        assert children == {"obs.liquidity_pressure", "obs.stress_intensity"}
+        assert children == {
+            "obs.liquidity_pressure",
+            "obs.stress_intensity",
+            "obs.person_activity",
+            "obs.company_activity",
+            "obs.wallet_activity",
+        }
 
     def test_no_orphan_nodes(self, graph: WorldModelGraph) -> None:
-        """Every node has at least one parent or child."""
+        """Every node except root observed nodes has at least one parent or child."""
+        # Root observed nodes (no causal parent, no children): cross_entity,
+        # country_activity, vessel_activity — they provide evidence without
+        # being caused by a single regime variable.
+        root_observed = {
+            "obs.cross_entity",
+            "obs.country_activity",
+            "obs.vessel_activity",
+        }
         for name in graph.node_names:
+            if name in root_observed:
+                continue
             parents = graph.get_parents(name)
             children = graph.get_children(name)
             assert parents or children, f"{name} is orphan (no edges)"
@@ -385,8 +413,8 @@ class TestHashAndSerialization:
         assert "nodes" in d
         assert "edges" in d
         assert "graph_hash" in d
-        assert len(d["nodes"]) == 9
-        assert len(d["edges"]) == 11
+        assert len(d["nodes"]) == 20
+        assert len(d["edges"]) == 19
 
 
 class TestWeaklyInformativePrior:

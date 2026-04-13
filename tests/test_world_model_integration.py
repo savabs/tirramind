@@ -144,8 +144,8 @@ class TestEndToEnd:
     def test_update_returns_beliefs(self) -> None:
         wm = _build_full_world_model()
         beliefs = wm.update(_expansion_features(), AS_OF)
-        # 9 DAG beliefs + 3 Kalman beliefs = 12
-        assert len(beliefs) == 12
+        # 20 DAG beliefs + 3 Kalman beliefs = 23
+        assert len(beliefs) == 23
 
     def test_dag_beliefs_present(self) -> None:
         wm = _build_full_world_model()
@@ -167,7 +167,7 @@ class TestEndToEnd:
         wm = _build_full_world_model()
         beliefs = wm.update(_expansion_features(), AS_OF)
         dag_beliefs = [b for b in beliefs if b.dist_type == "categorical"]
-        assert len(dag_beliefs) == 9
+        assert len(dag_beliefs) == 20
 
     def test_kalman_beliefs_are_gaussian(self) -> None:
         wm = _build_full_world_model()
@@ -205,14 +205,14 @@ class TestMissingFeatures:
         wm = _build_full_world_model()
         partial = [_make_feature("macro.rate_momentum.30d", 0.8)]
         beliefs = wm.update(partial, AS_OF)
-        assert len(beliefs) == 12
+        assert len(beliefs) == 23
 
     def test_none_value_excluded(self) -> None:
         wm = _build_full_world_model()
         features = [_make_feature("macro.rate_momentum.30d", None)]
         beliefs = wm.update(features, AS_OF)
         # Should not crash — None values are excluded from evidence
-        assert len(beliefs) == 12
+        assert len(beliefs) == 23
 
 
 class TestQuery:
@@ -248,7 +248,7 @@ class TestDagOnlyMode:
             continuous_state_names=[],  # empty → no Kalman beliefs
         )
         beliefs = wm.update(_expansion_features(), AS_OF)
-        assert len(beliefs) == 9  # DAG only
+        assert len(beliefs) == 20  # DAG only
         assert all(b.dist_type == "categorical" for b in beliefs)
 
 
@@ -266,8 +266,8 @@ class TestMultipleUpdates:
         wm = _build_full_world_model()
         b1 = wm.update(_expansion_features(), AS_OF)
         b2 = wm.update(_crisis_features(), AS_OF + 86400)
-        assert len(b1) == 12
-        assert len(b2) == 12
+        assert len(b1) == 23
+        assert len(b2) == 23
 
         # After crisis features, regime should shift
         macro_b2 = next(b for b in b2 if b.variable_name == "regime.macro")

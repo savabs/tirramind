@@ -22,6 +22,7 @@ from agent.features.builders import (
     FeatureBuilder,
     MacroStateFeatureBuilder,
 )
+from agent.features.gnn_builder import GNNFeatureBuilder
 from agent.features.protocol import EngineeredFeature, validate_feature
 from agent.pipeline.dag import DAG
 from agent.pipeline.store import PipelineStore
@@ -32,6 +33,7 @@ log = logging.getLogger(__name__)
 DEFAULT_BUILDERS: list[FeatureBuilder] = [
     ConvergenceFeatureBuilder(),
     MacroStateFeatureBuilder(),
+    GNNFeatureBuilder(model_path=".tirra_pipeline/gnn_model.pt"),
 ]
 
 

@@ -246,7 +246,7 @@ class TestExpertDAGIntervention:
 
     def test_intervene_on_regime(self, engine: InterventionEngine) -> None:
         beliefs = engine.intervene("regime.macro", "crisis", as_of=AS_OF)
-        assert len(beliefs) == 9
+        assert len(beliefs) == 20
         # Stress should shift toward extreme under crisis
         stress = next(b for b in beliefs if b.variable_name == "regime.stress")
         assert stress.probabilities["extreme"] > stress.probabilities["calm"]

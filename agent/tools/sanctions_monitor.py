@@ -28,12 +28,21 @@ import logging
 import re
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from agent.data.cache import DataCache
 from agent.tools.base import Tool, ToolResult
+
+if TYPE_CHECKING:
+    from agent.pipeline.store import PipelineStore
+
+try:
+    from agent.pipeline.entity import entity_id_from_key, normalize_company_name
+except ImportError:  # pragma: no cover
+    entity_id_from_key = None  # type: ignore[assignment]
+    normalize_company_name = None  # type: ignore[assignment]
 
 log = logging.getLogger(__name__)
 
@@ -55,6 +64,66 @@ _F_REMARKS = 11
 VALID_MODES = {"search", "recent", "programs"}
 VALID_SOURCES = {"ofac", "un", "all"}
 VALID_ENTITY_TYPES = {"individual", "entity", "vessel", "aircraft", "all"}
+
+# ── Program → Country mapping (ISO 3166-1 alpha-2) ─────────────
+# Only programs that map to a single country get links.
+_PROGRAM_COUNTRY: dict[str, str | None] = {
+    "IRAN": "IR",
+    "IRAN-TRA": "IR",
+    "IRAN-HR": "IR",
+    "IFSR": "IR",
+    "IRGC": "IR",
+    "IRAN-EO13846": "IR",
+    "IRAN-EO13871": "IR",
+    "IRAN-EO13902": "IR",
+    "CUBA": "CU",
+    "UKRAINE-EO13660": "UA",
+    "UKRAINE-EO13661": "UA",
+    "UKRAINE-EO13662": "UA",
+    "UKRAINE-EO13685": "UA",
+    "RUSSIA": "RU",
+    "RUSSIA-EO14024": "RU",
+    "RUSSIA-EO14071": "RU",
+    "SYRIA": "SY",
+    "DPRK": "KP",
+    "DPRK2": "KP",
+    "DPRK3": "KP",
+    "DPRK4": "KP",
+    "CHINA": "CN",
+    "CMIC": "CN",
+    "HK-EO13936": "HK",
+    "VENEZUELA": "VE",
+    "VENEZUELA-EO13692": "VE",
+    "MYANMAR": "MM",
+    "MYANMAR-EO14014": "MM",
+    "MALI": "ML",
+    "CAR": "CF",
+    "DRC": "CD",
+    "SOL": "SO",
+    "SOMALIA": "SO",
+    "YEM": "YE",
+    "YEMEN": "YE",
+    "LBY": "LY",
+    "LIBYA": "LY",
+    "HTI": "HT",
+    "HAITI": "HT",
+    "NICARAGUA": "NI",
+    "ETHIOPIA": "ET",
+    "LEBANON": "LB",
+    "IRAQ": "IQ",
+    "BURUNDI": "BI",
+    "SUDAN": "SD",
+    "ZIMBABWE": "ZW",
+    "BELARUS": "BY",
+    "BALKANS": None,  # multi-country
+    "SDGT": None,  # global terrorism
+    "SDNTK": None,  # transnational narcotics
+    "FTO": None,  # foreign terrorist organization
+    "ISIL": None,  # transnational
+    "TCO": None,  # transnational criminal orgs
+    "GLOMAG": None,  # global Magnitsky — multi-country
+    "CYBER2": None,  # transnational
+}
 
 
 def _clean(val: str) -> str | None:
@@ -355,8 +424,134 @@ class SanctionsMonitorTool(Tool):
         "required": [],
     }
 
-    def __init__(self, cache: DataCache | None = None) -> None:
+    def __init__(
+        self,
+        cache: DataCache | None = None,
+        *,
+        pipeline_store: PipelineStore | None = None,
+    ) -> None:
         self._cache = cache
+        self._store = pipeline_store
+
+    # ------------------------------------------------------------------
+    # Entity persistence (L2)
+    # ------------------------------------------------------------------
+
+    def _persist_entities(self, results: list[dict[str, Any]]) -> None:
+        """Register sanctioned entities and create country links."""
+        if self._store is None or entity_id_from_key is None:
+            return
+        if not results:
+            return
+        try:
+            self._persist_entities_inner(results)
+        except Exception:
+            log.exception("Entity persistence failed (non-fatal)")
+
+    def _persist_entities_inner(self, results: list[dict[str, Any]]) -> None:
+        assert self._store is not None  # noqa: S101
+        store = self._store
+
+        _SDN_TYPE_MAP = {
+            "individual": "person",
+            "entity": "organization",
+            "vessel": "vessel",
+            "aircraft": "organization",  # no aircraft entity type; treat as org
+        }
+
+        seen: set[str] = set()
+        for rec in results:
+            name = (rec.get("name") or "").strip()
+            if not name:
+                continue
+
+            sdn_type = (rec.get("type") or "entity").lower()
+            ent_type = _SDN_TYPE_MAP.get(sdn_type, "organization")
+
+            # Normalize name: use normalize_company_name for orgs, simpler for persons/vessels
+            if ent_type == "organization" and normalize_company_name:
+                try:
+                    canon = normalize_company_name(name)
+                except (ValueError, TypeError):
+                    canon = name.strip().lower()
+            else:
+                canon = name.strip().lower()
+
+            eid = entity_id_from_key(ent_type, canon)
+
+            if eid not in seen:
+                seen.add(eid)
+                store.register_entity(
+                    entity_type=ent_type,
+                    canonical_name=canon,
+                    entity_id=eid,
+                    metadata={
+                        "source": rec.get("source", "unknown"),
+                        "original_name": name,
+                        "sdn_type": sdn_type,
+                    },
+                )
+                # Add source-specific alias
+                source_id = rec.get("entity_id", "")
+                if source_id:
+                    store.add_entity_alias(
+                        eid,
+                        f"sanctions_{rec.get('source', 'unknown')}",
+                        str(source_id),
+                    )
+
+            # Observation
+            listed_date = rec.get("listed_date") or rec.get("last_updated")
+            try:
+                ts = (
+                    datetime.fromisoformat(
+                        listed_date.replace("Z", "+00:00")
+                    ).timestamp()
+                    if listed_date
+                    else datetime.now(tz=timezone.utc).timestamp()
+                )
+            except (ValueError, AttributeError):
+                ts = datetime.now(tz=timezone.utc).timestamp()
+
+            store.store_entity_observation(
+                entity_id=eid,
+                source_tool="sanctions_monitor",
+                observed_at=ts,
+                observation_type="sanctions_listing",
+                depth_level=2,
+                value={
+                    "source": rec.get("source", "unknown"),
+                    "programs": rec.get("programs", []),
+                    "nationality": rec.get("nationality"),
+                    "aliases": rec.get("aliases", [])[:5],
+                },
+            )
+
+            # ── Program → country links ──
+            for prog in rec.get("programs", []):
+                # Try exact match first, then uppercase
+                country_code = _PROGRAM_COUNTRY.get(prog) or _PROGRAM_COUNTRY.get(
+                    prog.upper()
+                )
+                if not country_code:
+                    continue
+
+                country_eid = entity_id_from_key("country", country_code.lower())
+                store.register_entity(
+                    entity_type="country",
+                    canonical_name=country_code,
+                    entity_id=country_eid,
+                )
+                # Avoid self-link (shouldn't happen, but guard)
+                if eid != country_eid:
+                    store.link_entities(
+                        entity_id_a=eid,
+                        entity_id_b=country_eid,
+                        link_type="sanctioned_under",
+                        source="sanctions_monitor",
+                        confidence=0.95,
+                        metadata={"program": prog, "data_source": rec.get("source")},
+                    )
 
     def execute(
         self,
@@ -470,6 +665,8 @@ class SanctionsMonitorTool(Tool):
             lines.append(_format_record(rec))
             lines.append("")
 
+        self._persist_entities(matched)
+
         return ToolResult(
             success=True,
             output="\n".join(lines),
@@ -544,6 +741,8 @@ class SanctionsMonitorTool(Tool):
         for rec in recent:
             lines.append(_format_record(rec))
             lines.append("")
+
+        self._persist_entities(recent)
 
         return ToolResult(
             success=True,

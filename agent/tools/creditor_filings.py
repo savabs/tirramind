@@ -35,13 +35,22 @@ from __future__ import annotations
 import logging
 import os
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
 
 import httpx
 
 from agent.data.cache import DataCache
 from agent.tools.base import Tool, ToolResult
+
+if TYPE_CHECKING:
+    from agent.pipeline.store import PipelineStore
+
+try:
+    from agent.pipeline.entity import entity_id_from_key, normalize_company_name
+except ImportError:  # pragma: no cover
+    entity_id_from_key = None  # type: ignore[assignment]
+    normalize_company_name = None  # type: ignore[assignment]
 
 log = logging.getLogger(__name__)
 
@@ -340,8 +349,191 @@ class CreditorFilingsTool(Tool):
         "required": ["mode"],
     }
 
-    def __init__(self, *, cache: DataCache | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        cache: DataCache | None = None,
+        pipeline_store: PipelineStore | None = None,
+    ) -> None:
         self._cache = cache
+        self._store = pipeline_store
+
+    # ------------------------------------------------------------------
+    # Entity persistence (L2)
+    # ------------------------------------------------------------------
+
+    def _persist_entities(
+        self,
+        entries: list[dict[str, Any]],
+        ch_charges: list[dict[str, Any]] | None = None,
+        ch_company_info: dict[str, Any] | None = None,
+    ) -> None:
+        """Register company entities and store creditor-filing observations."""
+        if self._store is None or entity_id_from_key is None:
+            return
+        if not entries and not ch_charges:
+            return
+        try:
+            self._persist_entities_inner(entries, ch_charges, ch_company_info)
+        except Exception:
+            log.exception("Entity persistence failed (non-fatal)")
+
+    def _persist_entities_inner(
+        self,
+        entries: list[dict[str, Any]],
+        ch_charges: list[dict[str, Any]] | None = None,
+        ch_company_info: dict[str, Any] | None = None,
+    ) -> None:
+        assert self._store is not None  # noqa: S101
+        store = self._store
+
+        seen: set[str] = set()
+
+        # ── SEC EDGAR 8-K entries ──
+        for entry in entries:
+            name = (entry.get("company_name") or "").strip()
+            if not name:
+                continue
+
+            canon = (
+                normalize_company_name(name)
+                if normalize_company_name
+                else name.strip().lower()
+            )
+            eid = entity_id_from_key("company", canon)
+
+            if eid not in seen:
+                seen.add(eid)
+                store.register_entity(
+                    entity_type="company",
+                    canonical_name=canon,
+                    entity_id=eid,
+                    metadata={
+                        "source": "sec_edgar",
+                        "cik": entry.get("cik", ""),
+                    },
+                )
+
+            date_str = entry.get("file_date", "")
+            try:
+                ts = (
+                    datetime.strptime(date_str, "%Y-%m-%d")
+                    .replace(tzinfo=timezone.utc)
+                    .timestamp()
+                )
+            except (ValueError, TypeError):
+                ts = datetime.now(tz=timezone.utc).timestamp()
+
+            items = entry.get("items", [])
+            is_stress = bool(set(items) & _CREDIT_ITEMS)
+
+            store.store_entity_observation(
+                entity_id=eid,
+                source_tool="creditor_filings",
+                observed_at=ts,
+                observation_type="creditor_filing",
+                depth_level=2,
+                value={
+                    "cik": entry.get("cik", ""),
+                    "form": entry.get("form", "8-K"),
+                    "file_date": date_str,
+                    "items": items,
+                    "is_stress_signal": is_stress,
+                },
+            )
+
+        # ── UK Companies House charges → debtor-creditor links ──
+        if not ch_charges or not ch_company_info:
+            return
+
+        debtor_name = (ch_company_info.get("company_name") or "").strip()
+        if not debtor_name:
+            return
+
+        debtor_canon = (
+            normalize_company_name(debtor_name)
+            if normalize_company_name
+            else debtor_name.strip().lower()
+        )
+        debtor_eid = entity_id_from_key("company", debtor_canon)
+
+        if debtor_eid not in seen:
+            seen.add(debtor_eid)
+            store.register_entity(
+                entity_type="company",
+                canonical_name=debtor_canon,
+                entity_id=debtor_eid,
+                metadata={
+                    "source": "companies_house",
+                    "company_number": ch_company_info.get("company_number", ""),
+                },
+            )
+
+        for charge in ch_charges:
+            date_str = charge.get("created_on", "")
+            try:
+                ts = (
+                    datetime.strptime(date_str, "%Y-%m-%d")
+                    .replace(tzinfo=timezone.utc)
+                    .timestamp()
+                )
+            except (ValueError, TypeError):
+                ts = datetime.now(tz=timezone.utc).timestamp()
+
+            is_red = charge.get("status", "") in _CHARGE_RED_FLAGS
+
+            store.store_entity_observation(
+                entity_id=debtor_eid,
+                source_tool="creditor_filings",
+                observed_at=ts,
+                observation_type="creditor_filing",
+                depth_level=2,
+                value={
+                    "charge_number": charge.get("charge_number"),
+                    "status": charge.get("status", ""),
+                    "created_on": date_str,
+                    "classification": charge.get("classification", ""),
+                    "persons_entitled": charge.get("persons_entitled", []),
+                    "is_red_flag": is_red,
+                },
+            )
+
+            # Create debtor→creditor entity links
+            for creditor_name in charge.get("persons_entitled", []):
+                creditor_name = creditor_name.strip()
+                if not creditor_name:
+                    continue
+                creditor_canon = (
+                    normalize_company_name(creditor_name)
+                    if normalize_company_name
+                    else creditor_name.strip().lower()
+                )
+                creditor_eid = entity_id_from_key("company", creditor_canon)
+
+                # Guard against self-link
+                if creditor_eid == debtor_eid:
+                    continue
+
+                if creditor_eid not in seen:
+                    seen.add(creditor_eid)
+                    store.register_entity(
+                        entity_type="company",
+                        canonical_name=creditor_canon,
+                        entity_id=creditor_eid,
+                        metadata={"source": "companies_house_charge"},
+                    )
+
+                store.link_entities(
+                    entity_id_a=debtor_eid,
+                    entity_id_b=creditor_eid,
+                    link_type="debtor_of",
+                    source="creditor_filings",
+                    confidence=0.8,
+                    metadata={
+                        "charge_number": charge.get("charge_number"),
+                        "classification": charge.get("classification", ""),
+                    },
+                )
 
     def execute(self, **kwargs: Any) -> ToolResult:
         mode = (kwargs.get("mode") or "").strip().lower()
@@ -425,6 +617,9 @@ class CreditorFilingsTool(Tool):
                 {"entries": entries, "total": total, "ch_charges": ch_charges},
                 ttl=_CACHE_TTL,
             )
+
+        # Persist entities (L2)
+        self._persist_entities(entries, ch_charges)
 
         return self._format_search_result(entries, total, query, days_back, ch_charges)
 
@@ -559,6 +754,9 @@ class CreditorFilingsTool(Tool):
                 ttl=_CACHE_TTL,
             )
 
+        # Persist entities (L2)
+        self._persist_entities([], charges, company_info)
+
         return self._format_uk_result(charges, company_info, limit)
 
     def _format_uk_result(
@@ -656,6 +854,9 @@ class CreditorFilingsTool(Tool):
                 {"entries": entries, "total": total, "clusters": clusters},
                 ttl=_CACHE_TTL,
             )
+
+        # Persist entities (L2)
+        self._persist_entities(entries)
 
         return self._format_stress_result(entries, total, clusters, days_back)
 

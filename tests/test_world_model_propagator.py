@@ -349,7 +349,7 @@ class TestWithInitialGraph:
 
     def test_prior_propagation(self, propagator: BeliefPropagator) -> None:
         beliefs = propagator.propagate_priors(as_of=AS_OF)
-        assert len(beliefs) == 9  # all 9 nodes
+        assert len(beliefs) == 20  # all 20 nodes
 
     def test_priors_sum_to_one(self, propagator: BeliefPropagator) -> None:
         beliefs = propagator.propagate_priors(as_of=AS_OF)
@@ -362,7 +362,7 @@ class TestWithInitialGraph:
             evidence={"obs.rate_momentum": "rising"},
             as_of=AS_OF,
         )
-        assert len(beliefs) == 9
+        assert len(beliefs) == 20
         # regime.macro should shift toward expansion
         macro = next(b for b in beliefs if b.variable_name == "regime.macro")
         assert macro.probabilities["expansion"] > macro.probabilities["crisis"]
@@ -402,7 +402,7 @@ class TestWithInitialGraph:
             },
             as_of=AS_OF,
         )
-        assert len(beliefs) == 9
+        assert len(beliefs) == 20
         macro = next(b for b in beliefs if b.variable_name == "regime.macro")
         # With all expansion-consistent evidence, expansion should dominate
         assert macro.probabilities["expansion"] > 0.5

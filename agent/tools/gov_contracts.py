@@ -30,12 +30,21 @@ Modes:
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from agent.data.cache import DataCache
 from agent.tools.base import Tool, ToolResult
+
+if TYPE_CHECKING:
+    from agent.pipeline.store import PipelineStore
+
+try:
+    from agent.pipeline.entity import entity_id_from_key, normalize_company_name
+except ImportError:  # pragma: no cover
+    entity_id_from_key = None  # type: ignore[assignment]
+    normalize_company_name = None  # type: ignore[assignment]
 
 log = logging.getLogger(__name__)
 
@@ -71,8 +80,152 @@ _FIELDS = [
 class GovContractsTool(Tool):
     """Query government contract awards from US (USASpending) and UK (Contracts Finder)."""
 
-    def __init__(self, cache: DataCache | None = None) -> None:
+    def __init__(
+        self,
+        cache: DataCache | None = None,
+        *,
+        pipeline_store: PipelineStore | None = None,
+    ) -> None:
         self._cache = cache
+        self._store = pipeline_store
+
+    # ------------------------------------------------------------------
+    # Entity persistence (L2)
+    # ------------------------------------------------------------------
+
+    def _persist_entities(
+        self, awards: list[dict[str, Any]], country_code: str
+    ) -> None:
+        """Register recipient + agency entities and create links."""
+        if self._store is None or entity_id_from_key is None:
+            return
+        if not awards:
+            return
+        try:
+            self._persist_entities_inner(awards, country_code)
+        except Exception:
+            log.exception("Entity persistence failed (non-fatal)")
+
+    def _persist_entities_inner(
+        self, awards: list[dict[str, Any]], country_code: str
+    ) -> None:
+        assert self._store is not None  # noqa: S101
+        store = self._store
+
+        # Register country entity once per batch
+        country_eid = entity_id_from_key("country", country_code.lower())
+        store.register_entity(
+            entity_type="country",
+            canonical_name=country_code,
+            entity_id=country_eid,
+        )
+
+        seen_companies: set[str] = set()
+        seen_agencies: set[str] = set()
+
+        for award in awards:
+            recipient = (award.get("recipient") or "").strip()
+            agency = (award.get("agency") or "").strip()
+            if not recipient:
+                continue
+
+            # ── Company (recipient) ──
+            try:
+                company_canon = (
+                    normalize_company_name(recipient)
+                    if normalize_company_name
+                    else recipient
+                )
+            except (ValueError, TypeError):
+                company_canon = recipient.strip().lower()
+
+            company_eid = entity_id_from_key("company", company_canon)
+
+            if company_eid not in seen_companies:
+                seen_companies.add(company_eid)
+                store.register_entity(
+                    entity_type="company",
+                    canonical_name=company_canon,
+                    entity_id=company_eid,
+                    metadata={"source": "gov_contracts", "original_name": recipient},
+                )
+
+            # Observation on the company
+            from datetime import datetime, timezone
+
+            start_date = award.get("start_date") or ""
+            try:
+                ts = (
+                    datetime.fromisoformat(
+                        start_date.replace("Z", "+00:00")
+                    ).timestamp()
+                    if start_date
+                    else datetime.now(tz=timezone.utc).timestamp()
+                )
+            except (ValueError, AttributeError):
+                ts = datetime.now(tz=timezone.utc).timestamp()
+
+            store.store_entity_observation(
+                entity_id=company_eid,
+                source_tool="gov_contracts",
+                observed_at=ts,
+                observation_type="contract_award",
+                depth_level=2,
+                value={
+                    "award_id": award.get("award_id"),
+                    "amount_usd": award.get("amount_usd") or award.get("amount"),
+                    "agency": agency,
+                    "award_type": award.get("award_type"),
+                    "country": country_code,
+                },
+            )
+
+            # ── operates_in link (company → country) ──
+            if company_eid != country_eid:
+                store.link_entities(
+                    entity_id_a=company_eid,
+                    entity_id_b=country_eid,
+                    link_type="operates_in",
+                    source="gov_contracts",
+                    confidence=0.9,
+                    metadata={"evidence": "contract_award"},
+                )
+
+            # ── Agency (organization) ──
+            if not agency:
+                continue
+
+            try:
+                agency_canon = (
+                    normalize_company_name(agency) if normalize_company_name else agency
+                )
+            except (ValueError, TypeError):
+                agency_canon = agency.strip().lower()
+
+            agency_eid = entity_id_from_key("organization", agency_canon)
+
+            if agency_eid not in seen_agencies:
+                seen_agencies.add(agency_eid)
+                store.register_entity(
+                    entity_type="organization",
+                    canonical_name=agency_canon,
+                    entity_id=agency_eid,
+                    metadata={"source": "gov_contracts", "original_name": agency},
+                )
+
+            # ── awarded_by link (company → agency/org) ──
+            if company_eid != agency_eid:
+                store.link_entities(
+                    entity_id_a=company_eid,
+                    entity_id_b=agency_eid,
+                    link_type="awarded_by",
+                    source="gov_contracts",
+                    confidence=1.0,
+                    metadata={
+                        "award_id": award.get("award_id"),
+                        "amount": award.get("amount_usd") or award.get("amount"),
+                    },
+                )
 
     @property
     def name(self) -> str:
@@ -288,6 +441,8 @@ class GovContractsTool(Tool):
         page_meta = data.get("page_metadata", {})
         total = page_meta.get("total", len(results))
 
+        self._persist_entities(results, "US")
+
         summary = (
             f"Found {total} federal contract awards ({start_date} to {end_date})"
             + (f" from {agency_name}" if agency_name else "")
@@ -352,6 +507,8 @@ class GovContractsTool(Tool):
 
         total = len(awards)
         awards = awards[:limit]
+
+        self._persist_entities(awards, "GB")
 
         summary = (
             f"Found {total} UK contract awards ({start_date} to {end_date})"

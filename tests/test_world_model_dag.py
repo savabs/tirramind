@@ -100,7 +100,7 @@ class TestRunWorldModelUpdate:
                 upstream={},
             )
             assert result["features_available"] >= 1
-            assert result["beliefs_count"] == 12  # 9 DAG + 3 Kalman
+            assert result["beliefs_count"] == 23  # 20 DAG + 3 Kalman
 
     def test_idempotent_rerun(self) -> None:
         """Running twice should not fail (upsert on unique index)."""

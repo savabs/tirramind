@@ -370,13 +370,19 @@ class HetTGN(nn.Module):
             )
 
         # ── Event prediction head ──────────────────────────────
-        # Predicts: which obs_type + time_delta (per-node)
+        # Predicts: which obs_type + time_delta + value (per-node)
         self.obs_type_head = nn.Linear(hidden_dim, _num_obs_types)
         self.time_delta_head = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim // 2),
             nn.ReLU(),
             nn.Linear(hidden_dim // 2, 1),
             nn.Softplus(),  # time delta is non-negative
+        )
+        # Value prediction head (Phase 20): predict magnitude of next observation
+        self.value_pred_head = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim // 2),
+            nn.ReLU(),
+            nn.Linear(hidden_dim // 2, 1),
         )
 
         # ── Entity-pair score for link prediction ──────────────
@@ -470,6 +476,17 @@ class HetTGN(nn.Module):
             Dict node_type → time_delta [N_type, 1].
         """
         return {ntype: self.time_delta_head(emb) for ntype, emb in embeddings.items()}
+
+    def predict_value(
+        self,
+        embeddings: dict[str, torch.Tensor],
+    ) -> dict[str, torch.Tensor]:
+        """Predict value (magnitude) of next observation per node.
+
+        Returns:
+            Dict node_type → value [N_type, 1].
+        """
+        return {ntype: self.value_pred_head(emb) for ntype, emb in embeddings.items()}
 
     def link_score(self, emb_u: torch.Tensor, emb_v: torch.Tensor) -> torch.Tensor:
         """Bilinear link score: u^T W v.

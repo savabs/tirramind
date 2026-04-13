@@ -1,8 +1,8 @@
 """
 TirraMind — Initial Expert DAG
 
-Expert-specified causal graph with 9 nodes (3 latent/regime + 6 observed)
-and 11 directed edges.  Prior CPDs are weakly informative — roughly uniform
+Expert-specified causal graph with 20 nodes (3 latent/regime + 17 observed)
+and 19 directed edges.  Prior CPDs are weakly informative — roughly uniform
 with slight center bias.  These priors will be updated by MLE fitting once
 enough historical feature data accumulates.
 
@@ -10,11 +10,15 @@ Causal semantics:
     - regime.macro governs macro features (rate_momentum, yield_curve_slope,
       liquidity_pressure) and influences regime.stress
     - regime.stress governs convergence features (stress_breadth,
-      stress_intensity, regime_persistence)
+      stress_intensity, regime_persistence) and GNN anomaly features
+      (person/company/wallet/country/vessel anomaly)
     - latent.risk_appetite is driven by both regime.macro and regime.stress
-      and modulates obs.liquidity_pressure and obs.stress_intensity
+      and modulates obs.liquidity_pressure, obs.stress_intensity,
+      and GNN activity features (person/company/wallet activity)
+    - GNN cross_entity is an unparented observed node (not caused by a single
+      regime variable; provides evidence about inter-entity correlation)
 
-Spec: docs/specs/world_model_spec.md (step 9.2.2)
+Spec: docs/specs/world_model_bridge_spec.md (step 19c.1)
 """
 
 from __future__ import annotations
@@ -112,6 +116,120 @@ _OBS_REGIME_PERSISTENCE = NodeSpec(
     bin_edges=(-math.inf, 0.3, 0.7, math.inf),
 )
 
+# ── GNN entity-derived observed nodes (Phase 19c) ─────────────
+
+_GNN_BIN_EDGES: tuple[float, ...] = (-math.inf, -1.0, 1.0, math.inf)
+
+_OBS_PERSON_ANOMALY = NodeSpec(
+    name="obs.person_anomaly",
+    node_type="observed",
+    domain="entity",
+    cardinality=3,
+    states=("low", "normal", "high"),
+    feature_name="gnn.person_anomaly.spot",
+    bin_edges=_GNN_BIN_EDGES,
+)
+
+_OBS_COMPANY_ANOMALY = NodeSpec(
+    name="obs.company_anomaly",
+    node_type="observed",
+    domain="entity",
+    cardinality=3,
+    states=("low", "normal", "high"),
+    feature_name="gnn.company_anomaly.spot",
+    bin_edges=_GNN_BIN_EDGES,
+)
+
+_OBS_WALLET_ANOMALY = NodeSpec(
+    name="obs.wallet_anomaly",
+    node_type="observed",
+    domain="entity",
+    cardinality=3,
+    states=("low", "normal", "high"),
+    feature_name="gnn.wallet_anomaly.spot",
+    bin_edges=_GNN_BIN_EDGES,
+)
+
+_OBS_COUNTRY_ANOMALY = NodeSpec(
+    name="obs.country_anomaly",
+    node_type="observed",
+    domain="entity",
+    cardinality=3,
+    states=("low", "normal", "high"),
+    feature_name="gnn.country_anomaly.spot",
+    bin_edges=_GNN_BIN_EDGES,
+)
+
+_OBS_VESSEL_ANOMALY = NodeSpec(
+    name="obs.vessel_anomaly",
+    node_type="observed",
+    domain="entity",
+    cardinality=3,
+    states=("low", "normal", "high"),
+    feature_name="gnn.vessel_anomaly.spot",
+    bin_edges=_GNN_BIN_EDGES,
+)
+
+_OBS_PERSON_ACTIVITY = NodeSpec(
+    name="obs.person_activity",
+    node_type="observed",
+    domain="entity",
+    cardinality=3,
+    states=("low", "normal", "high"),
+    feature_name="gnn.person_activity.spot",
+    bin_edges=_GNN_BIN_EDGES,
+)
+
+_OBS_COMPANY_ACTIVITY = NodeSpec(
+    name="obs.company_activity",
+    node_type="observed",
+    domain="entity",
+    cardinality=3,
+    states=("low", "normal", "high"),
+    feature_name="gnn.company_activity.spot",
+    bin_edges=_GNN_BIN_EDGES,
+)
+
+_OBS_WALLET_ACTIVITY = NodeSpec(
+    name="obs.wallet_activity",
+    node_type="observed",
+    domain="entity",
+    cardinality=3,
+    states=("low", "normal", "high"),
+    feature_name="gnn.wallet_activity.spot",
+    bin_edges=_GNN_BIN_EDGES,
+)
+
+_OBS_COUNTRY_ACTIVITY = NodeSpec(
+    name="obs.country_activity",
+    node_type="observed",
+    domain="entity",
+    cardinality=3,
+    states=("low", "normal", "high"),
+    feature_name="gnn.country_activity.spot",
+    bin_edges=_GNN_BIN_EDGES,
+)
+
+_OBS_VESSEL_ACTIVITY = NodeSpec(
+    name="obs.vessel_activity",
+    node_type="observed",
+    domain="entity",
+    cardinality=3,
+    states=("low", "normal", "high"),
+    feature_name="gnn.vessel_activity.spot",
+    bin_edges=_GNN_BIN_EDGES,
+)
+
+_OBS_CROSS_ENTITY = NodeSpec(
+    name="obs.cross_entity",
+    node_type="observed",
+    domain="entity",
+    cardinality=3,
+    states=("low", "normal", "high"),
+    feature_name="gnn.cross_entity.spot",
+    bin_edges=_GNN_BIN_EDGES,
+)
+
 ALL_NODES: list[NodeSpec] = [
     _REGIME_MACRO,
     _REGIME_STRESS,
@@ -122,6 +240,18 @@ ALL_NODES: list[NodeSpec] = [
     _OBS_STRESS_BREADTH,
     _OBS_STRESS_INTENSITY,
     _OBS_REGIME_PERSISTENCE,
+    # GNN entity-derived nodes (Phase 19c)
+    _OBS_PERSON_ANOMALY,
+    _OBS_COMPANY_ANOMALY,
+    _OBS_WALLET_ANOMALY,
+    _OBS_COUNTRY_ANOMALY,
+    _OBS_VESSEL_ANOMALY,
+    _OBS_PERSON_ACTIVITY,
+    _OBS_COMPANY_ACTIVITY,
+    _OBS_WALLET_ACTIVITY,
+    _OBS_COUNTRY_ACTIVITY,
+    _OBS_VESSEL_ACTIVITY,
+    _OBS_CROSS_ENTITY,
 ]
 
 ALL_EDGES: list[tuple[str, str]] = [
@@ -136,6 +266,17 @@ ALL_EDGES: list[tuple[str, str]] = [
     ("latent.risk_appetite", "obs.liquidity_pressure"),
     ("latent.risk_appetite", "obs.stress_intensity"),
     ("regime.macro", "regime.stress"),
+    # GNN anomaly edges: regime.stress → anomaly (5 edges)
+    ("regime.stress", "obs.person_anomaly"),
+    ("regime.stress", "obs.company_anomaly"),
+    ("regime.stress", "obs.wallet_anomaly"),
+    ("regime.stress", "obs.country_anomaly"),
+    ("regime.stress", "obs.vessel_anomaly"),
+    # GNN activity edges: latent.risk_appetite → activity (3 edges)
+    ("latent.risk_appetite", "obs.person_activity"),
+    ("latent.risk_appetite", "obs.company_activity"),
+    ("latent.risk_appetite", "obs.wallet_activity"),
+    # obs.cross_entity is unparented (root observed node)
 ]
 
 # ── CPD builders ───────────────────────────────────────────────
@@ -407,13 +548,79 @@ def _build_regime_persistence_cpd() -> TabularCPD:
     )
 
 
+# ── GNN-derived CPDs (Phase 19c) ──────────────────────────────
+
+
+def _weakly_informative_3x3(parent_name: str, parent_states: list[str]) -> np.ndarray:
+    """Near-uniform CPD for a 3-state child with a 3-state parent.
+
+    Each column sums to 1.0. Centre state slightly favoured in all
+    parent configurations, with a mild alignment bias (high→high, low→low).
+    """
+    return np.array(
+        [
+            [0.40, 0.30, 0.20],  # low
+            [0.35, 0.40, 0.35],  # normal
+            [0.25, 0.30, 0.45],  # high
+        ]
+    )
+
+
+def _build_anomaly_cpd(node: NodeSpec) -> TabularCPD:
+    """P(obs.{type}_anomaly | regime.stress)
+
+    Weakly informative: extreme stress slightly raises anomaly probability.
+    CPD columns: calm, elevated, extreme.
+    CPD rows: low, normal, high.
+    """
+    values = np.array(
+        [
+            [0.45, 0.30, 0.15],  # low
+            [0.35, 0.40, 0.35],  # normal
+            [0.20, 0.30, 0.50],  # high
+        ]
+    )
+    return _build_single_parent_obs_cpd(node, _REGIME_STRESS, values)
+
+
+def _build_activity_cpd(node: NodeSpec) -> TabularCPD:
+    """P(obs.{type}_activity | latent.risk_appetite)
+
+    Weakly informative: risk_on slightly raises activity.
+    CPD columns: risk_on, neutral, risk_off.
+    CPD rows: low, normal, high.
+    """
+    values = np.array(
+        [
+            [0.15, 0.30, 0.45],  # low
+            [0.35, 0.40, 0.35],  # normal
+            [0.50, 0.30, 0.20],  # high
+        ]
+    )
+    return _build_single_parent_obs_cpd(node, _LATENT_RISK_APPETITE, values)
+
+
+def _build_cross_entity_cpd() -> TabularCPD:
+    """P(obs.cross_entity) — root observed node (no parents).
+
+    Weakly informative prior: slightly favours "normal" correlation.
+    """
+    values = np.array([[0.25], [0.50], [0.25]])
+    return TabularCPD(
+        variable="obs.cross_entity",
+        variable_card=3,
+        values=values,
+        state_names={"obs.cross_entity": ["low", "normal", "high"]},
+    )
+
+
 # ── Public builder ─────────────────────────────────────────────
 
 
 def build_initial_graph() -> WorldModelGraph:
     """Construct the expert-specified initial world model graph.
 
-    Returns a fully wired WorldModelGraph with 9 nodes, 11 edges,
+    Returns a fully wired WorldModelGraph with 20 nodes, 19 edges,
     and weakly informative prior CPDs.  The graph passes validate()
     with zero errors.
     """
@@ -422,7 +629,7 @@ def build_initial_graph() -> WorldModelGraph:
     # Root node priors
     graph.set_cpd("regime.macro", _build_root_cpd(_REGIME_MACRO))
 
-    # Conditional CPDs
+    # Conditional CPDs — original 6 observed nodes
     graph.set_cpd("regime.stress", _build_regime_stress_cpd())
     graph.set_cpd("latent.risk_appetite", _build_risk_appetite_cpd())
     graph.set_cpd("obs.rate_momentum", _build_rate_momentum_cpd())
@@ -431,6 +638,28 @@ def build_initial_graph() -> WorldModelGraph:
     graph.set_cpd("obs.stress_breadth", _build_stress_breadth_cpd())
     graph.set_cpd("obs.stress_intensity", _build_stress_intensity_cpd())
     graph.set_cpd("obs.regime_persistence", _build_regime_persistence_cpd())
+
+    # GNN anomaly nodes — P(anomaly | regime.stress) (5 nodes)
+    graph.set_cpd("obs.person_anomaly", _build_anomaly_cpd(_OBS_PERSON_ANOMALY))
+    graph.set_cpd("obs.company_anomaly", _build_anomaly_cpd(_OBS_COMPANY_ANOMALY))
+    graph.set_cpd("obs.wallet_anomaly", _build_anomaly_cpd(_OBS_WALLET_ANOMALY))
+    graph.set_cpd("obs.country_anomaly", _build_anomaly_cpd(_OBS_COUNTRY_ANOMALY))
+    graph.set_cpd("obs.vessel_anomaly", _build_anomaly_cpd(_OBS_VESSEL_ANOMALY))
+
+    # GNN activity nodes — P(activity | latent.risk_appetite) (3 nodes)
+    graph.set_cpd("obs.person_activity", _build_activity_cpd(_OBS_PERSON_ACTIVITY))
+    graph.set_cpd("obs.company_activity", _build_activity_cpd(_OBS_COMPANY_ACTIVITY))
+    graph.set_cpd("obs.wallet_activity", _build_activity_cpd(_OBS_WALLET_ACTIVITY))
+
+    # GNN activity nodes — unparented (2 remaining activity + cross_entity)
+    # country_activity and vessel_activity have no parent edges (not enough
+    # causal justification for risk_appetite → vessel/country activity).
+    # They get marginal priors like cross_entity.
+    graph.set_cpd("obs.country_activity", _build_root_cpd(_OBS_COUNTRY_ACTIVITY))
+    graph.set_cpd("obs.vessel_activity", _build_root_cpd(_OBS_VESSEL_ACTIVITY))
+
+    # Cross-entity: root observed node (no parents)
+    graph.set_cpd("obs.cross_entity", _build_cross_entity_cpd())
 
     # Validate — fail fast if priors are broken
     errors = graph.validate()

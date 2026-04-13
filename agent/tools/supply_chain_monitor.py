@@ -22,12 +22,20 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from agent.data.cache import DataCache
 from agent.tools.base import Tool, ToolResult
+
+if TYPE_CHECKING:
+    from agent.pipeline.store import PipelineStore
+
+try:
+    from agent.pipeline.entity import entity_id_from_key
+except ImportError:  # pragma: no cover
+    entity_id_from_key = None  # type: ignore[assignment]
 
 log = logging.getLogger(__name__)
 
@@ -91,8 +99,73 @@ def _safe_float(val: Any) -> float | None:
 class SupplyChainMonitorTool(Tool):
     """BLS PPI + Import Price tracking across key supply chain sectors."""
 
-    def __init__(self, cache: DataCache | None = None) -> None:
+    def __init__(
+        self,
+        cache: DataCache | None = None,
+        *,
+        pipeline_store: PipelineStore | None = None,
+    ) -> None:
         self._cache = cache
+        self._store = pipeline_store
+
+    # ------------------------------------------------------------------
+    # Entity persistence (L2)
+    # ------------------------------------------------------------------
+
+    def _persist_entities(self, series_data: dict[str, Any]) -> None:
+        """Register topic entities for each BLS series."""
+        if self._store is None or entity_id_from_key is None:
+            return
+        if not series_data:
+            return
+        try:
+            self._persist_entities_inner(series_data)
+        except Exception:
+            log.exception("Entity persistence failed (non-fatal)")
+
+    def _persist_entities_inner(self, series_data: dict[str, Any]) -> None:
+        assert self._store is not None  # noqa: S101
+        store = self._store
+        now_ts = datetime.now(tz=timezone.utc).timestamp()
+
+        for series_id, info in series_data.items():
+            # info may be a dict with 'label'/'sector'/'values', or a list
+            if isinstance(info, dict):
+                label = info.get("label", series_id)
+                sector = info.get("sector", "unknown")
+                values = info.get("values", [])
+            else:
+                label = series_id
+                sector = "unknown"
+                values = info if isinstance(info, list) else []
+
+            eid = entity_id_from_key("topic", series_id)
+            store.register_entity(
+                entity_type="topic",
+                canonical_name=label,
+                entity_id=eid,
+                metadata={"series_id": series_id, "sector": sector},
+            )
+
+            # Latest value as observation
+            latest_val = None
+            if isinstance(values, list) and values:
+                last = values[-1] if isinstance(values[-1], dict) else {}
+                latest_val = _safe_float(last.get("value"))
+
+            store.store_entity_observation(
+                entity_id=eid,
+                source_tool="supply_chain_monitor",
+                observed_at=now_ts,
+                observation_type="price_movement",
+                depth_level=2,
+                value={
+                    "series_id": series_id,
+                    "sector": sector,
+                    "latest_value": latest_val,
+                    "num_periods": len(values) if isinstance(values, list) else 0,
+                },
+            )
 
     @property
     def name(self) -> str:
@@ -175,7 +248,7 @@ class SupplyChainMonitorTool(Tool):
             return ToolResult(
                 success=False,
                 output=f"No PPI series match sectors '{sectors_str}'. "
-                       f"Available sectors: tech, industrial, materials, energy, chemicals, all.",
+                f"Available sectors: tech, industrial, materials, energy, chemicals, all.",
             )
 
         cache_key = f"supply_chain:ppi:{','.join(sorted(series_ids))}:{months}"
@@ -199,7 +272,11 @@ class SupplyChainMonitorTool(Tool):
         }
 
         if self._cache:
-            self._cache.set(cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL)
+            self._cache.set(
+                cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL
+            )
+
+        self._persist_entities(data)
 
         return ToolResult(success=True, output=summary, data=result_data)
 
@@ -228,7 +305,11 @@ class SupplyChainMonitorTool(Tool):
         }
 
         if self._cache:
-            self._cache.set(cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL)
+            self._cache.set(
+                cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL
+            )
+
+        self._persist_entities(data)
 
         return ToolResult(success=True, output=summary, data=result_data)
 
@@ -267,7 +348,11 @@ class SupplyChainMonitorTool(Tool):
         }
 
         if self._cache:
-            self._cache.set(cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL)
+            self._cache.set(
+                cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL
+            )
+
+        self._persist_entities(data)
 
         return ToolResult(success=True, output=summary, data=result_data)
 
@@ -281,17 +366,15 @@ def _filter_ppi_series(sectors_str: str) -> list[str]:
         return list(_PPI_SERIES.keys())
 
     requested = {s.strip().lower() for s in sectors_str.split(",")}
-    return [
-        sid for sid, info in _PPI_SERIES.items()
-        if info["sector"] in requested
-    ]
+    return [sid for sid, info in _PPI_SERIES.items() if info["sector"] in requested]
 
 
 # ── BLS fetch ───────────────────────────────────────────────────
 
 
 def _fetch_bls_multi(
-    series_ids: list[str], months: int,
+    series_ids: list[str],
+    months: int,
 ) -> tuple[dict[str, list[dict]], str | None]:
     """Fetch multiple BLS series in a single request (up to 50 per request)."""
     now = datetime.now(timezone.utc)
@@ -338,11 +421,13 @@ def _fetch_bls_multi(
             val = _safe_float(entry.get("value"))
             if val is None:
                 continue
-            records.append({
-                "year": entry.get("year", ""),
-                "period": period,
-                "value": val,
-            })
+            records.append(
+                {
+                    "year": entry.get("year", ""),
+                    "period": period,
+                    "value": val,
+                }
+            )
         records.sort(key=lambda r: (r["year"], r["period"]))
         if len(records) > months:
             records = records[-months:]
@@ -463,7 +548,8 @@ def _compute_import_signals(
 
 
 def _compute_pressure_score(
-    ppi_sig: dict[str, Any], import_sig: dict[str, Any],
+    ppi_sig: dict[str, Any],
+    import_sig: dict[str, Any],
 ) -> dict[str, Any]:
     """Compute composite supply chain pressure score (0-100)."""
     score_components: list[float] = []
@@ -483,7 +569,9 @@ def _compute_pressure_score(
         if avg_mom > 0:
             score_components.append(magnitude)
         else:
-            score_components.append(-magnitude * 0.5)  # Deflation less alarming than inflation
+            score_components.append(
+                -magnitude * 0.5
+            )  # Deflation less alarming than inflation
 
     # Import price component
     all_imports = import_sig.get("series", {}).get("EIUIR", {})
@@ -518,7 +606,9 @@ def _compute_pressure_score(
 
 
 def _format_ppi_summary(
-    data: dict[str, list[dict]], signals: dict, months: int,
+    data: dict[str, list[dict]],
+    signals: dict,
+    months: int,
 ) -> str:
     lines = [f"Producer Price Index Summary ({months} months, BLS PPI):\n"]
 
@@ -531,9 +621,15 @@ def _format_ppi_summary(
 
         period = sig.get("latest_period", "")
         mom = sig.get("mom_pct")
-        mom_str = f" MoM: {'+' if mom and mom > 0 else ''}{mom}%" if mom is not None else ""
+        mom_str = (
+            f" MoM: {'+' if mom and mom > 0 else ''}{mom}%" if mom is not None else ""
+        )
         three_mo = sig.get("three_month_pct")
-        three_str = f" 3mo: {'+' if three_mo and three_mo > 0 else ''}{three_mo}%" if three_mo is not None else ""
+        three_str = (
+            f" 3mo: {'+' if three_mo and three_mo > 0 else ''}{three_mo}%"
+            if three_mo is not None
+            else ""
+        )
         alert = sig.get("alert")
         alert_str = f" ⚠ {alert}" if alert else ""
         lines.append(f"  {label}: {latest} ({period}){mom_str}{three_str}{alert_str}")
@@ -542,8 +638,10 @@ def _format_ppi_summary(
     if avg is not None:
         rising = signals.get("sectors_rising", 0)
         falling = signals.get("sectors_falling", 0)
-        lines.append(f"\n  Cross-sector: avg MoM {'+' if avg > 0 else ''}{avg}%"
-                      f" ({rising} rising, {falling} falling)")
+        lines.append(
+            f"\n  Cross-sector: avg MoM {'+' if avg > 0 else ''}{avg}%"
+            f" ({rising} rising, {falling} falling)"
+        )
 
     if signals.get("broad_inflation"):
         lines.append("  ⚠ BROAD INFLATION — 4+ sectors rising simultaneously")
@@ -552,7 +650,9 @@ def _format_ppi_summary(
 
 
 def _format_import_summary(
-    data: dict[str, list[dict]], signals: dict, months: int,
+    data: dict[str, list[dict]],
+    signals: dict,
+    months: int,
 ) -> str:
     lines = [f"Import Price Summary ({months} months, BLS):\n"]
 
@@ -565,14 +665,19 @@ def _format_import_summary(
 
         period = sig.get("latest_period", "")
         mom = sig.get("mom_pct")
-        mom_str = f" MoM: {'+' if mom and mom > 0 else ''}{mom}%" if mom is not None else ""
+        mom_str = (
+            f" MoM: {'+' if mom and mom > 0 else ''}{mom}%" if mom is not None else ""
+        )
         lines.append(f"  {label}: {latest} ({period}){mom_str}")
 
     return "\n".join(lines)
 
 
 def _format_pressure_summary(
-    ppi_sig: dict, import_sig: dict, pressure: dict, months: int,
+    ppi_sig: dict,
+    import_sig: dict,
+    pressure: dict,
+    months: int,
 ) -> str:
     lines = [f"Supply Chain Pressure Index ({months} months):\n"]
 
@@ -603,6 +708,8 @@ def _format_pressure_summary(
             lines.append(f"    {label}: {direction} {abs(mom)}%")
 
     if ppi_sig.get("broad_inflation"):
-        lines.append("\n  ⚠ BROAD COST-PUSH PRESSURE — multiple sectors and imports rising")
+        lines.append(
+            "\n  ⚠ BROAD COST-PUSH PRESSURE — multiple sectors and imports rising"
+        )
 
     return "\n".join(lines)

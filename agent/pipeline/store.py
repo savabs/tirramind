@@ -190,6 +190,79 @@ CREATE INDEX IF NOT EXISTS idx_entity_links_a
     ON entity_links(entity_id_a, link_type);
 CREATE INDEX IF NOT EXISTS idx_entity_links_b
     ON entity_links(entity_id_b, link_type);
+
+-- Entity alerts (Phase 20 – signal fusion)
+
+CREATE TABLE IF NOT EXISTS entity_alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_id TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    entity_name TEXT NOT NULL,
+    alert_time REAL NOT NULL,
+    obs_type_surprise REAL NOT NULL,
+    temporal_surprise REAL NOT NULL,
+    value_surprise REAL NOT NULL,
+    neighborhood_surprise REAL NOT NULL,
+    memory_drift REAL NOT NULL,
+    cusum_statistic REAL NOT NULL,
+    hawkes_intensity REAL NOT NULL,
+    event_study_score REAL NOT NULL,
+    composite_surprise REAL NOT NULL,
+    observation_count INTEGER NOT NULL,
+    evidence_sources_json TEXT NOT NULL,
+    metadata_json TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_entity_alerts_entity
+    ON entity_alerts(entity_id, alert_time);
+CREATE INDEX IF NOT EXISTS idx_entity_alerts_time
+    ON entity_alerts(alert_time);
+CREATE INDEX IF NOT EXISTS idx_entity_alerts_composite
+    ON entity_alerts(composite_surprise);
+
+-- Convergence clusters (Phase 20 – signal fusion)
+
+CREATE TABLE IF NOT EXISTS convergence_clusters (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cluster_id TEXT NOT NULL UNIQUE,
+    cluster_time REAL NOT NULL,
+    member_entity_ids_json TEXT NOT NULL,
+    correlated_surprise_score REAL NOT NULL,
+    temporal_span_hours REAL NOT NULL,
+    contributing_domains_json TEXT NOT NULL,
+    contributing_tools_json TEXT NOT NULL,
+    metadata_json TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_convergence_clusters_time
+    ON convergence_clusters(cluster_time);
+CREATE INDEX IF NOT EXISTS idx_convergence_clusters_score
+    ON convergence_clusters(correlated_surprise_score);
+
+CREATE TABLE IF NOT EXISTS rl_transitions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp REAL NOT NULL,
+    state_json TEXT NOT NULL,
+    action_json TEXT NOT NULL,
+    reward REAL NOT NULL,
+    next_state_json TEXT NOT NULL,
+    done INTEGER NOT NULL DEFAULT 0,
+    metadata_json TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_rl_transitions_ts
+    ON rl_transitions(timestamp);
+
+CREATE TABLE IF NOT EXISTS rl_policy_checkpoints (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    saved_at REAL NOT NULL,
+    policy_type TEXT NOT NULL,
+    config_json TEXT NOT NULL,
+    state_dict_blob BLOB NOT NULL,
+    metrics_json TEXT,
+    is_best INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_rl_checkpoints_type
+    ON rl_policy_checkpoints(policy_type, saved_at);
 """
 
 
@@ -1238,6 +1311,161 @@ class PipelineStore:
         ).fetchall()
         return [self._depth_eval_row_to_dict(r) for r in rows]
 
+    # ── entity alerts (Phase 20) ──────────────────────────────
+
+    def store_entity_alert(
+        self,
+        entity_id: str,
+        entity_type: str,
+        entity_name: str,
+        alert_time: float,
+        *,
+        obs_type_surprise: float,
+        temporal_surprise: float,
+        value_surprise: float,
+        neighborhood_surprise: float,
+        memory_drift: float,
+        cusum_statistic: float,
+        hawkes_intensity: float,
+        event_study_score: float,
+        composite_surprise: float,
+        observation_count: int,
+        evidence_sources: tuple[str, ...] = (),
+        metadata: dict[str, Any] | None = None,
+    ) -> int:
+        """Store an entity alert. Returns row ID."""
+        conn = self._get_conn()
+        cursor = conn.execute(
+            "INSERT INTO entity_alerts "
+            "(entity_id, entity_type, entity_name, alert_time, "
+            "obs_type_surprise, temporal_surprise, value_surprise, "
+            "neighborhood_surprise, memory_drift, "
+            "cusum_statistic, hawkes_intensity, event_study_score, "
+            "composite_surprise, observation_count, "
+            "evidence_sources_json, metadata_json) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                entity_id,
+                entity_type,
+                entity_name,
+                alert_time,
+                obs_type_surprise,
+                temporal_surprise,
+                value_surprise,
+                neighborhood_surprise,
+                memory_drift,
+                cusum_statistic,
+                hawkes_intensity,
+                event_study_score,
+                composite_surprise,
+                observation_count,
+                json.dumps(list(evidence_sources)),
+                json.dumps(metadata) if metadata else None,
+            ),
+        )
+        conn.commit()
+        return cursor.lastrowid  # type: ignore[return-value]
+
+    def query_entity_alerts(
+        self,
+        *,
+        entity_id: str | None = None,
+        since: float | None = None,
+        until: float | None = None,
+        min_composite: float | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Query entity alerts with optional filters."""
+        conn = self._get_conn()
+        clauses: list[str] = []
+        params: list[Any] = []
+        if entity_id is not None:
+            clauses.append("entity_id=?")
+            params.append(entity_id)
+        if since is not None:
+            clauses.append("alert_time >= ?")
+            params.append(since)
+        if until is not None:
+            clauses.append("alert_time <= ?")
+            params.append(until)
+        if min_composite is not None:
+            clauses.append("composite_surprise >= ?")
+            params.append(min_composite)
+        where = " AND ".join(clauses) if clauses else "1=1"
+        params.append(limit)
+        rows = conn.execute(
+            f"SELECT * FROM entity_alerts WHERE {where} "  # noqa: S608
+            "ORDER BY alert_time DESC LIMIT ?",
+            params,
+        ).fetchall()
+        return [self._entity_alert_row_to_dict(r) for r in rows]
+
+    # ── convergence clusters (Phase 20) ────────────────────────
+
+    def store_convergence_cluster(
+        self,
+        cluster_id: str,
+        cluster_time: float,
+        member_entity_ids: list[str],
+        correlated_surprise_score: float,
+        temporal_span_hours: float,
+        *,
+        contributing_domains: tuple[str, ...] = (),
+        contributing_tools: tuple[str, ...] = (),
+        metadata: dict[str, Any] | None = None,
+    ) -> int:
+        """Store a convergence cluster. Returns row ID."""
+        conn = self._get_conn()
+        cursor = conn.execute(
+            "INSERT INTO convergence_clusters "
+            "(cluster_id, cluster_time, member_entity_ids_json, "
+            "correlated_surprise_score, temporal_span_hours, "
+            "contributing_domains_json, contributing_tools_json, metadata_json) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (
+                cluster_id,
+                cluster_time,
+                json.dumps(member_entity_ids),
+                correlated_surprise_score,
+                temporal_span_hours,
+                json.dumps(list(contributing_domains)),
+                json.dumps(list(contributing_tools)),
+                json.dumps(metadata) if metadata else None,
+            ),
+        )
+        conn.commit()
+        return cursor.lastrowid  # type: ignore[return-value]
+
+    def query_convergence_clusters(
+        self,
+        *,
+        since: float | None = None,
+        until: float | None = None,
+        min_score: float | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Query convergence clusters with optional filters."""
+        conn = self._get_conn()
+        clauses: list[str] = []
+        params: list[Any] = []
+        if since is not None:
+            clauses.append("cluster_time >= ?")
+            params.append(since)
+        if until is not None:
+            clauses.append("cluster_time <= ?")
+            params.append(until)
+        if min_score is not None:
+            clauses.append("correlated_surprise_score >= ?")
+            params.append(min_score)
+        where = " AND ".join(clauses) if clauses else "1=1"
+        params.append(limit)
+        rows = conn.execute(
+            f"SELECT * FROM convergence_clusters WHERE {where} "  # noqa: S608
+            "ORDER BY cluster_time DESC LIMIT ?",
+            params,
+        ).fetchall()
+        return [self._convergence_cluster_row_to_dict(r) for r in rows]
+
     # ── helpers ────────────────────────────────────────────────
 
     @staticmethod
@@ -1343,6 +1571,179 @@ class PipelineStore:
         return d
 
     @staticmethod
+    def _entity_alert_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+        d = dict(row)
+        try:
+            d["evidence_sources"] = tuple(
+                json.loads(d.pop("evidence_sources_json", "[]"))
+            )
+        except (json.JSONDecodeError, TypeError):
+            d["evidence_sources"] = ()
+        try:
+            d["metadata"] = json.loads(d.pop("metadata_json", "null"))
+        except (json.JSONDecodeError, TypeError):
+            d["metadata"] = None
+        return d
+
+    @staticmethod
+    def _convergence_cluster_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+        d = dict(row)
+        try:
+            d["member_entity_ids"] = json.loads(d.pop("member_entity_ids_json", "[]"))
+        except (json.JSONDecodeError, TypeError):
+            d["member_entity_ids"] = []
+        try:
+            d["contributing_domains"] = tuple(
+                json.loads(d.pop("contributing_domains_json", "[]"))
+            )
+        except (json.JSONDecodeError, TypeError):
+            d["contributing_domains"] = ()
+        try:
+            d["contributing_tools"] = tuple(
+                json.loads(d.pop("contributing_tools_json", "[]"))
+            )
+        except (json.JSONDecodeError, TypeError):
+            d["contributing_tools"] = ()
+        try:
+            d["metadata"] = json.loads(d.pop("metadata_json", "null"))
+        except (json.JSONDecodeError, TypeError):
+            d["metadata"] = None
+        return d
+
+    @staticmethod
     def new_run_id() -> str:
         """Generate a new unique run ID."""
         return uuid.uuid4().hex[:12]
+
+    # ── RL transitions ─────────────────────────────────────────
+
+    def store_rl_transition(
+        self,
+        timestamp: float,
+        state: dict[str, Any],
+        action: dict[str, Any],
+        reward: float,
+        next_state: dict[str, Any],
+        done: bool,
+        metadata: dict[str, Any] | None = None,
+    ) -> int:
+        """Store one RL transition. Returns the row id."""
+        conn = self._get_conn()
+        cur = conn.execute(
+            "INSERT INTO rl_transitions "
+            "(timestamp, state_json, action_json, reward, next_state_json, done, metadata_json) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                timestamp,
+                json.dumps(state, default=str),
+                json.dumps(action, default=str),
+                reward,
+                json.dumps(next_state, default=str),
+                int(done),
+                json.dumps(metadata, default=str) if metadata else None,
+            ),
+        )
+        conn.commit()
+        return cur.lastrowid  # type: ignore[return-value]
+
+    def query_rl_transitions(
+        self,
+        start_time: float | None = None,
+        end_time: float | None = None,
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Query RL transitions within a time range."""
+        conn = self._get_conn()
+        clauses: list[str] = []
+        params: list[Any] = []
+        if start_time is not None:
+            clauses.append("timestamp >= ?")
+            params.append(start_time)
+        if end_time is not None:
+            clauses.append("timestamp <= ?")
+            params.append(end_time)
+        where = " WHERE " + " AND ".join(clauses) if clauses else ""
+        sql = f"SELECT * FROM rl_transitions{where} ORDER BY timestamp"
+        if limit is not None:
+            sql += " LIMIT ?"
+            params.append(limit)
+        rows = conn.execute(sql, params).fetchall()
+        result = []
+        for row in rows:
+            d = dict(row)
+            d["state"] = json.loads(d.pop("state_json", "{}"))
+            d["action"] = json.loads(d.pop("action_json", "{}"))
+            d["next_state"] = json.loads(d.pop("next_state_json", "{}"))
+            d["done"] = bool(d["done"])
+            try:
+                d["metadata"] = json.loads(d.pop("metadata_json", "null"))
+            except (json.JSONDecodeError, TypeError):
+                d["metadata"] = None
+            result.append(d)
+        return result
+
+    # ── RL policy checkpoints ──────────────────────────────────
+
+    def store_rl_checkpoint(
+        self,
+        policy_type: str,
+        config: dict[str, Any],
+        state_dict_bytes: bytes,
+        metrics: dict[str, Any] | None = None,
+        is_best: bool = False,
+    ) -> int:
+        """Store a policy checkpoint blob. Returns the row id."""
+        conn = self._get_conn()
+        cur = conn.execute(
+            "INSERT INTO rl_policy_checkpoints "
+            "(saved_at, policy_type, config_json, state_dict_blob, metrics_json, is_best) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                time.time(),
+                policy_type,
+                json.dumps(config, default=str),
+                state_dict_bytes,
+                json.dumps(metrics, default=str) if metrics else None,
+                int(is_best),
+            ),
+        )
+        conn.commit()
+        return cur.lastrowid  # type: ignore[return-value]
+
+    def load_best_rl_checkpoint(self, policy_type: str) -> dict[str, Any] | None:
+        """Load the best checkpoint for a policy type, or None."""
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT * FROM rl_policy_checkpoints "
+            "WHERE policy_type=? AND is_best=1 "
+            "ORDER BY saved_at DESC LIMIT 1",
+            (policy_type,),
+        ).fetchone()
+        if row is None:
+            return None
+        return self._parse_checkpoint_row(row)
+
+    def load_latest_rl_checkpoint(self, policy_type: str) -> dict[str, Any] | None:
+        """Load the most recent checkpoint for a policy type, or None."""
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT * FROM rl_policy_checkpoints "
+            "WHERE policy_type=? "
+            "ORDER BY saved_at DESC LIMIT 1",
+            (policy_type,),
+        ).fetchone()
+        if row is None:
+            return None
+        return self._parse_checkpoint_row(row)
+
+    @staticmethod
+    def _parse_checkpoint_row(row: Any) -> dict[str, Any]:
+        d = dict(row)
+        d["config"] = json.loads(d.pop("config_json", "{}"))
+        d["state_dict_bytes"] = d.pop("state_dict_blob")
+        try:
+            d["metrics"] = json.loads(d.pop("metrics_json", "null"))
+        except (json.JSONDecodeError, TypeError):
+            d["metrics"] = None
+        d["is_best"] = bool(d["is_best"])
+        return d

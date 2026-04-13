@@ -11,6 +11,9 @@ build/
 .venv/
 venv/
 
+# VS Code MCP config (contains API keys)
+.vscode/mcp.json
+
 # TirraMind memory persistence
 .tirra_memory/
 
@@ -41,3 +44,7 @@ tasks/
 *.png
 <MagicMock*
 =0.2
+*.json
+*.log
+*.csv
+*.txt

@@ -22,6 +22,7 @@ from agent.features.builders import (
     FeatureBuilder,
     MacroStateFeatureBuilder,
 )
+from agent.features.gnn_builder import GNNFeatureBuilder
 from agent.features.protocol import EngineeredFeature, validate_feature
 from agent.pipeline.dag import DAG
 from agent.pipeline.dags.feature_generation import (
@@ -416,11 +417,12 @@ class TestEndToEndPersistence:
 
 class TestDefaultBuilders:
     def test_default_builders_count(self):
-        assert len(DEFAULT_BUILDERS) == 2
+        assert len(DEFAULT_BUILDERS) == 3
 
     def test_default_builders_types(self):
         assert isinstance(DEFAULT_BUILDERS[0], ConvergenceFeatureBuilder)
         assert isinstance(DEFAULT_BUILDERS[1], MacroStateFeatureBuilder)
+        assert isinstance(DEFAULT_BUILDERS[2], GNNFeatureBuilder)
 
     def test_default_builders_names_unique(self):
         names = [b.name for b in DEFAULT_BUILDERS]

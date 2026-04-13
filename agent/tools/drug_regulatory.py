@@ -22,13 +22,23 @@ Signal theory:
 from __future__ import annotations
 
 import logging
-from typing import Any
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
 
 import httpx
 
 from agent.data.cache import DataCache
 from agent.tools.base import Tool, ToolResult
+
+if TYPE_CHECKING:
+    from agent.pipeline.store import PipelineStore
+
+try:
+    from agent.pipeline.entity import entity_id_from_key, normalize_company_name
+except ImportError:  # pragma: no cover
+    entity_id_from_key = None  # type: ignore[assignment]
+    normalize_company_name = None  # type: ignore[assignment]
 
 log = logging.getLogger(__name__)
 
@@ -109,8 +119,166 @@ class DrugRegulatoryTool(Tool):
         "required": ["mode"],
     }
 
-    def __init__(self, cache: DataCache | None = None) -> None:
+    def __init__(
+        self,
+        cache: DataCache | None = None,
+        *,
+        pipeline_store: PipelineStore | None = None,
+    ) -> None:
         self._cache = cache
+        self._store = pipeline_store
+
+    # ------------------------------------------------------------------
+    # Entity persistence (L2)
+    # ------------------------------------------------------------------
+
+    def _persist_entities(
+        self,
+        mode: str,
+        parsed: list[dict[str, Any]],
+        signals: dict[str, Any] | None = None,
+    ) -> None:
+        """Register company entities and store drug_approval observations."""
+        if self._store is None or entity_id_from_key is None:
+            return
+        if not parsed:
+            return
+        try:
+            self._persist_entities_inner(mode, parsed, signals)
+        except Exception:
+            log.exception("Entity persistence failed (non-fatal)")
+
+    def _persist_entities_inner(
+        self,
+        mode: str,
+        parsed: list[dict[str, Any]],
+        signals: dict[str, Any] | None = None,
+    ) -> None:
+        assert self._store is not None  # noqa: S101
+        store = self._store
+
+        # Register a US country entity once for FDA market-authorization links
+        us_eid = entity_id_from_key("country", "US")
+        us_registered = False
+
+        seen: set[str] = set()
+
+        if mode == "approvals":
+            for rec in parsed:
+                sponsor = (rec.get("sponsor") or "").strip()
+                if not sponsor:
+                    continue
+                canon = (
+                    normalize_company_name(sponsor)
+                    if normalize_company_name
+                    else sponsor
+                )
+                eid = entity_id_from_key("company", canon)
+
+                if eid not in seen:
+                    seen.add(eid)
+                    store.register_entity(
+                        entity_type="company",
+                        canonical_name=canon,
+                        entity_id=eid,
+                        metadata={"source": "fda", "sponsor_name": sponsor},
+                    )
+
+                # Timestamp from submission date
+                date_str = rec.get("latest_submission_date") or ""
+                try:
+                    ts = (
+                        datetime.strptime(date_str, "%Y%m%d")
+                        .replace(tzinfo=timezone.utc)
+                        .timestamp()
+                    )
+                except (ValueError, TypeError):
+                    ts = datetime.now(tz=timezone.utc).timestamp()
+
+                store.store_entity_observation(
+                    entity_id=eid,
+                    observation_type="drug_approval",
+                    depth_level=2,
+                    value={
+                        "application_number": rec.get("application_number"),
+                        "brand_names": rec.get("brands", []),
+                        "submission_type": rec.get("latest_submission_type"),
+                        "submission_date": date_str,
+                        "review_priority": rec.get("review_priority"),
+                    },
+                    observed_at=ts,
+                    source_tool="drug_regulatory",
+                )
+
+                # Market authorization link: company → US country
+                if not us_registered:
+                    store.register_entity(
+                        entity_type="country",
+                        canonical_name="US",
+                        entity_id=us_eid,
+                        metadata={"source": "fda"},
+                    )
+                    us_registered = True
+
+                store.link_entities(
+                    entity_id_a=eid,
+                    entity_id_b=us_eid,
+                    link_type="market_authorized_in",
+                    source="drug_regulatory",
+                    confidence=1.0,
+                )
+
+        elif mode == "adverse_events":
+            for rec in parsed:
+                drugs = rec.get("drugs") or []
+                for drug_name in drugs:
+                    drug_name = drug_name.strip()
+                    if not drug_name or drug_name == "?":
+                        continue
+                    canon = (
+                        normalize_company_name(drug_name)
+                        if normalize_company_name
+                        else drug_name
+                    )
+                    eid = entity_id_from_key("company", canon)
+
+                    if eid not in seen:
+                        seen.add(eid)
+                        store.register_entity(
+                            entity_type="company",
+                            canonical_name=canon,
+                            entity_id=eid,
+                            metadata={"source": "fda_faers", "drug_name": drug_name},
+                        )
+
+                    date_str = rec.get("date") or ""
+                    try:
+                        ts = (
+                            datetime.strptime(date_str, "%Y%m%d")
+                            .replace(tzinfo=timezone.utc)
+                            .timestamp()
+                        )
+                    except (ValueError, TypeError):
+                        ts = datetime.now(tz=timezone.utc).timestamp()
+
+                    store.store_entity_observation(
+                        entity_id=eid,
+                        observation_type="drug_approval",
+                        depth_level=2,
+                        value={
+                            "drug_name": drug_name,
+                            "reactions": rec.get("reactions", []),
+                            "serious": rec.get("serious", False),
+                            "receive_date": date_str,
+                            "seriousness_ratio": (signals or {}).get(
+                                "seriousness_ratio"
+                            ),
+                        },
+                        observed_at=ts,
+                        source_tool="drug_regulatory",
+                    )
+
+        # labels mode: informational only — no entity persistence
 
     # ── Public execute ───────────────────────────────────────────────
 
@@ -192,6 +360,11 @@ class DrugRegulatoryTool(Tool):
             output, data = self._format_adverse_events(results, total)
         else:
             output, data = self._format_labels(results, total)
+
+        # L2 entity persistence
+        parsed = data.get("results", [])
+        signals = data.get("signals")
+        self._persist_entities(mode, parsed, signals)
 
         return ToolResult(success=True, output=output, data=data)
 

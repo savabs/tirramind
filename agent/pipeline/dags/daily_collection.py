@@ -20,7 +20,9 @@ from __future__ import annotations
 from agent.pipeline.dag import DAG
 
 
-def build_daily_collection_dag() -> DAG:
+def build_daily_collection_dag(
+    db_path: str = ".tirra_pipeline/pipeline.db",
+) -> DAG:
     """Build the daily_collection DAG. Pure data declaration, no side effects."""
     dag = DAG(
         name="daily_collection",
@@ -80,6 +82,17 @@ def build_daily_collection_dag() -> DAG:
         params={"category": "all", "limit": 100},
         timeout=60,
         retries=2,
+    )
+
+    # ── Instrument Universe (daily prices) ─────────────────
+    from agent.tools.instrument_universe import run_instrument_ingest
+
+    dag.add(
+        "fetch_instruments",
+        operator=run_instrument_ingest,
+        params={"db_path": db_path},
+        timeout=300,
+        retries=1,
     )
 
     return dag
