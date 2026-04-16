@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import random
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -306,6 +307,10 @@ class TrainerConfig:
     contrastive_margin: float = 1.0
     num_negative_samples: int = 5
     value_weight: float = 0.3
+    auto_tune_loss_weights: bool = False
+    """When True, use learnable uncertainty-based loss weighting
+    (Kendall et al. 2018 "Multi-Task Learning Using Uncertainty
+    to Weigh Losses") instead of fixed config weights."""
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -372,10 +377,34 @@ class Trainer:
             num_layers=cfg.num_layers,
             num_nodes=id_map.num_nodes,
         )
-        self._optimizer = torch.optim.Adam(
-            self._model.parameters(),
-            lr=cfg.learning_rate,
-        )
+
+        # Learnable log-variance params for uncertainty-weighted multi-task
+        # loss (Kendall et al. 2018).  Initialised from config weights:
+        #   fixed_weight ≈ exp(-log_var) → log_var ≈ -ln(fixed_weight)
+        # Stored as plain Parameters (not part of the model) so they can
+        # be independently inspected / serialised.
+        self._log_vars: dict[str, torch.nn.Parameter] | None = None
+        if cfg.auto_tune_loss_weights:
+            self._log_vars = {
+                "obs_type": torch.nn.Parameter(
+                    torch.tensor(-math.log(max(cfg.obs_type_weight, 1e-6)))
+                ),
+                "time_delta": torch.nn.Parameter(
+                    torch.tensor(-math.log(max(cfg.time_delta_weight, 1e-6)))
+                ),
+                "contrastive": torch.nn.Parameter(
+                    torch.tensor(-math.log(max(cfg.contrastive_weight, 1e-6)))
+                ),
+                "value": torch.nn.Parameter(
+                    torch.tensor(-math.log(max(cfg.value_weight, 1e-6)))
+                ),
+            }
+
+        # Build optimizer — include log-var params when auto-tuning
+        opt_params = list(self._model.parameters())
+        if self._log_vars is not None:
+            opt_params.extend(self._log_vars.values())
+        self._optimizer = torch.optim.Adam(opt_params, lr=cfg.learning_rate)
         return self._model
 
     def _split_observations(
@@ -680,12 +709,28 @@ class Trainer:
                 c_loss = self._contrastive_loss(embeddings, id_map)
 
                 # ── total loss ───────────────────────────
-                total = (
-                    cfg.obs_type_weight * obs_loss
-                    + cfg.time_delta_weight * dt_loss
-                    + cfg.contrastive_weight * c_loss
-                    + cfg.value_weight * val_loss
-                )
+                if self._log_vars is not None:
+                    # Uncertainty-weighted multi-task loss
+                    # (Kendall et al. 2018): L_k / (2 * sigma_k^2) + ln(sigma_k)
+                    # With log_var = ln(sigma^2): exp(-log_var) * L_k + log_var
+                    lv = self._log_vars
+                    total = (
+                        torch.exp(-lv["obs_type"]) * obs_loss
+                        + lv["obs_type"]
+                        + torch.exp(-lv["time_delta"]) * dt_loss
+                        + lv["time_delta"]
+                        + torch.exp(-lv["contrastive"]) * c_loss
+                        + lv["contrastive"]
+                        + torch.exp(-lv["value"]) * val_loss
+                        + lv["value"]
+                    )
+                else:
+                    total = (
+                        cfg.obs_type_weight * obs_loss
+                        + cfg.time_delta_weight * dt_loss
+                        + cfg.contrastive_weight * c_loss
+                        + cfg.value_weight * val_loss
+                    )
 
                 if total.requires_grad:
                     optimizer.zero_grad()
@@ -720,8 +765,34 @@ class Trainer:
                 history["time_delta"][-1],
                 history["contrastive"][-1],
             )
+            if self._log_vars is not None:
+                eff = self.effective_loss_weights()
+                log.info(
+                    "  Effective loss weights: obs=%.3f dt=%.3f contr=%.3f val=%.3f",
+                    eff["obs_type"],
+                    eff["time_delta"],
+                    eff["contrastive"],
+                    eff["value"],
+                )
 
         return history
+
+    def effective_loss_weights(self) -> dict[str, float]:
+        """Return current effective loss weights.
+
+        When auto_tune_loss_weights is on, these are exp(-log_var)
+        for each task (the learned precision).  Otherwise returns
+        the fixed config weights.
+        """
+        if self._log_vars is not None:
+            return {k: math.exp(-p.item()) for k, p in self._log_vars.items()}
+        cfg = self.config
+        return {
+            "obs_type": cfg.obs_type_weight,
+            "time_delta": cfg.time_delta_weight,
+            "contrastive": cfg.contrastive_weight,
+            "value": cfg.value_weight,
+        }
 
     # ── Inference (Phase 19a) ─────────────────────────────────
 

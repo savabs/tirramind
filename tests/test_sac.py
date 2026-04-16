@@ -405,6 +405,7 @@ class TestUpdateMetrics:
             "q1_mean",
             "q2_mean",
             "log_prob_mean",
+            "gate_entropy",
         }
         assert set(metrics.keys()) == expected
 

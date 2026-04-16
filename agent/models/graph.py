@@ -158,6 +158,20 @@ class WorldModelGraph:
             self._bn.remove_edge(parent, child)
             raise ValueError(f"Adding edge {parent} → {child} would create a cycle")
 
+    def remove_edge(self, parent: str, child: str) -> None:
+        """Remove a directed edge.  Raises ValueError if edge doesn't exist."""
+        if not self._bn.has_edge(parent, child):
+            raise ValueError(f"Edge {parent} → {child} does not exist")
+        # Remove any CPD for child that depends on the old parent set
+        existing_cpd = self.get_cpd(child)
+        if existing_cpd is not None:
+            self._bn.remove_cpds(existing_cpd)
+        self._bn.remove_edge(parent, child)
+
+    def has_edge(self, parent: str, child: str) -> bool:
+        """Check whether a directed edge exists."""
+        return self._bn.has_edge(parent, child)
+
     @property
     def edges(self) -> list[tuple[str, str]]:
         return list(self._bn.edges())

@@ -527,7 +527,27 @@ DEFAULT_ARMS: list[GoalArm] = [
             "Compare import price changes vs domestic PPI for trade flow disruption",
         ],
     ),
+    # --- Novel exploration arm (Change 8 — Tier 3) ---
+    # The bandit treats this like any other arm.  When selected, the
+    # orchestrator uses the LLM to generate an unconstrained goal using
+    # any available tools.  Successful novel pulls are candidates for
+    # promotion into permanent arms.
+    GoalArm(
+        name="novel_exploration",
+        description="Open-ended exploration: pick any available tools and formulate a novel research goal that doesn't fit existing categories. The LLM is unconstrained — it should try creative, cross-domain combinations.",
+        tools=[],  # empty = all tools allowed
+        examples=[
+            "Combine satellite imagery with shipping data to look for hidden commodity flows",
+            "Cross-reference clinical trial failures with insider trading patterns in biotech",
+            "Look for patterns between weather data and agricultural futures positioning",
+        ],
+    ),
 ]
+
+# Minimum reward for a novel pull to be considered a success
+_NOVEL_PROMOTE_REWARD_THRESHOLD = 0.6
+# Number of successful novel pulls with similar tool signatures before promotion
+_NOVEL_PROMOTE_MIN_SUCCESSES = 3
 
 
 @dataclass
@@ -593,6 +613,9 @@ class StrategyBandit:
         self._beta: dict[str, float] = {name: 1.0 for name in self._arms}
         self._pulls: dict[str, int] = {name: 0 for name in self._arms}
         self._total_reward: dict[str, float] = {name: 0.0 for name in self._arms}
+
+        # Novel exploration history: list of {tools_used, reward, description}
+        self._novel_history: list[dict] = []
 
         # Load persisted state if it exists
         if persist_path and persist_path.exists():
@@ -698,6 +721,124 @@ class StrategyBandit:
         return sum(self._pulls.values())
 
     # ------------------------------------------------------------------
+    # Novel arm discovery (Change 8 — Tier 3)
+    # ------------------------------------------------------------------
+
+    def record_novel_pull(
+        self,
+        tools_used: list[str],
+        reward: float,
+        description: str = "",
+    ) -> GoalArm | None:
+        """Record the outcome of a novel_exploration pull.
+
+        Stores the pull and checks if enough successful pulls with a
+        similar tool signature exist to warrant promoting a new permanent arm.
+
+        Args:
+            tools_used: Which tools were actually used during execution.
+            reward: Observed reward for this pull.
+            description: Short description of what the novel goal was.
+
+        Returns:
+            A newly promoted GoalArm if promotion triggered, else None.
+        """
+        entry = {
+            "tools": sorted(tools_used),
+            "reward": float(reward),
+            "description": description,
+        }
+        self._novel_history.append(entry)
+        self._persist()
+
+        if reward < _NOVEL_PROMOTE_REWARD_THRESHOLD:
+            return None
+
+        return self._check_promote(entry["tools"])
+
+    def _check_promote(self, tools: list[str]) -> GoalArm | None:
+        """Check if a tool signature has enough successes for promotion.
+
+        Groups novel history by frozenset(tools_used), counts entries
+        with reward >= threshold.  If count >= _NOVEL_PROMOTE_MIN_SUCCESSES,
+        creates and adds a new permanent arm.
+        """
+        tool_key = frozenset(tools)
+
+        successes = [
+            h
+            for h in self._novel_history
+            if frozenset(h["tools"]) == tool_key
+            and h["reward"] >= _NOVEL_PROMOTE_REWARD_THRESHOLD
+        ]
+
+        if len(successes) < _NOVEL_PROMOTE_MIN_SUCCESSES:
+            return None
+
+        # Build a name from the tool signature
+        name = "_".join(tools) if tools else "general_exploration"
+        # Avoid duplicates
+        if name in self._arms:
+            return None
+
+        # Derive description from the successful pulls
+        descriptions = [s["description"] for s in successes if s["description"]]
+        desc = (
+            f"Auto-discovered category from {len(successes)} successful novel "
+            f"explorations using tools: {', '.join(tools)}. "
+            f"Examples: {'; '.join(descriptions[:3])}"
+        )
+
+        # Use mean reward of successes as informative prior
+        mean_r = sum(s["reward"] for s in successes) / len(successes)
+        arm = GoalArm(
+            name=name,
+            description=desc,
+            tools=list(tools),
+            examples=descriptions[:3],
+        )
+
+        self.add_arm(arm, prior_reward=mean_r)
+        log.info(
+            "Promoted novel exploration → permanent arm '%s' "
+            "(tools=%s, mean_reward=%.3f, n_successes=%d)",
+            name,
+            tools,
+            mean_r,
+            len(successes),
+        )
+        return arm
+
+    def add_arm(self, arm: GoalArm, prior_reward: float | None = None) -> None:
+        """Add a new arm to the bandit.
+
+        Args:
+            arm: The new GoalArm.
+            prior_reward: If given, start with an informative prior
+                Beta(1 + r, 1 + (1-r)) instead of uniform Beta(1,1).
+        """
+        if arm.name in self._arms:
+            log.warning("Arm '%s' already exists, skipping add", arm.name)
+            return
+
+        self._arms[arm.name] = arm
+        if prior_reward is not None:
+            r = max(0.0, min(1.0, prior_reward))
+            self._alpha[arm.name] = 1.0 + r
+            self._beta[arm.name] = 1.0 + (1.0 - r)
+        else:
+            self._alpha[arm.name] = 1.0
+            self._beta[arm.name] = 1.0
+        self._pulls[arm.name] = 0
+        self._total_reward[arm.name] = 0.0
+        self._persist()
+
+    @property
+    def novel_history(self) -> list[dict]:
+        """Read-only view of novel exploration pull history."""
+        return list(self._novel_history)
+
+    # ------------------------------------------------------------------
     # Persistence
     # ------------------------------------------------------------------
 
@@ -714,7 +855,8 @@ class StrategyBandit:
                     "total_reward": self._total_reward[name],
                 }
                 for name in self._arms
-            }
+            },
+            "novel_history": self._novel_history,
         }
         self._persist_path.write_text(json.dumps(state, indent=2))
 
@@ -727,10 +869,12 @@ class StrategyBandit:
                     self._beta[name] = float(data["beta"])
                     self._pulls[name] = int(data["pulls"])
                     self._total_reward[name] = float(data["total_reward"])
+            self._novel_history = state.get("novel_history", [])
             log.info(
-                "Loaded bandit state: %d arms, %d total pulls",
+                "Loaded bandit state: %d arms, %d total pulls, %d novel history",
                 len(self._arms),
                 self.total_pulls,
+                len(self._novel_history),
             )
         except Exception as exc:
             log.warning("Failed to load bandit state: %s", exc)

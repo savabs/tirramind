@@ -41,13 +41,17 @@ from agent.pipeline.store import PipelineStore
 log = logging.getLogger(__name__)
 
 # Entity types that have GNN edges (from Phase 17 entity linking)
-_CONNECTED_TYPES: tuple[str, ...] = (
+# Tier 8 (Change 16): Use get_connected_types() for dynamic resolution
+_SEED_CONNECTED_TYPES: tuple[str, ...] = (
     "person",
     "company",
     "wallet",
     "country",
     "vessel",
 )
+
+# Backward-compatible alias for code that reads the old name
+_CONNECTED_TYPES = _SEED_CONNECTED_TYPES
 
 # Minimum entities per type to produce a meaningful feature
 _MIN_ENTITIES_DEFAULT = 2
@@ -57,6 +61,52 @@ _ZSCORE_LOOKBACK = 30
 
 # Minimum historical values for z-score normalization
 _MIN_HISTORY_FOR_ZSCORE = 3
+
+
+def get_connected_types(
+    store: PipelineStore | None = None,
+    registry: Any = None,
+    min_entities: int = _MIN_ENTITIES_DEFAULT,
+    min_links: int = 1,
+) -> tuple[str, ...]:
+    """Return entity types eligible for GNN embedding.
+
+    A dynamically discovered type is included when it has ≥ *min_entities*
+    entities AND ≥ *min_links* links to other connected types.
+
+    Without a store or registry, returns the seed types.
+    """
+    if store is None or registry is None:
+        return _SEED_CONNECTED_TYPES
+
+    candidates = set(_SEED_CONNECTED_TYPES)
+
+    try:
+        type_rows = registry.query_entity_types(active_only=True) if hasattr(registry, "query_entity_types") else []
+        known_active = registry.known_entity_types() if hasattr(registry, "known_entity_types") else set()
+    except Exception:
+        return _SEED_CONNECTED_TYPES
+
+    for t in known_active:
+        if t in candidates:
+            continue
+        try:
+            entities = store.query_all_entities(entity_type=t)
+            if len(entities) < min_entities:
+                continue
+            # Check links involving this type
+            link_count = 0
+            for ent in entities[:10]:  # sample up to 10
+                links = store.query_entity_links(entity_id=ent["entity_id"])
+                link_count += len(links)
+                if link_count >= min_links:
+                    break
+            if link_count >= min_links:
+                candidates.add(t)
+        except Exception:
+            continue
+
+    return tuple(sorted(candidates))
 
 
 class GNNFeatureBuilder(FeatureBuilder):

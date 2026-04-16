@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from agent.learning.policy.feature_gate import FeatureGateConfig
+
 
 @dataclass(frozen=True)
 class RewardConfig:
@@ -79,6 +81,31 @@ class SACConfig:
     max_position: float = 0.5  # half-Kelly cap as fraction of Kelly-optimal
     leverage_limit: float = 1.0  # Σ|w_i| ≤ L
     warmup_steps: int = 1000  # random actions before policy is used
+    # Model-based Kalman augmentation (Phase B — differentiable bypass)
+    aux_kalman_weight: float = 0.01  # scale for auxiliary actor loss through Kalman
+    kalman_lr: float = 1e-4  # separate optimizer LR for Kalman params
+    kalman_grad_clip: float = 0.1  # max gradient norm for Kalman params
+
+
+@dataclass(frozen=True)
+class StateEncoderConfig:
+    """Learned state encoder hyperparameters (Change 6).
+
+    A multihead-attention encoder that replaces the hand-designed
+    top-K truncation in StateAssembler with learned entity attention.
+
+    entity_embed_dim must be divisible by n_heads.
+    """
+
+    entity_embed_dim: int = 32
+    n_heads: int = 4
+    n_attention_layers: int = 1
+    dropout: float = 0.1
+    max_entities: int = 50
+    surprise_dim: int = 5
+    belief_dim: int = 4
+    market_dim: int = 8
+    adversarial_dim: int = 4
 
 
 @dataclass(frozen=True)
@@ -94,3 +121,5 @@ class PolicyConfig:
     weight_learner: WeightLearnerConfig = field(default_factory=WeightLearnerConfig)
     sac: SACConfig = field(default_factory=SACConfig)
     surprise_weights: tuple[float, ...] | None = None
+    state_encoder: StateEncoderConfig | None = None
+    feature_gate: FeatureGateConfig | None = None

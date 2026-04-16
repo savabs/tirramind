@@ -56,6 +56,7 @@ from torch import Tensor
 
 from agent.learning.policy.config import SACConfig
 from agent.learning.policy.replay_buffer import ReplayBuffer
+from agent.learning.policy.state_encoder import LearnedStateEncoder
 
 log = logging.getLogger(__name__)
 
@@ -254,22 +255,32 @@ class SACTrainer:
         state_dim: int,
         action_dim: int,
         config: SACConfig | None = None,
+        encoder: LearnedStateEncoder | None = None,
     ) -> None:
         self._config = config or SACConfig()
         self._state_dim = state_dim
         self._action_dim = action_dim
+        self._encoder = encoder
         cfg = self._config
 
+        # If encoder is present, actor/critic see the compact encoded state dim
+        # instead of the raw assembler state dim.
+        policy_state_dim = encoder.output_dim if encoder is not None else state_dim
+
         # Networks
-        self._actor = GaussianActor(state_dim, action_dim, cfg)
-        self._critic = TwinCritic(state_dim, action_dim, cfg)
+        self._actor = GaussianActor(policy_state_dim, action_dim, cfg)
+        self._critic = TwinCritic(policy_state_dim, action_dim, cfg)
         self._target_critic = copy.deepcopy(self._critic)
         # Freeze target parameters
         for p in self._target_critic.parameters():
             p.requires_grad = False
 
-        # Optimisers
-        self._actor_optim = torch.optim.Adam(self._actor.parameters(), lr=cfg.actor_lr)
+        # Optimisers — include encoder params in actor optimizer so
+        # gradients flow: actor_loss → actor → encoder
+        actor_params = list(self._actor.parameters())
+        if encoder is not None:
+            actor_params += list(encoder.parameters())
+        self._actor_optim = torch.optim.Adam(actor_params, lr=cfg.actor_lr)
         self._critic_optim = torch.optim.Adam(
             self._critic.parameters(), lr=cfg.critic_lr
         )
@@ -278,6 +289,23 @@ class SACTrainer:
         self._alpha_sched = AlphaScheduler(action_dim, cfg)
 
         self._update_count = 0
+        self._regime_context: Tensor | None = None
+
+    def set_regime_context(self, regime_context: Tensor | None) -> None:
+        """Set the regime context tensor passed to the encoder's feature gate.
+
+        Parameters
+        ----------
+        regime_context : Tensor of shape (regime_dim,) or None
+            HMM regime posterior. Set to None to disable gating.
+        """
+        self._regime_context = regime_context
+
+    def _encode_state(self, state: Tensor) -> Tensor:
+        """Run state through encoder if present, otherwise pass through."""
+        if self._encoder is not None:
+            return self._encoder(state, regime_context=self._regime_context)
+        return state
 
     def update(self, buffer: ReplayBuffer) -> dict[str, float]:
         """One SAC update step. Returns loss metrics.
@@ -294,17 +322,21 @@ class SACTrainer:
         batch_size = min(cfg.batch_size, len(buffer))
         states, actions, rewards, next_states, dones = buffer.sample(batch_size)
 
+        # Encode states through learned encoder if present
+        encoded_states = self._encode_state(states)
+        encoded_next_states = self._encode_state(next_states)
+
         alpha = self._alpha_sched.alpha_tensor
 
         # ── Step 2: Critic targets ────────────────────────────
         with torch.no_grad():
-            next_actions, next_log_probs = self._actor.sample(next_states)
-            tq1, tq2 = self._target_critic(next_states, next_actions)
+            next_actions, next_log_probs = self._actor.sample(encoded_next_states)
+            tq1, tq2 = self._target_critic(encoded_next_states, next_actions)
             target_q = torch.min(tq1, tq2) - alpha * next_log_probs
             y = rewards + cfg.gamma * (1.0 - dones) * target_q
 
         # ── Step 3: Update critics ────────────────────────────
-        q1, q2 = self._critic(states, actions)
+        q1, q2 = self._critic(encoded_states.detach(), actions)
         critic_loss = F.mse_loss(q1, y) + F.mse_loss(q2, y)
 
         self._critic_optim.zero_grad()
@@ -313,10 +345,21 @@ class SACTrainer:
         self._critic_optim.step()
 
         # ── Step 4: Update actor ──────────────────────────────
-        new_actions, log_probs = self._actor.sample(states)
-        q1_new, q2_new = self._critic(states, new_actions)
+        # Re-encode with gradients for actor update (encoder learns from actor loss)
+        encoded_for_actor = self._encode_state(states)
+        new_actions, log_probs = self._actor.sample(encoded_for_actor)
+        q1_new, q2_new = self._critic(encoded_for_actor, new_actions)
         q_min = torch.min(q1_new, q2_new)
         actor_loss = (alpha * log_probs - q_min).mean()
+
+        # Change 11: feature gate entropy regularization
+        gate_entropy = 0.0
+        if (
+            self._encoder is not None
+            and self._encoder.feature_gate is not None
+        ):
+            gate_entropy = self._encoder.feature_gate.entropy_loss()
+            actor_loss = actor_loss + gate_entropy
 
         self._actor_optim.zero_grad()
         actor_loss.backward()
@@ -342,6 +385,7 @@ class SACTrainer:
             "q1_mean": float(q1.mean().item()),
             "q2_mean": float(q2.mean().item()),
             "log_prob_mean": float(log_probs.mean().item()),
+            "gate_entropy": float(gate_entropy) if isinstance(gate_entropy, (int, float)) else float(gate_entropy.item()),
         }
 
     def select_action(
@@ -355,12 +399,13 @@ class SACTrainer:
         with torch.no_grad():
             if state.dim() == 1:
                 state = state.unsqueeze(0)
+            encoded = self._encode_state(state)
             if deterministic:
-                mu, _ = self._actor(state)
+                mu, _ = self._actor(encoded)
                 action = torch.tanh(mu) * self._config.max_position
                 action = self._actor._enforce_leverage(action)
             else:
-                action, _ = self._actor.sample(state)
+                action, _ = self._actor.sample(encoded)
         return action.squeeze(0).cpu().numpy()
 
     # ── Serialisation ─────────────────────────────────────────
@@ -368,18 +413,30 @@ class SACTrainer:
     def save(self) -> bytes:
         """Serialise all state to bytes."""
         buf = io.BytesIO()
-        torch.save(
-            {
-                "actor": self._actor.state_dict(),
-                "critic": self._critic.state_dict(),
-                "target_critic": self._target_critic.state_dict(),
-                "actor_optim": self._actor_optim.state_dict(),
-                "critic_optim": self._critic_optim.state_dict(),
-                "alpha": self._alpha_sched.state_dict(),
-                "update_count": self._update_count,
-            },
-            buf,
-        )
+        checkpoint = {
+            "actor": self._actor.state_dict(),
+            "critic": self._critic.state_dict(),
+            "target_critic": self._target_critic.state_dict(),
+            "actor_optim": self._actor_optim.state_dict(),
+            "critic_optim": self._critic_optim.state_dict(),
+            "alpha": self._alpha_sched.state_dict(),
+            "update_count": self._update_count,
+            "has_encoder": self._encoder is not None,
+        }
+        if self._encoder is not None:
+            checkpoint["encoder"] = self._encoder.state_dict()
+            checkpoint["encoder_config"] = {
+                "entity_embed_dim": self._encoder._cfg.entity_embed_dim,
+                "n_heads": self._encoder._cfg.n_heads,
+                "n_attention_layers": self._encoder._cfg.n_attention_layers,
+                "dropout": self._encoder._cfg.dropout,
+                "max_entities": self._encoder._cfg.max_entities,
+                "surprise_dim": self._encoder._cfg.surprise_dim,
+                "belief_dim": self._encoder._cfg.belief_dim,
+                "market_dim": self._encoder._cfg.market_dim,
+                "adversarial_dim": self._encoder._cfg.adversarial_dim,
+            }
+        torch.save(checkpoint, buf)
         return buf.getvalue()
 
     @classmethod
@@ -390,10 +447,31 @@ class SACTrainer:
         action_dim: int,
         config: SACConfig | None = None,
     ) -> SACTrainer:
-        """Deserialise from bytes."""
-        trainer = cls(state_dim, action_dim, config)
+        """Deserialise from bytes.
+
+        Handles both old checkpoints (no encoder) and new ones (with encoder).
+        """
+        from agent.learning.policy.state_encoder import (
+            LearnedStateEncoder,
+            StateEncoderConfig,
+        )
+
         buf = io.BytesIO(data)
         checkpoint = torch.load(buf, map_location="cpu", weights_only=False)
+
+        # Reconstruct encoder if checkpoint has one
+        encoder = None
+        if checkpoint.get("has_encoder", False) and "encoder" in checkpoint:
+            enc_cfg_dict = checkpoint.get("encoder_config", {})
+            enc_cfg = (
+                StateEncoderConfig(**enc_cfg_dict)
+                if enc_cfg_dict
+                else StateEncoderConfig()
+            )
+            encoder = LearnedStateEncoder(enc_cfg)
+            encoder.load_state_dict(checkpoint["encoder"])
+
+        trainer = cls(state_dim, action_dim, config, encoder=encoder)
         trainer._actor.load_state_dict(checkpoint["actor"])
         trainer._critic.load_state_dict(checkpoint["critic"])
         trainer._target_critic.load_state_dict(checkpoint["target_critic"])

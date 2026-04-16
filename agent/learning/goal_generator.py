@@ -95,6 +95,7 @@ Rules:
 @dataclass
 class Goal:
     """A proposed next action for the autonomous agent."""
+
     description: str
     rationale: str
     expected_tool: str
@@ -141,7 +142,9 @@ class GoalGenerator:
             if goal.description.lower().strip() not in attempted:
                 log.info(
                     "Generated arm goal (arm=%s, attempt %d): %s",
-                    arm.name, attempt + 1, goal.description,
+                    arm.name,
+                    attempt + 1,
+                    goal.description,
                 )
                 return goal
 
@@ -179,8 +182,14 @@ class GoalGenerator:
     @staticmethod
     def _arm_fallback_goal(arm: GoalArm) -> Goal:
         """Fallback: use the first example from the arm definition."""
-        desc = arm.examples[0] if arm.examples else f"Explore using {arm.tools[0]}"
-        tool = arm.tools[0] if arm.tools else "unknown"
+        if arm.examples:
+            desc = arm.examples[0]
+        elif arm.tools:
+            desc = f"Explore using {arm.tools[0]}"
+        else:
+            # Novel exploration arm — tools=[], no specific tool constraint
+            desc = "Open-ended exploration: combine multiple data sources to find novel patterns"
+        tool = arm.tools[0] if arm.tools else "web_search"
         return Goal(
             description=desc,
             rationale=f"Fallback goal for {arm.name} category",
@@ -214,11 +223,15 @@ class GoalGenerator:
         attempted = set(g.lower().strip() for g in (attempted_goals or []))
 
         for attempt in range(max_retries):
-            goal = self._generate_once(reflection, available_tools, attempted_goals or [])
+            goal = self._generate_once(
+                reflection, available_tools, attempted_goals or []
+            )
 
             # Dedup check: reject if semantically duplicate
             if goal.description.lower().strip() not in attempted:
-                log.info("Generated goal (attempt %d): %s", attempt + 1, goal.description)
+                log.info(
+                    "Generated goal (attempt %d): %s", attempt + 1, goal.description
+                )
                 return goal
 
             log.info("Goal attempt %d was a duplicate, retrying", attempt + 1)
@@ -238,7 +251,8 @@ class GoalGenerator:
             what_worked=", ".join(reflection.what_worked) or "(none)",
             what_failed=", ".join(reflection.what_failed) or "(none)",
             open_questions=", ".join(reflection.open_questions) or "(none)",
-            suggested_next_actions=", ".join(reflection.suggested_next_actions) or "(none)",
+            suggested_next_actions=", ".join(reflection.suggested_next_actions)
+            or "(none)",
             tools=", ".join(available_tools),
             attempted="\n".join(f"- {g}" for g in attempted_goals) or "(none)",
         )
@@ -268,7 +282,9 @@ class GoalGenerator:
         )
 
     @staticmethod
-    def _fallback_goal(reflection: ReflectionResult, available_tools: list[str]) -> Goal:
+    def _fallback_goal(
+        reflection: ReflectionResult, available_tools: list[str]
+    ) -> Goal:
         """Generate a reasonable default when LLM parsing fails."""
         # Pick from suggested next actions if available
         if reflection.suggested_next_actions:
@@ -276,8 +292,10 @@ class GoalGenerator:
         else:
             desc = "Fetch current liquidity regime state to assess market conditions"
 
-        tool = "liquidity_regime" if "liquidity_regime" in available_tools else (
-            available_tools[0] if available_tools else "unknown"
+        tool = (
+            "liquidity_regime"
+            if "liquidity_regime" in available_tools
+            else (available_tools[0] if available_tools else "unknown")
         )
         return Goal(
             description=desc,

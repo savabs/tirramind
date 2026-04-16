@@ -38,7 +38,7 @@ def _make_id_map(entities: dict[str, list[str]]) -> IDMap:
 def _make_mock_model(
     id_map: IDMap,
     *,
-    num_obs_types: int = 18,
+    num_obs_types: int = len(OBSERVATION_TYPES),
     hidden_dim: int = 16,
     memory_dim: int = 16,
     obs_type_logits: dict[str, torch.Tensor] | None = None,
@@ -286,22 +286,23 @@ class TestSurpriseExtractorBasic:
 
 class TestObsTypeSurprise:
     def test_uniform_logits_give_log_18(self):
-        """Uniform distribution → P = 1/18 → surprise = log(18) ≈ 2.89."""
+        """Uniform distribution → P = 1/N → surprise = log(N)."""
+        n_ot = len(OBSERVATION_TYPES)
         id_map = _make_id_map({"company": ["c0"]})
         # Uniform logits
-        obs_logits = {"company": torch.zeros(1, 18)}
+        obs_logits = {"company": torch.zeros(1, n_ot)}
         model = _make_mock_model(id_map, obs_type_logits=obs_logits)
         data = _make_data_no_edges(id_map)
         obs = [{"entity_id": "c0", "observation_type": "price_movement"}]
         se = SurpriseExtractor()
         result = se.extract(model, data, id_map, obs)
-        expected = -math.log(1.0 / 18.0)
+        expected = -math.log(1.0 / n_ot)
         assert result["c0"].obs_type_surprise == pytest.approx(expected, rel=1e-4)
 
     def test_confident_prediction_low_surprise(self):
         """High logit for the actual type → low surprise."""
         id_map = _make_id_map({"company": ["c0"]})
-        logits = torch.full((1, 18), -10.0)
+        logits = torch.full((1, len(OBSERVATION_TYPES)), -10.0)
         idx = OBSERVATION_TYPES.index("price_movement")
         logits[0, idx] = 10.0  # Very confident
         model = _make_mock_model(id_map, obs_type_logits={"company": logits})
@@ -315,7 +316,7 @@ class TestObsTypeSurprise:
     def test_wrong_prediction_high_surprise(self):
         """Low logit for the actual type → high surprise."""
         id_map = _make_id_map({"company": ["c0"]})
-        logits = torch.full((1, 18), 10.0)
+        logits = torch.full((1, len(OBSERVATION_TYPES)), 10.0)
         idx = OBSERVATION_TYPES.index("price_movement")
         logits[0, idx] = -10.0  # Very wrong
         model = _make_mock_model(id_map, obs_type_logits={"company": logits})
@@ -508,7 +509,7 @@ class TestNeighborhoodSurprise:
         """With edges + multiple entities, neighborhood surprise propagates."""
         id_map = _make_id_map({"company": ["c0", "c1"]})
         # c1 has high obs_type surprise (wrong prediction)
-        logits = torch.zeros(2, 18)
+        logits = torch.zeros(2, len(OBSERVATION_TYPES))
         idx = OBSERVATION_TYPES.index("insider_trade")
         logits[1, idx] = -20.0  # c1 gets surprised
         model = _make_mock_model(id_map, obs_type_logits={"company": logits})
@@ -572,7 +573,7 @@ class TestCompositeSurprise:
         """Perfect predictions → all surprises 0 → composite 0."""
         id_map = _make_id_map({"company": ["c0"]})
         # Very confident prediction for price_movement
-        logits = torch.full((1, 18), -100.0)
+        logits = torch.full((1, len(OBSERVATION_TYPES)), -100.0)
         idx = OBSERVATION_TYPES.index("price_movement")
         logits[0, idx] = 100.0
         dt_preds = {"company": torch.tensor([[50.0]])}

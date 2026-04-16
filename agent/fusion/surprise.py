@@ -76,33 +76,50 @@ class SurpriseExtractor:
         value_weight: float = 0.25,
         neighborhood_weight: float = 0.2,
         memory_weight: float = 0.1,
+        adaptive_weights: AdaptiveSurpriseWeights | None = None,
     ) -> None:
-        if weights is not None:
-            if len(weights) != 5:
-                raise ValueError(f"weights must have 5 elements, got {len(weights)}")
-            (
-                obs_type_weight,
-                temporal_weight,
-                value_weight,
-                neighborhood_weight,
-                memory_weight,
-            ) = weights
-        total = (
-            obs_type_weight
-            + temporal_weight
-            + value_weight
-            + neighborhood_weight
-            + memory_weight
-        )
-        self._weights = {
-            "obs_type": obs_type_weight / total,
-            "temporal": temporal_weight / total,
-            "value": value_weight / total,
-            "neighborhood": neighborhood_weight / total,
-            "memory": memory_weight / total,
-        }
+        if adaptive_weights is not None:
+            self._adaptive = adaptive_weights
+            self._weights = dict(adaptive_weights.weights)
+        else:
+            self._adaptive = None
+            if weights is not None:
+                if len(weights) != 5:
+                    raise ValueError(
+                        f"weights must have 5 elements, got {len(weights)}"
+                    )
+                (
+                    obs_type_weight,
+                    temporal_weight,
+                    value_weight,
+                    neighborhood_weight,
+                    memory_weight,
+                ) = weights
+            total = (
+                obs_type_weight
+                + temporal_weight
+                + value_weight
+                + neighborhood_weight
+                + memory_weight
+            )
+            self._weights = {
+                "obs_type": obs_type_weight / total,
+                "temporal": temporal_weight / total,
+                "value": value_weight / total,
+                "neighborhood": neighborhood_weight / total,
+                "memory": memory_weight / total,
+            }
         # Per-type rolling statistics for z-scoring
         self._type_stats: dict[str, _RollingStats] = defaultdict(_RollingStats)
+
+    def sync_adaptive_weights(self) -> None:
+        """If adaptive weights are active, pull current values into _weights."""
+        if self._adaptive is not None:
+            self._weights = dict(self._adaptive.weights)
+
+    @property
+    def adaptive(self) -> AdaptiveSurpriseWeights | None:
+        return self._adaptive
 
     def extract(
         self,
@@ -125,6 +142,7 @@ class SurpriseExtractor:
         Returns:
             Dict mapping entity_id → EntitySurprise.
         """
+        self.sync_adaptive_weights()
         model.eval()
 
         with torch.no_grad():
@@ -345,3 +363,138 @@ class _RollingStats:
         if self._n < 2:
             return 0.0
         return math.sqrt(self._m2 / (self._n - 1))
+
+
+# ═══════════════════════════════════════════════════════════════
+# AdaptiveSurpriseWeights — Exponentiated Gradient on the simplex
+# ═══════════════════════════════════════════════════════════════
+
+_WEIGHT_NAMES = ("obs_type", "temporal", "value", "neighborhood", "memory")
+
+
+class AdaptiveSurpriseWeights:
+    """Online learning of surprise fusion weights via exponentiated gradient.
+
+    The composite surprise is w^T z where w lives on the probability simplex.
+    After each scoring window, a retrospective loss measures how well the
+    composite surprise predicted actual anomalous outcomes (e.g. a large
+    subsequent price move or a confirmed entity alert).  The EG update
+    keeps weights on the simplex:
+
+        w_k^{t+1} = w_k^t * exp(eta * grad_k) / Z
+
+    where Z is the normalising constant.
+
+    References:
+        - Kivinen & Warmuth (1997): EG± algorithm
+        - Spec: Change 4 in [[learned_vs_handcoded_architecture_spec]]
+    """
+
+    def __init__(
+        self,
+        *,
+        initial_weights: tuple[float, ...] | None = None,
+        learning_rate: float = 0.05,
+        min_weight: float = 0.01,
+    ) -> None:
+        if initial_weights is not None:
+            if len(initial_weights) != 5:
+                raise ValueError(
+                    f"initial_weights must have 5 elements, got {len(initial_weights)}"
+                )
+            total = sum(initial_weights)
+            self._weights = [w / total for w in initial_weights]
+        else:
+            # Default: current hand-coded weights
+            self._weights = [0.30, 0.15, 0.25, 0.20, 0.10]
+        self._eta = learning_rate
+        self._min_weight = min_weight
+        self._n_updates = 0
+
+    @property
+    def weights(self) -> dict[str, float]:
+        return dict(zip(_WEIGHT_NAMES, self._weights))
+
+    @property
+    def weights_tuple(self) -> tuple[float, ...]:
+        return tuple(self._weights)
+
+    @property
+    def n_updates(self) -> int:
+        return self._n_updates
+
+    def update(self, gradients: tuple[float, ...]) -> None:
+        """Apply one EG step given per-channel loss gradients.
+
+        Parameters
+        ----------
+        gradients : 5-tuple of floats.
+            Partial derivative of the retrospective loss w.r.t. each
+            weight.  Negative gradient = this channel was helpful
+            (weight should increase).  The sign convention follows
+            standard gradient *descent* — we negate internally because
+            EG maximises.
+        """
+        if len(gradients) != 5:
+            raise ValueError(f"gradients must have 5 elements, got {len(gradients)}")
+
+        # EG update: w_k *= exp(-eta * grad_k)  (descent → negate)
+        new_w = [w * math.exp(-self._eta * g) for w, g in zip(self._weights, gradients)]
+
+        # Enforce minimum weight (prevents collapse to a single channel)
+        new_w = [max(w, self._min_weight) for w in new_w]
+
+        # Re-normalise to simplex
+        total = sum(new_w)
+        self._weights = [w / total for w in new_w]
+        self._n_updates += 1
+
+    def compute_gradients(
+        self,
+        surprise_vectors: list[tuple[float, ...]],
+        outcomes: list[float],
+    ) -> tuple[float, ...]:
+        """Compute per-channel gradients from retrospective data.
+
+        For each entity that had a surprise vector, compare the
+        composite surprise (under current weights) to the actual
+        outcome magnitude.  The loss is MSE between weighted composite
+        and outcome.
+
+        Parameters
+        ----------
+        surprise_vectors : list of 5-tuples (one per entity).
+        outcomes : corresponding outcome magnitudes (e.g. |price_move|).
+            Positive = anomalous outcome confirmed.
+
+        Returns
+        -------
+        5-tuple of gradients (d_loss / d_w_k).
+        """
+        if not surprise_vectors or len(surprise_vectors) != len(outcomes):
+            return (0.0,) * 5
+
+        grad = [0.0] * 5
+        n = len(surprise_vectors)
+        for sv, y in zip(surprise_vectors, outcomes):
+            composite = sum(w * z for w, z in zip(self._weights, sv))
+            residual = composite - y
+            for k in range(5):
+                grad[k] += 2.0 * residual * sv[k] / n
+
+        return tuple(grad)
+
+    def to_dict(self) -> dict[str, float | int]:
+        """Serialise for persistence."""
+        d: dict[str, float | int] = {"n_updates": self._n_updates}
+        for name, w in zip(_WEIGHT_NAMES, self._weights):
+            d[name] = w
+        return d
+
+    @classmethod
+    def from_dict(cls, d: dict[str, float | int]) -> "AdaptiveSurpriseWeights":
+        """Reconstruct from serialised dict."""
+        weights = tuple(float(d[name]) for name in _WEIGHT_NAMES)
+        obj = cls(initial_weights=weights)
+        obj._n_updates = int(d.get("n_updates", 0))
+        return obj

@@ -40,6 +40,7 @@ References:
 
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -47,6 +48,8 @@ from typing import Any
 import numpy as np
 
 from agent.models.belief import BeliefState
+
+log = logging.getLogger(__name__)
 
 # ── Regime configuration ───────────────────────────────────────
 
@@ -285,3 +288,259 @@ class ContinuousStateFilter:
             )
         self._x = x0.copy()
         self._P = P0.copy()
+
+    # ── EM Parameter Fitting (Change 2b) ──────────────────────
+
+    def fit_filter_params(
+        self,
+        observations_seq: list[np.ndarray],
+        regime_labels: list[str],
+        *,
+        max_iter: int = 20,
+        tol: float = 1e-4,
+        min_samples: int = 30,
+    ) -> dict[str, Any]:
+        """Fit F, Q, H, R from data via EM (Shumway & Stoffer, Ch. 6).
+
+        The EM algorithm for linear Gaussian state-space models alternates:
+          E-step: Kalman smoother computes E[x_t | y_{1:T}], Cov(x_t, x_{t-1} | y_{1:T})
+          M-step: Closed-form MLE updates for F, Q, H, R
+
+        Each regime gets its own F, Q fitted from timesteps where that regime
+        was active.  H, R are shared across regimes.
+
+        Parameters
+        ----------
+        observations_seq : List of observation vectors (length T).
+            Each is (obs_dim,). NaN entries are treated as missing.
+        regime_labels : Regime name for each timestep (length T).
+        max_iter : Maximum EM iterations.
+        tol : Convergence threshold on log-likelihood relative change.
+        min_samples : Minimum T required to attempt fitting.
+
+        Returns
+        -------
+        Dict with 'fitted': bool, 'n_samples': int, 'iterations': int,
+        'log_likelihoods': list[float].
+        """
+        T = len(observations_seq)
+        if T < min_samples:
+            log.info(
+                "fit_filter_params: only %d samples (need %d), keeping current params.",
+                T,
+                min_samples,
+            )
+            return {
+                "fitted": False,
+                "n_samples": T,
+                "iterations": 0,
+                "log_likelihoods": [],
+            }
+
+        if len(regime_labels) != T:
+            raise ValueError(
+                f"regime_labels length ({len(regime_labels)}) != observations_seq length ({T})"
+            )
+
+        n = self._state_dim
+        m = self._obs_dim
+
+        # Initialise from current params
+        F_by_regime = {name: rc.F.copy() for name, rc in self._regime_configs.items()}
+        Q_by_regime = {name: rc.Q.copy() for name, rc in self._regime_configs.items()}
+        H = self._H.copy()
+        R = self._R.copy()
+
+        log_likelihoods: list[float] = []
+
+        for iteration in range(max_iter):
+            # ── E-step: forward (Kalman filter) ──────────────
+            x_filt = np.zeros((T, n))
+            P_filt = np.zeros((T, n, n))
+            x_pred = np.zeros((T, n))
+            P_pred = np.zeros((T, n, n))
+
+            # Initial state
+            x_t = np.zeros(n)
+            P_t = np.eye(n)
+            ll = 0.0
+
+            for t in range(T):
+                regime = regime_labels[t]
+                F_t = F_by_regime.get(regime, np.eye(n))
+                Q_t = Q_by_regime.get(regime, np.eye(n) * 0.01)
+
+                # Predict
+                x_p = F_t @ x_t
+                P_p = F_t @ P_t @ F_t.T + Q_t
+
+                x_pred[t] = x_p
+                P_pred[t] = P_p
+
+                # Update with observations
+                y = observations_seq[t]
+                valid = ~np.isnan(y)
+                if valid.any():
+                    z = y[valid]
+                    H_v = H[valid, :]
+                    R_v = R[np.ix_(valid, valid)]
+
+                    S = H_v @ P_p @ H_v.T + R_v
+                    # Regularise S for numerical stability
+                    S = 0.5 * (S + S.T) + np.eye(S.shape[0]) * 1e-8
+                    S_inv = np.linalg.inv(S)
+                    K = P_p @ H_v.T @ S_inv
+
+                    innov = z - H_v @ x_p
+                    x_t = x_p + K @ innov
+
+                    I_KH = np.eye(n) - K @ H_v
+                    P_t = I_KH @ P_p @ I_KH.T + K @ R_v @ K.T
+                    P_t = 0.5 * (P_t + P_t.T)
+
+                    # Log-likelihood contribution
+                    sign, logdet = np.linalg.slogdet(S)
+                    if sign > 0:
+                        ll += -0.5 * (
+                            logdet + innov @ S_inv @ innov + len(z) * np.log(2 * np.pi)
+                        )
+                else:
+                    x_t = x_p
+                    P_t = P_p
+
+                x_filt[t] = x_t
+                P_filt[t] = P_t
+
+            log_likelihoods.append(float(ll))
+
+            # ── E-step: backward (RTS smoother) ─────────────
+            x_smooth = np.zeros((T, n))
+            P_smooth = np.zeros((T, n, n))
+            Plag_smooth = np.zeros((T, n, n))  # Cov(x_t, x_{t-1} | y_1:T)
+
+            x_smooth[T - 1] = x_filt[T - 1]
+            P_smooth[T - 1] = P_filt[T - 1]
+
+            for t in range(T - 2, -1, -1):
+                P_pred_t1 = P_pred[t + 1]
+                # Regularise for inversion
+                P_pred_reg = P_pred_t1 + np.eye(n) * 1e-8
+                G = (
+                    P_filt[t]
+                    @ F_by_regime.get(regime_labels[t + 1], np.eye(n)).T
+                    @ np.linalg.inv(P_pred_reg)
+                )
+
+                x_smooth[t] = x_filt[t] + G @ (x_smooth[t + 1] - x_pred[t + 1])
+                P_smooth[t] = P_filt[t] + G @ (P_smooth[t + 1] - P_pred_t1) @ G.T
+                P_smooth[t] = 0.5 * (P_smooth[t] + P_smooth[t].T)
+                Plag_smooth[t + 1] = P_smooth[t + 1] @ G.T
+
+            # ── M-step ──────────────────────────────────────
+            # Fit F, Q per regime
+            for regime_name in F_by_regime:
+                indices = [t for t in range(1, T) if regime_labels[t] == regime_name]
+                if len(indices) < 2:
+                    continue  # not enough samples for this regime
+
+                A = np.zeros((n, n))  # sum E[x_t x_{t-1}^T]
+                B = np.zeros((n, n))  # sum E[x_{t-1} x_{t-1}^T]
+                C = np.zeros((n, n))  # sum E[x_t x_t^T]
+
+                for t in indices:
+                    xs_t = x_smooth[t].reshape(-1, 1)
+                    xs_tm1 = x_smooth[t - 1].reshape(-1, 1)
+
+                    A += Plag_smooth[t] + xs_t @ xs_tm1.T
+                    B += P_smooth[t - 1] + xs_tm1 @ xs_tm1.T
+                    C += P_smooth[t] + xs_t @ xs_t.T
+
+                # F_new = A @ B^{-1}
+                B_reg = B + np.eye(n) * 1e-8
+                F_new = A @ np.linalg.inv(B_reg)
+                F_by_regime[regime_name] = F_new
+
+                # Q_new = (C - F_new @ A^T) / |indices|
+                N_r = len(indices)
+                Q_new = (C - F_new @ A.T) / N_r
+                # Ensure PSD
+                Q_new = 0.5 * (Q_new + Q_new.T)
+                eigvals = np.linalg.eigvalsh(Q_new)
+                if eigvals.min() < 0:
+                    Q_new += np.eye(n) * (abs(eigvals.min()) + 1e-8)
+                Q_by_regime[regime_name] = Q_new
+
+            # Fit H, R (shared across regimes)
+            D = np.zeros((m, n))  # sum y_t x_t^T (over valid obs)
+            E_xx = np.zeros((n, n))  # sum x_t x_t^T
+            E_yy = np.zeros((m, m))  # sum y_t y_t^T
+            n_obs_total = 0
+
+            for t in range(T):
+                y = observations_seq[t]
+                valid = ~np.isnan(y)
+                if not valid.any():
+                    continue
+                # Use full vectors for the shared fit; NaN positions zeroed
+                y_filled = np.where(valid, y, 0.0)
+                xs_t = x_smooth[t]
+                outer_yx = y_filled.reshape(-1, 1) @ xs_t.reshape(1, -1)
+                outer_xx = P_smooth[t] + xs_t.reshape(-1, 1) @ xs_t.reshape(1, -1)
+                outer_yy = np.diag(valid.astype(float)) @ (
+                    y_filled.reshape(-1, 1) @ y_filled.reshape(1, -1)
+                )
+
+                D += outer_yx
+                E_xx += outer_xx
+                E_yy += outer_yy
+                n_obs_total += 1
+
+            if n_obs_total > 0:
+                E_xx_reg = E_xx + np.eye(n) * 1e-8
+                H_new = D @ np.linalg.inv(E_xx_reg)
+                R_new = (E_yy - H_new @ D.T) / n_obs_total
+                R_new = 0.5 * (R_new + R_new.T)
+                eigvals = np.linalg.eigvalsh(R_new)
+                if eigvals.min() < 0:
+                    R_new += np.eye(m) * (abs(eigvals.min()) + 1e-8)
+                H = H_new
+                R = R_new
+
+            # Convergence check
+            if len(log_likelihoods) >= 2:
+                prev_ll = log_likelihoods[-2]
+                if abs(prev_ll) > 0:
+                    rel_change = abs(ll - prev_ll) / abs(prev_ll)
+                else:
+                    rel_change = abs(ll - prev_ll)
+                if rel_change < tol:
+                    log.info(
+                        "fit_filter_params: converged at iteration %d (rel_change=%.6f).",
+                        iteration + 1,
+                        rel_change,
+                    )
+                    break
+
+        # Apply fitted params
+        for regime_name, rc in list(self._regime_configs.items()):
+            if regime_name in F_by_regime:
+                self._regime_configs[regime_name] = RegimeConfig(
+                    name=regime_name,
+                    F=F_by_regime[regime_name],
+                    Q=Q_by_regime[regime_name],
+                )
+        self._H = H
+        self._R = R
+
+        log.info(
+            "fit_filter_params: %d iterations, final LL=%.2f, %d samples.",
+            len(log_likelihoods),
+            log_likelihoods[-1] if log_likelihoods else float("nan"),
+            T,
+        )
+        return {
+            "fitted": True,
+            "n_samples": T,
+            "iterations": len(log_likelihoods),
+            "log_likelihoods": log_likelihoods,
+        }

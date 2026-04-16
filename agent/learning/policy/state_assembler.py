@@ -341,3 +341,168 @@ class InstrumentStateAssembler:
         }
 
         return torch.from_numpy(state), metadata
+
+
+class DifferentiableStateAssembler:
+    """State assembler with gradient-preserving belief block.
+
+    Produces the same state layout as ``InstrumentStateAssembler`` but
+    accepts belief means/variances as torch Tensors so autograd can
+    back-propagate through the belief segment to upstream Kalman params.
+
+    Non-belief components (instrument surprises, entity surprises, market
+    features, adversarial) remain numpy → ``torch.from_numpy()`` (detached).
+    Only the belief block carries gradients.
+
+    State layout (identical to InstrumentStateAssembler):
+        [0 : N*5]            → instrument surprise (detached)
+        [N*5 : N*5 + E*5]   → entity surprise (detached)
+        [... : ... + E*4]    → belief features (**differentiable**)
+        [... : ... + M]      → market features (detached)
+        [... : ... + 1]      → entity count (detached)
+        [... : ... + 4]      → adversarial summary (detached)
+    """
+
+    def __init__(
+        self,
+        instrument_tickers: list[str],
+        max_entities: int = 50,
+        surprise_dim: int = 5,
+        belief_dim: int = 4,
+        market_dim: int = 8,
+    ) -> None:
+        self._tickers = list(instrument_tickers)
+        self._n_instruments = len(instrument_tickers)
+        self._ticker_index = {t: i for i, t in enumerate(instrument_tickers)}
+        self._max_entities = max_entities
+        self._surprise_dim = surprise_dim
+        self._belief_dim = belief_dim
+        self._market_dim = market_dim
+
+    @property
+    def n_instruments(self) -> int:
+        return self._n_instruments
+
+    @property
+    def state_dim(self) -> int:
+        N = self._n_instruments
+        E = self._max_entities
+        return (
+            N * self._surprise_dim
+            + E * self._surprise_dim
+            + E * self._belief_dim
+            + self._market_dim
+            + 1
+            + _ADVERSARIAL_DIM
+        )
+
+    def assemble(
+        self,
+        instrument_surprises: dict[str, tuple[float, ...]],
+        entity_alerts: list[EntityAlert],
+        belief_means: torch.Tensor,
+        belief_variances: torch.Tensor,
+        market_features: dict[str, float],
+        asset_map: dict[str, str] | None = None,
+        adversarial_flags: list[Any] | None = None,
+    ) -> tuple[torch.Tensor, dict[str, Any]]:
+        """Build state tensor with differentiable belief block.
+
+        Parameters
+        ----------
+        instrument_surprises : {ticker → 5-tuple} for instruments.
+        entity_alerts : EntityAlerts from the current timestep.
+        belief_means : Tensor (state_dim_kalman,) — from DiffKalman.
+        belief_variances : Tensor (state_dim_kalman,) — from DiffKalman.
+        market_features : global features dict.
+        asset_map : optional {entity_id → ticker}.
+        adversarial_flags : optional adversarial flags.
+
+        Returns
+        -------
+        (state_tensor, metadata) where state_tensor has gradients through
+        the belief block.
+        """
+        N = self._n_instruments
+        E = self._max_entities
+
+        # ── Instrument surprise block (N, 5) — detached ──
+        inst_block = np.zeros((N, self._surprise_dim), dtype=np.float32)
+        n_instruments_active = 0
+        for ticker, sv in instrument_surprises.items():
+            idx = self._ticker_index.get(ticker)
+            if idx is not None:
+                inst_block[idx] = sv[: self._surprise_dim]
+                n_instruments_active += 1
+
+        # ── Entity surprise block (E, 5) — detached ──
+        if asset_map:
+            tradeable_alerts = [
+                a for a in entity_alerts if a.entity_id in asset_map
+            ]
+        else:
+            tradeable_alerts = list(entity_alerts)
+        tradeable_alerts.sort(key=lambda a: a.composite_surprise, reverse=True)
+        selected = tradeable_alerts[:E]
+        n_entities_active = len(selected)
+
+        entity_surprise = np.zeros((E, self._surprise_dim), dtype=np.float32)
+        for i, alert in enumerate(selected):
+            entity_surprise[i] = [
+                alert.obs_type_surprise,
+                alert.temporal_surprise,
+                alert.value_surprise,
+                alert.neighborhood_surprise,
+                alert.memory_drift,
+            ]
+
+        # ── Belief block (E, 4) — DIFFERENTIABLE ──
+        # Map Kalman state components directly to belief slots.
+        # The first min(n_kalman, E) slots get gradient-connected
+        # mean/variance from the Kalman filter.  Remaining slots are zeros.
+        # This is independent of n_entities_active — the surprise and
+        # belief blocks serve different purposes in the differentiable path.
+        n_kalman = belief_means.shape[0]
+        belief_rows: list[torch.Tensor] = []
+        for i in range(E):
+            if i < n_kalman:
+                mean_i = belief_means[i]
+                var_i = belief_variances[i]
+                confidence = torch.tensor(1.0)
+                stale = torch.tensor(0.0)
+                row = torch.stack([mean_i, var_i, confidence, stale])
+            else:
+                row = torch.zeros(self._belief_dim)
+            belief_rows.append(row)
+        belief_block = torch.stack(belief_rows)  # (E, 4) — grad connected
+
+        # ── Market block (M,) — detached ──
+        market_block = np.zeros(self._market_dim, dtype=np.float32)
+        market_keys = sorted(market_features.keys())[: self._market_dim]
+        for j, key in enumerate(market_keys):
+            market_block[j] = market_features.get(key, 0.0)
+
+        # ── Entity count + adversarial — detached ──
+        entity_count = np.array(
+            [n_entities_active / max(E, 1)], dtype=np.float32
+        )
+        adv_block = StateAssembler._adversarial_block(adversarial_flags)
+
+        # ── Concatenate: detached numpy → tensor, then cat with diff belief ──
+        inst_t = torch.from_numpy(inst_block.ravel())
+        ent_t = torch.from_numpy(entity_surprise.ravel())
+        belief_t = belief_block.reshape(-1)  # (E*4,) — grad connected
+        market_t = torch.from_numpy(market_block)
+        count_t = torch.from_numpy(entity_count)
+        adv_t = torch.from_numpy(adv_block)
+
+        state = torch.cat([inst_t, ent_t, belief_t, market_t, count_t, adv_t])
+
+        metadata = {
+            "n_instruments_active": n_instruments_active,
+            "n_entities_active": n_entities_active,
+            "instrument_tickers": list(self._tickers),
+            "entity_order": [a.entity_id for a in selected],
+        }
+
+        return state, metadata

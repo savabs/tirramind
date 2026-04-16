@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 
 from agent.learning.evaluator import Evaluation
+from agent.learning.param_optimizer import BayesianParamOptimizer, ParamSpace
 
 log = logging.getLogger(__name__)
 
@@ -28,6 +30,7 @@ class RewardWeights:
     - Higher novelty_bonus → reward exploring new arms
     - Higher dead_end_penalty → punish wasted effort harder
     """
+
     eval_weight: float = 0.4
     sharpe_weight: float = 0.3
     facts_weight: float = 0.2
@@ -97,8 +100,99 @@ def compute_reward(
 
     log.info(
         "Reward: %.3f (eval=%.3f sharpe=%.3f facts=%.3f novelty=%.3f dead_end=-%.3f)",
-        reward, eval_component, sharpe_component, facts_component,
-        novelty_component, dead_end_component,
+        reward,
+        eval_component,
+        sharpe_component,
+        facts_component,
+        novelty_component,
+        dead_end_component,
     )
 
     return reward
+
+
+# ---------------------------------------------------------------------------
+# Reward Weight Optimizer (Change 5 — Tier 3)
+# ---------------------------------------------------------------------------
+
+# Bounds for each reward weight component.
+# All weights live in [0.01, 1.0]: zero weights collapse the signal;
+# values > 1 would dominate the [0,1] clamp and make reward constant.
+_REWARD_WEIGHT_SPACE = ParamSpace(
+    names=[
+        "eval_weight",
+        "sharpe_weight",
+        "facts_weight",
+        "novelty_bonus",
+        "dead_end_penalty",
+    ],
+    bounds=[(0.01, 1.0)] * 5,
+)
+
+
+class RewardWeightOptimizer:
+    """GP-Bayesian optimization over the 5 reward weight dimensions.
+
+    Objective: rolling portfolio Sharpe ratio (or any scalar metric
+    measured after K autonomous iterations with a given weight vector).
+
+    Usage::
+
+        opt = RewardWeightOptimizer(persist_path=Path("reward_bo.json"))
+        weights = opt.suggest_weights()       # → RewardWeights
+        # … run K autonomous iterations with these weights …
+        opt.record_trial(weights, sharpe=1.2)
+        best = opt.current_best()             # → RewardWeights | None
+    """
+
+    def __init__(
+        self,
+        persist_path: Path | None = None,
+        *,
+        n_random: int = 5,
+        seed: int | None = None,
+    ) -> None:
+        self._bo = BayesianParamOptimizer(
+            _REWARD_WEIGHT_SPACE,
+            persist_path=persist_path,
+            n_random=n_random,
+            seed=seed,
+        )
+
+    @property
+    def n_trials(self) -> int:
+        return self._bo.n_trials
+
+    def suggest_weights(self) -> RewardWeights:
+        """Suggest the next reward weight vector to evaluate."""
+        params = self._bo.suggest()
+        return RewardWeights(**params)
+
+    def record_trial(
+        self,
+        weights: RewardWeights,
+        objective: float,
+        metadata: dict | None = None,
+    ) -> None:
+        """Record a completed trial.
+
+        Args:
+            weights: The RewardWeights used during the trial.
+            objective: Scalar performance metric (higher = better).
+            metadata: Optional extra info (e.g., n_iterations, date range).
+        """
+        params = {
+            "eval_weight": weights.eval_weight,
+            "sharpe_weight": weights.sharpe_weight,
+            "facts_weight": weights.facts_weight,
+            "novelty_bonus": weights.novelty_bonus,
+            "dead_end_penalty": weights.dead_end_penalty,
+        }
+        self._bo.record(params, objective, metadata)
+
+    def current_best(self) -> RewardWeights | None:
+        """Return the best-performing RewardWeights found so far."""
+        best = self._bo.best_params()
+        if best is None:
+            return None
+        return RewardWeights(**best)
