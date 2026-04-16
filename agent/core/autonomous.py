@@ -23,7 +23,7 @@ from agent.learning.bandit import GoalArm, StrategyBandit, DEFAULT_ARMS
 from agent.learning.evaluator import Evaluation, Evaluator
 from agent.learning.goal_generator import Goal, GoalGenerator
 from agent.learning.reflection import ReflectionResult, Reflector
-from agent.learning.reward import compute_reward
+from agent.learning.reward import RewardWeightOptimizer, compute_reward
 from agent.memory.store import (
     EpisodicMemory,
     LearningEntry,
@@ -39,26 +39,28 @@ log = logging.getLogger(__name__)
 @dataclass
 class LoopIteration:
     """Record of one autonomous loop iteration."""
+
     iteration: int
-    arm: GoalArm                  # which arm the bandit chose
+    arm: GoalArm  # which arm the bandit chose
     goal: Goal
     result: AgentResult
     evaluation: Evaluation
     reflection: ReflectionResult
-    reward: float                 # scalar reward fed back to bandit
+    reward: float  # scalar reward fed back to bandit
     timestamp: float = field(default_factory=time.time)
 
 
 @dataclass
 class AutonomousRunSummary:
     """Summary of an entire autonomous session."""
+
     iterations_completed: int
     total_goals_attempted: int
     successful_goals: int
     failed_goals: int
     dead_ends_found: int
     stop_reason: str
-    bandit_report: str = ""       # bandit stats after the run
+    bandit_report: str = ""  # bandit stats after the run
     iterations: list[LoopIteration] = field(default_factory=list)
 
     def report(self) -> str:
@@ -127,6 +129,11 @@ class AutonomousRunner:
             persist_path=mem_dir / "bandit_state.json",
         )
 
+        # GP-Bayesian optimization of reward weights (Tier 3, Change 5)
+        self._reward_optimizer = RewardWeightOptimizer(
+            persist_path=mem_dir / "reward_bo.json",
+        )
+
         # Learning components (LLM-based, for language tasks)
         self._reflector = Reflector(self._llm)
         self._goal_generator = GoalGenerator(self._llm)
@@ -144,7 +151,20 @@ class AutonomousRunner:
         """
         log.info(
             "Autonomous runner starting (max_iterations=%d, bandit_pulls=%d)",
-            self._max_iterations, self._bandit.total_pulls,
+            self._max_iterations,
+            self._bandit.total_pulls,
+        )
+
+        # Suggest reward weights for this run via GP-BO (Tier 3, Change 5)
+        learned_weights = self._reward_optimizer.suggest_weights()
+        log.info(
+            "Using learned reward weights: eval=%.3f sharpe=%.3f "
+            "facts=%.3f novelty=%.3f dead_end=%.3f",
+            learned_weights.eval_weight,
+            learned_weights.sharpe_weight,
+            learned_weights.facts_weight,
+            learned_weights.novelty_bonus,
+            learned_weights.dead_end_penalty,
         )
 
         iterations: list[LoopIteration] = []
@@ -196,28 +216,50 @@ class AutonomousRunner:
             evaluation = self._evaluator.evaluate(result, goal)
             log.info(
                 "Evaluation: success=%s score=%.2f dead_end=%s",
-                evaluation.success, evaluation.score, evaluation.dead_end,
+                evaluation.success,
+                evaluation.score,
+                evaluation.dead_end,
             )
 
             # 6. COMPUTE REWARD (pure numeric — NO LLM)
             reward = compute_reward(
                 evaluation=evaluation,
                 is_first_pull=self._bandit.is_first_pull(arm.name),
+                weights=learned_weights,
             )
 
             # 7. BANDIT UPDATE (actual RL learning step)
             self._bandit.update(arm.name, reward)
 
+            # 7b. NOVEL ARM RECORDING (Tier 3, Change 8)
+            # If the bandit chose novel_exploration, extract which tools
+            # were actually used and record the pull for auto-promotion.
+            if arm.name == "novel_exploration" and result.episodes:
+                tools_used = list({ep.action for ep in result.episodes if ep.action})
+                promoted = self._bandit.record_novel_pull(
+                    tools_used=tools_used,
+                    reward=reward,
+                    description=goal.description,
+                )
+                if promoted:
+                    log.info(
+                        "Novel exploration promoted new arm: '%s' (tools=%s)",
+                        promoted.name,
+                        promoted.tools,
+                    )
+
             # 8. Store learning with arm + reward info
-            self._semantic.store_learning(LearningEntry(
-                goal=goal.description,
-                score=evaluation.score,
-                success=evaluation.success,
-                dead_end=evaluation.dead_end,
-                lessons=evaluation.lessons,
-                arm=arm.name,
-                reward=reward,
-            ))
+            self._semantic.store_learning(
+                LearningEntry(
+                    goal=goal.description,
+                    score=evaluation.score,
+                    success=evaluation.success,
+                    dead_end=evaluation.dead_end,
+                    lessons=evaluation.lessons,
+                    arm=arm.name,
+                    reward=reward,
+                )
+            )
 
             # Record iteration
             iteration = LoopIteration(
@@ -246,6 +288,17 @@ class AutonomousRunner:
                 break
         else:
             stop_reason = "max_iterations_reached"
+
+        # Record reward weight trial (Tier 3, Change 5)
+        # Objective: mean reward across iterations in this run — higher = better weights
+        if iterations:
+            mean_reward = sum(it.reward for it in iterations) / len(iterations)
+            self._reward_optimizer.record_trial(learned_weights, objective=mean_reward)
+            log.info(
+                "Recorded reward weight trial: mean_reward=%.3f (n=%d iterations)",
+                mean_reward,
+                len(iterations),
+            )
 
         summary = AutonomousRunSummary(
             iterations_completed=len(iterations),

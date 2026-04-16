@@ -26,6 +26,10 @@ quant = [
     "cvxpy>=1.4",
     "networkx>=3.0",
 ]
+ml = [
+    "torch>=2.0",
+    "torch-geometric>=2.5",
+]
 dev = [
     "pytest>=7.0",
     "pytest-asyncio>=0.21",

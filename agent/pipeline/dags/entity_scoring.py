@@ -33,6 +33,43 @@ _MIN_ENTITY_COUNT = 5
 _DEFAULT_MODEL_PATH = ".tirra_pipeline/gnn_model.pt"
 
 
+def _merge_learned_thresholds(
+    scorer_config: dict[str, Any],
+    threshold_dir: Path,
+) -> dict[str, Any]:
+    """Merge GP-BO learned thresholds into scorer_config.
+
+    Loads the ThresholdOptimizer from *threshold_dir* and fills in
+    CUSUM/Hawkes best-so-far values.  Explicit keys already in
+    *scorer_config* take precedence (user overrides beat learned).
+
+    Returns a new dict (does not mutate the input).
+    """
+    from agent.learning.threshold_optimizer import ThresholdOptimizer
+
+    try:
+        opt = ThresholdOptimizer(persist_dir=threshold_dir)
+    except Exception:
+        log.warning("Could not load ThresholdOptimizer from %s", threshold_dir)
+        return scorer_config
+
+    merged = dict(scorer_config)
+
+    # Mapping: ThresholdOptimizer param name → ScorerConfig field name
+    _CUSUM_MAP = {"k": "cusum_k", "h": "cusum_h"}
+    _HAWKES_MAP = {"mu": "hawkes_mu", "alpha": "hawkes_alpha", "beta": "hawkes_beta"}
+
+    for detector, field_map in [("cusum", _CUSUM_MAP), ("hawkes", _HAWKES_MAP)]:
+        best = opt.current_best(detector)
+        if best is None:
+            continue
+        for bo_key, cfg_key in field_map.items():
+            if cfg_key not in merged and bo_key in best:
+                merged[cfg_key] = best[bo_key]
+
+    return merged
+
+
 def run_entity_scoring(params: dict, upstream: dict) -> dict:
     """FunctionOperator callback for the entity_scoring DAG step.
 
@@ -56,6 +93,18 @@ def run_entity_scoring(params: dict, upstream: dict) -> dict:
     model_path = Path(params.get("model_path", _DEFAULT_MODEL_PATH))
     as_of: float = params.get("as_of") or time.time()
     scorer_config: dict[str, Any] = params.get("scorer_config") or {}
+
+    # Merge learned detector thresholds from GP-BO (Tier 3, Change 7)
+    # ThresholdOptimizer persists best CUSUM/Hawkes params — load them
+    # and let explicit scorer_config overrides take precedence.
+    threshold_dir = params.get("threshold_dir")
+    if threshold_dir:
+        scorer_config = _merge_learned_thresholds(scorer_config, Path(threshold_dir))
+    else:
+        # Default location: alongside the pipeline DB
+        default_dir = Path(db_path).parent / "threshold_bo"
+        if default_dir.exists():
+            scorer_config = _merge_learned_thresholds(scorer_config, default_dir)
 
     store = PipelineStore(db_path)
     try:

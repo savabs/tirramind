@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import time
+from pathlib import Path
 from typing import Any
 
 from agent.convergence.detector import ConvergenceDetector, ConvergenceDetectorConfig
@@ -99,6 +100,30 @@ def build_registry_from_evidence(evidence: list[Evidence]) -> SignalRegistry:
     return registry
 
 
+def _load_convergence_thresholds(threshold_dir: Path) -> dict[str, float]:
+    """Load GP-BO learned convergence thresholds if available.
+
+    Returns a dict with keys matching ConvergenceDetectorConfig fields
+    (z_threshold, p_threshold, fdr_q).  Empty dict if no trials exist.
+    """
+    from agent.learning.threshold_optimizer import ThresholdOptimizer
+
+    try:
+        opt = ThresholdOptimizer(persist_dir=threshold_dir)
+    except Exception:
+        log.warning("Could not load ThresholdOptimizer from %s", threshold_dir)
+        return {}
+
+    best = opt.current_best("convergence")
+    if best is None:
+        return {}
+
+    # Map BO param names → ConvergenceDetectorConfig field names (they match)
+    return {
+        k: v for k, v in best.items() if k in ("z_threshold", "p_threshold", "fdr_q")
+    }
+
+
 # ═══════════════════════════════════════════════════════════════
 #  FunctionOperator Callback
 # ═══════════════════════════════════════════════════════════════
@@ -130,7 +155,19 @@ def run_convergence_detection(params: dict, upstream: dict) -> dict:
         registry = build_registry_from_evidence(evidence)
 
         # Configure and run detector
-        config = ConvergenceDetectorConfig(lookback_days=lookback_days)
+        # Merge learned convergence thresholds from GP-BO (Tier 3, Change 7)
+        config_kwargs: dict[str, Any] = {"lookback_days": lookback_days}
+        threshold_dir = params.get("threshold_dir")
+        default_dir = Path(db_path).parent / "threshold_bo"
+        _dir = (
+            Path(threshold_dir)
+            if threshold_dir
+            else (default_dir if default_dir.exists() else None)
+        )
+        if _dir is not None:
+            config_kwargs.update(_load_convergence_thresholds(_dir))
+
+        config = ConvergenceDetectorConfig(**config_kwargs)
         detector = ConvergenceDetector(store, registry, config)
         results = detector.detect(as_of)
 

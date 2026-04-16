@@ -141,10 +141,18 @@ class DAGExecutor:
         """Execute all nodes in a layer in parallel."""
         results: dict[str, NodeResult] = {}
 
-        # Check which nodes should be skipped (dependency failed)
+        # Check which nodes should be skipped (dependency failed or disabled)
         executable = []
         for nid in layer:
             node = dag.nodes[nid]
+            # Change 12: skip nodes disabled by tool routing
+            if not node.enabled:
+                nr = run.node_results[nid]
+                nr.status = "skipped"
+                nr.error = "Skipped: disabled by tool router"
+                results[nid] = nr
+                log.info("Node %s skipped: disabled by tool router", nid)
+                continue
             deps_ok = all(
                 run.node_results.get(dep, NodeResult(node_id=dep)).status == "completed"
                 for dep in node.depends_on

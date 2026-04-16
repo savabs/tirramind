@@ -295,14 +295,23 @@ def _sac_inference(params: dict[str, Any], upstream: dict[str, Any]) -> dict[str
             for r in recent_alert_rows
         ]
 
-        # Load recent beliefs from store
+        # ── Load beliefs from world model store ──────────────
+        belief_rows = store.query_all_latest_beliefs()
         beliefs: list[BeliefState] = []
-        # Use a simple heuristic: load beliefs for variables with 'instrument' prefix
-        # In practice, the world model emits beliefs keyed by entity
-        # For now, pass empty beliefs — the assembler zero-pads missing entries
+        for row in belief_rows:
+            try:
+                beliefs.append(BeliefState.from_dict(row))
+            except (KeyError, TypeError):
+                pass  # skip malformed rows
 
-        # Minimal market features placeholder
+        # ── Market features: pack global belief means ────────
+        # World-model latent beliefs (no entity_id) provide global
+        # state context that SAC can use even when per-entity beliefs
+        # are not yet available.
         market_features: dict[str, float] = {}
+        for b in beliefs:
+            if b.entity_id is None and b.mean is not None:
+                market_features[f"belief.{b.variable_name}"] = b.mean
 
         state_tensor, meta = assembler.assemble(
             instrument_surprises=instrument_surprises,
@@ -333,6 +342,9 @@ def _sac_inference(params: dict[str, Any], upstream: dict[str, Any]) -> dict[str
             "status": "completed",
             "weights": weights,
             "instrument_tickers": tickers,
+            # For transition storage — emit_portfolio uses these
+            "state_vector": state_tensor.numpy().tolist(),
+            "action_vector": [float(a) for a in action],
         }
 
     except Exception as exc:
@@ -384,6 +396,25 @@ def _emit_portfolio(params: dict[str, Any], upstream: dict[str, Any]) -> dict[st
         store.store_portfolio_weights(today, weights)
         log.info("Stored %d portfolio weights for %s", len(weights), today)
 
+        # 1b. Store today's pending RL transition (state + action, reward TBD)
+        state_vector = sac_result.get("state_vector")
+        action_vector = sac_result.get("action_vector")
+        transition_stored = False
+        if state_vector is not None and action_vector is not None:
+            import time as _time
+
+            store.store_pending_transition(
+                date=today,
+                timestamp=_time.time(),
+                state=state_vector,
+                action=action_vector,
+                metadata={
+                    "instrument_tickers": sac_result.get("instrument_tickers", [])
+                },
+            )
+            transition_stored = True
+            log.info("Stored pending RL transition for %s", today)
+
         # 6a. Concentration alert — check BEFORE P&L (uses today's weights)
         alerts: list[dict[str, Any]] = []
         alerts.extend(_check_concentration(weights))
@@ -428,6 +459,20 @@ def _emit_portfolio(params: dict[str, Any], upstream: dict[str, Any]) -> dict[st
         for ticker, ret in today_returns.items():
             benchmark_return += ret / n_bench
 
+        # 4b. Complete yesterday's pending RL transition with realized reward
+        transition_completed = store.complete_pending_transition(
+            date=yesterday,
+            reward=portfolio_return,
+            next_state=state_vector if state_vector is not None else [],
+            done=False,
+        )
+        if transition_completed:
+            log.info(
+                "Completed RL transition for %s with reward=%.6f",
+                yesterday,
+                portfolio_return,
+            )
+
         # 5. Cumulative return (load previous cumulative or start at 0)
         prev_pnl = store.query_paper_pnl(end_date=yesterday, limit=1)
         prev_cumulative = prev_pnl[-1]["cumulative_return"] if prev_pnl else 0.0
@@ -468,6 +513,8 @@ def _emit_portfolio(params: dict[str, Any], upstream: dict[str, Any]) -> dict[st
             "portfolio_return": portfolio_return,
             "benchmark_return": benchmark_return,
             "cumulative_return": cumulative_return,
+            "transition_stored": transition_stored,
+            "transition_completed": transition_completed,
             "alerts": alerts,
         }
 

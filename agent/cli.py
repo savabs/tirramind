@@ -162,6 +162,37 @@ def build_tool_registry(config: AgentConfig | None = None) -> ToolRegistry:
         db_path=config.pipeline.db_path if config else ".tirra_pipeline/pipeline.db"
     )
     registry.register(PipelineQueryTool(store=pipeline_store))
+
+    # ── Tier 8, Change 16: Seed OntologyRegistry on startup ───
+    try:
+        from agent.discovery.ontology_registry import OntologyRegistry
+        from agent.pipeline.entity import set_ontology_registry
+
+        ontology = OntologyRegistry(pipeline_store)
+        set_ontology_registry(ontology)
+    except Exception:
+        logging.getLogger(__name__).debug(
+            "OntologyRegistry init skipped (discovery module unavailable)"
+        )
+
+    # ── Tier 8, Change 15: Load discovered tool configs ───────
+    try:
+        from agent.discovery.tool_factory import ToolFactory
+
+        factory = ToolFactory()
+        for tool in factory.load_all_configs():
+            # Only register tools whose source is active in the store
+            sources = pipeline_store.query_discovered_sources(status="active")
+            active_ids = {s["source_id"] for s in sources}
+            # Tool names are "discovered_{source_id[:8]}"
+            source_prefix = tool.name.replace("discovered_", "")
+            if any(sid.startswith(source_prefix) for sid in active_ids):
+                registry.register(tool)
+    except Exception:
+        logging.getLogger(__name__).debug(
+            "Discovered tool loading skipped (no configs or module unavailable)"
+        )
+
     return registry
 
 

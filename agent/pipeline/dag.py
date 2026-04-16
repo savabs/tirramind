@@ -35,6 +35,7 @@ class Node:
     timeout: int = 60
     store_result: bool = True
     table_name: str | None = None
+    enabled: bool = True  # Change 12: tool routing — False skips execution
 
 
 @dataclass
