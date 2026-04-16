@@ -1076,3 +1076,212 @@ class TestGracefulDegradation:
             days_back=365,
         )
         assert isinstance(r, ToolResult)
+
+
+# ── L2 Entity Persistence Tests ──────────────────────────────────────────────
+
+import unittest
+
+
+def _make_store_mock():
+    """Build a mock PipelineStore for L2 persistence testing."""
+    store = MagicMock()
+    store.register_entity = MagicMock(side_effect=lambda **kw: kw["entity_id"])
+    store.store_entity_observation = MagicMock(return_value=1)
+    return store
+
+
+class TestL2PersistenceNoStore(unittest.TestCase):
+    """Persistence is a no-op when store is absent."""
+
+    def test_no_store_returns_zeros(self):
+        tool = FoiaRequestsTool()
+        tool._store = None
+        counts = tool._persist_entities(
+            {"records": [{"title": "Some request"}]}, "search"
+        )
+        assert counts == {"investigation_signal_obs": 0}
+
+    def test_no_entity_id_fn_returns_zeros(self):
+        import agent.tools.foia_requests as foia_mod
+
+        tool = FoiaRequestsTool()
+        tool._store = _make_store_mock()
+        original = foia_mod._entity_id_from_key
+        try:
+            foia_mod._entity_id_from_key = None
+            counts = tool._persist_entities(
+                {"records": [{"title": "Some request"}]}, "search"
+            )
+            assert counts == {"investigation_signal_obs": 0}
+        finally:
+            foia_mod._entity_id_from_key = original
+
+
+class TestL2PersistenceSearch(unittest.TestCase):
+    """search mode persists investigation_signal obs on entity nodes."""
+
+    def test_persists_one_obs(self):
+        tool = FoiaRequestsTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "records": [
+                {
+                    "title": "FOIA re: Acme Corp Safety Violations",
+                    "agency": "EPA",
+                    "jurisdiction": "US",
+                    "source": "muckrock",
+                    "date_filed": "2026-04-01",
+                    "status": "Submitted",
+                }
+            ]
+        }
+        counts = tool._persist_entities(data, "search")
+        assert counts["investigation_signal_obs"] == 1
+
+    def test_obs_type_and_depth(self):
+        tool = FoiaRequestsTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "records": [
+                {
+                    "title": "Records on XYZ Pharma",
+                    "agency": "FDA",
+                    "source": "muckrock",
+                }
+            ]
+        }
+        tool._persist_entities(data, "search")
+        obs_call = store.store_entity_observation.call_args_list[0]
+        assert obs_call.kwargs["observation_type"] == "investigation_signal"
+        assert obs_call.kwargs["depth_level"] == 2
+        assert obs_call.kwargs["source_tool"] == "foia_requests"
+
+    def test_empty_title_skipped(self):
+        tool = FoiaRequestsTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {"records": [{"title": "", "agency": "SEC"}]}
+        counts = tool._persist_entities(data, "search")
+        assert counts["investigation_signal_obs"] == 0
+
+    def test_multiple_records(self):
+        tool = FoiaRequestsTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "records": [
+                {"title": "Req A", "agency": "EPA", "source": "muckrock"},
+                {"title": "Req B", "agency": "FDA", "source": "muckrock"},
+                {"title": "Req C", "agency": "DOJ", "source": "wdtk"},
+            ]
+        }
+        counts = tool._persist_entities(data, "search")
+        assert counts["investigation_signal_obs"] == 3
+
+
+class TestL2PersistenceAgencyActivity(unittest.TestCase):
+    """agency_activity mode uses agency name as entity."""
+
+    def test_persists_agency_entity(self):
+        tool = FoiaRequestsTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "records": [
+                {
+                    "title": "Request about enforcement",
+                    "agency": "Securities and Exchange Commission",
+                    "jurisdiction": "US",
+                    "source": "muckrock",
+                }
+            ]
+        }
+        counts = tool._persist_entities(data, "agency_activity")
+        assert counts["investigation_signal_obs"] == 1
+        # Agency name is used as entity, not title
+        reg_call = store.register_entity.call_args_list[0]
+        assert reg_call.kwargs["canonical_name"] == "Securities and Exchange Commission"
+
+    def test_empty_agency_skipped(self):
+        tool = FoiaRequestsTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {"records": [{"title": "Some FOIA", "agency": ""}]}
+        counts = tool._persist_entities(data, "agency_activity")
+        assert counts["investigation_signal_obs"] == 0
+
+
+class TestL2PersistenceEntityCluster(unittest.TestCase):
+    """entity_cluster mode persists on entity from title."""
+
+    def test_persists_cluster_obs(self):
+        tool = FoiaRequestsTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "records": [
+                {"title": "Entity Alpha", "agency": "FBI", "source": "muckrock"},
+                {"title": "Entity Alpha", "agency": "DOJ", "source": "muckrock"},
+            ]
+        }
+        counts = tool._persist_entities(data, "entity_cluster")
+        assert counts["investigation_signal_obs"] == 2
+
+    def test_obs_value_contains_mode(self):
+        tool = FoiaRequestsTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "records": [{"title": "Test Entity", "agency": "SEC", "source": "muckrock"}]
+        }
+        tool._persist_entities(data, "entity_cluster")
+        obs_call = store.store_entity_observation.call_args_list[0]
+        assert obs_call.kwargs["value"]["mode"] == "entity_cluster"
+
+
+class TestL2PersistenceExceptionHandling(unittest.TestCase):
+    """Exception in persistence is non-fatal."""
+
+    def test_exception_returns_zeros(self):
+        tool = FoiaRequestsTool()
+        store = _make_store_mock()
+        store.register_entity.side_effect = RuntimeError("boom")
+        tool._store = store
+        counts = tool._persist_entities(
+            {"records": [{"title": "Crash Request", "agency": "EPA"}]},
+            "search",
+        )
+        assert counts == {"investigation_signal_obs": 0}
+
+    def test_exception_does_not_propagate(self):
+        tool = FoiaRequestsTool()
+        store = _make_store_mock()
+        store.store_entity_observation.side_effect = Exception("db error")
+        tool._store = store
+        counts = tool._persist_entities(
+            {"records": [{"title": "Crash Request"}]}, "search"
+        )
+        assert counts == {"investigation_signal_obs": 0}
+
+
+class TestL2PersistenceEmptyRecords(unittest.TestCase):
+    """Empty records are handled gracefully."""
+
+    def test_empty_records_all_modes(self):
+        tool = FoiaRequestsTool()
+        store = _make_store_mock()
+        tool._store = store
+        for mode in ("search", "agency_activity", "entity_cluster"):
+            counts = tool._persist_entities({"records": []}, mode)
+            assert counts["investigation_signal_obs"] == 0
+        store.store_entity_observation.assert_not_called()
+
+    def test_missing_records_key(self):
+        tool = FoiaRequestsTool()
+        store = _make_store_mock()
+        tool._store = store
+        counts = tool._persist_entities({}, "search")
+        assert counts["investigation_signal_obs"] == 0

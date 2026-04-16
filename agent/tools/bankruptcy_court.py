@@ -27,15 +27,24 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from agent.data.cache import DataCache
 from agent.tools.base import Tool, ToolResult
+
+if TYPE_CHECKING:
+    from agent.pipeline.store import PipelineStore
+
+try:
+    from agent.pipeline.entity import entity_id_from_key as _entity_id_from_key
+except ImportError:  # pragma: no cover — optional dependency
+    _entity_id_from_key = None  # type: ignore[assignment]
 
 log = logging.getLogger(__name__)
 
@@ -360,8 +369,13 @@ class BankruptcyCourtTool(Tool):
         "required": ["mode"],
     }
 
-    def __init__(self, cache: DataCache | None = None) -> None:
+    def __init__(
+        self,
+        cache: DataCache | None = None,
+        pipeline_store: "PipelineStore | None" = None,
+    ) -> None:
         self._cache = cache
+        self._store = pipeline_store
 
     def execute(
         self,
@@ -413,13 +427,19 @@ class BankruptcyCourtTool(Tool):
         )
 
         if mode == "us_bankruptcy":
-            return self._us_bankruptcy(court=court.strip().lower(), limit=limit)
-        if mode == "sec_enforcement":
-            return self._sec_enforcement(keyword=keyword, limit=limit)
-        if mode == "sec_bankruptcy":
-            return self._sec_bankruptcy(days_back=days_back, limit=limit)
-        # uk_insolvency
-        return self._uk_insolvency(keyword=keyword, limit=limit)
+            result = self._us_bankruptcy(court=court.strip().lower(), limit=limit)
+        elif mode == "sec_enforcement":
+            result = self._sec_enforcement(keyword=keyword, limit=limit)
+        elif mode == "sec_bankruptcy":
+            result = self._sec_bankruptcy(days_back=days_back, limit=limit)
+        else:
+            result = self._uk_insolvency(keyword=keyword, limit=limit)
+
+        # L2: persist bankruptcy/enforcement observations on company entities
+        if result.success and result.data:
+            self._persist_entities(result.data, mode)
+
+        return result
 
     # ── us_bankruptcy ─────────────────────────────────────────────────────
 
@@ -765,3 +785,151 @@ class BankruptcyCourtTool(Tool):
                 "entries": entries,
             },
         )
+
+    # ── L2 entity persistence ────────────────────────────────────────────
+
+    def _persist_entities(
+        self,
+        data: dict[str, Any],
+        mode: str,
+    ) -> dict[str, int]:
+        """Persist bankruptcy/enforcement observations onto company entity nodes.
+
+        Skips silently if no PipelineStore or entity module is available.
+        """
+        if self._store is None or _entity_id_from_key is None:
+            return {"bankruptcy_status_obs": 0}
+        try:
+            return self._persist_entities_inner(data, mode)
+        except Exception:
+            log.exception("Bankruptcy court entity persistence failed (non-fatal)")
+            return {"bankruptcy_status_obs": 0}
+
+    def _persist_entities_inner(
+        self,
+        data: dict[str, Any],
+        mode: str,
+    ) -> dict[str, int]:
+        """Inner persistence logic separated for testability."""
+        assert self._store is not None  # noqa: S101 — guarded
+        assert _entity_id_from_key is not None  # noqa: S101
+
+        store = self._store
+        counts = {"bankruptcy_status_obs": 0}
+        now_ts = time.time()
+        entries = data.get("entries", [])
+
+        if mode == "us_bankruptcy":
+            for entry in entries:
+                name = (entry.get("debtor_name") or "").strip()
+                if not name:
+                    continue
+                # Normalize: strip common legal prefixes
+                clean = re.sub(
+                    r"^(In\s+re[:\s]*)", "", name, flags=re.IGNORECASE
+                ).strip()
+                if not clean:
+                    continue
+                eid = _entity_id_from_key("company", clean)
+                store.register_entity(
+                    entity_type="company",
+                    canonical_name=clean,
+                    entity_id=eid,
+                )
+                store.store_entity_observation(
+                    entity_id=eid,
+                    source_tool="bankruptcy_court",
+                    observed_at=now_ts,
+                    observation_type="bankruptcy_status",
+                    value={
+                        "source": "pacer",
+                        "chapter": entry.get("chapter"),
+                        "court": entry.get("court"),
+                        "case_number": entry.get("case_number"),
+                        "pub_date": entry.get("pub_date"),
+                    },
+                    depth_level=2,
+                )
+                counts["bankruptcy_status_obs"] += 1
+
+        elif mode == "sec_enforcement":
+            for entry in entries:
+                title = (entry.get("title") or "").strip()
+                if not title:
+                    continue
+                eid = _entity_id_from_key("company", title)
+                store.register_entity(
+                    entity_type="company",
+                    canonical_name=title,
+                    entity_id=eid,
+                )
+                store.store_entity_observation(
+                    entity_id=eid,
+                    source_tool="bankruptcy_court",
+                    observed_at=now_ts,
+                    observation_type="bankruptcy_status",
+                    value={
+                        "source": "sec_enforcement",
+                        "type": entry.get("type"),
+                        "pub_date": entry.get("pub_date"),
+                    },
+                    depth_level=2,
+                )
+                counts["bankruptcy_status_obs"] += 1
+
+        elif mode == "sec_bankruptcy":
+            for entry in entries:
+                name = (entry.get("company_name") or "").strip()
+                if not name or name == "Unknown":
+                    continue
+                eid = _entity_id_from_key("company", name)
+                store.register_entity(
+                    entity_type="company",
+                    canonical_name=name,
+                    entity_id=eid,
+                )
+                store.store_entity_observation(
+                    entity_id=eid,
+                    source_tool="bankruptcy_court",
+                    observed_at=now_ts,
+                    observation_type="bankruptcy_status",
+                    value={
+                        "source": "sec_8k_103",
+                        "cik": entry.get("cik"),
+                        "file_date": entry.get("file_date"),
+                        "items": entry.get("items", []),
+                    },
+                    depth_level=2,
+                )
+                counts["bankruptcy_status_obs"] += 1
+
+        elif mode == "uk_insolvency":
+            for entry in entries:
+                title = (entry.get("title") or "").strip()
+                if not title:
+                    continue
+                eid = _entity_id_from_key("company", title)
+                store.register_entity(
+                    entity_type="company",
+                    canonical_name=title,
+                    entity_id=eid,
+                )
+                store.store_entity_observation(
+                    entity_id=eid,
+                    source_tool="bankruptcy_court",
+                    observed_at=now_ts,
+                    observation_type="bankruptcy_status",
+                    value={
+                        "source": entry.get("source", "uk"),
+                        "pub_date": entry.get("pub_date"),
+                    },
+                    depth_level=2,
+                )
+                counts["bankruptcy_status_obs"] += 1
+
+        if counts["bankruptcy_status_obs"]:
+            log.info(
+                "Bankruptcy court L2: %d bankruptcy_status obs persisted",
+                counts["bankruptcy_status_obs"],
+            )
+        return counts

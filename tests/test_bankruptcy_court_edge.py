@@ -1337,3 +1337,325 @@ class TestPACERCourtsDict:
     def test_expected_courts_present(self):
         expected = {"sdny", "del", "sdtx", "cdca", "ndil", "nj"}
         assert set(PACER_COURTS.keys()) == expected
+
+
+# ── L2 Entity Persistence Tests ──────────────────────────────────────────────
+
+import unittest
+
+
+def _make_store_mock():
+    """Build a mock PipelineStore for L2 persistence testing."""
+    store = MagicMock()
+    store.register_entity = MagicMock(side_effect=lambda **kw: kw["entity_id"])
+    store.store_entity_observation = MagicMock(return_value=1)
+    return store
+
+
+class TestL2PersistenceNoStore(unittest.TestCase):
+    """Persistence is a no-op when store is absent."""
+
+    def test_no_store_returns_zeros(self):
+        tool = BankruptcyCourtTool()
+        tool._store = None
+        counts = tool._persist_entities(
+            {"entries": [{"debtor_name": "Foo Corp"}]}, "us_bankruptcy"
+        )
+        assert counts == {"bankruptcy_status_obs": 0}
+
+    def test_no_entity_id_fn_returns_zeros(self):
+        import agent.tools.bankruptcy_court as bc_mod
+
+        tool = BankruptcyCourtTool()
+        tool._store = _make_store_mock()
+        original = bc_mod._entity_id_from_key
+        try:
+            bc_mod._entity_id_from_key = None
+            counts = tool._persist_entities(
+                {"entries": [{"debtor_name": "Foo Corp"}]}, "us_bankruptcy"
+            )
+            assert counts == {"bankruptcy_status_obs": 0}
+        finally:
+            bc_mod._entity_id_from_key = original
+
+
+class TestL2PersistenceUSBankruptcy(unittest.TestCase):
+    """us_bankruptcy mode persists bankruptcy_status obs on company entities."""
+
+    def test_persists_one_obs(self):
+        tool = BankruptcyCourtTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "entries": [
+                {
+                    "debtor_name": "Acme Corp",
+                    "chapter": "11",
+                    "court": "sdny",
+                    "case_number": "25-12345",
+                    "pub_date": "2026-04-10 14:30",
+                }
+            ]
+        }
+        counts = tool._persist_entities(data, "us_bankruptcy")
+        assert counts["bankruptcy_status_obs"] == 1
+
+    def test_obs_type_and_depth(self):
+        tool = BankruptcyCourtTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "entries": [{"debtor_name": "Acme Corp", "chapter": "7", "court": "del"}]
+        }
+        tool._persist_entities(data, "us_bankruptcy")
+        obs_call = store.store_entity_observation.call_args_list[0]
+        assert obs_call.kwargs["observation_type"] == "bankruptcy_status"
+        assert obs_call.kwargs["depth_level"] == 2
+        assert obs_call.kwargs["source_tool"] == "bankruptcy_court"
+
+    def test_in_re_prefix_stripped(self):
+        tool = BankruptcyCourtTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "entries": [
+                {"debtor_name": "In re: FooBar Inc", "chapter": "11", "court": "sdny"}
+            ]
+        }
+        tool._persist_entities(data, "us_bankruptcy")
+        reg_call = store.register_entity.call_args_list[0]
+        assert reg_call.kwargs["canonical_name"] == "FooBar Inc"
+
+    def test_empty_debtor_name_skipped(self):
+        tool = BankruptcyCourtTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {"entries": [{"debtor_name": "", "chapter": "7"}]}
+        counts = tool._persist_entities(data, "us_bankruptcy")
+        assert counts["bankruptcy_status_obs"] == 0
+        store.store_entity_observation.assert_not_called()
+
+    def test_none_debtor_name_skipped(self):
+        tool = BankruptcyCourtTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {"entries": [{"chapter": "11"}]}
+        counts = tool._persist_entities(data, "us_bankruptcy")
+        assert counts["bankruptcy_status_obs"] == 0
+
+    def test_multiple_entries(self):
+        tool = BankruptcyCourtTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "entries": [
+                {"debtor_name": "A Corp", "chapter": "11", "court": "sdny"},
+                {"debtor_name": "B Corp", "chapter": "7", "court": "del"},
+                {"debtor_name": "C Corp", "chapter": "13", "court": "nj"},
+            ]
+        }
+        counts = tool._persist_entities(data, "us_bankruptcy")
+        assert counts["bankruptcy_status_obs"] == 3
+        assert store.register_entity.call_count == 3
+
+    def test_obs_value_contains_chapter(self):
+        tool = BankruptcyCourtTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "entries": [{"debtor_name": "X Corp", "chapter": "11", "court": "sdtx"}]
+        }
+        tool._persist_entities(data, "us_bankruptcy")
+        obs_call = store.store_entity_observation.call_args_list[0]
+        assert obs_call.kwargs["value"]["chapter"] == "11"
+        assert obs_call.kwargs["value"]["source"] == "pacer"
+
+
+class TestL2PersistenceSECEnforcement(unittest.TestCase):
+    """sec_enforcement mode persists on company entities from titles."""
+
+    def test_persists_enforcement_obs(self):
+        tool = BankruptcyCourtTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "entries": [
+                {
+                    "title": "SEC vs Big Bad Corp",
+                    "type": "admin",
+                    "pub_date": "2026-04-10 10:00",
+                }
+            ]
+        }
+        counts = tool._persist_entities(data, "sec_enforcement")
+        assert counts["bankruptcy_status_obs"] == 1
+
+    def test_empty_title_skipped(self):
+        tool = BankruptcyCourtTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {"entries": [{"title": "", "type": "litigation"}]}
+        counts = tool._persist_entities(data, "sec_enforcement")
+        assert counts["bankruptcy_status_obs"] == 0
+
+    def test_obs_source_is_sec_enforcement(self):
+        tool = BankruptcyCourtTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {"entries": [{"title": "ACME Fraud Case", "type": "admin"}]}
+        tool._persist_entities(data, "sec_enforcement")
+        obs_call = store.store_entity_observation.call_args_list[0]
+        assert obs_call.kwargs["value"]["source"] == "sec_enforcement"
+
+
+class TestL2PersistenceSECBankruptcy(unittest.TestCase):
+    """sec_bankruptcy mode persists on company entities from EFTS hits."""
+
+    def test_persists_8k_obs(self):
+        tool = BankruptcyCourtTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "entries": [
+                {
+                    "company_name": "Troubled Inc",
+                    "cik": "0001234567",
+                    "file_date": "2026-04-05",
+                    "items": ["1.03"],
+                }
+            ]
+        }
+        counts = tool._persist_entities(data, "sec_bankruptcy")
+        assert counts["bankruptcy_status_obs"] == 1
+
+    def test_unknown_company_skipped(self):
+        tool = BankruptcyCourtTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "entries": [
+                {"company_name": "Unknown", "cik": "", "file_date": "2026-04-05"}
+            ]
+        }
+        counts = tool._persist_entities(data, "sec_bankruptcy")
+        assert counts["bankruptcy_status_obs"] == 0
+
+    def test_obs_source_is_sec_8k(self):
+        tool = BankruptcyCourtTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "entries": [
+                {"company_name": "XYZ Corp", "cik": "123", "file_date": "2026-04-05"}
+            ]
+        }
+        tool._persist_entities(data, "sec_bankruptcy")
+        obs_call = store.store_entity_observation.call_args_list[0]
+        assert obs_call.kwargs["value"]["source"] == "sec_8k_103"
+        assert obs_call.kwargs["value"]["cik"] == "123"
+
+
+class TestL2PersistenceUKInsolvency(unittest.TestCase):
+    """uk_insolvency mode persists on company entities."""
+
+    def test_persists_uk_obs(self):
+        tool = BankruptcyCourtTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "entries": [
+                {
+                    "title": "Winding Up Order - British Widget Co",
+                    "source": "gazette",
+                    "pub_date": "2026-04-08 12:00",
+                }
+            ]
+        }
+        counts = tool._persist_entities(data, "uk_insolvency")
+        assert counts["bankruptcy_status_obs"] == 1
+
+    def test_empty_title_skipped(self):
+        tool = BankruptcyCourtTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {"entries": [{"title": "", "source": "sfo"}]}
+        counts = tool._persist_entities(data, "uk_insolvency")
+        assert counts["bankruptcy_status_obs"] == 0
+
+    def test_obs_source_matches_entry(self):
+        tool = BankruptcyCourtTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {"entries": [{"title": "SFO Investigation", "source": "sfo"}]}
+        tool._persist_entities(data, "uk_insolvency")
+        obs_call = store.store_entity_observation.call_args_list[0]
+        assert obs_call.kwargs["value"]["source"] == "sfo"
+
+
+class TestL2PersistenceExceptionHandling(unittest.TestCase):
+    """Exception in persistence is non-fatal."""
+
+    def test_exception_returns_zeros(self):
+        tool = BankruptcyCourtTool()
+        store = _make_store_mock()
+        store.register_entity.side_effect = RuntimeError("boom")
+        tool._store = store
+        counts = tool._persist_entities(
+            {"entries": [{"debtor_name": "Crash Corp", "chapter": "11"}]},
+            "us_bankruptcy",
+        )
+        assert counts == {"bankruptcy_status_obs": 0}
+
+    def test_exception_does_not_propagate(self):
+        tool = BankruptcyCourtTool()
+        store = _make_store_mock()
+        store.store_entity_observation.side_effect = Exception("db error")
+        tool._store = store
+        # Should not raise
+        counts = tool._persist_entities(
+            {"entries": [{"debtor_name": "Crash Corp"}]}, "us_bankruptcy"
+        )
+        assert counts == {"bankruptcy_status_obs": 0}
+
+
+class TestL2PersistenceEmptyEntries(unittest.TestCase):
+    """Empty entry list is handled gracefully."""
+
+    def test_empty_entries_all_modes(self):
+        tool = BankruptcyCourtTool()
+        store = _make_store_mock()
+        tool._store = store
+        for mode in (
+            "us_bankruptcy",
+            "sec_enforcement",
+            "sec_bankruptcy",
+            "uk_insolvency",
+        ):
+            counts = tool._persist_entities({"entries": []}, mode)
+            assert counts["bankruptcy_status_obs"] == 0
+        store.store_entity_observation.assert_not_called()
+
+    def test_missing_entries_key(self):
+        tool = BankruptcyCourtTool()
+        store = _make_store_mock()
+        tool._store = store
+        counts = tool._persist_entities({}, "us_bankruptcy")
+        assert counts["bankruptcy_status_obs"] == 0
+
+
+class TestL2PersistenceIdempotent(unittest.TestCase):
+    """Same entity persisted multiple times yields multiple observations."""
+
+    def test_same_entity_twice(self):
+        tool = BankruptcyCourtTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "entries": [
+                {"debtor_name": "Same Corp", "chapter": "11", "court": "sdny"},
+                {"debtor_name": "Same Corp", "chapter": "11", "court": "del"},
+            ]
+        }
+        counts = tool._persist_entities(data, "us_bankruptcy")
+        assert counts["bankruptcy_status_obs"] == 2
+        assert store.register_entity.call_count == 2

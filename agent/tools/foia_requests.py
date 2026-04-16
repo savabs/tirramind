@@ -35,14 +35,23 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import time
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
 
 import httpx
 
 from agent.data.cache import DataCache
 from agent.tools.base import Tool, ToolResult
+
+if TYPE_CHECKING:
+    from agent.pipeline.store import PipelineStore
+
+try:
+    from agent.pipeline.entity import entity_id_from_key as _entity_id_from_key
+except ImportError:  # pragma: no cover — optional dependency
+    _entity_id_from_key = None  # type: ignore[assignment]
 
 log = logging.getLogger(__name__)
 
@@ -356,8 +365,13 @@ class FoiaRequestsTool(Tool):
         "required": ["mode"],
     }
 
-    def __init__(self, cache: DataCache | None = None) -> None:
+    def __init__(
+        self,
+        cache: DataCache | None = None,
+        pipeline_store: "PipelineStore | None" = None,
+    ) -> None:
         self._cache = cache
+        self._store = pipeline_store
 
     # ── Public entry point ─────────────────────────────────────
 
@@ -393,7 +407,7 @@ class FoiaRequestsTool(Tool):
                     success=False,
                     output="A 'query' parameter is required for search mode.",
                 )
-            return self._search(
+            result = self._search(
                 query=query,
                 days_back=days_back,
                 jurisdiction=jurisdiction,
@@ -405,7 +419,7 @@ class FoiaRequestsTool(Tool):
                     success=False,
                     output="An 'agency' parameter is required for agency_activity mode.",
                 )
-            return self._agency_activity(
+            result = self._agency_activity(
                 agency=agency,
                 days_back=days_back,
                 limit=limit,
@@ -416,12 +430,18 @@ class FoiaRequestsTool(Tool):
                     success=False,
                     output="A 'query' parameter is required for entity_cluster mode.",
                 )
-            return self._entity_cluster(
+            result = self._entity_cluster(
                 query=query,
                 days_back=days_back,
                 jurisdiction=jurisdiction,
                 limit=limit,
             )
+
+        # L2: persist investigation signal observations on entity nodes
+        if result.success and result.data:
+            self._persist_entities(result.data, mode)
+
+        return result
 
     # ── Mode: search ───────────────────────────────────────────
 
@@ -470,7 +490,11 @@ class FoiaRequestsTool(Tool):
         output = self._format_search_output(query, records, days_back, jurisdiction)
         if self._cache:
             self._cache.put(key, output, ttl=_CACHE_TTL)
-        return ToolResult(success=True, output=output)
+        return ToolResult(
+            success=True,
+            output=output,
+            data={"mode": "search", "records": records, "query": query},
+        )
 
     def _format_search_output(
         self,
@@ -584,7 +608,15 @@ class FoiaRequestsTool(Tool):
         )
         if self._cache:
             self._cache.put(key, output, ttl=_CACHE_TTL)
-        return ToolResult(success=True, output=output)
+        return ToolResult(
+            success=True,
+            output=output,
+            data={
+                "mode": "agency_activity",
+                "records": recent[:limit],
+                "agency": agency,
+            },
+        )
 
     def _format_agency_output(
         self,
@@ -691,7 +723,11 @@ class FoiaRequestsTool(Tool):
         )
         if self._cache:
             self._cache.put(key, output, ttl=_CACHE_TTL)
-        return ToolResult(success=True, output=output)
+        return ToolResult(
+            success=True,
+            output=output,
+            data={"mode": "entity_cluster", "records": records[:limit], "query": query},
+        )
 
     def _format_cluster_output(
         self,
@@ -744,3 +780,84 @@ class FoiaRequestsTool(Tool):
             lines.append("")
 
         return "\n".join(lines)
+
+    # ── L2 entity persistence ────────────────────────────────────────────
+
+    def _persist_entities(
+        self,
+        data: dict[str, Any],
+        mode: str,
+    ) -> dict[str, int]:
+        """Persist investigation_signal observations onto entity nodes.
+
+        Extracts entity names from FOIA request titles and agencies.
+        Skips silently if no PipelineStore or entity module is available.
+        """
+        if self._store is None or _entity_id_from_key is None:
+            return {"investigation_signal_obs": 0}
+        try:
+            return self._persist_entities_inner(data, mode)
+        except Exception:
+            log.exception("FOIA entity persistence failed (non-fatal)")
+            return {"investigation_signal_obs": 0}
+
+    def _persist_entities_inner(
+        self,
+        data: dict[str, Any],
+        mode: str,
+    ) -> dict[str, int]:
+        """Inner persistence logic separated for testability."""
+        assert self._store is not None  # noqa: S101 — guarded
+        assert _entity_id_from_key is not None  # noqa: S101
+
+        store = self._store
+        counts = {"investigation_signal_obs": 0}
+        now_ts = time.time()
+        records = data.get("records", [])
+
+        for rec in records:
+            title = (rec.get("title") or "").strip()
+            if not title:
+                continue
+
+            # Use agency as the primary entity for agency_activity mode
+            if mode == "agency_activity":
+                entity_name = (rec.get("agency") or "").strip()
+                entity_type = "company"
+            else:
+                # For search/entity_cluster, persist the query target entity
+                entity_name = title
+                entity_type = "company"
+
+            if not entity_name:
+                continue
+
+            eid = _entity_id_from_key(entity_type, entity_name)
+            store.register_entity(
+                entity_type=entity_type,
+                canonical_name=entity_name,
+                entity_id=eid,
+            )
+            store.store_entity_observation(
+                entity_id=eid,
+                source_tool="foia_requests",
+                observed_at=now_ts,
+                observation_type="investigation_signal",
+                value={
+                    "source": rec.get("source", "unknown"),
+                    "agency": rec.get("agency"),
+                    "jurisdiction": rec.get("jurisdiction"),
+                    "date_filed": rec.get("date_filed"),
+                    "status": rec.get("status"),
+                    "mode": mode,
+                },
+                depth_level=2,
+            )
+            counts["investigation_signal_obs"] += 1
+
+        if counts["investigation_signal_obs"]:
+            log.info(
+                "FOIA L2: %d investigation_signal obs persisted",
+                counts["investigation_signal_obs"],
+            )
+        return counts

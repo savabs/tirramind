@@ -668,3 +668,329 @@ class TestRegistryAndBandit:
 
         arm = next(a for a in DEFAULT_ARMS if a.name == "research_pipeline")
         assert "academic_preprints" in arm.tools
+
+
+# ── L2 Entity Persistence Tests ──────────────────────────────────────────────
+
+import unittest
+
+
+def _make_store_mock():
+    """Build a mock PipelineStore for L2 persistence testing."""
+    store = MagicMock()
+    store.register_entity = MagicMock(side_effect=lambda **kw: kw["entity_id"])
+    store.store_entity_observation = MagicMock(return_value=1)
+    return store
+
+
+class TestL2PersistenceNoStore(unittest.TestCase):
+    """Persistence is a no-op when store is absent."""
+
+    def test_no_store_returns_zeros(self):
+        tool = AcademicPreprintsTool()
+        tool._store = None
+        counts = tool._persist_entities(
+            {"papers": [{"categories": ["cs.AI"], "title": "test"}]}, "papers"
+        )
+        assert counts == {"research_velocity_obs": 0}
+
+    def test_no_entity_id_fn_returns_zeros(self):
+        import agent.tools.academic_preprints as ap_mod
+
+        tool = AcademicPreprintsTool()
+        tool._store = _make_store_mock()
+        original = ap_mod._entity_id_from_key
+        try:
+            ap_mod._entity_id_from_key = None
+            counts = tool._persist_entities(
+                {"papers": [{"categories": ["cs.AI"]}]}, "papers"
+            )
+            assert counts == {"research_velocity_obs": 0}
+        finally:
+            ap_mod._entity_id_from_key = original
+
+
+class TestL2PersistenceTrials(unittest.TestCase):
+    """trials mode persists research_velocity obs on company entity nodes."""
+
+    def test_persists_one_trial(self):
+        tool = AcademicPreprintsTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "trials": [
+                {
+                    "nct_id": "NCT00001234",
+                    "title": "Phase III Study of Drug X",
+                    "status": "RECRUITING",
+                    "sponsor": "Pfizer Inc",
+                    "conditions": ["Cancer"],
+                }
+            ]
+        }
+        counts = tool._persist_entities(data, "trials")
+        assert counts["research_velocity_obs"] == 1
+        store.register_entity.assert_called_once()
+        call_kw = store.register_entity.call_args.kwargs
+        assert call_kw["entity_type"] == "company"
+        assert call_kw["canonical_name"] == "Pfizer Inc"
+
+    def test_obs_type_and_depth(self):
+        tool = AcademicPreprintsTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "trials": [
+                {
+                    "nct_id": "NCT99999999",
+                    "title": "Study A",
+                    "status": "COMPLETED",
+                    "sponsor": "Moderna",
+                    "conditions": ["COVID-19"],
+                }
+            ]
+        }
+        tool._persist_entities(data, "trials")
+        obs_kw = store.store_entity_observation.call_args.kwargs
+        assert obs_kw["observation_type"] == "research_velocity"
+        assert obs_kw["depth_level"] == 2
+        assert obs_kw["source_tool"] == "academic_preprints"
+        assert obs_kw["value"]["source"] == "clinicaltrials"
+        assert obs_kw["value"]["nct_id"] == "NCT99999999"
+
+    def test_multiple_trials(self):
+        tool = AcademicPreprintsTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "trials": [
+                {"sponsor": "Pfizer", "nct_id": "A"},
+                {"sponsor": "Moderna", "nct_id": "B"},
+                {"sponsor": "Novartis", "nct_id": "C"},
+            ]
+        }
+        counts = tool._persist_entities(data, "trials")
+        assert counts["research_velocity_obs"] == 3
+        assert store.register_entity.call_count == 3
+
+    def test_empty_sponsor_skipped(self):
+        tool = AcademicPreprintsTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "trials": [
+                {"sponsor": "", "nct_id": "A"},
+                {"sponsor": None, "nct_id": "B"},
+                {"sponsor": "   ", "nct_id": "C"},
+            ]
+        }
+        counts = tool._persist_entities(data, "trials")
+        assert counts["research_velocity_obs"] == 0
+        store.register_entity.assert_not_called()
+
+    def test_missing_sponsor_key_skipped(self):
+        tool = AcademicPreprintsTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {"trials": [{"nct_id": "A", "title": "No sponsor field"}]}
+        counts = tool._persist_entities(data, "trials")
+        assert counts["research_velocity_obs"] == 0
+
+    def test_trial_value_contains_conditions(self):
+        tool = AcademicPreprintsTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "trials": [
+                {
+                    "sponsor": "BioNTech",
+                    "nct_id": "NCT123",
+                    "title": "mRNA Study",
+                    "status": "ACTIVE_NOT_RECRUITING",
+                    "conditions": ["Influenza", "RSV"],
+                }
+            ]
+        }
+        tool._persist_entities(data, "trials")
+        obs_val = store.store_entity_observation.call_args.kwargs["value"]
+        assert obs_val["conditions"] == ["Influenza", "RSV"]
+        assert obs_val["title"] == "mRNA Study"
+        assert obs_val["status"] == "ACTIVE_NOT_RECRUITING"
+
+
+class TestL2PersistencePapers(unittest.TestCase):
+    """papers mode persists research_velocity obs on topic entity nodes."""
+
+    def test_persists_one_paper(self):
+        tool = AcademicPreprintsTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "papers": [
+                {
+                    "id": "2401.12345",
+                    "title": "Quantum Error Correction",
+                    "categories": ["quant-ph", "cs.IT"],
+                    "published": "2026-04-01",
+                }
+            ]
+        }
+        counts = tool._persist_entities(data, "papers")
+        assert counts["research_velocity_obs"] == 1
+        call_kw = store.register_entity.call_args.kwargs
+        assert call_kw["entity_type"] == "topic"
+        assert call_kw["canonical_name"] == "quant-ph"
+
+    def test_uses_first_category(self):
+        tool = AcademicPreprintsTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "papers": [
+                {
+                    "id": "2401.99999",
+                    "title": "ML for Finance",
+                    "categories": ["q-fin.CP", "cs.LG", "stat.ML"],
+                    "published": "2026-04-15",
+                }
+            ]
+        }
+        tool._persist_entities(data, "papers")
+        call_kw = store.register_entity.call_args.kwargs
+        assert call_kw["canonical_name"] == "q-fin.CP"
+
+    def test_paper_obs_value_fields(self):
+        tool = AcademicPreprintsTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "papers": [
+                {
+                    "id": "2401.00001",
+                    "title": "Deep RL Trading",
+                    "categories": ["cs.AI"],
+                    "published": "2026-01-01",
+                }
+            ]
+        }
+        tool._persist_entities(data, "papers")
+        obs_val = store.store_entity_observation.call_args.kwargs["value"]
+        assert obs_val["source"] == "arxiv"
+        assert obs_val["paper_id"] == "2401.00001"
+        assert obs_val["title"] == "Deep RL Trading"
+        assert obs_val["published"] == "2026-01-01"
+
+    def test_empty_categories_skipped(self):
+        tool = AcademicPreprintsTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "papers": [
+                {"id": "A", "title": "No Cat", "categories": []},
+                {"id": "B", "title": "None Cat", "categories": None},
+                {"id": "C", "title": "Missing Cat"},
+            ]
+        }
+        counts = tool._persist_entities(data, "papers")
+        assert counts["research_velocity_obs"] == 0
+        store.register_entity.assert_not_called()
+
+    def test_multiple_papers(self):
+        tool = AcademicPreprintsTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "papers": [
+                {"categories": ["cs.AI"], "id": "1"},
+                {"categories": ["q-fin"], "id": "2"},
+                {"categories": ["cs.LG"], "id": "3"},
+            ]
+        }
+        counts = tool._persist_entities(data, "papers")
+        assert counts["research_velocity_obs"] == 3
+
+
+class TestL2PersistenceTrending(unittest.TestCase):
+    """trending mode uses same code path as papers."""
+
+    def test_trending_persists_topics(self):
+        tool = AcademicPreprintsTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "papers": [
+                {"categories": ["cs.CR"], "id": "trend-1", "title": "Zero-Day"},
+                {"categories": ["econ"], "id": "trend-2", "title": "Macro Model"},
+            ]
+        }
+        counts = tool._persist_entities(data, "trending")
+        assert counts["research_velocity_obs"] == 2
+        assert store.register_entity.call_count == 2
+
+
+class TestL2PersistenceExceptionHandling(unittest.TestCase):
+    """Exceptions in persistence are non-fatal."""
+
+    def test_exception_in_inner_returns_zeros(self):
+        tool = AcademicPreprintsTool()
+        store = _make_store_mock()
+        store.register_entity.side_effect = RuntimeError("DB failure")
+        tool._store = store
+        counts = tool._persist_entities(
+            {"trials": [{"sponsor": "TestCo", "nct_id": "X"}]}, "trials"
+        )
+        assert counts == {"research_velocity_obs": 0}
+
+    def test_exception_does_not_propagate(self):
+        tool = AcademicPreprintsTool()
+        store = _make_store_mock()
+        store.store_entity_observation.side_effect = ValueError("bad value")
+        tool._store = store
+        # Should not raise
+        counts = tool._persist_entities(
+            {"papers": [{"categories": ["cs.AI"], "id": "err"}]}, "papers"
+        )
+        assert counts == {"research_velocity_obs": 0}
+
+
+class TestL2PersistenceEmptyData(unittest.TestCase):
+    """Empty data dicts produce zero counts."""
+
+    def test_empty_trials(self):
+        tool = AcademicPreprintsTool()
+        tool._store = _make_store_mock()
+        counts = tool._persist_entities({"trials": []}, "trials")
+        assert counts["research_velocity_obs"] == 0
+
+    def test_empty_papers(self):
+        tool = AcademicPreprintsTool()
+        tool._store = _make_store_mock()
+        counts = tool._persist_entities({"papers": []}, "papers")
+        assert counts["research_velocity_obs"] == 0
+
+    def test_missing_key(self):
+        tool = AcademicPreprintsTool()
+        tool._store = _make_store_mock()
+        counts = tool._persist_entities({}, "trials")
+        assert counts["research_velocity_obs"] == 0
+
+    def test_unknown_mode_returns_zeros(self):
+        tool = AcademicPreprintsTool()
+        tool._store = _make_store_mock()
+        counts = tool._persist_entities(
+            {"papers": [{"categories": ["cs.AI"]}]}, "unknown_mode"
+        )
+        assert counts["research_velocity_obs"] == 0
+
+
+class TestL2PersistenceIdempotent(unittest.TestCase):
+    """Same data persisted twice produces correct cumulative counts."""
+
+    def test_double_persist_doubles_count(self):
+        tool = AcademicPreprintsTool()
+        tool._store = _make_store_mock()
+        data = {"trials": [{"sponsor": "Pfizer", "nct_id": "NCT1"}]}
+        c1 = tool._persist_entities(data, "trials")
+        c2 = tool._persist_entities(data, "trials")
+        assert c1["research_velocity_obs"] == 1
+        assert c2["research_velocity_obs"] == 1

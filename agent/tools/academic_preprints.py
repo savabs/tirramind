@@ -30,13 +30,22 @@ Modes:
 from __future__ import annotations
 
 import logging
+import time
 import xml.etree.ElementTree as ET
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from agent.data.cache import DataCache
 from agent.tools.base import Tool, ToolResult
+
+if TYPE_CHECKING:
+    from agent.pipeline.store import PipelineStore
+
+try:
+    from agent.pipeline.entity import entity_id_from_key as _entity_id_from_key
+except ImportError:  # pragma: no cover — optional dependency
+    _entity_id_from_key = None  # type: ignore[assignment]
 
 log = logging.getLogger(__name__)
 
@@ -70,8 +79,13 @@ _NS = {
 class AcademicPreprintsTool(Tool):
     """Search arXiv preprints and ClinicalTrials.gov studies."""
 
-    def __init__(self, cache: DataCache | None = None) -> None:
+    def __init__(
+        self,
+        cache: DataCache | None = None,
+        pipeline_store: "PipelineStore | None" = None,
+    ) -> None:
         self._cache = cache
+        self._store = pipeline_store
 
     @property
     def name(self) -> str:
@@ -141,12 +155,14 @@ class AcademicPreprintsTool(Tool):
                         output="Papers mode requires a 'query' parameter.",
                     )
                 category = (kwargs.get("category") or "").strip()
-                return self._arxiv_search(query, category, limit)
+                result = self._arxiv_search(query, category, limit)
             elif mode == "trending":
                 category = (kwargs.get("category") or "").strip()
-                return self._arxiv_trending(category, limit)
+                result = self._arxiv_trending(category, limit)
             elif mode == "trials":
-                return self._clinical_trials(kwargs, limit)
+                result = self._clinical_trials(kwargs, limit)
+            else:
+                return ToolResult(success=False, output=f"Unhandled mode: {mode}")
         except httpx.TimeoutException:
             return ToolResult(success=False, output="API timed out.")
         except httpx.HTTPError as exc:
@@ -155,7 +171,11 @@ class AcademicPreprintsTool(Tool):
             log.exception("AcademicPreprintsTool error")
             return ToolResult(success=False, output=f"Unexpected error: {exc}")
 
-        return ToolResult(success=False, output=f"Unhandled mode: {mode}")
+        # L2: persist research_velocity observations on entity nodes
+        if result.success and result.data:
+            self._persist_entities(result.data, mode)
+
+        return result
 
     def _arxiv_search(self, query: str, category: str, limit: int) -> ToolResult:
         search_query = f"all:{query}"
@@ -414,3 +434,96 @@ class AcademicPreprintsTool(Tool):
         if self._cache and data is not None:
             self._cache.set(cache_key, data)
         return data
+
+    # ------------------------------------------------------------------
+    # L2 entity persistence
+    # ------------------------------------------------------------------
+
+    def _persist_entities(
+        self,
+        data: dict[str, Any],
+        mode: str,
+    ) -> dict[str, int]:
+        """Persist research_velocity observations onto entity nodes.
+
+        trials → company entities (by sponsor).
+        papers / trending → topic entities (by arXiv category).
+
+        Skips silently if no PipelineStore or entity module is available.
+        """
+        if self._store is None or _entity_id_from_key is None:
+            return {"research_velocity_obs": 0}
+        try:
+            return self._persist_entities_inner(data, mode)
+        except Exception:
+            log.exception("Academic preprints entity persistence failed (non-fatal)")
+            return {"research_velocity_obs": 0}
+
+    def _persist_entities_inner(
+        self,
+        data: dict[str, Any],
+        mode: str,
+    ) -> dict[str, int]:
+        """Inner persistence logic separated for testability."""
+        assert self._store is not None  # noqa: S101 — guarded
+        assert _entity_id_from_key is not None  # noqa: S101
+
+        store = self._store
+        counts: dict[str, int] = {"research_velocity_obs": 0}
+        now_ts = time.time()
+
+        if mode == "trials":
+            for trial in data.get("trials", []):
+                sponsor = (trial.get("sponsor") or "").strip()
+                if not sponsor:
+                    continue
+                eid = _entity_id_from_key("company", sponsor)
+                store.register_entity(
+                    entity_type="company",
+                    canonical_name=sponsor,
+                    entity_id=eid,
+                )
+                store.store_entity_observation(
+                    entity_id=eid,
+                    source_tool="academic_preprints",
+                    observed_at=now_ts,
+                    observation_type="research_velocity",
+                    value={
+                        "source": "clinicaltrials",
+                        "nct_id": trial.get("nct_id"),
+                        "title": trial.get("title"),
+                        "status": trial.get("status"),
+                        "conditions": trial.get("conditions", []),
+                    },
+                    depth_level=2,
+                )
+                counts["research_velocity_obs"] += 1
+
+        elif mode in ("papers", "trending"):
+            for paper in data.get("papers", []):
+                categories = paper.get("categories") or []
+                if not categories:
+                    continue
+                cat = categories[0]
+                eid = _entity_id_from_key("topic", cat)
+                store.register_entity(
+                    entity_type="topic",
+                    canonical_name=cat,
+                    entity_id=eid,
+                )
+                store.store_entity_observation(
+                    entity_id=eid,
+                    source_tool="academic_preprints",
+                    observed_at=now_ts,
+                    observation_type="research_velocity",
+                    value={
+                        "source": "arxiv",
+                        "paper_id": paper.get("id"),
+                        "title": paper.get("title"),
+                        "published": paper.get("published"),
+                    },
+                    depth_level=2,
+                )
+                counts["research_velocity_obs"] += 1
+
+        return counts
