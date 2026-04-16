@@ -22,13 +22,22 @@ Data lag: Fed weekly (Wed), ECB weekly (Tue), BOJ/BOE/SNB/BOC/RBA monthly.
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from agent.data.cache import DataCache
 from agent.tools.base import Tool, ToolResult
+
+if TYPE_CHECKING:
+    from agent.pipeline.store import PipelineStore
+
+try:
+    from agent.pipeline.entity import entity_id_from_key as _entity_id_from_key
+except ImportError:  # pragma: no cover — optional dependency
+    _entity_id_from_key = None  # type: ignore[assignment]
 
 log = logging.getLogger(__name__)
 
@@ -157,6 +166,18 @@ _FOREIGN_PER_USD = {"DEXJPUS", "DEXSZUS", "DEXCAUS"}
 _ECB_DFR_KEY = "FM/B.U2.EUR.4F.KR.DFR.LEV"  # Deposit Facility Rate
 _ECB_BS_KEY = "ILM/W.U2.C.T000000.Z5.Z01"  # Total Assets (EUR millions)
 
+# Deterministic CB → country mapping (Phase 27).
+# Only explicit, verifiable relationships.
+CB_TO_COUNTRY: dict[str, str] = {
+    "fed": "US",
+    "ecb": "EU",
+    "boj": "JP",
+    "boe": "GB",
+    "snb": "CH",
+    "boc": "CA",
+    "rba": "AU",
+}
+
 
 # ---------------------------------------------------------------------------
 # Tool class
@@ -208,9 +229,11 @@ class CentralBankBalanceTool(Tool):
         self,
         fred_api_key: str = "",
         cache: DataCache | None = None,
+        pipeline_store: PipelineStore | None = None,
     ) -> None:
         self._api_key = fred_api_key
         self._cache = cache
+        self._store = pipeline_store
 
     # ── Public entry point ─────────────────────────────────────
 
@@ -260,7 +283,13 @@ class CentralBankBalanceTool(Tool):
             "policy_divergence": self._mode_policy_divergence,
             "rate_monitor": self._mode_rate_monitor,
         }
-        return dispatch[mode](period, bank_list)
+        result = dispatch[mode](period, bank_list)
+
+        # L2: persist monetary-state observations onto country entities (Phase 27)
+        if result.success and result.data:
+            self._persist_entities(result.data, mode, bank_list)
+
+        return result
 
     # ── Mode: balance_sheets ───────────────────────────────────
 
@@ -895,6 +924,179 @@ class CentralBankBalanceTool(Tool):
                 }
 
         return {}
+
+    # ── L2 entity persistence (Phase 27) ──────────────────────
+
+    def _persist_entities(
+        self,
+        data: dict[str, Any],
+        mode: str,
+        bank_list: list[str],
+    ) -> dict[str, int]:
+        """Persist monetary-state observations onto country entities.
+
+        Observation families:
+        - ``cb_balance_sheet``: balance sheet level/changes on country nodes.
+        - ``cb_policy_rate``: policy rate state on country nodes.
+
+        Skips silently if no PipelineStore or entity module is available.
+        Returns counts: {balance_sheet_obs, rate_obs}.
+        """
+        if self._store is None or _entity_id_from_key is None:
+            return {"balance_sheet_obs": 0, "rate_obs": 0}
+        try:
+            return self._persist_entities_inner(data, mode, bank_list)
+        except Exception:
+            log.exception("CB entity persistence failed (non-fatal)")
+            return {"balance_sheet_obs": 0, "rate_obs": 0}
+
+    def _persist_entities_inner(
+        self,
+        data: dict[str, Any],
+        mode: str,
+        bank_list: list[str],
+    ) -> dict[str, int]:
+        """Inner persistence logic separated for testability."""
+        assert self._store is not None  # noqa: S101 — guarded by caller
+        assert _entity_id_from_key is not None  # noqa: S101
+
+        store = self._store
+        counts = {"balance_sheet_obs": 0, "rate_obs": 0}
+        now_ts = time.time()
+
+        # ── Balance sheet observations ──
+        # Available from balance_sheets, liquidity_index, policy_divergence modes
+        if mode == "balance_sheets":
+            for bank_row in data.get("banks", []):
+                cb_code = bank_row.get("code", "")
+                country_code = CB_TO_COUNTRY.get(cb_code)
+                if not country_code:
+                    continue
+
+                country_eid = _entity_id_from_key("country", country_code)
+                store.register_entity(
+                    entity_type="country",
+                    canonical_name=country_code,
+                    entity_id=country_eid,
+                )
+
+                obs_value = {
+                    "cb_code": cb_code,
+                    "native_trillions": bank_row.get("native_trillions"),
+                    "usd_trillions": bank_row.get("usd_trillions"),
+                    "wow_pct": bank_row.get("wow_pct"),
+                    "mom_pct": bank_row.get("mom_pct"),
+                    "yoy_pct": bank_row.get("yoy_pct"),
+                }
+                store.store_entity_observation(
+                    entity_id=country_eid,
+                    source_tool="central_bank_balance",
+                    observed_at=now_ts,
+                    observation_type="cb_balance_sheet",
+                    value=obs_value,
+                    depth_level=2,
+                )
+                counts["balance_sheet_obs"] += 1
+
+        elif mode == "policy_divergence":
+            for assessment in data.get("assessments", []):
+                cb_code = assessment.get("code", "")
+                country_code = CB_TO_COUNTRY.get(cb_code)
+                if not country_code:
+                    continue
+
+                country_eid = _entity_id_from_key("country", country_code)
+                store.register_entity(
+                    entity_type="country",
+                    canonical_name=country_code,
+                    entity_id=country_eid,
+                )
+
+                obs_value = {
+                    "cb_code": cb_code,
+                    "growth_3m_ann": assessment.get("growth_3m_ann"),
+                    "growth_12m": assessment.get("growth_12m"),
+                    "stance": assessment.get("stance"),
+                }
+                store.store_entity_observation(
+                    entity_id=country_eid,
+                    source_tool="central_bank_balance",
+                    observed_at=now_ts,
+                    observation_type="cb_balance_sheet",
+                    value=obs_value,
+                    depth_level=2,
+                )
+                counts["balance_sheet_obs"] += 1
+
+        # ── Policy rate observations ──
+        # Available from rate_monitor mode and from policy_divergence (rates dict)
+        if mode == "rate_monitor":
+            for rate_row in data.get("rates", []):
+                cb_code = rate_row.get("code", "")
+                country_code = CB_TO_COUNTRY.get(cb_code)
+                if not country_code:
+                    continue
+
+                country_eid = _entity_id_from_key("country", country_code)
+                store.register_entity(
+                    entity_type="country",
+                    canonical_name=country_code,
+                    entity_id=country_eid,
+                )
+
+                obs_value = {
+                    "cb_code": cb_code,
+                    "current_rate": rate_row.get("current_rate"),
+                    "last_change_date": rate_row.get("last_change_date"),
+                    "last_change_direction": rate_row.get("last_change_direction"),
+                    "last_change_bps": rate_row.get("last_change_bps"),
+                    "days_since_change": rate_row.get("days_since_change"),
+                }
+                store.store_entity_observation(
+                    entity_id=country_eid,
+                    source_tool="central_bank_balance",
+                    observed_at=now_ts,
+                    observation_type="cb_policy_rate",
+                    value=obs_value,
+                    depth_level=2,
+                )
+                counts["rate_obs"] += 1
+
+        elif mode == "policy_divergence":
+            # policy_divergence also has rate data as a dict
+            for cb_code, rate_val in data.get("rates", {}).items():
+                country_code = CB_TO_COUNTRY.get(cb_code)
+                if not country_code:
+                    continue
+
+                country_eid = _entity_id_from_key("country", country_code)
+                store.register_entity(
+                    entity_type="country",
+                    canonical_name=country_code,
+                    entity_id=country_eid,
+                )
+
+                obs_value = {
+                    "cb_code": cb_code,
+                    "current_rate": rate_val,
+                }
+                store.store_entity_observation(
+                    entity_id=country_eid,
+                    source_tool="central_bank_balance",
+                    observed_at=now_ts,
+                    observation_type="cb_policy_rate",
+                    value=obs_value,
+                    depth_level=2,
+                )
+                counts["rate_obs"] += 1
+
+        if counts["balance_sheet_obs"] or counts["rate_obs"]:
+            log.info(
+                "CB L2 persistence: %d balance_sheet obs, %d rate obs",
+                counts["balance_sheet_obs"],
+                counts["rate_obs"],
+            )
+        return counts
 
     # ── Growth rate helpers ────────────────────────────────────
 

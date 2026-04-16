@@ -254,6 +254,18 @@ CREATE TABLE IF NOT EXISTS rl_transitions (
 CREATE INDEX IF NOT EXISTS idx_rl_transitions_ts
     ON rl_transitions(timestamp);
 
+CREATE TABLE IF NOT EXISTS pending_rl_transitions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date TEXT NOT NULL UNIQUE,
+    timestamp REAL NOT NULL,
+    state_json TEXT NOT NULL,
+    action_json TEXT NOT NULL,
+    metadata_json TEXT,
+    completed INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_pending_rl_date
+    ON pending_rl_transitions(date);
+
 CREATE TABLE IF NOT EXISTS rl_policy_checkpoints (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     saved_at REAL NOT NULL,
@@ -297,6 +309,50 @@ CREATE TABLE IF NOT EXISTS paper_trade_pnl (
 
 CREATE INDEX IF NOT EXISTS idx_paper_trade_pnl_date
     ON paper_trade_pnl(date);
+
+-- Tier 8: Autonomous Discovery tables
+
+CREATE TABLE IF NOT EXISTS discovered_sources (
+    source_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    url TEXT NOT NULL,
+    description TEXT,
+    format TEXT NOT NULL,
+    update_frequency TEXT,
+    topic_tags_json TEXT,
+    probe_result_json TEXT,
+    mi_score REAL,
+    status TEXT NOT NULL DEFAULT 'discovered',
+    discovered_at REAL NOT NULL,
+    promoted_at REAL,
+    tool_config_json TEXT,
+    consecutive_failures INTEGER NOT NULL DEFAULT 0,
+    metadata_json TEXT
+);
+
+CREATE TABLE IF NOT EXISTS unresolved_entities (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    raw_text TEXT NOT NULL,
+    source_tool TEXT NOT NULL,
+    context_snippet TEXT,
+    observed_at REAL NOT NULL,
+    cluster_id INTEGER,
+    resolved_type TEXT,
+    resolved_at REAL
+);
+
+CREATE INDEX IF NOT EXISTS idx_unresolved_cluster
+    ON unresolved_entities(cluster_id);
+
+CREATE TABLE IF NOT EXISTS entity_type_registry (
+    type_name TEXT PRIMARY KEY,
+    parent_type TEXT,
+    discovered_at REAL NOT NULL,
+    source TEXT NOT NULL,
+    confidence REAL NOT NULL DEFAULT 1.0,
+    active INTEGER NOT NULL DEFAULT 1,
+    metadata_json TEXT
+);
 """
 
 
@@ -824,6 +880,95 @@ class PipelineStore:
         """Return the single most-recent belief record, or None."""
         results = self.query_beliefs(variable_name, version=version, limit=1)
         return results[0] if results else None
+
+    def query_all_latest_beliefs(self) -> list[dict[str, Any]]:
+        """Return the most recent belief for each distinct variable_name.
+
+        Uses a GROUP BY on variable_name with MAX(effective_at) to pick
+        the latest record per variable.  Useful for loading the full
+        current world-model belief state into downstream consumers
+        (e.g. SAC inference).
+        """
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT b.* FROM beliefs b "
+            "INNER JOIN ("
+            "  SELECT variable_name, MAX(effective_at) AS max_ea "
+            "  FROM beliefs GROUP BY variable_name"
+            ") latest "
+            "ON b.variable_name = latest.variable_name "
+            "AND b.effective_at = latest.max_ea "
+            "ORDER BY b.variable_name",
+        ).fetchall()
+        return [self._belief_row_to_dict(r) for r in rows]
+
+    # ── edge confidence & component performance (Change 13/14) ─
+
+    _EDGE_CONF_SOURCE = "edge_confidence"
+    _COMPONENT_PERF_PREFIX = "component_perf_"
+
+    def store_edge_confidences(
+        self,
+        as_of: float,
+        dag_version: str,
+        confidences: dict[str, Any],
+    ) -> int:
+        """Persist edge confidence scores for a DAG evaluation cycle."""
+        return self.store_data(
+            self._EDGE_CONF_SOURCE,
+            {"as_of": as_of, "dag_version": dag_version},
+            confidences,
+        )
+
+    def query_edge_confidence_history(
+        self,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        """Query recent edge confidence evaluations."""
+        return self.query_data(self._EDGE_CONF_SOURCE, limit=limit)
+
+    def store_component_performance(
+        self,
+        component: str,
+        as_of: float,
+        arm: int,
+        reward: float,
+        metrics: dict[str, Any] | None = None,
+    ) -> int:
+        """Persist a component refit outcome for the meta-scheduler."""
+        return self.store_data(
+            f"{self._COMPONENT_PERF_PREFIX}{component}",
+            {"as_of": as_of, "arm": arm, "reward": reward},
+            metrics or {},
+        )
+
+    def query_component_history(
+        self,
+        component: str,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """Query recent performance records for a component."""
+        return self.query_data(f"{self._COMPONENT_PERF_PREFIX}{component}", limit=limit)
+
+    def mark_beliefs_stale(
+        self,
+        reason: str = "structure_change",
+        dag_version: str | None = None,
+    ) -> int:
+        """Mark all non-stale beliefs as stale. Returns count of rows updated."""
+        conn = self._get_conn()
+        cursor = conn.execute(
+            "UPDATE beliefs SET stale=1 WHERE stale=0",
+        )
+        conn.commit()
+        count = cursor.rowcount
+        log.info(
+            "Marked %d beliefs stale (reason=%s, dag_version=%s)",
+            count,
+            reason,
+            dag_version,
+        )
+        return count
 
     # ── entities ───────────────────────────────────────────────
 
@@ -1716,6 +1861,109 @@ class PipelineStore:
             result.append(d)
         return result
 
+    # ── Pending RL transitions ─────────────────────────────────
+
+    def store_pending_transition(
+        self,
+        date: str,
+        timestamp: float,
+        state: list[float],
+        action: list[float],
+        metadata: dict[str, Any] | None = None,
+    ) -> int:
+        """Store a pending transition (state + action, reward unknown yet).
+
+        Uses INSERT OR REPLACE so re-runs for the same date are idempotent.
+        Returns the row id.
+        """
+        conn = self._get_conn()
+        cur = conn.execute(
+            "INSERT OR REPLACE INTO pending_rl_transitions "
+            "(date, timestamp, state_json, action_json, metadata_json, completed) "
+            "VALUES (?, ?, ?, ?, ?, 0)",
+            (
+                date,
+                timestamp,
+                json.dumps(state),
+                json.dumps(action),
+                json.dumps(metadata, default=str) if metadata else None,
+            ),
+        )
+        conn.commit()
+        return cur.lastrowid  # type: ignore[return-value]
+
+    def query_pending_transition(self, date: str) -> dict[str, Any] | None:
+        """Load a pending transition for a specific date, or None."""
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT * FROM pending_rl_transitions WHERE date=? AND completed=0",
+            (date,),
+        ).fetchone()
+        if row is None:
+            return None
+        d = dict(row)
+        d["state"] = json.loads(d.pop("state_json", "[]"))
+        d["action"] = json.loads(d.pop("action_json", "[]"))
+        try:
+            d["metadata"] = json.loads(d.pop("metadata_json", "null"))
+        except (json.JSONDecodeError, TypeError):
+            d["metadata"] = None
+        return d
+
+    def complete_pending_transition(
+        self,
+        date: str,
+        reward: float,
+        next_state: list[float],
+        done: bool = False,
+    ) -> bool:
+        """Complete a pending transition: write the full transition to rl_transitions.
+
+        Loads the pending row for *date*, combines with reward/next_state,
+        writes to rl_transitions, and marks the pending row as completed.
+
+        Returns True if a transition was completed, False if no pending found.
+        """
+        pending = self.query_pending_transition(date)
+        if pending is None:
+            return False
+
+        # Validate state/next_state are finite
+        import math
+
+        for val in pending["state"]:
+            if not math.isfinite(val):
+                log.warning(
+                    "Pending state for %s contains non-finite value, skipping", date
+                )
+                return False
+        for val in next_state:
+            if not math.isfinite(val):
+                log.warning(
+                    "next_state for %s contains non-finite value, skipping", date
+                )
+                return False
+
+        # Store the completed transition
+        self.store_rl_transition(
+            timestamp=pending["timestamp"],
+            state=pending["state"],
+            action=pending["action"],
+            reward=reward,
+            next_state=next_state,
+            done=done,
+            metadata=pending.get("metadata"),
+        )
+
+        # Mark pending as completed
+        conn = self._get_conn()
+        conn.execute(
+            "UPDATE pending_rl_transitions SET completed=1 WHERE date=?",
+            (date,),
+        )
+        conn.commit()
+        return True
+
     # ── RL policy checkpoints ──────────────────────────────────
 
     def store_rl_checkpoint(
@@ -1934,3 +2182,263 @@ class PipelineStore:
         except (json.JSONDecodeError, TypeError):
             d["metadata"] = None
         return d
+
+    # ── Tier 8: discovered sources ─────────────────────────────
+
+    def store_discovered_source(
+        self,
+        source_id: str,
+        name: str,
+        url: str,
+        fmt: str,
+        *,
+        description: str | None = None,
+        update_frequency: str | None = None,
+        topic_tags: list[str] | None = None,
+        probe_result: dict | list | None = None,
+        mi_score: float | None = None,
+        status: str = "discovered",
+        tool_config: dict | None = None,
+        metadata: dict | None = None,
+    ) -> None:
+        """Store a discovered data source candidate."""
+        conn = self._get_conn()
+        conn.execute(
+            "INSERT OR IGNORE INTO discovered_sources "
+            "(source_id, name, url, description, format, update_frequency, "
+            "topic_tags_json, probe_result_json, mi_score, status, discovered_at, "
+            "tool_config_json, metadata_json) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                source_id,
+                name,
+                url,
+                description,
+                fmt,
+                update_frequency,
+                json.dumps(topic_tags) if topic_tags else None,
+                json.dumps(probe_result, default=str) if probe_result else None,
+                mi_score,
+                status,
+                time.time(),
+                json.dumps(tool_config, default=str) if tool_config else None,
+                json.dumps(metadata, default=str) if metadata else None,
+            ),
+        )
+        conn.commit()
+
+    def update_source_status(
+        self,
+        source_id: str,
+        status: str,
+    ) -> None:
+        """Update a discovered source's status."""
+        conn = self._get_conn()
+        extras = ""
+        params: list[Any] = [status]
+        if status == "active":
+            extras = ", promoted_at=?"
+            params.append(time.time())
+        params.append(source_id)
+        conn.execute(
+            f"UPDATE discovered_sources SET status=?{extras} WHERE source_id=?",  # noqa: S608
+            params,
+        )
+        conn.commit()
+
+    def increment_source_failures(self, source_id: str) -> int:
+        """Increment consecutive_failures and return new count."""
+        conn = self._get_conn()
+        conn.execute(
+            "UPDATE discovered_sources SET consecutive_failures = consecutive_failures + 1 "
+            "WHERE source_id=?",
+            (source_id,),
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT consecutive_failures FROM discovered_sources WHERE source_id=?",
+            (source_id,),
+        ).fetchone()
+        return int(row[0]) if row else 0
+
+    def reset_source_failures(self, source_id: str) -> None:
+        """Reset consecutive failures to 0 on successful fetch."""
+        conn = self._get_conn()
+        conn.execute(
+            "UPDATE discovered_sources SET consecutive_failures=0 WHERE source_id=?",
+            (source_id,),
+        )
+        conn.commit()
+
+    def query_discovered_sources(
+        self,
+        status: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Query discovered sources, optionally filtered by status."""
+        conn = self._get_conn()
+        if status is not None:
+            rows = conn.execute(
+                "SELECT * FROM discovered_sources WHERE status=? ORDER BY discovered_at",
+                (status,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM discovered_sources ORDER BY discovered_at"
+            ).fetchall()
+        return [self._source_row_to_dict(r) for r in rows]
+
+    @staticmethod
+    def _source_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+        d = dict(row)
+        for key in ("topic_tags_json", "probe_result_json", "tool_config_json", "metadata_json"):
+            plain = key.replace("_json", "")
+            try:
+                d[plain] = json.loads(d.pop(key, "null"))
+            except (json.JSONDecodeError, TypeError):
+                d[plain] = None
+        return d
+
+    # ── Tier 8: unresolved entities ────────────────────────────
+
+    def store_unresolved_entity(
+        self,
+        raw_text: str,
+        source_tool: str,
+        context_snippet: str | None = None,
+        observed_at: float | None = None,
+    ) -> int:
+        """Store an unresolved entity mention. Returns row id."""
+        conn = self._get_conn()
+        cur = conn.execute(
+            "INSERT INTO unresolved_entities "
+            "(raw_text, source_tool, context_snippet, observed_at) "
+            "VALUES (?, ?, ?, ?)",
+            (raw_text, source_tool, context_snippet, observed_at or time.time()),
+        )
+        conn.commit()
+        return cur.lastrowid  # type: ignore[return-value]
+
+    def query_unresolved_entities(
+        self,
+        *,
+        cluster_id: int | None = None,
+        resolved: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Query unresolved entity mentions."""
+        conn = self._get_conn()
+        clauses: list[str] = []
+        params: list[Any] = []
+        if not resolved:
+            clauses.append("resolved_type IS NULL")
+        if cluster_id is not None:
+            clauses.append("cluster_id=?")
+            params.append(cluster_id)
+        where = " AND ".join(clauses) if clauses else "1=1"
+        rows = conn.execute(
+            f"SELECT * FROM unresolved_entities WHERE {where} ORDER BY observed_at",  # noqa: S608
+            params,
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def update_unresolved_cluster(
+        self,
+        entity_ids: list[int],
+        cluster_id: int,
+    ) -> None:
+        """Assign cluster_id to a batch of unresolved entities."""
+        if not entity_ids:
+            return
+        conn = self._get_conn()
+        placeholders = ",".join("?" for _ in entity_ids)
+        conn.execute(
+            f"UPDATE unresolved_entities SET cluster_id=? WHERE id IN ({placeholders})",  # noqa: S608
+            [cluster_id, *entity_ids],
+        )
+        conn.commit()
+
+    def resolve_unresolved_entities(
+        self,
+        cluster_id: int,
+        resolved_type: str,
+    ) -> int:
+        """Mark all entities in a cluster as resolved. Returns count."""
+        conn = self._get_conn()
+        cur = conn.execute(
+            "UPDATE unresolved_entities SET resolved_type=?, resolved_at=? "
+            "WHERE cluster_id=? AND resolved_type IS NULL",
+            (resolved_type, time.time(), cluster_id),
+        )
+        conn.commit()
+        return cur.rowcount
+
+    # ── Tier 8: entity type registry ───────────────────────────
+
+    def register_entity_type(
+        self,
+        type_name: str,
+        *,
+        parent_type: str | None = None,
+        source: str = "seed",
+        confidence: float = 1.0,
+        metadata: dict | None = None,
+    ) -> bool:
+        """Register an entity type. Returns True if newly created."""
+        conn = self._get_conn()
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO entity_type_registry "
+            "(type_name, parent_type, discovered_at, source, confidence, active, metadata_json) "
+            "VALUES (?, ?, ?, ?, ?, 1, ?)",
+            (
+                type_name,
+                parent_type,
+                time.time(),
+                source,
+                confidence,
+                json.dumps(metadata, default=str) if metadata else None,
+            ),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+
+    def query_entity_types(
+        self,
+        *,
+        active_only: bool = True,
+    ) -> list[dict[str, Any]]:
+        """Query registered entity types."""
+        conn = self._get_conn()
+        if active_only:
+            rows = conn.execute(
+                "SELECT * FROM entity_type_registry WHERE active=1 ORDER BY type_name"
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM entity_type_registry ORDER BY type_name"
+            ).fetchall()
+        result = []
+        for r in rows:
+            d = dict(r)
+            try:
+                d["metadata"] = json.loads(d.pop("metadata_json", "null"))
+            except (json.JSONDecodeError, TypeError):
+                d["metadata"] = None
+            result.append(d)
+        return result
+
+    def deactivate_entity_type(self, type_name: str) -> None:
+        """Mark an entity type as inactive (never delete)."""
+        conn = self._get_conn()
+        conn.execute(
+            "UPDATE entity_type_registry SET active=0 WHERE type_name=?",
+            (type_name,),
+        )
+        conn.commit()
+
+    def reactivate_entity_type(self, type_name: str) -> None:
+        """Re-activate a previously deactivated entity type."""
+        conn = self._get_conn()
+        conn.execute(
+            "UPDATE entity_type_registry SET active=1 WHERE type_name=?",
+            (type_name,),
+        )
+        conn.commit()

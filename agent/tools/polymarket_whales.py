@@ -26,6 +26,11 @@ from agent.data.dns_bypass import ensure_polymarket_dns
 from agent.pipeline.store import PipelineStore
 from agent.tools.base import Tool, ToolResult
 
+try:
+    from agent.pipeline.entity import entity_id_from_key
+except ImportError:  # pragma: no cover
+    entity_id_from_key = None  # type: ignore[assignment]
+
 ensure_polymarket_dns()
 
 log = logging.getLogger(__name__)
@@ -142,6 +147,12 @@ class PolymarketWhalesTool(Tool):
                 return ToolResult(
                     success=True, output="No scored wallets yet.", data={"wallets": []}
                 )
+
+            # L2: persist wallet entities
+            try:
+                self._persist_wallet_entities(wallets, store)
+            except Exception:
+                log.exception("Whale wallet persistence failed (non-fatal)")
 
             lines = [f"Top {len(wallets)} Polymarket wallets by composite score:\n"]
             for i, w in enumerate(wallets, 1):
@@ -368,6 +379,76 @@ class PolymarketWhalesTool(Tool):
             )
         finally:
             store.close()
+
+    # ── Entity persistence (L2) ──────────────────────────────
+
+    def _persist_wallet_entities(
+        self,
+        wallets: list[dict[str, Any]],
+        store: PipelineStore,
+    ) -> dict[str, int]:
+        """Register wallet entities and store whale_trade observations.
+
+        Each wallet with a valid address becomes a wallet entity. A
+        ``whale_trade`` observation stores the composite score, accuracy,
+        volume, and trade count.
+
+        Returns counts: {wallets, observations}.
+        """
+        if entity_id_from_key is None:
+            return {"wallets": 0, "observations": 0}
+        if not wallets:
+            return {"wallets": 0, "observations": 0}
+
+        import time as _time
+
+        counts = {"wallets": 0, "observations": 0}
+        seen: set[str] = set()
+
+        for w in wallets:
+            addr = (w.get("wallet") or "").strip().lower()
+            if not addr or not addr.startswith("0x"):
+                continue
+            if addr in seen:
+                continue
+            seen.add(addr)
+
+            wallet_eid = entity_id_from_key("wallet", addr)
+            store.register_entity(
+                entity_type="wallet",
+                canonical_name=addr,
+                entity_id=wallet_eid,
+                metadata={
+                    "source": "polymarket_whales",
+                    "platform": "polymarket",
+                },
+            )
+            counts["wallets"] += 1
+
+            # Store whale_trade observation with scoring data
+            store.store_entity_observation(
+                entity_id=wallet_eid,
+                source_tool="polymarket_whales",
+                observed_at=_time.time(),
+                observation_type="whale_trade",
+                depth_level=2,
+                value={
+                    "composite_score": w.get("composite"),
+                    "accuracy": w.get("accuracy"),
+                    "total_volume": w.get("total_volume"),
+                    "total_resolved": w.get("total_resolved"),
+                    "markets": w.get("markets"),
+                    "profit_factor": w.get("profit_factor"),
+                },
+            )
+            counts["observations"] += 1
+
+        log.info(
+            "Polymarket whales L2: %d wallets, %d observations",
+            counts["wallets"],
+            counts["observations"],
+        )
+        return counts
 
     # ── Cold Start ─────────────────────────────────────────
 

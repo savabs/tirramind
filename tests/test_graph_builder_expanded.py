@@ -72,7 +72,7 @@ class TestExpandedTypeRegistries:
         assert ENTITY_TYPES == sorted(ENTITY_TYPES)
 
     def test_entity_types_count(self):
-        assert len(ENTITY_TYPES) == 10
+        assert len(ENTITY_TYPES) == 11
 
     def test_observation_types_contains_new_types(self):
         new_obs = [
@@ -87,11 +87,16 @@ class TestExpandedTypeRegistries:
         for obs in new_obs:
             assert obs in OBSERVATION_TYPES, f"{obs} missing from OBSERVATION_TYPES"
 
+    def test_observation_types_contains_phase28_types(self):
+        phase28_obs = ["capital_flow", "economic_activity", "sovereign_yield"]
+        for obs in phase28_obs:
+            assert obs in OBSERVATION_TYPES, f"{obs} missing from OBSERVATION_TYPES"
+
     def test_observation_types_sorted_alphabetically(self):
         assert OBSERVATION_TYPES == sorted(OBSERVATION_TYPES)
 
     def test_observation_types_count(self):
-        assert len(OBSERVATION_TYPES) == 24
+        assert len(OBSERVATION_TYPES) == 32
 
     def test_insider_trade_in_observation_types(self):
         """Verify 'insider_trade' exists (not 'purchase')."""
@@ -142,7 +147,7 @@ class TestNewTypeOneHotEncoding:
     def test_feature_dim_is_10_plus_3(self):
         """10 entity types + 3 observation stats = 13 features."""
         features = _build_node_features("company", ["c1"], [], 0.0)
-        assert features.shape[1] == 13
+        assert features.shape[1] == 14
 
 
 # ── Unknown Type Fallback Tests ────────────────────────────────
@@ -201,7 +206,7 @@ class TestGraphBuildWithNewTypes:
         data, id_map, events = builder.build()
 
         assert id_map.num_nodes_of_type("domain") == 2
-        assert data["domain"].x.shape == (2, 13)
+        assert data["domain"].x.shape == (2, 14)
         assert len(events) == 2
 
     def test_build_with_protocol_entities(self, store):
@@ -212,7 +217,7 @@ class TestGraphBuildWithNewTypes:
         data, id_map, events = builder.build()
 
         assert id_map.num_nodes_of_type("protocol") == 1
-        assert data["protocol"].x.shape == (1, 13)
+        assert data["protocol"].x.shape == (1, 14)
 
     def test_build_with_topic_entities(self, store):
         t1 = _reg(store, "topic", "Tesla,_Inc.", "Tesla")
@@ -229,7 +234,7 @@ class TestGraphBuildWithNewTypes:
         data, id_map, events = builder.build()
 
         assert id_map.num_nodes_of_type("topic") == 1
-        assert data["topic"].x.shape == (1, 13)
+        assert data["topic"].x.shape == (1, 14)
 
     def test_mixed_old_and_new_types(self, store):
         """Build graph with both old (company, person) and new (domain, protocol) types."""

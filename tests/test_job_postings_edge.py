@@ -646,11 +646,11 @@ class TestIntegration:
     def test_tool_count(self):
         from agent.cli import build_tool_registry
         reg = build_tool_registry()
-        assert len(reg.list_names()) == 47
+        assert len(reg.list_names()) == 60
 
     def test_arm_count(self):
         from agent.learning.bandit import DEFAULT_ARMS
-        assert len(DEFAULT_ARMS) == 35
+        assert len(DEFAULT_ARMS) == 48
 
     def test_tool_registered(self):
         from agent.cli import build_tool_registry

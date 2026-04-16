@@ -1289,7 +1289,7 @@ class TestRegistryIntegration:
     def test_tool_count(self):
         registry = self._build_registry()
         names = registry.list_names()
-        assert len(names) == 47, f"Expected 41 tools, got {len(names)}: {sorted(names)}"
+        assert len(names) == 60, f"Expected 60 tools, got {len(names)}: {sorted(names)}"
 
     def test_dns_monitor_in_registry(self):
         registry = self._build_registry()
@@ -1299,8 +1299,8 @@ class TestRegistryIntegration:
     def test_arm_count(self):
         from agent.learning.bandit import DEFAULT_ARMS
 
-        assert len(DEFAULT_ARMS) == 35, (
-            f"Expected 23 arms, got {len(DEFAULT_ARMS)}: "
+        assert len(DEFAULT_ARMS) == 48, (
+            f"Expected 48 arms, got {len(DEFAULT_ARMS)}: "
             f"{[a.name for a in DEFAULT_ARMS]}"
         )
 

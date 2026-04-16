@@ -25,12 +25,21 @@ import csv
 import io
 import logging
 import re
-from typing import Any
+import time
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from agent.data.cache import DataCache
 from agent.tools.base import Tool, ToolResult
+
+if TYPE_CHECKING:
+    from agent.pipeline.store import PipelineStore
+
+try:
+    from agent.pipeline.entity import entity_id_from_key as _entity_id_from_key
+except ImportError:  # pragma: no cover — optional dependency
+    _entity_id_from_key = None  # type: ignore[assignment]
 
 log = logging.getLogger(__name__)
 
@@ -113,6 +122,56 @@ _KNOWN_CODES = frozenset(
 )
 
 
+# ISO-3 → ISO-2 country code mapping for entity persistence (Phase 28).
+# Aggregates (OECD, G-7, EA19, G-20) are excluded — no country entity.
+ISO3_TO_ISO2: dict[str, str] = {
+    "USA": "US",
+    "GBR": "GB",
+    "DEU": "DE",
+    "FRA": "FR",
+    "JPN": "JP",
+    "CHN": "CN",
+    "KOR": "KR",
+    "AUS": "AU",
+    "CAN": "CA",
+    "ITA": "IT",
+    "ESP": "ES",
+    "BRA": "BR",
+    "IND": "IN",
+    "MEX": "MX",
+    "TUR": "TR",
+    "ZAF": "ZA",
+    "IDN": "ID",
+    "RUS": "RU",
+    "NLD": "NL",
+    "BEL": "BE",
+    "AUT": "AT",
+    "CHE": "CH",
+    "SWE": "SE",
+    "NOR": "NO",
+    "DNK": "DK",
+    "FIN": "FI",
+    "POL": "PL",
+    "CZE": "CZ",
+    "HUN": "HU",
+    "GRC": "GR",
+    "PRT": "PT",
+    "IRL": "IE",
+    "NZL": "NZ",
+    "ISR": "IL",
+    "CHL": "CL",
+    "COL": "CO",
+    "CRI": "CR",
+    "LVA": "LV",
+    "LTU": "LT",
+    "SVK": "SK",
+    "SVN": "SI",
+    "EST": "EE",
+    "ISL": "IS",
+    "LUX": "LU",
+}
+
+
 def _parse_float(val: str | None) -> float | None:
     """Parse a float, returning None for empty/invalid."""
     if val is None:
@@ -176,8 +235,13 @@ class GlobalPmiTool(Tool):
         "required": ["mode"],
     }
 
-    def __init__(self, cache: DataCache | None = None) -> None:
+    def __init__(
+        self,
+        cache: DataCache | None = None,
+        pipeline_store: "PipelineStore | None" = None,
+    ) -> None:
         self._cache = cache
+        self._store = pipeline_store
 
     # ── Public execute ───────────────────────────────────────────────
 
@@ -240,7 +304,13 @@ class GlobalPmiTool(Tool):
 
         # Build output
         output, data = self._format_output(mode, by_country, include_signals)
-        return ToolResult(success=True, output=output, data=data)
+        result = ToolResult(success=True, output=output, data=data)
+
+        # L2: persist economic-activity observations on country entities (Phase 28)
+        if result.success and result.data:
+            self._persist_entities(result.data, mode)
+
+        return result
 
     # ── Fetch ────────────────────────────────────────────────────────
 
@@ -436,3 +506,77 @@ class GlobalPmiTool(Tool):
                 spreads[f"{a}-{b}"] = round(latest_vals[a] - latest_vals[b], 2)
 
         return spreads
+
+    # ── L2 entity persistence (Phase 28) ──────────────────────
+
+    def _persist_entities(
+        self,
+        data: dict[str, Any],
+        mode: str,
+    ) -> dict[str, int]:
+        """Persist economic-activity observations onto country entity nodes.
+
+        Observation type: ``economic_activity``.
+        Aggregates (OECD, G-7, EA19, G-20) are skipped — no country entity.
+        Skips silently if no PipelineStore or entity module is available.
+        """
+        if self._store is None or _entity_id_from_key is None:
+            return {"economic_activity_obs": 0}
+        try:
+            return self._persist_entities_inner(data, mode)
+        except Exception:
+            log.exception("Global PMI entity persistence failed (non-fatal)")
+            return {"economic_activity_obs": 0}
+
+    def _persist_entities_inner(
+        self,
+        data: dict[str, Any],
+        mode: str,
+    ) -> dict[str, int]:
+        """Inner persistence logic separated for testability."""
+        assert self._store is not None  # noqa: S101 — guarded
+        assert _entity_id_from_key is not None  # noqa: S101
+
+        store = self._store
+        counts = {"economic_activity_obs": 0}
+        now_ts = time.time()
+
+        by_country = data.get("by_country", {})
+        signals = data.get("signals", {})
+
+        for iso3, entries in by_country.items():
+            iso2 = ISO3_TO_ISO2.get(iso3)
+            if not iso2 or not entries:
+                continue  # skip aggregates and unknown codes
+
+            latest = entries[-1]
+            country_eid = _entity_id_from_key("country", iso2)
+            store.register_entity(
+                entity_type="country",
+                canonical_name=iso2,
+                entity_id=country_eid,
+            )
+
+            csig = signals.get(iso3, {})
+            store.store_entity_observation(
+                entity_id=country_eid,
+                source_tool="global_pmi",
+                observed_at=now_ts,
+                observation_type="economic_activity",
+                value={
+                    "indicator": mode,
+                    "value": latest.get("value"),
+                    "period": latest.get("period"),
+                    "regime": csig.get("regime"),
+                    "momentum_6m": csig.get("momentum_6m"),
+                },
+                depth_level=2,
+            )
+            counts["economic_activity_obs"] += 1
+
+        if counts["economic_activity_obs"]:
+            log.info(
+                "Global PMI L2: %d economic_activity obs persisted",
+                counts["economic_activity_obs"],
+            )
+        return counts

@@ -32,14 +32,23 @@ import csv
 import io
 import logging
 import re
+import time
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from agent.data.cache import DataCache
 from agent.tools.base import Tool, ToolResult
+
+if TYPE_CHECKING:
+    from agent.pipeline.store import PipelineStore
+
+try:
+    from agent.pipeline.entity import entity_id_from_key as _entity_id_from_key
+except ImportError:  # pragma: no cover — optional dependency
+    _entity_id_from_key = None  # type: ignore[assignment]
 
 log = logging.getLogger(__name__)
 
@@ -314,11 +323,25 @@ def _parse_uk_dmo_xml(text: str) -> list[dict[str, Any]]:
 # --- Tool class ---
 
 
+# Deterministic country mapping for each mode (Phase 28).
+# EU mode countries are ISO-2 already; no extra mapping needed.
+_SOVEREIGN_COUNTRY: dict[str, str] = {
+    "us_yields": "US",
+    "jp_yields": "JP",
+    "uk_gilts": "GB",
+}
+
+
 class SovereignDebtTool(Tool):
     """Query government bond yield data across US, EU, Japan, and UK."""
 
-    def __init__(self, cache: DataCache | None = None) -> None:
+    def __init__(
+        self,
+        cache: DataCache | None = None,
+        pipeline_store: "PipelineStore | None" = None,
+    ) -> None:
         self._cache = cache
+        self._store = pipeline_store
 
     @property
     def name(self) -> str:
@@ -704,15 +727,168 @@ class SovereignDebtTool(Tool):
 
         limit = min(max(int(kwargs.get("limit", 20)), 1), 100)
 
-        if mode == "us_yields":
-            return self._fetch_us_yields(month)
-        elif mode == "eu_yields":
-            return self._fetch_eu_yields(countries, month)
-        elif mode == "jp_yields":
-            return self._fetch_jp_yields()
-        elif mode == "uk_gilts":
-            return self._fetch_uk_gilts(limit)
-        elif mode == "spreads":
-            return self._compute_spreads(countries, month)
+        dispatch: dict[str, Any] = {
+            "us_yields": lambda: self._fetch_us_yields(month),
+            "eu_yields": lambda: self._fetch_eu_yields(countries, month),
+            "jp_yields": lambda: self._fetch_jp_yields(),
+            "uk_gilts": lambda: self._fetch_uk_gilts(limit),
+            "spreads": lambda: self._compute_spreads(countries, month),
+        }
+        handler = dispatch.get(mode)
+        if handler is None:
+            return ToolResult(success=False, output=f"Unhandled mode: {mode}")
 
-        return ToolResult(success=False, output=f"Unhandled mode: {mode}")
+        result = handler()
+
+        # L2: persist sovereign-yield observations on country entities (Phase 28)
+        if result.success and result.data:
+            self._persist_entities(result.data, mode)
+
+        return result
+
+    # ── L2 entity persistence (Phase 28) ──────────────────────
+
+    def _persist_entities(
+        self,
+        data: dict[str, Any],
+        mode: str,
+    ) -> dict[str, int]:
+        """Persist sovereign-yield observations onto country entity nodes.
+
+        Skips silently if no PipelineStore or entity module is available.
+        Skips ``spreads`` mode (derived from eu_yields — would double-persist).
+        """
+        if self._store is None or _entity_id_from_key is None:
+            return {"sovereign_yield_obs": 0}
+        if mode == "spreads":
+            return {"sovereign_yield_obs": 0}
+        try:
+            return self._persist_entities_inner(data, mode)
+        except Exception:
+            log.exception("Sovereign debt entity persistence failed (non-fatal)")
+            return {"sovereign_yield_obs": 0}
+
+    def _persist_entities_inner(
+        self,
+        data: dict[str, Any],
+        mode: str,
+    ) -> dict[str, int]:
+        """Inner persistence logic separated for testability."""
+        assert self._store is not None  # noqa: S101 — guarded
+        assert _entity_id_from_key is not None  # noqa: S101
+
+        store = self._store
+        counts = {"sovereign_yield_obs": 0}
+        now_ts = time.time()
+
+        if mode == "us_yields":
+            records = data.get("records", [])
+            if records:
+                latest = records[-1]
+                country_eid = _entity_id_from_key("country", "US")
+                store.register_entity(
+                    entity_type="country",
+                    canonical_name="US",
+                    entity_id=country_eid,
+                )
+                store.store_entity_observation(
+                    entity_id=country_eid,
+                    source_tool="sovereign_debt",
+                    observed_at=now_ts,
+                    observation_type="sovereign_yield",
+                    value={
+                        "source": "us_treasury",
+                        "maturity": "10y",
+                        "yield_pct": latest.get("yields", {}).get("10y"),
+                        "curve_2s10s": latest.get("curve_2s10s"),
+                        "date": latest.get("date"),
+                    },
+                    depth_level=2,
+                )
+                counts["sovereign_yield_obs"] += 1
+
+        elif mode == "eu_yields":
+            for cc, records in (data.get("countries") or {}).items():
+                if not records:
+                    continue
+                latest = records[-1]
+                country_eid = _entity_id_from_key("country", cc)
+                store.register_entity(
+                    entity_type="country",
+                    canonical_name=cc,
+                    entity_id=country_eid,
+                )
+                store.store_entity_observation(
+                    entity_id=country_eid,
+                    source_tool="sovereign_debt",
+                    observed_at=now_ts,
+                    observation_type="sovereign_yield",
+                    value={
+                        "source": "ecb",
+                        "maturity": "10y",
+                        "yield_pct": latest.get("yield_pct"),
+                        "curve_2s10s": None,
+                        "date": latest.get("period"),
+                    },
+                    depth_level=2,
+                )
+                counts["sovereign_yield_obs"] += 1
+
+        elif mode == "jp_yields":
+            records = data.get("records", [])
+            if records:
+                latest = records[-1]
+                country_eid = _entity_id_from_key("country", "JP")
+                store.register_entity(
+                    entity_type="country",
+                    canonical_name="JP",
+                    entity_id=country_eid,
+                )
+                store.store_entity_observation(
+                    entity_id=country_eid,
+                    source_tool="sovereign_debt",
+                    observed_at=now_ts,
+                    observation_type="sovereign_yield",
+                    value={
+                        "source": "mof",
+                        "maturity": "10y",
+                        "yield_pct": latest.get("yields", {}).get("10y"),
+                        "curve_2s10s": None,
+                        "date": latest.get("date"),
+                    },
+                    depth_level=2,
+                )
+                counts["sovereign_yield_obs"] += 1
+
+        elif mode == "uk_gilts":
+            records = data.get("records", [])
+            if records:
+                latest = records[0]  # sorted descending (most recent first)
+                country_eid = _entity_id_from_key("country", "GB")
+                store.register_entity(
+                    entity_type="country",
+                    canonical_name="GB",
+                    entity_id=country_eid,
+                )
+                store.store_entity_observation(
+                    entity_id=country_eid,
+                    source_tool="sovereign_debt",
+                    observed_at=now_ts,
+                    observation_type="sovereign_yield",
+                    value={
+                        "source": "dmo",
+                        "maturity": None,
+                        "yield_pct": latest.get("yield_pct"),
+                        "curve_2s10s": None,
+                        "date": latest.get("date"),
+                    },
+                    depth_level=2,
+                )
+                counts["sovereign_yield_obs"] += 1
+
+        if counts["sovereign_yield_obs"]:
+            log.info(
+                "Sovereign debt L2: %d yield obs persisted",
+                counts["sovereign_yield_obs"],
+            )
+        return counts

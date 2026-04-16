@@ -4,7 +4,10 @@ TirraMind — Entity Resolution Utilities
 Deterministic entity name normalization, canonical ID generation,
 and seed loaders for the entity registry.
 
-Entity types: company, person, vessel, wallet, country, organization.
+Entity types: company, person, vessel, wallet, country, organization, etc.
+Tier 8 (Change 16): EntityType is now a runtime-validated string rather than
+a static Literal.  The 9 seed types are always valid; additional types are
+registered dynamically via OntologyRegistry.
 """
 
 from __future__ import annotations
@@ -15,24 +18,63 @@ import logging
 import re
 import unicodedata
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from agent.discovery.ontology_registry import OntologyRegistry
     from agent.pipeline.store import PipelineStore
 
 log = logging.getLogger(__name__)
 
-EntityType = Literal[
-    "company",
-    "country",
-    "domain",
-    "organization",
-    "person",
-    "protocol",
-    "topic",
-    "vessel",
-    "wallet",
-]
+# Seed entity types — always valid even without DB access (Tier 8)
+SEED_ENTITY_TYPES: frozenset[str] = frozenset(
+    {
+        "cftc_contract",
+        "company",
+        "country",
+        "domain",
+        "organization",
+        "person",
+        "protocol",
+        "topic",
+        "vessel",
+        "wallet",
+    }
+)
+
+# Runtime type alias — accepts any string, validated at runtime
+EntityType = str
+
+# Module-level registry reference (set during pipeline startup)
+_GLOBAL_REGISTRY: OntologyRegistry | None = None
+
+
+def set_ontology_registry(registry: OntologyRegistry) -> None:
+    """Set the global OntologyRegistry for entity type validation."""
+    global _GLOBAL_REGISTRY  # noqa: PLW0603
+    _GLOBAL_REGISTRY = registry
+
+
+def get_ontology_registry() -> OntologyRegistry | None:
+    """Return the global OntologyRegistry, or None if not set."""
+    return _GLOBAL_REGISTRY
+
+
+def validate_entity_type(
+    entity_type: str,
+    registry: OntologyRegistry | None = None,
+) -> bool:
+    """Check if *entity_type* is a known type.
+
+    Without a registry, falls back to SEED_ENTITY_TYPES.
+    """
+    if entity_type in SEED_ENTITY_TYPES:
+        return True
+    reg = registry or _GLOBAL_REGISTRY
+    if reg is not None:
+        return reg.is_valid_type(entity_type)
+    return False
+
 
 # Suffixes stripped during company name normalization (case-insensitive).
 # Order matters: longer suffixes first to avoid partial matches.

@@ -1223,7 +1223,7 @@ class TestRegistry(unittest.TestCase):
             return
         names = registry.list_names()
         self.assertEqual(
-            len(names), 47, f"Expected 47 tools, got {len(names)}: {sorted(names)}"
+            len(names), 60, f"Expected 60 tools, got {len(names)}: {sorted(names)}"
         )
 
     def test_sovereign_debt_in_registry(self):
@@ -1248,8 +1248,8 @@ class TestBanditArm(unittest.TestCase):
 
         self.assertEqual(
             len(DEFAULT_ARMS),
-            35,
-            f"Expected 35 arms, got {len(DEFAULT_ARMS)}: {[a.name for a in DEFAULT_ARMS]}",
+            48,
+            f"Expected 48 arms, got {len(DEFAULT_ARMS)}: {[a.name for a in DEFAULT_ARMS]}",
         )
 
     def test_sovereign_stress_arm_exists(self):
@@ -1269,6 +1269,305 @@ class TestBanditArm(unittest.TestCase):
 
         arm = next(a for a in DEFAULT_ARMS if a.name == "sovereign_stress")
         self.assertTrue(len(arm.examples) > 0)
+
+
+# ──────────────────────────────────────────────────────────────────
+# Phase 28: L2 sovereign-yield entity persistence
+# ──────────────────────────────────────────────────────────────────
+
+
+def _make_store_mock():
+    """Build a mock PipelineStore for L2 persistence testing."""
+    store = MagicMock()
+    store.register_entity = MagicMock(side_effect=lambda **kw: kw["entity_id"])
+    store.store_entity_observation = MagicMock(return_value=1)
+    return store
+
+
+class TestL2PersistenceNoStore(unittest.TestCase):
+    """Persistence is a no-op when store is absent."""
+
+    def test_no_store_returns_zeros(self):
+        from agent.tools.sovereign_debt import SovereignDebtTool
+
+        tool = SovereignDebtTool()
+        tool._store = None
+        counts = tool._persist_entities(
+            {"records": [{"date": "2026-03-27"}]}, "us_yields"
+        )
+        self.assertEqual(counts, {"sovereign_yield_obs": 0})
+
+    def test_no_entity_id_fn_returns_zeros(self):
+        from agent.tools.sovereign_debt import SovereignDebtTool
+        import agent.tools.sovereign_debt as sd_mod
+
+        tool = SovereignDebtTool()
+        tool._store = _make_store_mock()
+        original = sd_mod._entity_id_from_key
+        try:
+            sd_mod._entity_id_from_key = None
+            counts = tool._persist_entities(
+                {"records": [{"date": "2026-03-27"}]}, "us_yields"
+            )
+            self.assertEqual(counts, {"sovereign_yield_obs": 0})
+        finally:
+            sd_mod._entity_id_from_key = original
+
+
+class TestL2PersistenceSpreadsSkipped(unittest.TestCase):
+    """Spreads mode should not persist anything (would double-count eu_yields)."""
+
+    def test_spreads_mode_skipped(self):
+        from agent.tools.sovereign_debt import SovereignDebtTool
+
+        tool = SovereignDebtTool()
+        tool._store = _make_store_mock()
+        counts = tool._persist_entities({"countries": {"DE": []}}, "spreads")
+        self.assertEqual(counts, {"sovereign_yield_obs": 0})
+        tool._store.store_entity_observation.assert_not_called()
+
+
+class TestL2PersistenceUSYields(unittest.TestCase):
+    """us_yields mode persists a sovereign_yield obs on country=US."""
+
+    def test_us_yields_persists_one_obs(self):
+        from agent.tools.sovereign_debt import SovereignDebtTool
+
+        tool = SovereignDebtTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "records": [
+                {
+                    "date": "2026-03-27",
+                    "yields": {"2y": 3.88, "10y": 4.44},
+                    "curve_2s10s": 0.56,
+                },
+            ],
+            "entries": 1,
+        }
+        counts = tool._persist_entities(data, "us_yields")
+        self.assertEqual(counts["sovereign_yield_obs"], 1)
+
+    def test_us_yields_obs_type_and_depth(self):
+        from agent.tools.sovereign_debt import SovereignDebtTool
+
+        tool = SovereignDebtTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "records": [
+                {
+                    "date": "2026-03-27",
+                    "yields": {"10y": 4.44},
+                    "curve_2s10s": 0.56,
+                },
+            ],
+        }
+        tool._persist_entities(data, "us_yields")
+        obs_call = store.store_entity_observation.call_args_list[0]
+        self.assertEqual(obs_call.kwargs["observation_type"], "sovereign_yield")
+        self.assertEqual(obs_call.kwargs["depth_level"], 2)
+        self.assertEqual(obs_call.kwargs["source_tool"], "sovereign_debt")
+
+    def test_us_yields_targets_US_country(self):
+        from agent.tools.sovereign_debt import SovereignDebtTool
+        from agent.pipeline.entity import entity_id_from_key
+
+        tool = SovereignDebtTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "records": [
+                {"date": "2026-03-27", "yields": {"10y": 4.44}, "curve_2s10s": 0.56}
+            ]
+        }
+        tool._persist_entities(data, "us_yields")
+
+        us_eid = entity_id_from_key("country", "US")
+        obs_call = store.store_entity_observation.call_args_list[0]
+        self.assertEqual(obs_call.kwargs["entity_id"], us_eid)
+
+    def test_us_yields_obs_value_fields(self):
+        from agent.tools.sovereign_debt import SovereignDebtTool
+
+        tool = SovereignDebtTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "records": [
+                {"date": "2026-03-27", "yields": {"10y": 4.44}, "curve_2s10s": 0.56}
+            ]
+        }
+        tool._persist_entities(data, "us_yields")
+
+        val = store.store_entity_observation.call_args_list[0].kwargs["value"]
+        self.assertEqual(val["source"], "us_treasury")
+        self.assertEqual(val["maturity"], "10y")
+        self.assertAlmostEqual(val["yield_pct"], 4.44)
+        self.assertAlmostEqual(val["curve_2s10s"], 0.56)
+
+    def test_us_yields_empty_records(self):
+        from agent.tools.sovereign_debt import SovereignDebtTool
+
+        tool = SovereignDebtTool()
+        tool._store = _make_store_mock()
+        counts = tool._persist_entities({"records": []}, "us_yields")
+        self.assertEqual(counts["sovereign_yield_obs"], 0)
+
+
+class TestL2PersistenceEUYields(unittest.TestCase):
+    """eu_yields mode persists per-country sovereign_yield obs."""
+
+    def test_eu_yields_multiple_countries(self):
+        from agent.tools.sovereign_debt import SovereignDebtTool
+
+        tool = SovereignDebtTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "countries": {
+                "DE": [{"period": "2026-02", "yield_pct": 2.744}],
+                "IT": [{"period": "2026-02", "yield_pct": 3.388}],
+                "FR": [{"period": "2026-02", "yield_pct": 2.900}],
+            },
+        }
+        counts = tool._persist_entities(data, "eu_yields")
+        self.assertEqual(counts["sovereign_yield_obs"], 3)
+
+    def test_eu_yields_targets_correct_country_entities(self):
+        from agent.tools.sovereign_debt import SovereignDebtTool
+        from agent.pipeline.entity import entity_id_from_key
+
+        tool = SovereignDebtTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "countries": {
+                "DE": [{"period": "2026-02", "yield_pct": 2.744}],
+            },
+        }
+        tool._persist_entities(data, "eu_yields")
+        de_eid = entity_id_from_key("country", "DE")
+        obs_call = store.store_entity_observation.call_args_list[0]
+        self.assertEqual(obs_call.kwargs["entity_id"], de_eid)
+
+    def test_eu_yields_source_is_ecb(self):
+        from agent.tools.sovereign_debt import SovereignDebtTool
+
+        tool = SovereignDebtTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {"countries": {"IT": [{"period": "2026-02", "yield_pct": 3.388}]}}
+        tool._persist_entities(data, "eu_yields")
+        val = store.store_entity_observation.call_args_list[0].kwargs["value"]
+        self.assertEqual(val["source"], "ecb")
+
+    def test_eu_yields_skips_empty_records(self):
+        from agent.tools.sovereign_debt import SovereignDebtTool
+
+        tool = SovereignDebtTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "countries": {"DE": [], "FR": [{"period": "2026-02", "yield_pct": 2.9}]}
+        }
+        counts = tool._persist_entities(data, "eu_yields")
+        self.assertEqual(counts["sovereign_yield_obs"], 1)
+
+
+class TestL2PersistenceJPYields(unittest.TestCase):
+    """jp_yields mode persists sovereign_yield on country=JP."""
+
+    def test_jp_yields_persists_one_obs(self):
+        from agent.tools.sovereign_debt import SovereignDebtTool
+
+        tool = SovereignDebtTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "records": [{"date": "2026-03-27", "yields": {"10y": 2.30}}],
+        }
+        counts = tool._persist_entities(data, "jp_yields")
+        self.assertEqual(counts["sovereign_yield_obs"], 1)
+
+    def test_jp_yields_targets_JP_country(self):
+        from agent.tools.sovereign_debt import SovereignDebtTool
+        from agent.pipeline.entity import entity_id_from_key
+
+        tool = SovereignDebtTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {"records": [{"date": "2026-03-27", "yields": {"10y": 2.30}}]}
+        tool._persist_entities(data, "jp_yields")
+        jp_eid = entity_id_from_key("country", "JP")
+        obs_call = store.store_entity_observation.call_args_list[0]
+        self.assertEqual(obs_call.kwargs["entity_id"], jp_eid)
+
+    def test_jp_yields_source_is_mof(self):
+        from agent.tools.sovereign_debt import SovereignDebtTool
+
+        tool = SovereignDebtTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {"records": [{"date": "2026-03-27", "yields": {"10y": 2.30}}]}
+        tool._persist_entities(data, "jp_yields")
+        val = store.store_entity_observation.call_args_list[0].kwargs["value"]
+        self.assertEqual(val["source"], "mof")
+
+
+class TestL2PersistenceUKGilts(unittest.TestCase):
+    """uk_gilts mode persists sovereign_yield on country=GB."""
+
+    def test_uk_gilts_persists_one_obs(self):
+        from agent.tools.sovereign_debt import SovereignDebtTool
+
+        tool = SovereignDebtTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "records": [
+                {
+                    "name": "2% Treasury Gilt 2025",
+                    "date": "2025-11-20",
+                    "yield_pct": 2.05,
+                },
+            ],
+        }
+        counts = tool._persist_entities(data, "uk_gilts")
+        self.assertEqual(counts["sovereign_yield_obs"], 1)
+
+    def test_uk_gilts_targets_GB_country(self):
+        from agent.tools.sovereign_debt import SovereignDebtTool
+        from agent.pipeline.entity import entity_id_from_key
+
+        tool = SovereignDebtTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {"records": [{"name": "T 2%", "date": "2025-11-20", "yield_pct": 2.05}]}
+        tool._persist_entities(data, "uk_gilts")
+        gb_eid = entity_id_from_key("country", "GB")
+        obs_call = store.store_entity_observation.call_args_list[0]
+        self.assertEqual(obs_call.kwargs["entity_id"], gb_eid)
+
+
+class TestL2PersistenceExceptionHandler(unittest.TestCase):
+    """Inner exception caught, returns zeros."""
+
+    def test_inner_exception_returns_zeros(self):
+        from agent.tools.sovereign_debt import SovereignDebtTool
+
+        tool = SovereignDebtTool()
+        store = _make_store_mock()
+        store.register_entity.side_effect = RuntimeError("DB down")
+        tool._store = store
+        data = {
+            "records": [
+                {"date": "2026-03-27", "yields": {"10y": 4.44}, "curve_2s10s": 0.56}
+            ]
+        }
+        counts = tool._persist_entities(data, "us_yields")
+        self.assertEqual(counts, {"sovereign_yield_obs": 0})
 
 
 if __name__ == "__main__":

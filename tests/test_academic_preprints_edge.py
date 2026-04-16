@@ -637,7 +637,7 @@ class TestRegistryAndBandit:
         mock_config.tool_timeout = 30
         mock_config.fred_api_key = ""
         registry = build_tool_registry(mock_config)
-        assert len(registry._tools) == 47
+        assert len(registry._tools) == 60
 
     def test_academic_preprints_registered(self):
         try:
@@ -655,7 +655,7 @@ class TestRegistryAndBandit:
     def test_bandit_arm_count(self):
         from agent.learning.bandit import DEFAULT_ARMS
 
-        assert len(DEFAULT_ARMS) == 35
+        assert len(DEFAULT_ARMS) == 48
 
     def test_research_pipeline_arm_exists(self):
         from agent.learning.bandit import DEFAULT_ARMS

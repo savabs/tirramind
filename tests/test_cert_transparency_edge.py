@@ -846,16 +846,16 @@ class TestIntegration:
 
     def test_tool_count(self):
         registry = self._build_registry()
-        assert len(registry._tools) == 47, (
-            f"Expected 35 tools, got {len(registry._tools)}: "
+        assert len(registry._tools) == 60, (
+            f"Expected 60 tools, got {len(registry._tools)}: "
             f"{sorted(registry._tools.keys())}"
         )
 
     def test_bandit_arm_count(self):
         from agent.learning.bandit import DEFAULT_ARMS
 
-        assert len(DEFAULT_ARMS) == 35, (
-            f"Expected 23 arms, got {len(DEFAULT_ARMS)}: "
+        assert len(DEFAULT_ARMS) == 48, (
+            f"Expected 48 arms, got {len(DEFAULT_ARMS)}: "
             f"{[a.name for a in DEFAULT_ARMS]}"
         )
 

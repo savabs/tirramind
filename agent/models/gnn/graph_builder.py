@@ -43,6 +43,7 @@ log = logging.getLogger(__name__)
 
 # Canonical ordering — determines one-hot position in node features.
 ENTITY_TYPES: list[str] = [
+    "cftc_contract",
     "company",
     "country",
     "domain",
@@ -57,19 +58,25 @@ ENTITY_TYPES: list[str] = [
 
 OBSERVATION_TYPES: list[str] = [
     "btc_transfer",
+    "capital_flow",
+    "cb_balance_sheet",
+    "cb_policy_rate",
     "cert_issued",
     "contract_award",
     "creditor_filing",
     "cross_entity_pattern",
     "dns_change",
     "drug_approval",
+    "economic_activity",
     "form144_filing",
+    "futures_positioning",
     "geopolitical_event",
     "insider_trade",
     "instrument_return",
     "instrument_volatility",
     "instrument_volume",
     "lobbying_spend",
+    "market_probability",
     "pageview_spike",
     "patent_filing",
     "port_call",
@@ -78,8 +85,10 @@ OBSERVATION_TYPES: list[str] = [
     "sanctions_listing",
     "sell_intent",
     "short_interest",
+    "sovereign_yield",
     "tvl_change",
     "vessel_position",
+    "whale_trade",
 ]
 
 _ENTITY_TYPE_TO_IDX: dict[str, int] = {t: i for i, t in enumerate(ENTITY_TYPES)}
@@ -182,8 +191,8 @@ def _compute_obs_stats(
 # When enrichment is provided, these extra features are appended:
 #   cusum_state (1) + hawkes_intensity (1) + event_study_score (1) +
 #   bocpd_prob (1) + value_variance (1) + value_min (1) + value_max (1) +
-#   value_iqr (1) + num_source_tools (1) + obs_type_dist (21) = 30
-ENRICHMENT_DIM = 33
+#   value_iqr (1) + num_source_tools (1) + obs_type_dist (32) = 41
+ENRICHMENT_DIM = 41
 BASE_FEAT_DIM = len(ENTITY_TYPES) + 3  # one-hot type + count + recency + mean_val
 
 

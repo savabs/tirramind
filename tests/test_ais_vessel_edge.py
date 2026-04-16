@@ -925,7 +925,7 @@ class TestRegistryIntegration:
 
         assert "ais_vessel_tracking" in names
         assert (
-            len(names) == 47
+            len(names) == 60
         )  # was 27, +3 for defi/gov_contracts/academic_preprints, +1 sanctions_monitor, +1 cert_transparency, +1 sovereign_debt, +1 central_bank_balance, +1 foia_requests
 
     def test_tool_executes_from_registry(self):

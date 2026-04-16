@@ -860,7 +860,7 @@ class TestRegistryIntegration:
         from agent.cli import build_tool_registry
 
         registry = build_tool_registry()
-        assert len(registry.list_names()) == 47
+        assert len(registry.list_names()) == 60
 
     def test_weather_alerts_registered(self):
         from agent.cli import build_tool_registry
@@ -883,4 +883,4 @@ class TestRegistryIntegration:
     def test_bandit_arm_count(self):
         from agent.learning.bandit import DEFAULT_ARMS
 
-        assert len(DEFAULT_ARMS) == 35
+        assert len(DEFAULT_ARMS) == 48

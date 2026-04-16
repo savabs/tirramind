@@ -1032,14 +1032,14 @@ class TestRegistration(unittest.TestCase):
         registry = build_tool_registry(config)
         names = registry.list_names()
         assert "central_bank_balance" in names
-        assert len(names) == 47, f"Expected 41 tools, got {len(names)}: {sorted(names)}"
+        assert len(names) == 60, f"Expected 60 tools, got {len(names)}: {sorted(names)}"
 
     def test_bandit_arm_exists(self):
         from agent.learning.bandit import DEFAULT_ARMS
 
         arm_names = [a.name for a in DEFAULT_ARMS]
         assert "global_liquidity" in arm_names
-        assert len(DEFAULT_ARMS) == 35, f"Expected 29 arms, got {len(DEFAULT_ARMS)}"
+        assert len(DEFAULT_ARMS) == 48, f"Expected 48 arms, got {len(DEFAULT_ARMS)}"
 
     def test_bandit_arm_references_tool(self):
         from agent.learning.bandit import DEFAULT_ARMS
@@ -1159,6 +1159,416 @@ class TestFetchPolicyRate(unittest.TestCase):
         tool = _make_tool()
         rate = tool._fetch_policy_rate("boj", "2025-01-01", "2026-03-01")
         assert rate is None
+
+
+# ---------------------------------------------------------------------------
+# Phase 27: L2 country entity persistence tests
+# ---------------------------------------------------------------------------
+
+
+def _make_store_mock() -> MagicMock:
+    """Build a mock PipelineStore for L2 persistence testing."""
+    store = MagicMock()
+    store.register_entity = MagicMock(side_effect=lambda **kw: kw["entity_id"])
+    store.store_entity_observation = MagicMock(return_value=1)
+    store.link_entities = MagicMock(return_value=1)
+    return store
+
+
+class TestL2PersistenceBalanceSheets:
+    """Phase 27 — cb_balance_sheet observations on country nodes."""
+
+    def test_balance_sheet_mode_persists_obs(self):
+        store = _make_store_mock()
+        tool = _make_tool(cache=MagicMock())
+        tool._store = store
+
+        data = {
+            "banks": [
+                {
+                    "code": "fed",
+                    "native_trillions": 7.5,
+                    "usd_trillions": 7.5,
+                    "wow_pct": 0.1,
+                    "mom_pct": -0.5,
+                    "yoy_pct": 2.0,
+                },
+                {
+                    "code": "ecb",
+                    "native_trillions": 6.0,
+                    "usd_trillions": 6.5,
+                    "wow_pct": 0.0,
+                    "mom_pct": -1.0,
+                    "yoy_pct": -3.0,
+                },
+            ],
+            "errors": [],
+        }
+        counts = tool._persist_entities(data, "balance_sheets", ["fed", "ecb"])
+        assert counts["balance_sheet_obs"] == 2
+        assert counts["rate_obs"] == 0
+
+    def test_balance_sheet_obs_type_is_correct(self):
+        store = _make_store_mock()
+        tool = _make_tool(cache=MagicMock())
+        tool._store = store
+
+        data = {
+            "banks": [{"code": "fed", "native_trillions": 7.5, "usd_trillions": 7.5,
+                        "wow_pct": 0.1, "mom_pct": -0.5, "yoy_pct": 2.0}],
+            "errors": [],
+        }
+        tool._persist_entities(data, "balance_sheets", ["fed"])
+        obs_calls = store.store_entity_observation.call_args_list
+        assert len(obs_calls) == 1
+        assert obs_calls[0].kwargs["observation_type"] == "cb_balance_sheet"
+        assert obs_calls[0].kwargs["source_tool"] == "central_bank_balance"
+        assert obs_calls[0].kwargs["depth_level"] == 2
+
+    def test_balance_sheet_targets_correct_country_entity(self):
+        from agent.pipeline.entity import entity_id_from_key
+
+        store = _make_store_mock()
+        tool = _make_tool(cache=MagicMock())
+        tool._store = store
+
+        data = {
+            "banks": [{"code": "boj", "native_trillions": 5.0, "usd_trillions": 4.0,
+                        "wow_pct": None, "mom_pct": 1.0, "yoy_pct": 5.0}],
+            "errors": [],
+        }
+        tool._persist_entities(data, "balance_sheets", ["boj"])
+
+        jp_eid = entity_id_from_key("country", "JP")
+        obs_call = store.store_entity_observation.call_args_list[0]
+        assert obs_call.kwargs["entity_id"] == jp_eid
+
+    def test_balance_sheet_registers_country_entity(self):
+        store = _make_store_mock()
+        tool = _make_tool(cache=MagicMock())
+        tool._store = store
+
+        data = {
+            "banks": [{"code": "snb", "native_trillions": 0.8, "usd_trillions": 0.9,
+                        "wow_pct": None, "mom_pct": 0.0, "yoy_pct": -1.0}],
+            "errors": [],
+        }
+        tool._persist_entities(data, "balance_sheets", ["snb"])
+        country_regs = [
+            c for c in store.register_entity.call_args_list
+            if c.kwargs.get("entity_type") == "country"
+        ]
+        assert len(country_regs) == 1
+        assert country_regs[0].kwargs["canonical_name"] == "CH"
+
+    def test_balance_sheet_unknown_cb_code_skipped(self):
+        store = _make_store_mock()
+        tool = _make_tool(cache=MagicMock())
+        tool._store = store
+
+        data = {
+            "banks": [{"code": "unknown_bank", "native_trillions": 1.0,
+                        "usd_trillions": 1.0, "wow_pct": None, "mom_pct": None,
+                        "yoy_pct": None}],
+            "errors": [],
+        }
+        counts = tool._persist_entities(data, "balance_sheets", [])
+        assert counts["balance_sheet_obs"] == 0
+
+    def test_balance_sheet_empty_banks_list(self):
+        store = _make_store_mock()
+        tool = _make_tool(cache=MagicMock())
+        tool._store = store
+
+        data = {"banks": [], "errors": []}
+        counts = tool._persist_entities(data, "balance_sheets", [])
+        assert counts["balance_sheet_obs"] == 0
+        assert counts["rate_obs"] == 0
+
+    def test_balance_sheet_obs_value_fields(self):
+        store = _make_store_mock()
+        tool = _make_tool(cache=MagicMock())
+        tool._store = store
+
+        data = {
+            "banks": [{"code": "fed", "native_trillions": 7.5, "usd_trillions": 7.5,
+                        "wow_pct": 0.1, "mom_pct": -0.5, "yoy_pct": 2.0}],
+            "errors": [],
+        }
+        tool._persist_entities(data, "balance_sheets", ["fed"])
+        val = store.store_entity_observation.call_args_list[0].kwargs["value"]
+        assert val["cb_code"] == "fed"
+        assert val["native_trillions"] == 7.5
+        assert val["usd_trillions"] == 7.5
+        assert val["wow_pct"] == 0.1
+        assert val["mom_pct"] == -0.5
+        assert val["yoy_pct"] == 2.0
+
+
+class TestL2PersistencePolicyDivergence:
+    """Phase 27 — policy_divergence mode persists both obs types."""
+
+    def test_divergence_persists_balance_and_rate(self):
+        store = _make_store_mock()
+        tool = _make_tool(cache=MagicMock())
+        tool._store = store
+
+        data = {
+            "assessments": [
+                {"code": "fed", "growth_3m_ann": 5.0, "growth_12m": 3.0,
+                 "stance": "expanding"},
+            ],
+            "rates": {"fed": 5.33},
+            "divergences": [],
+            "synchronized": "",
+            "errors": [],
+        }
+        counts = tool._persist_entities(data, "policy_divergence", ["fed"])
+        assert counts["balance_sheet_obs"] == 1
+        assert counts["rate_obs"] == 1
+
+    def test_divergence_rate_value_is_scalar(self):
+        store = _make_store_mock()
+        tool = _make_tool(cache=MagicMock())
+        tool._store = store
+
+        data = {
+            "assessments": [],
+            "rates": {"ecb": 3.75},
+            "divergences": [],
+            "synchronized": "",
+            "errors": [],
+        }
+        tool._persist_entities(data, "policy_divergence", ["ecb"])
+        rate_calls = [
+            c for c in store.store_entity_observation.call_args_list
+            if c.kwargs["observation_type"] == "cb_policy_rate"
+        ]
+        assert len(rate_calls) == 1
+        assert rate_calls[0].kwargs["value"]["current_rate"] == 3.75
+
+
+class TestL2PersistenceRateMonitor:
+    """Phase 27 — rate_monitor mode persists cb_policy_rate."""
+
+    def test_rate_monitor_persists_rate_obs(self):
+        store = _make_store_mock()
+        tool = _make_tool(cache=MagicMock())
+        tool._store = store
+
+        data = {
+            "rates": [
+                {"code": "fed", "current_rate": 5.33, "rate_date": "2026-04-10",
+                 "last_change_date": "2025-12-18", "last_change_direction": "cut",
+                 "last_change_bps": -25.0, "days_since_change": 114},
+            ],
+            "errors": [],
+        }
+        counts = tool._persist_entities(data, "rate_monitor", ["fed"])
+        assert counts["rate_obs"] == 1
+        assert counts["balance_sheet_obs"] == 0
+
+    def test_rate_monitor_obs_type_correct(self):
+        store = _make_store_mock()
+        tool = _make_tool(cache=MagicMock())
+        tool._store = store
+
+        data = {
+            "rates": [
+                {"code": "fed", "current_rate": 5.33, "rate_date": "2026-04-10",
+                 "last_change_date": None, "last_change_direction": None,
+                 "last_change_bps": None, "days_since_change": None},
+            ],
+            "errors": [],
+        }
+        tool._persist_entities(data, "rate_monitor", ["fed"])
+        obs_call = store.store_entity_observation.call_args_list[0]
+        assert obs_call.kwargs["observation_type"] == "cb_policy_rate"
+        assert obs_call.kwargs["depth_level"] == 2
+
+    def test_rate_monitor_targets_correct_country(self):
+        from agent.pipeline.entity import entity_id_from_key
+
+        store = _make_store_mock()
+        tool = _make_tool(cache=MagicMock())
+        tool._store = store
+
+        data = {
+            "rates": [
+                {"code": "ecb", "current_rate": 3.75, "rate_date": "2026-04-10",
+                 "last_change_date": None, "last_change_direction": None,
+                 "last_change_bps": None, "days_since_change": None},
+            ],
+            "errors": [],
+        }
+        tool._persist_entities(data, "rate_monitor", ["ecb"])
+        obs_call = store.store_entity_observation.call_args_list[0]
+        eu_eid = entity_id_from_key("country", "EU")
+        assert obs_call.kwargs["entity_id"] == eu_eid
+
+    def test_rate_monitor_multiple_banks(self):
+        store = _make_store_mock()
+        tool = _make_tool(cache=MagicMock())
+        tool._store = store
+
+        data = {
+            "rates": [
+                {"code": "fed", "current_rate": 5.33, "rate_date": "2026-04-10",
+                 "last_change_date": None, "last_change_direction": None,
+                 "last_change_bps": None, "days_since_change": None},
+                {"code": "ecb", "current_rate": 3.75, "rate_date": "2026-04-10",
+                 "last_change_date": None, "last_change_direction": None,
+                 "last_change_bps": None, "days_since_change": None},
+            ],
+            "errors": [],
+        }
+        counts = tool._persist_entities(data, "rate_monitor", ["fed", "ecb"])
+        assert counts["rate_obs"] == 2
+
+    def test_rate_monitor_obs_value_fields(self):
+        store = _make_store_mock()
+        tool = _make_tool(cache=MagicMock())
+        tool._store = store
+
+        data = {
+            "rates": [
+                {"code": "fed", "current_rate": 5.33, "rate_date": "2026-04-10",
+                 "last_change_date": "2025-12-18", "last_change_direction": "cut",
+                 "last_change_bps": -25.0, "days_since_change": 114},
+            ],
+            "errors": [],
+        }
+        tool._persist_entities(data, "rate_monitor", ["fed"])
+        val = store.store_entity_observation.call_args_list[0].kwargs["value"]
+        assert val["cb_code"] == "fed"
+        assert val["current_rate"] == 5.33
+        assert val["last_change_direction"] == "cut"
+        assert val["last_change_bps"] == -25.0
+        assert val["days_since_change"] == 114
+
+
+class TestL2PersistenceEdgeCases:
+    """Phase 27 — edge cases for L2 persistence."""
+
+    def test_no_store_returns_zeros(self):
+        tool = _make_tool(cache=MagicMock())
+        tool._store = None
+        data = {"banks": [{"code": "fed"}], "errors": []}
+        counts = tool._persist_entities(data, "balance_sheets", ["fed"])
+        assert counts == {"balance_sheet_obs": 0, "rate_obs": 0}
+
+    def test_no_entity_id_from_key_returns_zeros(self):
+        store = _make_store_mock()
+        tool = _make_tool(cache=MagicMock())
+        tool._store = store
+        import agent.tools.central_bank_balance as cb_mod
+        original = cb_mod._entity_id_from_key
+        try:
+            cb_mod._entity_id_from_key = None  # type: ignore
+            counts = tool._persist_entities(
+                {"banks": [{"code": "fed"}], "errors": []},
+                "balance_sheets", ["fed"],
+            )
+            assert counts == {"balance_sheet_obs": 0, "rate_obs": 0}
+        finally:
+            cb_mod._entity_id_from_key = original
+
+    def test_inner_exception_caught(self):
+        store = _make_store_mock()
+        store.register_entity.side_effect = RuntimeError("DB down")
+        tool = _make_tool(cache=MagicMock())
+        tool._store = store
+
+        data = {
+            "banks": [{"code": "fed", "native_trillions": 7.5, "usd_trillions": 7.5,
+                        "wow_pct": None, "mom_pct": None, "yoy_pct": None}],
+            "errors": [],
+        }
+        counts = tool._persist_entities(data, "balance_sheets", ["fed"])
+        assert counts == {"balance_sheet_obs": 0, "rate_obs": 0}
+
+    def test_liquidity_index_mode_no_persistence(self):
+        """liquidity_index mode produces aggregate data — no L2 obs expected."""
+        store = _make_store_mock()
+        tool = _make_tool(cache=MagicMock())
+        tool._store = store
+
+        data = {
+            "gross_usd": 20e12, "rrp_usd": 0.5e12, "tga_usd": 0.8e12,
+            "net_usd": 18.7e12, "components": [], "errors": [],
+        }
+        counts = tool._persist_entities(data, "liquidity_index", ["fed"])
+        assert counts["balance_sheet_obs"] == 0
+        assert counts["rate_obs"] == 0
+
+    def test_cb_to_country_mapping_complete(self):
+        """Every CB in the registry has a country mapping."""
+        from agent.tools.central_bank_balance import CB_TO_COUNTRY, CB_REGISTRY
+        for cb_code in CB_REGISTRY:
+            assert cb_code in CB_TO_COUNTRY, (
+                f"CB {cb_code} missing from CB_TO_COUNTRY mapping"
+            )
+
+    def test_cb_to_country_values_are_iso(self):
+        from agent.tools.central_bank_balance import CB_TO_COUNTRY
+        for cb_code, country in CB_TO_COUNTRY.items():
+            assert country == country.upper(), (
+                f"CB_TO_COUNTRY[{cb_code}]={country!r} not uppercase"
+            )
+            assert 2 <= len(country) <= 6
+
+    def test_execute_calls_persist_on_success(self):
+        """execute() should call _persist_entities when mode returns success."""
+        tool = _make_tool()
+        tool._store = _make_store_mock()
+
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_result.data = {"banks": [{"code": "fed"}], "errors": []}
+
+        with patch.object(tool, "_mode_balance_sheets", return_value=mock_result):
+            with patch.object(tool, "_persist_entities") as mock_persist:
+                tool.execute(mode="balance_sheets", banks="fed")
+                mock_persist.assert_called_once()
+
+    def test_execute_skips_persist_on_failure(self):
+        """execute() should NOT call _persist_entities when mode fails."""
+        tool = _make_tool()
+        tool._store = _make_store_mock()
+
+        mock_result = MagicMock()
+        mock_result.success = False
+        mock_result.data = None
+
+        with patch.object(tool, "_mode_balance_sheets", return_value=mock_result):
+            with patch.object(tool, "_persist_entities") as mock_persist:
+                tool.execute(mode="balance_sheets", banks="fed")
+                mock_persist.assert_not_called()
+
+
+class TestGraphBuilderPhase27:
+    """Phase 27 — graph builder registration for CB obs types."""
+
+    def test_cb_balance_sheet_in_obs_types(self):
+        from agent.models.gnn.graph_builder import OBSERVATION_TYPES
+        assert "cb_balance_sheet" in OBSERVATION_TYPES
+
+    def test_cb_policy_rate_in_obs_types(self):
+        from agent.models.gnn.graph_builder import OBSERVATION_TYPES
+        assert "cb_policy_rate" in OBSERVATION_TYPES
+
+    def test_enrichment_dim_updated(self):
+        from agent.models.gnn.graph_builder import ENRICHMENT_DIM, OBSERVATION_TYPES
+        expected = 9 + len(OBSERVATION_TYPES)
+        assert ENRICHMENT_DIM == expected, (
+            f"ENRICHMENT_DIM={ENRICHMENT_DIM} != expected {expected}"
+        )
+
+    def test_obs_types_alphabetically_sorted(self):
+        from agent.models.gnn.graph_builder import OBSERVATION_TYPES
+        assert OBSERVATION_TYPES == sorted(OBSERVATION_TYPES), (
+            "OBSERVATION_TYPES must be alphabetically sorted"
+        )
 
 
 if __name__ == "__main__":

@@ -555,9 +555,295 @@ class TestIntegration:
         from agent.cli import build_tool_registry
 
         reg = build_tool_registry()
-        assert len(reg.list_names()) == 47
+        assert len(reg.list_names()) == 60
 
     def test_arm_count(self):
         from agent.learning.bandit import DEFAULT_ARMS
 
-        assert len(DEFAULT_ARMS) == 35
+        assert len(DEFAULT_ARMS) == 48
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Phase 28: L2 capital-flow entity persistence
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _make_store_mock():
+    """Build a mock PipelineStore for L2 persistence testing."""
+    store = MagicMock()
+    store.register_entity = MagicMock(side_effect=lambda **kw: kw["entity_id"])
+    store.store_entity_observation = MagicMock(return_value=1)
+    return store
+
+
+class TestL2PersistenceGuards:
+    """Persistence guards: no store or no entity_id_from_key → no-op."""
+
+    def test_no_store_returns_zeros(self):
+        tool = CapitalFlowsTool(fred_api_key="test-key", cache=MagicMock())
+        tool._store = None
+        counts = tool._persist_entities({"holdings": []}, "holdings")
+        assert counts == {"capital_flow_obs": 0}
+
+    def test_no_entity_id_fn_returns_zeros(self):
+        import agent.tools.capital_flows as cf_mod
+
+        tool = CapitalFlowsTool(fred_api_key="test-key", cache=MagicMock())
+        tool._store = _make_store_mock()
+        original = cf_mod._entity_id_from_key
+        try:
+            cf_mod._entity_id_from_key = None
+            counts = tool._persist_entities({"holdings": []}, "holdings")
+            assert counts == {"capital_flow_obs": 0}
+        finally:
+            cf_mod._entity_id_from_key = original
+
+    def test_inner_exception_returns_zeros(self):
+        tool = CapitalFlowsTool(fred_api_key="test-key", cache=MagicMock())
+        store = _make_store_mock()
+        store.register_entity.side_effect = RuntimeError("DB down")
+        tool._store = store
+        data = {
+            "holdings": [
+                {
+                    "key": "japan",
+                    "country": "Japan",
+                    "latest_value_billions": 1100.0,
+                    "mom_change_pct": -2.0,
+                }
+            ]
+        }
+        counts = tool._persist_entities(data, "holdings")
+        assert counts == {"capital_flow_obs": 0}
+
+
+class TestL2PersistenceHoldings:
+    """holdings mode persists per-country capital_flow obs."""
+
+    def test_holdings_persists_mapped_countries(self):
+        tool = CapitalFlowsTool(fred_api_key="test-key", cache=MagicMock())
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "holdings": [
+                {
+                    "key": "japan",
+                    "country": "Japan",
+                    "latest_value_billions": 1100.0,
+                    "mom_change_pct": -2.0,
+                },
+                {
+                    "key": "china",
+                    "country": "China",
+                    "latest_value_billions": 800.0,
+                    "mom_change_pct": 1.5,
+                },
+            ],
+        }
+        counts = tool._persist_entities(data, "holdings")
+        assert counts["capital_flow_obs"] == 2
+
+    def test_holdings_skips_total(self):
+        tool = CapitalFlowsTool(fred_api_key="test-key", cache=MagicMock())
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "holdings": [
+                {
+                    "key": "total",
+                    "country": "Total",
+                    "latest_value_billions": 8000.0,
+                    "mom_change_pct": 0.5,
+                },
+            ],
+        }
+        counts = tool._persist_entities(data, "holdings")
+        assert counts["capital_flow_obs"] == 0
+
+    def test_holdings_obs_type_and_depth(self):
+        tool = CapitalFlowsTool(fred_api_key="test-key", cache=MagicMock())
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "holdings": [
+                {
+                    "key": "japan",
+                    "country": "Japan",
+                    "latest_value_billions": 1100.0,
+                    "mom_change_pct": -2.0,
+                }
+            ]
+        }
+        tool._persist_entities(data, "holdings")
+        obs = store.store_entity_observation.call_args_list[0]
+        assert obs.kwargs["observation_type"] == "capital_flow"
+        assert obs.kwargs["depth_level"] == 2
+        assert obs.kwargs["source_tool"] == "capital_flows"
+
+    def test_holdings_targets_correct_country(self):
+        from agent.pipeline.entity import entity_id_from_key
+
+        tool = CapitalFlowsTool(fred_api_key="test-key", cache=MagicMock())
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "holdings": [
+                {
+                    "key": "uk",
+                    "country": "UK",
+                    "latest_value_billions": 700.0,
+                    "mom_change_pct": 0.0,
+                }
+            ]
+        }
+        tool._persist_entities(data, "holdings")
+        gb_eid = entity_id_from_key("country", "GB")
+        obs = store.store_entity_observation.call_args_list[0]
+        assert obs.kwargs["entity_id"] == gb_eid
+
+    def test_holdings_value_fields(self):
+        tool = CapitalFlowsTool(fred_api_key="test-key", cache=MagicMock())
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "holdings": [
+                {
+                    "key": "japan",
+                    "country": "Japan",
+                    "latest_value_billions": 1100.0,
+                    "mom_change_pct": -2.0,
+                }
+            ]
+        }
+        tool._persist_entities(data, "holdings")
+        val = store.store_entity_observation.call_args_list[0].kwargs["value"]
+        assert val["flow_type"] == "holdings"
+        assert val["latest_value"] == 1100.0
+        assert val["mom_change_pct"] == -2.0
+
+
+class TestL2PersistenceFlows:
+    """flows mode persists all to country=US."""
+
+    def test_flows_persists_to_US(self):
+        from agent.pipeline.entity import entity_id_from_key
+
+        tool = CapitalFlowsTool(fred_api_key="test-key", cache=MagicMock())
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "flows": [
+                {"series": "net_tic", "latest_value": 50000, "flow_reversal": False},
+                {
+                    "series": "foreign_net_purchases",
+                    "latest_value": -20000,
+                    "flow_reversal": True,
+                },
+            ],
+        }
+        counts = tool._persist_entities(data, "flows")
+        assert counts["capital_flow_obs"] == 2
+
+        us_eid = entity_id_from_key("country", "US")
+        for call in store.store_entity_observation.call_args_list:
+            assert call.kwargs["entity_id"] == us_eid
+
+    def test_flows_value_has_reversal(self):
+        tool = CapitalFlowsTool(fred_api_key="test-key", cache=MagicMock())
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "flows": [
+                {"series": "net_tic", "latest_value": -5000, "flow_reversal": True}
+            ]
+        }
+        tool._persist_entities(data, "flows")
+        val = store.store_entity_observation.call_args_list[0].kwargs["value"]
+        assert val["flow_type"] == "flows"
+        assert val["stress"] is True
+
+
+class TestL2PersistenceReserves:
+    """reserves mode persists per-country with stress info."""
+
+    def test_reserves_persists_mapped_countries(self):
+        tool = CapitalFlowsTool(fred_api_key="test-key", cache=MagicMock())
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "reserves": [
+                {
+                    "key": "china_reserves",
+                    "series": "TRESEGCNM052N",
+                    "latest_value": 3200e9,
+                    "stress": {"stress": True, "drawdown_pct": -6.0},
+                },
+                {
+                    "key": "japan_reserves",
+                    "series": "TRESEGJPM052N",
+                    "latest_value": 1300e9,
+                    "stress": {"stress": False, "drawdown_pct": -1.0},
+                },
+            ],
+            "stress_alerts": ["china_reserves"],
+            "errors": [],
+        }
+        counts = tool._persist_entities(data, "reserves")
+        assert counts["capital_flow_obs"] == 2
+
+    def test_reserves_skips_aggregate(self):
+        tool = CapitalFlowsTool(fred_api_key="test-key", cache=MagicMock())
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "reserves": [
+                {
+                    "key": "total_reserves_ex_gold",
+                    "series": "X",
+                    "latest_value": 9e12,
+                    "stress": {},
+                }
+            ]
+        }
+        counts = tool._persist_entities(data, "reserves")
+        assert counts["capital_flow_obs"] == 0
+
+    def test_reserves_targets_correct_country(self):
+        from agent.pipeline.entity import entity_id_from_key
+
+        tool = CapitalFlowsTool(fred_api_key="test-key", cache=MagicMock())
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "reserves": [
+                {
+                    "key": "india_reserves",
+                    "series": "X",
+                    "latest_value": 600e9,
+                    "stress": {"stress": False, "drawdown_pct": -0.5},
+                }
+            ]
+        }
+        tool._persist_entities(data, "reserves")
+        in_eid = entity_id_from_key("country", "IN")
+        obs = store.store_entity_observation.call_args_list[0]
+        assert obs.kwargs["entity_id"] == in_eid
+
+    def test_reserves_stress_in_value(self):
+        tool = CapitalFlowsTool(fred_api_key="test-key", cache=MagicMock())
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "reserves": [
+                {
+                    "key": "saudi_reserves",
+                    "series": "X",
+                    "latest_value": 400e9,
+                    "stress": {"stress": True, "drawdown_pct": -8.0},
+                }
+            ]
+        }
+        tool._persist_entities(data, "reserves")
+        val = store.store_entity_observation.call_args_list[0].kwargs["value"]
+        assert val["flow_type"] == "reserves"
+        assert val["stress"] is True

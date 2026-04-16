@@ -32,13 +32,22 @@ Signal theory:
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from agent.data.cache import DataCache
 from agent.tools.base import Tool, ToolResult
+
+if TYPE_CHECKING:
+    from agent.pipeline.store import PipelineStore
+
+try:
+    from agent.pipeline.entity import entity_id_from_key as _entity_id_from_key
+except ImportError:  # pragma: no cover — optional dependency
+    _entity_id_from_key = None  # type: ignore[assignment]
 
 log = logging.getLogger(__name__)
 
@@ -236,6 +245,21 @@ def _reserve_stress(
 # ---------------------------------------------------------------------------
 
 
+# Deterministic key → ISO-2 country code mappings (Phase 28).
+# Aggregate / total series are excluded — they have no single country entity.
+HOLDINGS_COUNTRY_MAP: dict[str, str] = {
+    "japan": "JP",
+    "china": "CN",
+    "uk": "GB",
+}
+RESERVES_COUNTRY_MAP: dict[str, str] = {
+    "china_reserves": "CN",
+    "japan_reserves": "JP",
+    "saudi_reserves": "SA",
+    "india_reserves": "IN",
+}
+
+
 class CapitalFlowsTool(Tool):
     """Monitor cross-border capital flows and foreign holdings."""
 
@@ -275,9 +299,11 @@ class CapitalFlowsTool(Tool):
         *,
         fred_api_key: str = "",
         cache: DataCache | None = None,
+        pipeline_store: "PipelineStore | None" = None,
     ) -> None:
         self._api_key = fred_api_key
         self._cache = cache
+        self._store = pipeline_store
 
     def execute(self, **kwargs: Any) -> ToolResult:
         mode = (kwargs.get("mode") or "").strip().lower()
@@ -300,11 +326,18 @@ class CapitalFlowsTool(Tool):
         start = (now - timedelta(days=days)).strftime("%Y-%m-%d")
         end = now.strftime("%Y-%m-%d")
 
-        if mode == "holdings":
-            return self._holdings(start, end, **kwargs)
-        if mode == "flows":
-            return self._flows(start, end, **kwargs)
-        return self._reserves(start, end, **kwargs)
+        dispatch: dict[str, Any] = {
+            "holdings": lambda: self._holdings(start, end, **kwargs),
+            "flows": lambda: self._flows(start, end, **kwargs),
+            "reserves": lambda: self._reserves(start, end, **kwargs),
+        }
+        result = dispatch[mode]()
+
+        # L2: persist capital-flow observations on country entities (Phase 28)
+        if result.success and result.data:
+            self._persist_entities(result.data, mode)
+
+        return result
 
     # ── holdings mode ────────────────────────────────────────────
 
@@ -572,3 +605,129 @@ class CapitalFlowsTool(Tool):
                 "errors": errors,
             },
         )
+
+    # ── L2 entity persistence (Phase 28) ──────────────────────
+
+    def _persist_entities(
+        self,
+        data: dict[str, Any],
+        mode: str,
+    ) -> dict[str, int]:
+        """Persist capital-flow observations onto country entity nodes.
+
+        Observation type: ``capital_flow``.
+        Skips silently if no PipelineStore or entity module is available.
+        """
+        if self._store is None or _entity_id_from_key is None:
+            return {"capital_flow_obs": 0}
+        try:
+            return self._persist_entities_inner(data, mode)
+        except Exception:
+            log.exception("Capital flows entity persistence failed (non-fatal)")
+            return {"capital_flow_obs": 0}
+
+    def _persist_entities_inner(
+        self,
+        data: dict[str, Any],
+        mode: str,
+    ) -> dict[str, int]:
+        """Inner persistence logic separated for testability."""
+        assert self._store is not None  # noqa: S101 — guarded
+        assert _entity_id_from_key is not None  # noqa: S101
+
+        store = self._store
+        counts = {"capital_flow_obs": 0}
+        now_ts = time.time()
+
+        if mode == "holdings":
+            for row in data.get("holdings", []):
+                key = row.get("key", "")
+                cc = HOLDINGS_COUNTRY_MAP.get(key)
+                if not cc:
+                    continue  # skip 'total'
+                country_eid = _entity_id_from_key("country", cc)
+                store.register_entity(
+                    entity_type="country",
+                    canonical_name=cc,
+                    entity_id=country_eid,
+                )
+                store.store_entity_observation(
+                    entity_id=country_eid,
+                    source_tool="capital_flows",
+                    observed_at=now_ts,
+                    observation_type="capital_flow",
+                    value={
+                        "flow_type": "holdings",
+                        "series": row.get("country"),
+                        "latest_value": row.get("latest_value_billions"),
+                        "mom_change_pct": row.get("mom_change_pct"),
+                        "stress": None,
+                    },
+                    depth_level=2,
+                )
+                counts["capital_flow_obs"] += 1
+
+        elif mode == "flows":
+            # Aggregate US-level capital flows
+            for row in data.get("flows", []):
+                country_eid = _entity_id_from_key("country", "US")
+                store.register_entity(
+                    entity_type="country",
+                    canonical_name="US",
+                    entity_id=country_eid,
+                )
+                store.store_entity_observation(
+                    entity_id=country_eid,
+                    source_tool="capital_flows",
+                    observed_at=now_ts,
+                    observation_type="capital_flow",
+                    value={
+                        "flow_type": "flows",
+                        "series": row.get("series"),
+                        "latest_value": row.get("latest_value"),
+                        "mom_change_pct": None,
+                        "stress": row.get("flow_reversal"),
+                    },
+                    depth_level=2,
+                )
+                counts["capital_flow_obs"] += 1
+
+        elif mode == "reserves":
+            for row in data.get("reserves", []):
+                key = row.get("key", "")
+                cc = RESERVES_COUNTRY_MAP.get(key)
+                if not cc:
+                    continue  # skip aggregate
+                country_eid = _entity_id_from_key("country", cc)
+                store.register_entity(
+                    entity_type="country",
+                    canonical_name=cc,
+                    entity_id=country_eid,
+                )
+                stress_info = row.get("stress", {})
+                store.store_entity_observation(
+                    entity_id=country_eid,
+                    source_tool="capital_flows",
+                    observed_at=now_ts,
+                    observation_type="capital_flow",
+                    value={
+                        "flow_type": "reserves",
+                        "series": row.get("series"),
+                        "latest_value": row.get("latest_value"),
+                        "mom_change_pct": None,
+                        "stress": (
+                            stress_info.get("stress")
+                            if isinstance(stress_info, dict)
+                            else None
+                        ),
+                    },
+                    depth_level=2,
+                )
+                counts["capital_flow_obs"] += 1
+
+        if counts["capital_flow_obs"]:
+            log.info(
+                "Capital flows L2: %d capital_flow obs persisted",
+                counts["capital_flow_obs"],
+            )
+        return counts

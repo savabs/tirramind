@@ -970,7 +970,7 @@ class TestIntegration:
         registry = build_tool_registry()
         names = registry.list_names()
         assert "foia_requests" in names
-        assert len(names) == 47, f"Expected 41 tools, got {len(names)}: {sorted(names)}"
+        assert len(names) == 60, f"Expected 60 tools, got {len(names)}: {sorted(names)}"
 
     def test_bandit_arm_count(self):
         """Ensure investigation_signals is arm #25."""
@@ -978,7 +978,7 @@ class TestIntegration:
 
         arm_names = [a.name for a in DEFAULT_ARMS]
         assert "investigation_signals" in arm_names
-        assert len(DEFAULT_ARMS) == 35, f"Expected 29 arms, got {len(DEFAULT_ARMS)}"
+        assert len(DEFAULT_ARMS) == 48, f"Expected 48 arms, got {len(DEFAULT_ARMS)}"
 
     def test_arm_tools_reference_valid(self):
         """The arm's tools list should reference tools that exist in registry."""

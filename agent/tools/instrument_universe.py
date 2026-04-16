@@ -44,106 +44,461 @@ class InstrumentDef:
     asset_class: str  # commodity_future | fx | equity_index | equity_etf | sector_etf | fixed_income | vol | crypto
     region: str  # US | Europe | Asia | LatAm | Pacific | Global | EM
     is_tradeable: bool = True
+    # Cross-domain linking metadata (Phase 25).
+    # Only explicit, verifiable relationships — leave None when unknown.
+    issuer: str | None = None  # canonical company/organization name (for ETFs/stocks)
+    country: str | None = None  # ISO 3166-1 alpha-2 code for primary market/country
+    cftc_code: str | None = None  # CFTC contract market code for futures
+    # FX pair country metadata (Phase 27).
+    # Deterministic two-country structure so both sides are graph-visible.
+    base_country: str | None = None  # ISO code for base currency country
+    quote_country: str | None = None  # ISO code for quote currency country
 
 
 # ── Instrument universe ────────────────────────────────────────
 
 INSTRUMENTS: tuple[InstrumentDef, ...] = (
     # ── Commodity Futures (20) ─────────────────────────────
-    InstrumentDef("CL=F", "WTI Crude Oil", "commodity_future", "Global"),
-    InstrumentDef("BZ=F", "Brent Crude Oil", "commodity_future", "Global"),
-    InstrumentDef("NG=F", "Natural Gas", "commodity_future", "US"),
-    InstrumentDef("RB=F", "RBOB Gasoline", "commodity_future", "US"),
-    InstrumentDef("GC=F", "Gold", "commodity_future", "Global"),
-    InstrumentDef("SI=F", "Silver", "commodity_future", "Global"),
-    InstrumentDef("PL=F", "Platinum", "commodity_future", "Global"),
-    InstrumentDef("PA=F", "Palladium", "commodity_future", "Global"),
-    InstrumentDef("HG=F", "Copper", "commodity_future", "Global"),
-    InstrumentDef("ZW=F", "Wheat", "commodity_future", "US"),
-    InstrumentDef("ZC=F", "Corn", "commodity_future", "US"),
-    InstrumentDef("ZS=F", "Soybeans", "commodity_future", "US"),
-    InstrumentDef("KC=F", "Coffee", "commodity_future", "Global"),
-    InstrumentDef("CC=F", "Cocoa", "commodity_future", "Global"),
-    InstrumentDef("CT=F", "Cotton", "commodity_future", "US"),
-    InstrumentDef("SB=F", "Sugar", "commodity_future", "Global"),
-    InstrumentDef("ZO=F", "Oats", "commodity_future", "US"),
-    InstrumentDef("OJ=F", "Orange Juice", "commodity_future", "US"),
-    InstrumentDef("LE=F", "Live Cattle", "commodity_future", "US"),
-    InstrumentDef("HE=F", "Lean Hogs", "commodity_future", "US"),
+    # country=None for commodities: they trade globally, no single issuer country.
+    # cftc_code: verified against CFTC disaggregated report (2026-04-15).
+    InstrumentDef(
+        "CL=F", "WTI Crude Oil", "commodity_future", "Global", cftc_code="06765A"
+    ),
+    InstrumentDef(
+        "BZ=F", "Brent Crude Oil", "commodity_future", "Global", cftc_code="06765T"
+    ),
+    InstrumentDef("NG=F", "Natural Gas", "commodity_future", "US", cftc_code="023651"),
+    InstrumentDef(
+        "RB=F", "RBOB Gasoline", "commodity_future", "US", cftc_code="111659"
+    ),
+    InstrumentDef("GC=F", "Gold", "commodity_future", "Global", cftc_code="088691"),
+    InstrumentDef("SI=F", "Silver", "commodity_future", "Global", cftc_code="084691"),
+    InstrumentDef("PL=F", "Platinum", "commodity_future", "Global", cftc_code="076651"),
+    InstrumentDef(
+        "PA=F", "Palladium", "commodity_future", "Global", cftc_code="075651"
+    ),
+    InstrumentDef("HG=F", "Copper", "commodity_future", "Global", cftc_code="085692"),
+    InstrumentDef("ZW=F", "Wheat", "commodity_future", "US", cftc_code="001602"),
+    InstrumentDef("ZC=F", "Corn", "commodity_future", "US", cftc_code="002602"),
+    InstrumentDef("ZS=F", "Soybeans", "commodity_future", "US", cftc_code="005602"),
+    InstrumentDef("KC=F", "Coffee", "commodity_future", "Global", cftc_code="083731"),
+    InstrumentDef("CC=F", "Cocoa", "commodity_future", "Global", cftc_code="073732"),
+    InstrumentDef("CT=F", "Cotton", "commodity_future", "US", cftc_code="033661"),
+    InstrumentDef("SB=F", "Sugar", "commodity_future", "Global", cftc_code="080732"),
+    InstrumentDef("ZO=F", "Oats", "commodity_future", "US"),  # no CFTC disagg code
+    InstrumentDef("OJ=F", "Orange Juice", "commodity_future", "US", cftc_code="040701"),
+    InstrumentDef("LE=F", "Live Cattle", "commodity_future", "US", cftc_code="057642"),
+    InstrumentDef("HE=F", "Lean Hogs", "commodity_future", "US", cftc_code="054642"),
     # ── FX Pairs (15) ─────────────────────────────────────
-    InstrumentDef("EURUSD=X", "EUR/USD", "fx", "Global"),
-    InstrumentDef("USDJPY=X", "USD/JPY", "fx", "Global"),
-    InstrumentDef("GBPUSD=X", "GBP/USD", "fx", "Global"),
-    InstrumentDef("USDCHF=X", "USD/CHF", "fx", "Global"),
-    InstrumentDef("AUDUSD=X", "AUD/USD", "fx", "Global"),
-    InstrumentDef("USDCAD=X", "USD/CAD", "fx", "Global"),
-    InstrumentDef("NZDUSD=X", "NZD/USD", "fx", "Global"),
-    InstrumentDef("EURGBP=X", "EUR/GBP", "fx", "Global"),
-    InstrumentDef("EURJPY=X", "EUR/JPY", "fx", "Global"),
-    InstrumentDef("GBPJPY=X", "GBP/JPY", "fx", "Global"),
-    InstrumentDef("USDMXN=X", "USD/MXN", "fx", "EM"),
-    InstrumentDef("USDBRL=X", "USD/BRL", "fx", "EM"),
-    InstrumentDef("USDINR=X", "USD/INR", "fx", "EM"),
-    InstrumentDef("USDCNY=X", "USD/CNY", "fx", "EM"),
-    InstrumentDef("USDZAR=X", "USD/ZAR", "fx", "EM"),
+    # FX: base_country/quote_country capture both sides explicitly (Phase 27).
+    # country retained for backward compat (non-USD side for USD pairs, base for crosses).
+    # No CFTC code: disaggregated report covers physical commodities only.
+    InstrumentDef(
+        "EURUSD=X",
+        "EUR/USD",
+        "fx",
+        "Global",
+        country="EU",
+        base_country="EU",
+        quote_country="US",
+    ),
+    InstrumentDef(
+        "USDJPY=X",
+        "USD/JPY",
+        "fx",
+        "Global",
+        country="JP",
+        base_country="US",
+        quote_country="JP",
+    ),
+    InstrumentDef(
+        "GBPUSD=X",
+        "GBP/USD",
+        "fx",
+        "Global",
+        country="GB",
+        base_country="GB",
+        quote_country="US",
+    ),
+    InstrumentDef(
+        "USDCHF=X",
+        "USD/CHF",
+        "fx",
+        "Global",
+        country="CH",
+        base_country="US",
+        quote_country="CH",
+    ),
+    InstrumentDef(
+        "AUDUSD=X",
+        "AUD/USD",
+        "fx",
+        "Global",
+        country="AU",
+        base_country="AU",
+        quote_country="US",
+    ),
+    InstrumentDef(
+        "USDCAD=X",
+        "USD/CAD",
+        "fx",
+        "Global",
+        country="CA",
+        base_country="US",
+        quote_country="CA",
+    ),
+    InstrumentDef(
+        "NZDUSD=X",
+        "NZD/USD",
+        "fx",
+        "Global",
+        country="NZ",
+        base_country="NZ",
+        quote_country="US",
+    ),
+    InstrumentDef(
+        "EURGBP=X",
+        "EUR/GBP",
+        "fx",
+        "Global",
+        country="EU",
+        base_country="EU",
+        quote_country="GB",
+    ),
+    InstrumentDef(
+        "EURJPY=X",
+        "EUR/JPY",
+        "fx",
+        "Global",
+        country="EU",
+        base_country="EU",
+        quote_country="JP",
+    ),
+    InstrumentDef(
+        "GBPJPY=X",
+        "GBP/JPY",
+        "fx",
+        "Global",
+        country="GB",
+        base_country="GB",
+        quote_country="JP",
+    ),
+    InstrumentDef(
+        "USDMXN=X",
+        "USD/MXN",
+        "fx",
+        "EM",
+        country="MX",
+        base_country="US",
+        quote_country="MX",
+    ),
+    InstrumentDef(
+        "USDBRL=X",
+        "USD/BRL",
+        "fx",
+        "EM",
+        country="BR",
+        base_country="US",
+        quote_country="BR",
+    ),
+    InstrumentDef(
+        "USDINR=X",
+        "USD/INR",
+        "fx",
+        "EM",
+        country="IN",
+        base_country="US",
+        quote_country="IN",
+    ),
+    InstrumentDef(
+        "USDCNY=X",
+        "USD/CNY",
+        "fx",
+        "EM",
+        country="CN",
+        base_country="US",
+        quote_country="CN",
+    ),
+    InstrumentDef(
+        "USDZAR=X",
+        "USD/ZAR",
+        "fx",
+        "EM",
+        country="ZA",
+        base_country="US",
+        quote_country="ZA",
+    ),
     # ── Equity Index Futures (4) ───────────────────────────
-    InstrumentDef("ES=F", "S&P 500 Futures", "equity_index", "US"),
-    InstrumentDef("NQ=F", "Nasdaq 100 Futures", "equity_index", "US"),
-    InstrumentDef("YM=F", "Dow Futures", "equity_index", "US"),
-    InstrumentDef("RTY=F", "Russell 2000 Futures", "equity_index", "US"),
+    # No CFTC code: handled by TFF report, not disaggregated.
+    InstrumentDef("ES=F", "S&P 500 Futures", "equity_index", "US", country="US"),
+    InstrumentDef("NQ=F", "Nasdaq 100 Futures", "equity_index", "US", country="US"),
+    InstrumentDef("YM=F", "Dow Futures", "equity_index", "US", country="US"),
+    InstrumentDef("RTY=F", "Russell 2000 Futures", "equity_index", "US", country="US"),
     # ── Equity ETFs (21) ──────────────────────────────────
-    InstrumentDef("SPY", "S&P 500 ETF", "equity_etf", "US"),
-    InstrumentDef("QQQ", "Nasdaq 100 ETF", "equity_etf", "US"),
-    InstrumentDef("IWM", "Russell 2000 ETF", "equity_etf", "US"),
-    InstrumentDef("DIA", "Dow Jones ETF", "equity_etf", "US"),
-    InstrumentDef("EWZ", "Brazil ETF", "equity_etf", "LatAm"),
-    InstrumentDef("EWG", "Germany ETF", "equity_etf", "Europe"),
-    InstrumentDef("FXI", "China ETF", "equity_etf", "Asia"),
-    InstrumentDef("EWJ", "Japan ETF", "equity_etf", "Asia"),
-    InstrumentDef("EWY", "South Korea ETF", "equity_etf", "Asia"),
-    InstrumentDef("EWA", "Australia ETF", "equity_etf", "Pacific"),
-    InstrumentDef("EWC", "Canada ETF", "equity_etf", "US"),
-    InstrumentDef("EWU", "United Kingdom ETF", "equity_etf", "Europe"),
-    InstrumentDef("EWQ", "France ETF", "equity_etf", "Europe"),
-    InstrumentDef("EWP", "Spain ETF", "equity_etf", "Europe"),
-    InstrumentDef("EWI", "Italy ETF", "equity_etf", "Europe"),
-    InstrumentDef("INDA", "India ETF", "equity_etf", "Asia"),
-    InstrumentDef("EWT", "Taiwan ETF", "equity_etf", "Asia"),
-    InstrumentDef("EWH", "Hong Kong ETF", "equity_etf", "Asia"),
-    InstrumentDef("THD", "Thailand ETF", "equity_etf", "Asia"),
-    InstrumentDef("EWW", "Mexico ETF", "equity_etf", "LatAm"),
-    InstrumentDef("VGK", "FTSE Europe ETF", "equity_etf", "Europe"),
+    # issuer = ETF sponsor. country = primary country the ETF tracks.
+    InstrumentDef(
+        "SPY",
+        "S&P 500 ETF",
+        "equity_etf",
+        "US",
+        issuer="State Street Global Advisors",
+        country="US",
+    ),
+    InstrumentDef(
+        "QQQ", "Nasdaq 100 ETF", "equity_etf", "US", issuer="Invesco", country="US"
+    ),
+    InstrumentDef(
+        "IWM", "Russell 2000 ETF", "equity_etf", "US", issuer="BlackRock", country="US"
+    ),
+    InstrumentDef(
+        "DIA",
+        "Dow Jones ETF",
+        "equity_etf",
+        "US",
+        issuer="State Street Global Advisors",
+        country="US",
+    ),
+    InstrumentDef(
+        "EWZ", "Brazil ETF", "equity_etf", "LatAm", issuer="BlackRock", country="BR"
+    ),
+    InstrumentDef(
+        "EWG", "Germany ETF", "equity_etf", "Europe", issuer="BlackRock", country="DE"
+    ),
+    InstrumentDef(
+        "FXI", "China ETF", "equity_etf", "Asia", issuer="BlackRock", country="CN"
+    ),
+    InstrumentDef(
+        "EWJ", "Japan ETF", "equity_etf", "Asia", issuer="BlackRock", country="JP"
+    ),
+    InstrumentDef(
+        "EWY", "South Korea ETF", "equity_etf", "Asia", issuer="BlackRock", country="KR"
+    ),
+    InstrumentDef(
+        "EWA",
+        "Australia ETF",
+        "equity_etf",
+        "Pacific",
+        issuer="BlackRock",
+        country="AU",
+    ),
+    InstrumentDef(
+        "EWC", "Canada ETF", "equity_etf", "US", issuer="BlackRock", country="CA"
+    ),
+    InstrumentDef(
+        "EWU",
+        "United Kingdom ETF",
+        "equity_etf",
+        "Europe",
+        issuer="BlackRock",
+        country="GB",
+    ),
+    InstrumentDef(
+        "EWQ", "France ETF", "equity_etf", "Europe", issuer="BlackRock", country="FR"
+    ),
+    InstrumentDef(
+        "EWP", "Spain ETF", "equity_etf", "Europe", issuer="BlackRock", country="ES"
+    ),
+    InstrumentDef(
+        "EWI", "Italy ETF", "equity_etf", "Europe", issuer="BlackRock", country="IT"
+    ),
+    InstrumentDef(
+        "INDA", "India ETF", "equity_etf", "Asia", issuer="BlackRock", country="IN"
+    ),
+    InstrumentDef(
+        "EWT", "Taiwan ETF", "equity_etf", "Asia", issuer="BlackRock", country="TW"
+    ),
+    InstrumentDef(
+        "EWH", "Hong Kong ETF", "equity_etf", "Asia", issuer="BlackRock", country="HK"
+    ),
+    InstrumentDef(
+        "THD", "Thailand ETF", "equity_etf", "Asia", issuer="BlackRock", country="TH"
+    ),
+    InstrumentDef(
+        "EWW", "Mexico ETF", "equity_etf", "LatAm", issuer="BlackRock", country="MX"
+    ),
+    InstrumentDef(
+        "VGK",
+        "FTSE Europe ETF",
+        "equity_etf",
+        "Europe",
+        issuer="Vanguard",
+        country="EU",
+    ),
     # ── Sector ETFs (15) ──────────────────────────────────
-    InstrumentDef("XLE", "Energy Select", "sector_etf", "US"),
-    InstrumentDef("XLF", "Financials Select", "sector_etf", "US"),
-    InstrumentDef("XLK", "Technology Select", "sector_etf", "US"),
-    InstrumentDef("XLV", "Healthcare Select", "sector_etf", "US"),
-    InstrumentDef("XLI", "Industrials Select", "sector_etf", "US"),
-    InstrumentDef("XLP", "Consumer Staples Select", "sector_etf", "US"),
-    InstrumentDef("XLY", "Consumer Discretionary Select", "sector_etf", "US"),
-    InstrumentDef("XLB", "Materials Select", "sector_etf", "US"),
-    InstrumentDef("XLU", "Utilities Select", "sector_etf", "US"),
-    InstrumentDef("XLRE", "Real Estate Select", "sector_etf", "US"),
-    InstrumentDef("XLC", "Communication Services Select", "sector_etf", "US"),
-    InstrumentDef("GDX", "Gold Miners ETF", "sector_etf", "Global"),
-    InstrumentDef("SLV", "Silver ETF", "sector_etf", "Global"),
-    InstrumentDef("USO", "US Oil Fund", "sector_etf", "US"),
-    InstrumentDef("UNG", "US Natural Gas Fund", "sector_etf", "US"),
+    # Sector ETFs: issuer = sponsor, country = US (all US sector ETFs).
+    InstrumentDef(
+        "XLE",
+        "Energy Select",
+        "sector_etf",
+        "US",
+        issuer="State Street Global Advisors",
+        country="US",
+    ),
+    InstrumentDef(
+        "XLF",
+        "Financials Select",
+        "sector_etf",
+        "US",
+        issuer="State Street Global Advisors",
+        country="US",
+    ),
+    InstrumentDef(
+        "XLK",
+        "Technology Select",
+        "sector_etf",
+        "US",
+        issuer="State Street Global Advisors",
+        country="US",
+    ),
+    InstrumentDef(
+        "XLV",
+        "Healthcare Select",
+        "sector_etf",
+        "US",
+        issuer="State Street Global Advisors",
+        country="US",
+    ),
+    InstrumentDef(
+        "XLI",
+        "Industrials Select",
+        "sector_etf",
+        "US",
+        issuer="State Street Global Advisors",
+        country="US",
+    ),
+    InstrumentDef(
+        "XLP",
+        "Consumer Staples Select",
+        "sector_etf",
+        "US",
+        issuer="State Street Global Advisors",
+        country="US",
+    ),
+    InstrumentDef(
+        "XLY",
+        "Consumer Discretionary Select",
+        "sector_etf",
+        "US",
+        issuer="State Street Global Advisors",
+        country="US",
+    ),
+    InstrumentDef(
+        "XLB",
+        "Materials Select",
+        "sector_etf",
+        "US",
+        issuer="State Street Global Advisors",
+        country="US",
+    ),
+    InstrumentDef(
+        "XLU",
+        "Utilities Select",
+        "sector_etf",
+        "US",
+        issuer="State Street Global Advisors",
+        country="US",
+    ),
+    InstrumentDef(
+        "XLRE",
+        "Real Estate Select",
+        "sector_etf",
+        "US",
+        issuer="State Street Global Advisors",
+        country="US",
+    ),
+    InstrumentDef(
+        "XLC",
+        "Communication Services Select",
+        "sector_etf",
+        "US",
+        issuer="State Street Global Advisors",
+        country="US",
+    ),
+    InstrumentDef(
+        "GDX", "Gold Miners ETF", "sector_etf", "Global", issuer="VanEck", country="US"
+    ),
+    InstrumentDef(
+        "SLV", "Silver ETF", "sector_etf", "Global", issuer="BlackRock", country="US"
+    ),
+    InstrumentDef(
+        "USO", "US Oil Fund", "sector_etf", "US", issuer="USCF", country="US"
+    ),
+    InstrumentDef(
+        "UNG", "US Natural Gas Fund", "sector_etf", "US", issuer="USCF", country="US"
+    ),
     # ── Fixed Income (10) ─────────────────────────────────
-    InstrumentDef("ZN=F", "10-Year T-Note Futures", "fixed_income", "US"),
-    InstrumentDef("ZB=F", "30-Year T-Bond Futures", "fixed_income", "US"),
-    InstrumentDef("ZF=F", "5-Year T-Note Futures", "fixed_income", "US"),
-    InstrumentDef("TLT", "20+ Year Treasury ETF", "fixed_income", "US"),
-    InstrumentDef("IEF", "7-10 Year Treasury ETF", "fixed_income", "US"),
-    InstrumentDef("SHY", "1-3 Year Treasury ETF", "fixed_income", "US"),
-    InstrumentDef("HYG", "High Yield Corporate ETF", "fixed_income", "US"),
-    InstrumentDef("LQD", "Investment Grade Corporate ETF", "fixed_income", "US"),
-    InstrumentDef("EMB", "EM Bond ETF", "fixed_income", "EM"),
-    InstrumentDef("AGG", "US Aggregate Bond ETF", "fixed_income", "US"),
+    InstrumentDef("ZN=F", "10-Year T-Note Futures", "fixed_income", "US", country="US"),
+    InstrumentDef("ZB=F", "30-Year T-Bond Futures", "fixed_income", "US", country="US"),
+    InstrumentDef("ZF=F", "5-Year T-Note Futures", "fixed_income", "US", country="US"),
+    InstrumentDef(
+        "TLT",
+        "20+ Year Treasury ETF",
+        "fixed_income",
+        "US",
+        issuer="BlackRock",
+        country="US",
+    ),
+    InstrumentDef(
+        "IEF",
+        "7-10 Year Treasury ETF",
+        "fixed_income",
+        "US",
+        issuer="BlackRock",
+        country="US",
+    ),
+    InstrumentDef(
+        "SHY",
+        "1-3 Year Treasury ETF",
+        "fixed_income",
+        "US",
+        issuer="BlackRock",
+        country="US",
+    ),
+    InstrumentDef(
+        "HYG",
+        "High Yield Corporate ETF",
+        "fixed_income",
+        "US",
+        issuer="BlackRock",
+        country="US",
+    ),
+    InstrumentDef(
+        "LQD",
+        "Investment Grade Corporate ETF",
+        "fixed_income",
+        "US",
+        issuer="BlackRock",
+        country="US",
+    ),
+    InstrumentDef(
+        "EMB", "EM Bond ETF", "fixed_income", "EM", issuer="BlackRock"
+    ),  # no single country
+    InstrumentDef(
+        "AGG",
+        "US Aggregate Bond ETF",
+        "fixed_income",
+        "US",
+        issuer="BlackRock",
+        country="US",
+    ),
     # ── Volatility (3) ────────────────────────────────────
-    InstrumentDef("^VIX", "VIX Index", "vol", "US", is_tradeable=False),
-    InstrumentDef("VIXY", "VIX Short-Term Futures ETF", "vol", "US"),
-    InstrumentDef("UVXY", "Ultra VIX Short-Term Futures ETF", "vol", "US"),
+    InstrumentDef("^VIX", "VIX Index", "vol", "US", is_tradeable=False, country="US"),
+    InstrumentDef(
+        "VIXY",
+        "VIX Short-Term Futures ETF",
+        "vol",
+        "US",
+        issuer="ProShares",
+        country="US",
+    ),
+    InstrumentDef(
+        "UVXY",
+        "Ultra VIX Short-Term Futures ETF",
+        "vol",
+        "US",
+        issuer="ProShares",
+        country="US",
+    ),
     # ── Crypto (2) ────────────────────────────────────────
     InstrumentDef("BTC-USD", "Bitcoin", "crypto", "Global"),
     InstrumentDef("ETH-USD", "Ethereum", "crypto", "Global"),
@@ -166,6 +521,151 @@ def instruments_by_class(asset_class: str) -> list[InstrumentDef]:
 def ticker_to_instrument() -> dict[str, InstrumentDef]:
     """Return {ticker: InstrumentDef} lookup for all instruments."""
     return {i.ticker: i for i in INSTRUMENTS}
+
+
+def cftc_code_to_ticker() -> dict[str, str]:
+    """Return {CFTC_Contract_Market_Code: ticker} for instruments with cftc_code."""
+    return {i.cftc_code: i.ticker for i in INSTRUMENTS if i.cftc_code}
+
+
+# ── Cross-domain link persistence (Phase 25) ──────────────────
+
+
+def _persist_instrument_links(store: PipelineStore) -> dict[str, int]:
+    """Create cross-domain entity links from deterministic instrument metadata.
+
+    Links created:
+    - ``tracks_issuer``: instrument → company (ETF/stock → issuer org)
+    - ``located_in``: instrument → country (primary country/market)
+    - ``located_in``: company → country (issuer HQ → country, deduped)
+    - ``fx_base_country``: instrument → country (FX base currency side, Phase 27)
+    - ``fx_quote_country``: instrument → country (FX quote currency side, Phase 27)
+
+    Only explicit metadata is used.  Instruments without issuer/country are skipped.
+
+    Returns:
+        Counts of links created per link type.
+    """
+    from agent.pipeline.entity import entity_id_from_key, normalize_company_name
+
+    counts = {
+        "tracks_issuer": 0,
+        "inst_country": 0,
+        "issuer_country": 0,
+        "fx_base_country": 0,
+        "fx_quote_country": 0,
+    }
+    seen_issuers: dict[str, str] = {}  # canonical_name → entity_id (dedup)
+
+    for inst in INSTRUMENTS:
+        inst_eid = _entity_id(inst.ticker)
+
+        # ── instrument → company (tracks_issuer) ──
+        if inst.issuer:
+            try:
+                canon = normalize_company_name(inst.issuer)
+            except ValueError:
+                log.warning(
+                    "Cannot normalize issuer %r for %s", inst.issuer, inst.ticker
+                )
+                continue
+
+            if canon not in seen_issuers:
+                issuer_eid = entity_id_from_key("company", canon)
+                store.register_entity(
+                    entity_type="company",
+                    canonical_name=canon,
+                    entity_id=issuer_eid,
+                    metadata={"source": "instrument_universe", "raw_name": inst.issuer},
+                )
+                seen_issuers[canon] = issuer_eid
+            else:
+                issuer_eid = seen_issuers[canon]
+
+            link_id = store.link_entities(
+                entity_id_a=inst_eid,
+                entity_id_b=issuer_eid,
+                link_type="tracks_issuer",
+                source="instrument_universe",
+                confidence=1.0,
+                metadata={"ticker": inst.ticker},
+            )
+            if link_id:
+                counts["tracks_issuer"] += 1
+
+            # ── company → country (located_in, for issuer) ──
+            if inst.country:
+                country_eid = entity_id_from_key("country", inst.country)
+                store.register_entity(
+                    entity_type="country",
+                    canonical_name=inst.country,
+                    entity_id=country_eid,
+                )
+                link_id = store.link_entities(
+                    entity_id_a=issuer_eid,
+                    entity_id_b=country_eid,
+                    link_type="located_in",
+                    source="instrument_universe",
+                    confidence=1.0,
+                )
+                if link_id:
+                    counts["issuer_country"] += 1
+
+        # ── instrument → country (located_in) ──
+        if inst.country:
+            country_eid = entity_id_from_key("country", inst.country)
+            store.register_entity(
+                entity_type="country",
+                canonical_name=inst.country,
+                entity_id=country_eid,
+            )
+            link_id = store.link_entities(
+                entity_id_a=inst_eid,
+                entity_id_b=country_eid,
+                link_type="located_in",
+                source="instrument_universe",
+                confidence=1.0,
+                metadata={"ticker": inst.ticker},
+            )
+            if link_id:
+                counts["inst_country"] += 1
+
+        # ── FX pair two-country links (Phase 27) ──
+        # Creates explicit fx_base_country / fx_quote_country edges so the
+        # GNN sees both sides of every FX pair through distinct link types.
+        for side, field in (
+            ("fx_base_country", inst.base_country),
+            ("fx_quote_country", inst.quote_country),
+        ):
+            if field is None:
+                continue
+            side_eid = entity_id_from_key("country", field)
+            store.register_entity(
+                entity_type="country",
+                canonical_name=field,
+                entity_id=side_eid,
+            )
+            link_id = store.link_entities(
+                entity_id_a=inst_eid,
+                entity_id_b=side_eid,
+                link_type=side,
+                source="instrument_universe",
+                confidence=1.0,
+                metadata={"ticker": inst.ticker},
+            )
+            if link_id:
+                counts[side] += 1
+
+    log.info(
+        "Instrument links: %d tracks_issuer, %d inst→country, %d issuer→country, "
+        "%d fx_base_country, %d fx_quote_country",
+        counts["tracks_issuer"],
+        counts["inst_country"],
+        counts["issuer_country"],
+        counts["fx_base_country"],
+        counts["fx_quote_country"],
+    )
+    return counts
 
 
 # ── Daily price ingest ─────────────────────────────────────────
@@ -357,10 +857,18 @@ def ingest_daily_prices(
             f"(>50%). Likely API issue. Failed: {failed[:10]}..."
         )
 
+    # ── Cross-domain entity links (Phase 25) ───────────────
+    try:
+        link_counts = _persist_instrument_links(store)
+    except Exception:
+        log.warning("Instrument link persistence failed (non-fatal)", exc_info=True)
+        link_counts = {}
+
     summary = {
         "instruments_fetched": fetched,
         "instruments_failed": failed,
         "observations_stored": obs_stored,
+        "links_created": link_counts,
         "as_of": as_of.isoformat(),
     }
     log.info(

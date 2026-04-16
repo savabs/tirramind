@@ -1143,7 +1143,7 @@ class TestRegistration:
 
         config = AgentConfig()
         registry = build_tool_registry(config)
-        assert len(registry.list_names()) == 47
+        assert len(registry.list_names()) == 60
 
 
 # ── 14. Bandit Arm ─────────────────────────────────────────────────

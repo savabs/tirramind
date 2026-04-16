@@ -811,12 +811,12 @@ class TestIntegration:
 
         registry = build_tool_registry()
         names = registry.list_names()
-        assert len(names) == 47, f"Expected 47 tools, got {len(names)}: {names}"
+        assert len(names) == 60, f"Expected 60 tools, got {len(names)}: {names}"
 
     def test_arm_count(self):
         from agent.learning.bandit import DEFAULT_ARMS
 
-        assert len(DEFAULT_ARMS) == 35, f"Expected 35 arms, got {len(DEFAULT_ARMS)}"
+        assert len(DEFAULT_ARMS) == 48, f"Expected 48 arms, got {len(DEFAULT_ARMS)}"
 
     def test_satellite_registered(self):
         from agent.cli import build_tool_registry

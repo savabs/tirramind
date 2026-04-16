@@ -510,5 +510,205 @@ class TestGlobalPmiTool(unittest.TestCase):
         self.assertTrue(result.success)
 
 
+# ──────────────────────────────────────────────────────────────────
+# Phase 28: L2 economic-activity entity persistence
+# ──────────────────────────────────────────────────────────────────
+
+
+def _make_store_mock():
+    """Build a mock PipelineStore for L2 persistence testing."""
+    store = MagicMock()
+    store.register_entity = MagicMock(side_effect=lambda **kw: kw["entity_id"])
+    store.store_entity_observation = MagicMock(return_value=1)
+    return store
+
+
+class TestL2PersistenceGuards(unittest.TestCase):
+    """Persistence guards: no store or no entity_id_from_key → no-op."""
+
+    def test_no_store_returns_zeros(self):
+        from agent.tools.global_pmi import GlobalPmiTool
+
+        tool = GlobalPmiTool()
+        tool._store = None
+        counts = tool._persist_entities({"by_country": {}, "signals": {}}, "cli")
+        self.assertEqual(counts, {"economic_activity_obs": 0})
+
+    def test_no_entity_id_fn_returns_zeros(self):
+        from agent.tools.global_pmi import GlobalPmiTool
+        import agent.tools.global_pmi as gp_mod
+
+        tool = GlobalPmiTool()
+        tool._store = _make_store_mock()
+        original = gp_mod._entity_id_from_key
+        try:
+            gp_mod._entity_id_from_key = None
+            counts = tool._persist_entities({"by_country": {}, "signals": {}}, "cli")
+            self.assertEqual(counts, {"economic_activity_obs": 0})
+        finally:
+            gp_mod._entity_id_from_key = original
+
+    def test_inner_exception_returns_zeros(self):
+        from agent.tools.global_pmi import GlobalPmiTool
+
+        tool = GlobalPmiTool()
+        store = _make_store_mock()
+        store.register_entity.side_effect = RuntimeError("DB down")
+        tool._store = store
+        data = {
+            "by_country": {"USA": [{"value": 101.0, "period": "2026-01"}]},
+            "signals": {},
+        }
+        counts = tool._persist_entities(data, "cli")
+        self.assertEqual(counts, {"economic_activity_obs": 0})
+
+
+class TestL2PersistencePerCountry(unittest.TestCase):
+    """economic_activity obs persisted per-country with ISO3→ISO2 mapping."""
+
+    def test_multiple_countries_persisted(self):
+        from agent.tools.global_pmi import GlobalPmiTool
+
+        tool = GlobalPmiTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "by_country": {
+                "USA": [{"value": 101.0, "period": "2026-01"}],
+                "DEU": [{"value": 99.0, "period": "2026-01"}],
+                "JPN": [{"value": 100.5, "period": "2026-01"}],
+            },
+            "signals": {
+                "USA": {"regime": "expanding", "momentum_6m": 1.4},
+                "DEU": {"regime": "contracting"},
+                "JPN": {"regime": "troughing", "momentum_6m": 0.5},
+            },
+        }
+        counts = tool._persist_entities(data, "cli")
+        self.assertEqual(counts["economic_activity_obs"], 3)
+
+    def test_obs_type_and_depth(self):
+        from agent.tools.global_pmi import GlobalPmiTool
+
+        tool = GlobalPmiTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "by_country": {"USA": [{"value": 101.0, "period": "2026-01"}]},
+            "signals": {"USA": {"regime": "expanding"}},
+        }
+        tool._persist_entities(data, "cli")
+        obs = store.store_entity_observation.call_args_list[0]
+        self.assertEqual(obs.kwargs["observation_type"], "economic_activity")
+        self.assertEqual(obs.kwargs["depth_level"], 2)
+        self.assertEqual(obs.kwargs["source_tool"], "global_pmi")
+
+    def test_targets_correct_country_entity(self):
+        from agent.tools.global_pmi import GlobalPmiTool
+        from agent.pipeline.entity import entity_id_from_key
+
+        tool = GlobalPmiTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "by_country": {"DEU": [{"value": 99.0, "period": "2026-01"}]},
+            "signals": {},
+        }
+        tool._persist_entities(data, "cli")
+        de_eid = entity_id_from_key("country", "DE")
+        obs = store.store_entity_observation.call_args_list[0]
+        self.assertEqual(obs.kwargs["entity_id"], de_eid)
+
+    def test_value_fields_complete(self):
+        from agent.tools.global_pmi import GlobalPmiTool
+
+        tool = GlobalPmiTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "by_country": {"USA": [{"value": 101.0, "period": "2026-01"}]},
+            "signals": {"USA": {"regime": "expanding", "momentum_6m": 1.41}},
+        }
+        tool._persist_entities(data, "cli")
+        val = store.store_entity_observation.call_args_list[0].kwargs["value"]
+        self.assertEqual(val["indicator"], "cli")
+        self.assertEqual(val["value"], 101.0)
+        self.assertEqual(val["period"], "2026-01")
+        self.assertEqual(val["regime"], "expanding")
+        self.assertAlmostEqual(val["momentum_6m"], 1.41)
+
+
+class TestL2PersistenceAggregatesSkipped(unittest.TestCase):
+    """Aggregates like OECD, G-7, EA19, G-20 have no ISO2 → skipped."""
+
+    def test_oecd_aggregate_skipped(self):
+        from agent.tools.global_pmi import GlobalPmiTool
+
+        tool = GlobalPmiTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "by_country": {
+                "OECD": [{"value": 100.2, "period": "2026-01"}],
+                "G-7": [{"value": 100.1, "period": "2026-01"}],
+            },
+            "signals": {},
+        }
+        counts = tool._persist_entities(data, "cli")
+        self.assertEqual(counts["economic_activity_obs"], 0)
+        store.store_entity_observation.assert_not_called()
+
+    def test_mix_aggregate_and_country(self):
+        from agent.tools.global_pmi import GlobalPmiTool
+
+        tool = GlobalPmiTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "by_country": {
+                "OECD": [{"value": 100.2, "period": "2026-01"}],
+                "USA": [{"value": 101.0, "period": "2026-01"}],
+                "EA19": [{"value": 99.8, "period": "2026-01"}],
+            },
+            "signals": {},
+        }
+        counts = tool._persist_entities(data, "cli")
+        self.assertEqual(counts["economic_activity_obs"], 1)  # only USA
+
+
+class TestL2PersistenceISO3Map(unittest.TestCase):
+    """ISO3_TO_ISO2 mapping sanity."""
+
+    def test_iso3_map_all_uppercase(self):
+        from agent.tools.global_pmi import ISO3_TO_ISO2
+
+        for k, v in ISO3_TO_ISO2.items():
+            self.assertEqual(k, k.upper(), f"Key {k} not uppercase")
+            self.assertEqual(v, v.upper(), f"Value {v} not uppercase")
+            self.assertEqual(len(v), 2, f"Value {v} not 2-char ISO-2")
+
+    def test_iso3_map_has_major_countries(self):
+        from agent.tools.global_pmi import ISO3_TO_ISO2
+
+        for iso3 in ("USA", "GBR", "DEU", "FRA", "JPN", "CHN", "KOR", "AUS", "CAN"):
+            self.assertIn(iso3, ISO3_TO_ISO2)
+
+    def test_bci_mode_persists_same_way(self):
+        """BCI mode uses same persistence path as CLI."""
+        from agent.tools.global_pmi import GlobalPmiTool
+
+        tool = GlobalPmiTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {
+            "by_country": {"FRA": [{"value": 100.5, "period": "2026-01"}]},
+            "signals": {"FRA": {"regime": "expanding"}},
+        }
+        counts = tool._persist_entities(data, "bci")
+        self.assertEqual(counts["economic_activity_obs"], 1)
+        val = store.store_entity_observation.call_args_list[0].kwargs["value"]
+        self.assertEqual(val["indicator"], "bci")
+
+
 if __name__ == "__main__":
     unittest.main()

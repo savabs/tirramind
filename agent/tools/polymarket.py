@@ -25,6 +25,13 @@ from agent.data.dns_bypass import ensure_polymarket_dns
 from agent.data.cache import DataCache
 from agent.tools.base import Tool, ToolResult
 
+try:
+    from agent.pipeline.store import PipelineStore
+    from agent.pipeline.entity import entity_id_from_key
+except ImportError:  # pragma: no cover
+    PipelineStore = None  # type: ignore[assignment,misc]
+    entity_id_from_key = None  # type: ignore[assignment]
+
 ensure_polymarket_dns()
 
 log = logging.getLogger(__name__)
@@ -105,8 +112,14 @@ class PolymarketTool(Tool):
         "required": [],
     }
 
-    def __init__(self, cache: DataCache | None = None) -> None:
+    def __init__(
+        self,
+        cache: DataCache | None = None,
+        *,
+        pipeline_store: PipelineStore | None = None,
+    ) -> None:
         self._cache = cache
+        self._store = pipeline_store
 
     # ------------------------------------------------------------------
     # Core execution
@@ -140,6 +153,12 @@ class PolymarketTool(Tool):
             )
 
         markets = self._parse_markets(raw_events)
+
+        # L2: persist topic entities + observations when PipelineStore available
+        try:
+            self._persist_entities(markets)
+        except Exception:
+            log.exception("Polymarket entity persistence failed (non-fatal)")
 
         # Filter by search term
         if search:
@@ -284,6 +303,89 @@ class PolymarketTool(Tool):
                 )
 
         return markets
+
+    # ------------------------------------------------------------------
+    # Entity persistence (L2)
+    # ------------------------------------------------------------------
+
+    def _persist_entities(self, markets: list[dict[str, Any]]) -> dict[str, int]:
+        """Persist Polymarket markets as L2 topic entities with observations.
+
+        Each market with a valid slug becomes a topic entity. A
+        ``market_probability`` observation stores the current YES price,
+        volume, liquidity, and price changes.
+
+        Skips silently if no PipelineStore is configured.
+        Returns counts: {topics, observations}.
+        """
+        if self._store is None or entity_id_from_key is None:
+            return {"topics": 0, "observations": 0}
+        if not markets:
+            return {"topics": 0, "observations": 0}
+
+        try:
+            return self._persist_entities_inner(markets)
+        except Exception:
+            log.exception("Polymarket entity persistence failed (non-fatal)")
+            return {"topics": 0, "observations": 0}
+
+    def _persist_entities_inner(self, markets: list[dict[str, Any]]) -> dict[str, int]:
+        """Inner persistence logic separated for testability."""
+        assert self._store is not None  # noqa: S101
+        store = self._store
+
+        counts = {"topics": 0, "observations": 0}
+        seen_slugs: set[str] = set()
+
+        for mkt in markets:
+            slug = (mkt.get("slug") or "").strip()
+            if not slug:
+                continue
+
+            # Register topic entity (deduped by slug)
+            topic_eid = entity_id_from_key("topic", slug)
+            if slug not in seen_slugs:
+                seen_slugs.add(slug)
+                store.register_entity(
+                    entity_type="topic",
+                    canonical_name=mkt.get("question", slug)[:200],
+                    entity_id=topic_eid,
+                    metadata={
+                        "slug": slug,
+                        "category": mkt.get("category", ""),
+                        "source": "polymarket",
+                    },
+                )
+                counts["topics"] += 1
+
+            # Store market_probability observation
+            import time as _time
+
+            store.store_entity_observation(
+                entity_id=topic_eid,
+                source_tool="polymarket",
+                observed_at=_time.time(),
+                observation_type="market_probability",
+                depth_level=2,
+                value={
+                    "yes_price": mkt.get("yes_price"),
+                    "no_price": mkt.get("no_price"),
+                    "volume_24h": mkt.get("volume_24h"),
+                    "volume_total": mkt.get("volume_total"),
+                    "liquidity": mkt.get("liquidity"),
+                    "spread": mkt.get("spread"),
+                    "price_change_24h": mkt.get("price_change_24h"),
+                    "price_change_1wk": mkt.get("price_change_1wk"),
+                },
+            )
+            counts["observations"] += 1
+
+        log.info(
+            "Polymarket L2: %d topics, %d observations",
+            counts["topics"],
+            counts["observations"],
+        )
+        return counts
 
     def _categorize_event(self, event: dict[str, Any]) -> str:
         """Map event tags to one of our normalized categories."""

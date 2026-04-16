@@ -24,6 +24,13 @@ import httpx
 from agent.data.cache import DataCache
 from agent.tools.base import Tool, ToolResult
 
+try:
+    from agent.pipeline.store import PipelineStore
+    from agent.pipeline.entity import entity_id_from_key
+except ImportError:  # pragma: no cover — optional dependency
+    PipelineStore = None  # type: ignore[assignment,misc]
+    entity_id_from_key = None  # type: ignore[assignment]
+
 log = logging.getLogger(__name__)
 
 _USER_AGENT = "TirraMind/0.1 (research; https://github.com/tirramind)"
@@ -33,131 +40,206 @@ _HIST_URL_TPL = "https://www.cftc.gov/files/dea/history/fut_disagg_txt_{year}.zi
 # ── Authoritative 191-column header from historical ZIP ──────────────
 # Weekly flat file has no headers; we apply these in the same order.
 _HEADERS: list[str] = [
-    "Market_and_Exchange_Names", "As_of_Date_In_Form_YYMMDD",
-    "Report_Date_as_YYYY-MM-DD", "CFTC_Contract_Market_Code",
-    "CFTC_Market_Code", "CFTC_Region_Code", "CFTC_Commodity_Code",
+    "Market_and_Exchange_Names",
+    "As_of_Date_In_Form_YYMMDD",
+    "Report_Date_as_YYYY-MM-DD",
+    "CFTC_Contract_Market_Code",
+    "CFTC_Market_Code",
+    "CFTC_Region_Code",
+    "CFTC_Commodity_Code",
     # ── Open Interest + Positions (_All = all contracts) ─────────────
     "Open_Interest_All",
-    "Prod_Merc_Positions_Long_All", "Prod_Merc_Positions_Short_All",
-    "Swap_Positions_Long_All", "Swap__Positions_Short_All",
+    "Prod_Merc_Positions_Long_All",
+    "Prod_Merc_Positions_Short_All",
+    "Swap_Positions_Long_All",
+    "Swap__Positions_Short_All",
     "Swap__Positions_Spread_All",
-    "M_Money_Positions_Long_All", "M_Money_Positions_Short_All",
+    "M_Money_Positions_Long_All",
+    "M_Money_Positions_Short_All",
     "M_Money_Positions_Spread_All",
-    "Other_Rept_Positions_Long_All", "Other_Rept_Positions_Short_All",
+    "Other_Rept_Positions_Long_All",
+    "Other_Rept_Positions_Short_All",
     "Other_Rept_Positions_Spread_All",
-    "Tot_Rept_Positions_Long_All", "Tot_Rept_Positions_Short_All",
-    "NonRept_Positions_Long_All", "NonRept_Positions_Short_All",
+    "Tot_Rept_Positions_Long_All",
+    "Tot_Rept_Positions_Short_All",
+    "NonRept_Positions_Long_All",
+    "NonRept_Positions_Short_All",
     # ── Old crop ─────────────────────────────────────────────────────
     "Open_Interest_Old",
-    "Prod_Merc_Positions_Long_Old", "Prod_Merc_Positions_Short_Old",
-    "Swap_Positions_Long_Old", "Swap__Positions_Short_Old",
+    "Prod_Merc_Positions_Long_Old",
+    "Prod_Merc_Positions_Short_Old",
+    "Swap_Positions_Long_Old",
+    "Swap__Positions_Short_Old",
     "Swap__Positions_Spread_Old",
-    "M_Money_Positions_Long_Old", "M_Money_Positions_Short_Old",
+    "M_Money_Positions_Long_Old",
+    "M_Money_Positions_Short_Old",
     "M_Money_Positions_Spread_Old",
-    "Other_Rept_Positions_Long_Old", "Other_Rept_Positions_Short_Old",
+    "Other_Rept_Positions_Long_Old",
+    "Other_Rept_Positions_Short_Old",
     "Other_Rept_Positions_Spread_Old",
-    "Tot_Rept_Positions_Long_Old", "Tot_Rept_Positions_Short_Old",
-    "NonRept_Positions_Long_Old", "NonRept_Positions_Short_Old",
+    "Tot_Rept_Positions_Long_Old",
+    "Tot_Rept_Positions_Short_Old",
+    "NonRept_Positions_Long_Old",
+    "NonRept_Positions_Short_Old",
     # ── Other ────────────────────────────────────────────────────────
     "Open_Interest_Other",
-    "Prod_Merc_Positions_Long_Other", "Prod_Merc_Positions_Short_Other",
-    "Swap_Positions_Long_Other", "Swap__Positions_Short_Other",
+    "Prod_Merc_Positions_Long_Other",
+    "Prod_Merc_Positions_Short_Other",
+    "Swap_Positions_Long_Other",
+    "Swap__Positions_Short_Other",
     "Swap__Positions_Spread_Other",
-    "M_Money_Positions_Long_Other", "M_Money_Positions_Short_Other",
+    "M_Money_Positions_Long_Other",
+    "M_Money_Positions_Short_Other",
     "M_Money_Positions_Spread_Other",
-    "Other_Rept_Positions_Long_Other", "Other_Rept_Positions_Short_Other",
+    "Other_Rept_Positions_Long_Other",
+    "Other_Rept_Positions_Short_Other",
     "Other_Rept_Positions_Spread_Other",
-    "Tot_Rept_Positions_Long_Other", "Tot_Rept_Positions_Short_Other",
-    "NonRept_Positions_Long_Other", "NonRept_Positions_Short_Other",
+    "Tot_Rept_Positions_Long_Other",
+    "Tot_Rept_Positions_Short_Other",
+    "NonRept_Positions_Long_Other",
+    "NonRept_Positions_Short_Other",
     # ── Weekly changes ───────────────────────────────────────────────
     "Change_in_Open_Interest_All",
-    "Change_in_Prod_Merc_Long_All", "Change_in_Prod_Merc_Short_All",
-    "Change_in_Swap_Long_All", "Change_in_Swap_Short_All",
+    "Change_in_Prod_Merc_Long_All",
+    "Change_in_Prod_Merc_Short_All",
+    "Change_in_Swap_Long_All",
+    "Change_in_Swap_Short_All",
     "Change_in_Swap_Spread_All",
-    "Change_in_M_Money_Long_All", "Change_in_M_Money_Short_All",
+    "Change_in_M_Money_Long_All",
+    "Change_in_M_Money_Short_All",
     "Change_in_M_Money_Spread_All",
-    "Change_in_Other_Rept_Long_All", "Change_in_Other_Rept_Short_All",
+    "Change_in_Other_Rept_Long_All",
+    "Change_in_Other_Rept_Short_All",
     "Change_in_Other_Rept_Spread_All",
-    "Change_in_Tot_Rept_Long_All", "Change_in_Tot_Rept_Short_All",
-    "Change_in_NonRept_Long_All", "Change_in_NonRept_Short_All",
+    "Change_in_Tot_Rept_Long_All",
+    "Change_in_Tot_Rept_Short_All",
+    "Change_in_NonRept_Long_All",
+    "Change_in_NonRept_Short_All",
     # ── Pct of OI (_All) ────────────────────────────────────────────
     "Pct_of_Open_Interest_All",
-    "Pct_of_OI_Prod_Merc_Long_All", "Pct_of_OI_Prod_Merc_Short_All",
-    "Pct_of_OI_Swap_Long_All", "Pct_of_OI_Swap_Short_All",
+    "Pct_of_OI_Prod_Merc_Long_All",
+    "Pct_of_OI_Prod_Merc_Short_All",
+    "Pct_of_OI_Swap_Long_All",
+    "Pct_of_OI_Swap_Short_All",
     "Pct_of_OI_Swap_Spread_All",
-    "Pct_of_OI_M_Money_Long_All", "Pct_of_OI_M_Money_Short_All",
+    "Pct_of_OI_M_Money_Long_All",
+    "Pct_of_OI_M_Money_Short_All",
     "Pct_of_OI_M_Money_Spread_All",
-    "Pct_of_OI_Other_Rept_Long_All", "Pct_of_OI_Other_Rept_Short_All",
+    "Pct_of_OI_Other_Rept_Long_All",
+    "Pct_of_OI_Other_Rept_Short_All",
     "Pct_of_OI_Other_Rept_Spread_All",
-    "Pct_of_OI_Tot_Rept_Long_All", "Pct_of_OI_Tot_Rept_Short_All",
-    "Pct_of_OI_NonRept_Long_All", "Pct_of_OI_NonRept_Short_All",
+    "Pct_of_OI_Tot_Rept_Long_All",
+    "Pct_of_OI_Tot_Rept_Short_All",
+    "Pct_of_OI_NonRept_Long_All",
+    "Pct_of_OI_NonRept_Short_All",
     # ── Pct of OI (Old) ─────────────────────────────────────────────
     "Pct_of_Open_Interest_Old",
-    "Pct_of_OI_Prod_Merc_Long_Old", "Pct_of_OI_Prod_Merc_Short_Old",
-    "Pct_of_OI_Swap_Long_Old", "Pct_of_OI_Swap_Short_Old",
+    "Pct_of_OI_Prod_Merc_Long_Old",
+    "Pct_of_OI_Prod_Merc_Short_Old",
+    "Pct_of_OI_Swap_Long_Old",
+    "Pct_of_OI_Swap_Short_Old",
     "Pct_of_OI_Swap_Spread_Old",
-    "Pct_of_OI_M_Money_Long_Old", "Pct_of_OI_M_Money_Short_Old",
+    "Pct_of_OI_M_Money_Long_Old",
+    "Pct_of_OI_M_Money_Short_Old",
     "Pct_of_OI_M_Money_Spread_Old",
-    "Pct_of_OI_Other_Rept_Long_Old", "Pct_of_OI_Other_Rept_Short_Old",
+    "Pct_of_OI_Other_Rept_Long_Old",
+    "Pct_of_OI_Other_Rept_Short_Old",
     "Pct_of_OI_Other_Rept_Spread_Old",
-    "Pct_of_OI_Tot_Rept_Long_Old", "Pct_of_OI_Tot_Rept_Short_Old",
-    "Pct_of_OI_NonRept_Long_Old", "Pct_of_OI_NonRept_Short_Old",
+    "Pct_of_OI_Tot_Rept_Long_Old",
+    "Pct_of_OI_Tot_Rept_Short_Old",
+    "Pct_of_OI_NonRept_Long_Old",
+    "Pct_of_OI_NonRept_Short_Old",
     # ── Pct of OI (Other) ───────────────────────────────────────────
     "Pct_of_Open_Interest_Other",
-    "Pct_of_OI_Prod_Merc_Long_Other", "Pct_of_OI_Prod_Merc_Short_Other",
-    "Pct_of_OI_Swap_Long_Other", "Pct_of_OI_Swap_Short_Other",
+    "Pct_of_OI_Prod_Merc_Long_Other",
+    "Pct_of_OI_Prod_Merc_Short_Other",
+    "Pct_of_OI_Swap_Long_Other",
+    "Pct_of_OI_Swap_Short_Other",
     "Pct_of_OI_Swap_Spread_Other",
-    "Pct_of_OI_M_Money_Long_Other", "Pct_of_OI_M_Money_Short_Other",
+    "Pct_of_OI_M_Money_Long_Other",
+    "Pct_of_OI_M_Money_Short_Other",
     "Pct_of_OI_M_Money_Spread_Other",
-    "Pct_of_OI_Other_Rept_Long_Other", "Pct_of_OI_Other_Rept_Short_Other",
+    "Pct_of_OI_Other_Rept_Long_Other",
+    "Pct_of_OI_Other_Rept_Short_Other",
     "Pct_of_OI_Other_Rept_Spread_Other",
-    "Pct_of_OI_Tot_Rept_Long_Other", "Pct_of_OI_Tot_Rept_Short_Other",
-    "Pct_of_OI_NonRept_Long_Other", "Pct_of_OI_NonRept_Short_Other",
+    "Pct_of_OI_Tot_Rept_Long_Other",
+    "Pct_of_OI_Tot_Rept_Short_Other",
+    "Pct_of_OI_NonRept_Long_Other",
+    "Pct_of_OI_NonRept_Short_Other",
     # ── Trader counts ────────────────────────────────────────────────
     "Traders_Tot_All",
-    "Traders_Prod_Merc_Long_All", "Traders_Prod_Merc_Short_All",
-    "Traders_Swap_Long_All", "Traders_Swap_Short_All",
+    "Traders_Prod_Merc_Long_All",
+    "Traders_Prod_Merc_Short_All",
+    "Traders_Swap_Long_All",
+    "Traders_Swap_Short_All",
     "Traders_Swap_Spread_All",
-    "Traders_M_Money_Long_All", "Traders_M_Money_Short_All",
+    "Traders_M_Money_Long_All",
+    "Traders_M_Money_Short_All",
     "Traders_M_Money_Spread_All",
-    "Traders_Other_Rept_Long_All", "Traders_Other_Rept_Short_All",
+    "Traders_Other_Rept_Long_All",
+    "Traders_Other_Rept_Short_All",
     "Traders_Other_Rept_Spread_All",
-    "Traders_Tot_Rept_Long_All", "Traders_Tot_Rept_Short_All",
+    "Traders_Tot_Rept_Long_All",
+    "Traders_Tot_Rept_Short_All",
     "Traders_Tot_Old",
-    "Traders_Prod_Merc_Long_Old", "Traders_Prod_Merc_Short_Old",
-    "Traders_Swap_Long_Old", "Traders_Swap_Short_Old",
+    "Traders_Prod_Merc_Long_Old",
+    "Traders_Prod_Merc_Short_Old",
+    "Traders_Swap_Long_Old",
+    "Traders_Swap_Short_Old",
     "Traders_Swap_Spread_Old",
-    "Traders_M_Money_Long_Old", "Traders_M_Money_Short_Old",
+    "Traders_M_Money_Long_Old",
+    "Traders_M_Money_Short_Old",
     "Traders_M_Money_Spread_Old",
-    "Traders_Other_Rept_Long_Old", "Traders_Other_Rept_Short_Old",
+    "Traders_Other_Rept_Long_Old",
+    "Traders_Other_Rept_Short_Old",
     "Traders_Other_Rept_Spread_Old",
-    "Traders_Tot_Rept_Long_Old", "Traders_Tot_Rept_Short_Old",
+    "Traders_Tot_Rept_Long_Old",
+    "Traders_Tot_Rept_Short_Old",
     "Traders_Tot_Other",
-    "Traders_Prod_Merc_Long_Other", "Traders_Prod_Merc_Short_Other",
-    "Traders_Swap_Long_Other", "Traders_Swap_Short_Other",
+    "Traders_Prod_Merc_Long_Other",
+    "Traders_Prod_Merc_Short_Other",
+    "Traders_Swap_Long_Other",
+    "Traders_Swap_Short_Other",
     "Traders_Swap_Spread_Other",
-    "Traders_M_Money_Long_Other", "Traders_M_Money_Short_Other",
+    "Traders_M_Money_Long_Other",
+    "Traders_M_Money_Short_Other",
     "Traders_M_Money_Spread_Other",
-    "Traders_Other_Rept_Long_Other", "Traders_Other_Rept_Short_Other",
+    "Traders_Other_Rept_Long_Other",
+    "Traders_Other_Rept_Short_Other",
     "Traders_Other_Rept_Spread_Other",
-    "Traders_Tot_Rept_Long_Other", "Traders_Tot_Rept_Short_Other",
+    "Traders_Tot_Rept_Long_Other",
+    "Traders_Tot_Rept_Short_Other",
     # ── Concentration ratios ─────────────────────────────────────────
-    "Conc_Gross_LE_4_TDR_Long_All", "Conc_Gross_LE_4_TDR_Short_All",
-    "Conc_Gross_LE_8_TDR_Long_All", "Conc_Gross_LE_8_TDR_Short_All",
-    "Conc_Net_LE_4_TDR_Long_All", "Conc_Net_LE_4_TDR_Short_All",
-    "Conc_Net_LE_8_TDR_Long_All", "Conc_Net_LE_8_TDR_Short_All",
-    "Conc_Gross_LE_4_TDR_Long_Old", "Conc_Gross_LE_4_TDR_Short_Old",
-    "Conc_Gross_LE_8_TDR_Long_Old", "Conc_Gross_LE_8_TDR_Short_Old",
-    "Conc_Net_LE_4_TDR_Long_Old", "Conc_Net_LE_4_TDR_Short_Old",
-    "Conc_Net_LE_8_TDR_Long_Old", "Conc_Net_LE_8_TDR_Short_Old",
-    "Conc_Gross_LE_4_TDR_Long_Other", "Conc_Gross_LE_4_TDR_Short_Other",
-    "Conc_Gross_LE_8_TDR_Long_Other", "Conc_Gross_LE_8_TDR_Short_Other",
-    "Conc_Net_LE_4_TDR_Long_Other", "Conc_Net_LE_4_TDR_Short_Other",
-    "Conc_Net_LE_8_TDR_Long_Other", "Conc_Net_LE_8_TDR_Short_Other",
+    "Conc_Gross_LE_4_TDR_Long_All",
+    "Conc_Gross_LE_4_TDR_Short_All",
+    "Conc_Gross_LE_8_TDR_Long_All",
+    "Conc_Gross_LE_8_TDR_Short_All",
+    "Conc_Net_LE_4_TDR_Long_All",
+    "Conc_Net_LE_4_TDR_Short_All",
+    "Conc_Net_LE_8_TDR_Long_All",
+    "Conc_Net_LE_8_TDR_Short_All",
+    "Conc_Gross_LE_4_TDR_Long_Old",
+    "Conc_Gross_LE_4_TDR_Short_Old",
+    "Conc_Gross_LE_8_TDR_Long_Old",
+    "Conc_Gross_LE_8_TDR_Short_Old",
+    "Conc_Net_LE_4_TDR_Long_Old",
+    "Conc_Net_LE_4_TDR_Short_Old",
+    "Conc_Net_LE_8_TDR_Long_Old",
+    "Conc_Net_LE_8_TDR_Short_Old",
+    "Conc_Gross_LE_4_TDR_Long_Other",
+    "Conc_Gross_LE_4_TDR_Short_Other",
+    "Conc_Gross_LE_8_TDR_Long_Other",
+    "Conc_Gross_LE_8_TDR_Short_Other",
+    "Conc_Net_LE_4_TDR_Long_Other",
+    "Conc_Net_LE_4_TDR_Short_Other",
+    "Conc_Net_LE_8_TDR_Long_Other",
+    "Conc_Net_LE_8_TDR_Short_Other",
     # ── Metadata ─────────────────────────────────────────────────────
     "Contract_Units",
-    "CFTC_Contract_Market_Code_Quotes", "CFTC_Market_Code_Quotes",
-    "CFTC_Commodity_Code_Quotes", "CFTC_SubGroup_Code",
+    "CFTC_Contract_Market_Code_Quotes",
+    "CFTC_Market_Code_Quotes",
+    "CFTC_Commodity_Code_Quotes",
+    "CFTC_SubGroup_Code",
     "FutOnly_or_Combined",
 ]
 
@@ -184,6 +266,23 @@ def _safe_float(val: str) -> float | None:
         return float(v)
     except (ValueError, TypeError):
         return None
+
+
+def _report_date_to_ts(date_str: str) -> float:
+    """Convert 'YYYY-MM-DD' report date to Unix timestamp (midnight UTC).
+
+    Returns 0.0 for missing/malformed dates.
+    """
+    if not date_str or not date_str.strip():
+        return 0.0
+    try:
+        dt = datetime.strptime(date_str.strip(), "%Y-%m-%d")
+        # Use calendar.timegm for UTC (avoids local-timezone offset)
+        import calendar
+
+        return float(calendar.timegm(dt.timetuple()))
+    except ValueError:
+        return 0.0
 
 
 # ── Columns we actually extract (indices into _HEADERS) ─────────────
@@ -236,8 +335,14 @@ class CFTCTool(Tool):
         },
     }
 
-    def __init__(self, cache: DataCache | None = None) -> None:
+    def __init__(
+        self,
+        cache: DataCache | None = None,
+        *,
+        pipeline_store: PipelineStore | None = None,
+    ) -> None:
         self._cache = cache
+        self._store = pipeline_store
 
     # ── Public execute ───────────────────────────────────────────────
 
@@ -282,11 +387,18 @@ class CFTCTool(Tool):
             return ToolResult(
                 success=True,
                 output=f"No contracts matched filter (filter='{contract_filter}', code='{code_filter}'). "
-                       f"Total rows parsed: {len(rows)}.",
+                f"Total rows parsed: {len(rows)}.",
                 data={"contracts": [], "total_parsed": len(rows)},
             )
 
         enriched = self._compute_signals(filtered)
+
+        # L2: persist entities + observations when PipelineStore available
+        try:
+            self._persist_entities(enriched)
+        except Exception:
+            log.exception("CFTC entity persistence failed (non-fatal)")
+
         output = self._format_output(enriched, len(rows))
 
         return ToolResult(
@@ -341,9 +453,7 @@ class CFTCTool(Tool):
 
     # ── Parsing ──────────────────────────────────────────────────────
 
-    def _parse_rows(
-        self, csv_text: str, *, has_headers: bool
-    ) -> list[dict[str, Any]]:
+    def _parse_rows(self, csv_text: str, *, has_headers: bool) -> list[dict[str, Any]]:
         lines = csv_text.strip().split("\n")
         if not lines:
             return []
@@ -412,14 +522,16 @@ class CFTCTool(Tool):
         if contract_filter:
             filt = contract_filter.lower()
             result = [
-                r for r in result
+                r
+                for r in result
                 if filt in r.get("Market_and_Exchange_Names", "").lower()
             ]
 
         if code_filter:
             code = code_filter.strip()
             result = [
-                r for r in result
+                r
+                for r in result
                 if r.get("CFTC_Contract_Market_Code", "").strip() == code
             ]
 
@@ -430,9 +542,7 @@ class CFTCTool(Tool):
 
     # ── Signal computation ───────────────────────────────────────────
 
-    def _compute_signals(
-        self, rows: list[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
+    def _compute_signals(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         for row in rows:
             mm_long = row.get("M_Money_Positions_Long_All") or 0
             mm_short = row.get("M_Money_Positions_Short_All") or 0
@@ -445,9 +555,9 @@ class CFTCTool(Tool):
             row["_mm_net"] = mm_long - mm_short
             row["_pm_net"] = pm_long - pm_short
             row["_swap_net"] = swap_long - swap_short
-            row["_mm_net_pct_oi"] = round(
-                (mm_long - mm_short) / oi * 100, 2
-            ) if oi > 0 else 0.0
+            row["_mm_net_pct_oi"] = (
+                round((mm_long - mm_short) / oi * 100, 2) if oi > 0 else 0.0
+            )
 
             # Weekly changes
             chg_mm_long = row.get("Change_in_M_Money_Long_All") or 0
@@ -462,11 +572,115 @@ class CFTCTool(Tool):
 
         return rows
 
+    # ── Entity persistence (L2) ──────────────────────────────────────
+
+    def _persist_entities(self, rows: list[dict[str, Any]]) -> dict[str, int]:
+        """Persist CFTC positioning as L2 entity observations.
+
+        For each CFTC row whose contract market code maps to a known
+        instrument ticker (via ``cftc_code_to_ticker``), store a
+        ``futures_positioning`` observation on the instrument entity
+        and link it to the CFTC contract entity.
+
+        Skips silently if no PipelineStore is configured.
+        Returns counts of entities/observations/links created.
+        """
+        if self._store is None or entity_id_from_key is None:
+            return {"observations": 0, "contracts": 0, "links": 0}
+        if not rows:
+            return {"observations": 0, "contracts": 0, "links": 0}
+
+        try:
+            return self._persist_entities_inner(rows)
+        except Exception:
+            log.exception("CFTC entity persistence failed (non-fatal)")
+            return {"observations": 0, "contracts": 0, "links": 0}
+
+    def _persist_entities_inner(self, rows: list[dict[str, Any]]) -> dict[str, int]:
+        """Inner persistence logic separated for testability."""
+        from agent.tools.instrument_universe import cftc_code_to_ticker, _entity_id
+
+        assert self._store is not None  # noqa: S101 — guarded by caller
+        store = self._store
+        code_map = cftc_code_to_ticker()
+
+        counts = {"observations": 0, "contracts": 0, "links": 0}
+        seen_contracts: set[str] = set()
+
+        for row in rows:
+            cftc_code = (row.get("CFTC_Contract_Market_Code") or "").strip()
+            if not cftc_code:
+                continue
+
+            report_date = row.get("Report_Date_as_YYYY-MM-DD", "")
+            market_name = row.get("Market_and_Exchange_Names", "")
+
+            # Register the CFTC contract entity (deduped)
+            if cftc_code not in seen_contracts:
+                seen_contracts.add(cftc_code)
+                contract_eid = entity_id_from_key("cftc_contract", cftc_code)
+                store.register_entity(
+                    entity_type="cftc_contract",
+                    canonical_name=market_name.strip() or cftc_code,
+                    entity_id=contract_eid,
+                    metadata={
+                        "cftc_code": cftc_code,
+                        "source": "cftc",
+                    },
+                )
+                counts["contracts"] += 1
+
+            contract_eid = entity_id_from_key("cftc_contract", cftc_code)
+
+            # Store positioning observation on the CFTC contract entity
+            observed_at = _report_date_to_ts(report_date)
+            obs_value = {
+                "open_interest": row.get("Open_Interest_All"),
+                "mm_net": row.get("_mm_net"),
+                "pm_net": row.get("_pm_net"),
+                "swap_net": row.get("_swap_net"),
+                "mm_net_pct_oi": row.get("_mm_net_pct_oi"),
+                "mm_weekly_flow": row.get("_mm_weekly_flow"),
+                "oi_change": row.get("_oi_change"),
+                "conc_top4_long": row.get("_conc_top4_long"),
+                "conc_top4_short": row.get("_conc_top4_short"),
+            }
+            store.store_entity_observation(
+                entity_id=contract_eid,
+                source_tool="cftc",
+                observed_at=observed_at,
+                observation_type="futures_positioning",
+                depth_level=2,
+                value=obs_value,
+            )
+            counts["observations"] += 1
+
+            # Link CFTC contract → instrument (if mapping exists)
+            ticker = code_map.get(cftc_code)
+            if ticker:
+                inst_eid = _entity_id(ticker)
+                link_id = store.link_entities(
+                    entity_id_a=contract_eid,
+                    entity_id_b=inst_eid,
+                    link_type="cftc_tracks",
+                    source="cftc",
+                    confidence=1.0,
+                    metadata={"cftc_code": cftc_code, "ticker": ticker},
+                )
+                if link_id:
+                    counts["links"] += 1
+
+        log.info(
+            "CFTC L2: %d contracts, %d observations, %d instrument links",
+            counts["contracts"],
+            counts["observations"],
+            counts["links"],
+        )
+        return counts
+
     # ── Formatting ───────────────────────────────────────────────────
 
-    def _format_output(
-        self, rows: list[dict[str, Any]], total_parsed: int
-    ) -> str:
+    def _format_output(self, rows: list[dict[str, Any]], total_parsed: int) -> str:
         lines: list[str] = []
         lines.append(f"CFTC COT — {len(rows)} contracts (of {total_parsed} total)")
 
@@ -493,9 +707,7 @@ class CFTCTool(Tool):
                 f"    MM net: {mm_net:>+10,} ({mm_pct:>+.1f}% OI)  "
                 f"ΔMM: {mm_flow:>+10,}"
             )
-            lines.append(
-                f"    PM net: {pm_net:>+10,}  Swap net: {swap_net:>+10,}"
-            )
+            lines.append(f"    PM net: {pm_net:>+10,}  Swap net: {swap_net:>+10,}")
             if c4l is not None or c4s is not None:
                 c4l_s = f"{c4l:.1f}%" if c4l is not None else "n/a"
                 c4s_s = f"{c4s:.1f}%" if c4s is not None else "n/a"
