@@ -62,8 +62,8 @@ class TestObsTypeRegistration:
     def test_sovereign_yield_in_obs_types(self):
         assert "sovereign_yield" in OBSERVATION_TYPES
 
-    def test_enrichment_dim_is_41(self):
-        assert ENRICHMENT_DIM == 41
+    def test_enrichment_dim_is_44(self):
+        assert ENRICHMENT_DIM == 44
 
 
 # ── 2. Single-tool persistence flows through to graph ────────────
@@ -74,8 +74,13 @@ class TestSingleToolPersistence:
 
     def test_sovereign_yield_us(self, store):
         eid = _reg(store, "US")
-        _obs(store, eid, "sovereign_debt", "sovereign_yield",
-             {"source": "us_treasury", "maturity": "10y", "yield_pct": 4.44})
+        _obs(
+            store,
+            eid,
+            "sovereign_debt",
+            "sovereign_yield",
+            {"source": "us_treasury", "maturity": "10y", "yield_pct": 4.44},
+        )
 
         builder = GraphBuilder(store)
         data, id_map, events = builder.build()
@@ -86,8 +91,13 @@ class TestSingleToolPersistence:
 
     def test_capital_flow_jp(self, store):
         eid = _reg(store, "JP")
-        _obs(store, eid, "capital_flows", "capital_flow",
-             {"flow_type": "holdings", "series": "Japan", "latest_value": 1100.0})
+        _obs(
+            store,
+            eid,
+            "capital_flows",
+            "capital_flow",
+            {"flow_type": "holdings", "series": "Japan", "latest_value": 1100.0},
+        )
 
         builder = GraphBuilder(store)
         _, id_map, events = builder.build()
@@ -97,8 +107,13 @@ class TestSingleToolPersistence:
 
     def test_economic_activity_de(self, store):
         eid = _reg(store, "DE")
-        _obs(store, eid, "global_pmi", "economic_activity",
-             {"indicator": "cli", "value": 99.0, "regime": "contracting"})
+        _obs(
+            store,
+            eid,
+            "global_pmi",
+            "economic_activity",
+            {"indicator": "cli", "value": 99.0, "regime": "contracting"},
+        )
 
         builder = GraphBuilder(store)
         _, id_map, events = builder.build()
@@ -116,12 +131,30 @@ class TestMultiToolEnrichment:
     def test_us_receives_all_three_obs_types(self, store):
         eid = _reg(store, "US")
         now = time.time()
-        _obs(store, eid, "sovereign_debt", "sovereign_yield",
-             {"source": "us_treasury", "yield_pct": 4.44}, ts=now - 10)
-        _obs(store, eid, "capital_flows", "capital_flow",
-             {"flow_type": "flows", "series": "net_tic"}, ts=now - 5)
-        _obs(store, eid, "global_pmi", "economic_activity",
-             {"indicator": "cli", "value": 101.0}, ts=now)
+        _obs(
+            store,
+            eid,
+            "sovereign_debt",
+            "sovereign_yield",
+            {"source": "us_treasury", "yield_pct": 4.44},
+            ts=now - 10,
+        )
+        _obs(
+            store,
+            eid,
+            "capital_flows",
+            "capital_flow",
+            {"flow_type": "flows", "series": "net_tic"},
+            ts=now - 5,
+        )
+        _obs(
+            store,
+            eid,
+            "global_pmi",
+            "economic_activity",
+            {"indicator": "cli", "value": 101.0},
+            ts=now,
+        )
 
         builder = GraphBuilder(store)
         data, id_map, events = builder.build()
@@ -133,10 +166,20 @@ class TestMultiToolEnrichment:
 
     def test_jp_receives_sovereign_and_flows(self, store):
         eid = _reg(store, "JP")
-        _obs(store, eid, "sovereign_debt", "sovereign_yield",
-             {"source": "mof", "yield_pct": 2.30})
-        _obs(store, eid, "capital_flows", "capital_flow",
-             {"flow_type": "holdings", "latest_value": 1100.0})
+        _obs(
+            store,
+            eid,
+            "sovereign_debt",
+            "sovereign_yield",
+            {"source": "mof", "yield_pct": 2.30},
+        )
+        _obs(
+            store,
+            eid,
+            "capital_flows",
+            "capital_flow",
+            {"flow_type": "holdings", "latest_value": 1100.0},
+        )
 
         builder = GraphBuilder(store)
         _, _, events = builder.build()
@@ -168,16 +211,39 @@ class TestCoexistenceWithPhase27:
     def test_us_has_cb_and_sovereign_and_flow(self, store):
         eid = _reg(store, "US")
         now = time.time()
-        _obs(store, eid, "central_bank_balance", "cb_balance_sheet",
-             {"cb_code": "fed", "usd_trillions": 7.5}, ts=now - 30)
-        _obs(store, eid, "central_bank_balance", "cb_policy_rate",
-             {"cb_code": "fed", "current_rate": 5.33}, ts=now - 20)
-        _obs(store, eid, "sovereign_debt", "sovereign_yield",
-             {"yield_pct": 4.44}, ts=now - 10)
-        _obs(store, eid, "capital_flows", "capital_flow",
-             {"flow_type": "flows"}, ts=now - 5)
-        _obs(store, eid, "global_pmi", "economic_activity",
-             {"value": 101.0}, ts=now)
+        _obs(
+            store,
+            eid,
+            "central_bank_balance",
+            "cb_balance_sheet",
+            {"cb_code": "fed", "usd_trillions": 7.5},
+            ts=now - 30,
+        )
+        _obs(
+            store,
+            eid,
+            "central_bank_balance",
+            "cb_policy_rate",
+            {"cb_code": "fed", "current_rate": 5.33},
+            ts=now - 20,
+        )
+        _obs(
+            store,
+            eid,
+            "sovereign_debt",
+            "sovereign_yield",
+            {"yield_pct": 4.44},
+            ts=now - 10,
+        )
+        _obs(
+            store,
+            eid,
+            "capital_flows",
+            "capital_flow",
+            {"flow_type": "flows"},
+            ts=now - 5,
+        )
+        _obs(store, eid, "global_pmi", "economic_activity", {"value": 101.0}, ts=now)
 
         builder = GraphBuilder(store)
         _, _, events = builder.build()
@@ -185,8 +251,11 @@ class TestCoexistenceWithPhase27:
         assert len(events) == 5
         obs_types = {e["observation_type"] for e in events}
         assert obs_types == {
-            "cb_balance_sheet", "cb_policy_rate",
-            "sovereign_yield", "capital_flow", "economic_activity",
+            "cb_balance_sheet",
+            "cb_policy_rate",
+            "sovereign_yield",
+            "capital_flow",
+            "economic_activity",
         }
 
 

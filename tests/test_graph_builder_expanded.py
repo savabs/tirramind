@@ -92,11 +92,16 @@ class TestExpandedTypeRegistries:
         for obs in phase28_obs:
             assert obs in OBSERVATION_TYPES, f"{obs} missing from OBSERVATION_TYPES"
 
+    def test_observation_types_contains_phase29_types(self):
+        phase29_obs = ["bankruptcy_status", "investigation_signal", "research_velocity"]
+        for obs in phase29_obs:
+            assert obs in OBSERVATION_TYPES, f"{obs} missing from OBSERVATION_TYPES"
+
     def test_observation_types_sorted_alphabetically(self):
         assert OBSERVATION_TYPES == sorted(OBSERVATION_TYPES)
 
     def test_observation_types_count(self):
-        assert len(OBSERVATION_TYPES) == 32
+        assert len(OBSERVATION_TYPES) == 35
 
     def test_insider_trade_in_observation_types(self):
         """Verify 'insider_trade' exists (not 'purchase')."""

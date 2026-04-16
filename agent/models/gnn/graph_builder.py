@@ -57,6 +57,7 @@ ENTITY_TYPES: list[str] = [
 ]
 
 OBSERVATION_TYPES: list[str] = [
+    "bankruptcy_status",
     "btc_transfer",
     "capital_flow",
     "cb_balance_sheet",
@@ -75,6 +76,7 @@ OBSERVATION_TYPES: list[str] = [
     "instrument_return",
     "instrument_volatility",
     "instrument_volume",
+    "investigation_signal",
     "lobbying_spend",
     "market_probability",
     "pageview_spike",
@@ -82,6 +84,7 @@ OBSERVATION_TYPES: list[str] = [
     "port_call",
     "price_movement",
     "project_status",
+    "research_velocity",
     "sanctions_listing",
     "sell_intent",
     "short_interest",
@@ -191,8 +194,8 @@ def _compute_obs_stats(
 # When enrichment is provided, these extra features are appended:
 #   cusum_state (1) + hawkes_intensity (1) + event_study_score (1) +
 #   bocpd_prob (1) + value_variance (1) + value_min (1) + value_max (1) +
-#   value_iqr (1) + num_source_tools (1) + obs_type_dist (32) = 41
-ENRICHMENT_DIM = 41
+#   value_iqr (1) + num_source_tools (1) + obs_type_dist (35) = 44
+ENRICHMENT_DIM = 44
 BASE_FEAT_DIM = len(ENTITY_TYPES) + 3  # one-hot type + count + recency + mean_val
 
 
