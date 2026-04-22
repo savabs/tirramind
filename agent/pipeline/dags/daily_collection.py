@@ -13,6 +13,8 @@ Nodes:
     fetch_power_fuel    — NYISO generation by fuel type
     fetch_gdelt         — GDELT geopolitical events, last 24h
     fetch_polymarket    — Polymarket prediction market odds, all categories
+    fetch_cert_domains  — CT log recent issuances for 20 financial domains (callable)
+    fetch_dns_domains   — DNS bulk_resolve for 20 financial domains
 
 Change 12: Optional ``tool_router`` parameter.  When provided, the bandit
 decides which optional tools to enable before DAG execution.
@@ -28,7 +30,7 @@ from __future__ import annotations
 import logging
 import time
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from agent.pipeline.dag import DAG
 
@@ -37,6 +39,81 @@ if TYPE_CHECKING:
     from agent.pipeline.store import PipelineStore
 
 log = logging.getLogger(__name__)
+
+# ── Financial domain watchlist (cert_transparency + dns_monitor) ──────────
+# 20 major financial institution domains — banks, brokers, exchanges, regulators.
+# Used for both CT log surveillance (cert issuance patterns) and DNS change
+# monitoring (infrastructure migration, SaaS adoption signals).
+# Max 20 enforced by dns_monitor's bulk_resolve limit.
+FINANCIAL_DOMAINS: list[str] = [
+    "jpmorgan.com",
+    "goldmansachs.com",
+    "morganstanley.com",
+    "blackrock.com",
+    "vanguard.com",
+    "fidelity.com",
+    "schwab.com",
+    "citadel.com",
+    "bridgewater.com",
+    "aqr.com",
+    "sec.gov",
+    "cftc.gov",
+    "federalreserve.gov",
+    "bis.org",
+    "nyse.com",
+    "nasdaq.com",
+    "cboe.com",
+    "ice.com",
+    "bloomberg.com",
+    "refinitiv.com",
+]
+
+
+def run_cert_domain_collection(
+    params: dict[str, Any],
+    upstream_results: dict[str, Any],
+) -> dict[str, Any]:
+    """FunctionOperator callback: fetch recent CT certs for all FINANCIAL_DOMAINS.
+
+    Calls CertTransparencyTool(mode='recent') once per domain and persists
+    domain entities + cert_issued observations via PipelineStore.
+
+    params:
+        db_path  : str  — PipelineStore database path (injected by DAG builder)
+        domains  : list — override FINANCIAL_DOMAINS (optional, for tests)
+        days_back: int  — lookback window in days (default 30)
+    """
+    from agent.pipeline.store import PipelineStore
+    from agent.tools.cert_transparency import CertTransparencyTool
+
+    db_path = params.get("db_path", ".tirra_pipeline/pipeline.db")
+    domains: list[str] = params.get("domains", FINANCIAL_DOMAINS)
+    days_back: int = params.get("days_back", 30)
+
+    store = PipelineStore(db_path)
+    try:
+        tool = CertTransparencyTool(pipeline_store=store)
+        per_domain: dict[str, dict[str, Any]] = {}
+        total_certs = 0
+        for domain in domains:
+            result = tool.execute(
+                mode="recent",
+                domain=domain,
+                days_back=days_back,
+                limit=50,
+            )
+            count = (result.data or {}).get("count", 0)
+            per_domain[domain] = {"success": result.success, "count": count}
+            if result.success:
+                total_certs += count
+        return {
+            "domains_scanned": len(domains),
+            "total_certs": total_certs,
+            "per_domain": per_domain,
+        }
+    finally:
+        store.close()
+
 
 # ── Quarantine constants ──────────────────────────────────
 _QUARANTINE_CYCLES_TO_PROMOTE = 5
@@ -475,6 +552,43 @@ def build_daily_collection_dag(
         params={"db_path": db_path},
         timeout=300,
         retries=1,
+    )
+
+    # ═══════════════════════════════════════════════════════════════
+    # Phase 45 — cert_transparency + dns_monitor wiring
+    # Both tools monitor FINANCIAL_DOMAINS (20 major bank/broker/
+    # exchange/regulator domains). cert_transparency uses a callable
+    # operator that iterates per-domain (single-domain API constraint).
+    # dns_monitor uses bulk_resolve (native multi-domain support).
+    # Domain entities + cert_issued / dns_record observations accumulate
+    # daily. See [[phase45_cert_dns_wiring]].
+    # ═══════════════════════════════════════════════════════════════
+
+    # ── CT log surveillance — recent cert issuances (domain entities) ─
+    # Calls CertTransparencyTool(mode='recent', days_back=30) for each
+    # of the 20 FINANCIAL_DOMAINS. Persists domain entities + cert_issued
+    # obs. Signals: cert surge = scaling, new subdomain = product launch,
+    # issuer switch = security posture change.
+    dag.add(
+        "fetch_cert_domains",
+        operator=run_cert_domain_collection,
+        params={"db_path": db_path, "domains": FINANCIAL_DOMAINS, "days_back": 30},
+        timeout=300,
+        retries=1,
+    )
+
+    # ── DNS change monitoring — bulk_resolve for all financial domains ─
+    # DNSMonitorTool(mode='bulk_resolve') resolves A/AAAA/MX/NS/TXT/CNAME
+    # for all 20 FINANCIAL_DOMAINS in one call. Persists domain entities
+    # + dns_record obs. Signals: MX change = email migration, TXT tokens
+    # = SaaS adoption, TTL drop = imminent infra change, NS switch = CDN.
+    dag.add(
+        "fetch_dns_domains",
+        operator="dns_monitor",
+        table_name="dns_monitor",
+        params={"mode": "bulk_resolve", "domains": FINANCIAL_DOMAINS},
+        timeout=120,
+        retries=2,
     )
 
     # ── Change 12: Apply tool routing decisions ────────────

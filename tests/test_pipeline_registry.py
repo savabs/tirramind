@@ -174,7 +174,7 @@ class TestDailyCollectionStructure:
         assert dag.validate() == []
 
     def test_node_count(self, dag):
-        assert len(dag.nodes) == 27
+        assert len(dag.nodes) == 29
 
     def test_expected_node_ids(self, dag):
         expected = {
@@ -208,6 +208,9 @@ class TestDailyCollectionStructure:
             "fetch_supply_chain",
             "fetch_political_risk",
             "fetch_comtrade",
+            # Phase 45 — cert/dns domain wiring
+            "fetch_cert_domains",
+            "fetch_dns_domains",
         }
         assert set(dag.nodes.keys()) == expected
 
@@ -219,10 +222,10 @@ class TestDailyCollectionStructure:
     def test_single_parallel_layer(self, dag):
         layers = dag.topo_sort()
         assert len(layers) == 1
-        assert len(layers[0]) == 27
+        assert len(layers[0]) == 29
 
     def test_all_roots(self, dag):
-        assert len(dag.roots()) == 27
+        assert len(dag.roots()) == 29
 
     def test_whale_alert_node_config(self, dag):
         n = dag.nodes["fetch_whale_alert"]
@@ -496,3 +499,64 @@ class TestRegistrySchedulerIntegration:
             assert "daily_collection" in job_ids
         finally:
             scheduler.stop()
+
+
+# ── Phase 45: cert_transparency + dns_monitor wiring ──────────────────────────
+
+
+class TestPhase45Nodes:
+    """Node configuration tests for Phase 45 cert/dns domain wiring."""
+
+    @pytest.fixture
+    def dag(self):
+        return build_daily_collection_dag()
+
+    def test_fetch_cert_domains_present(self, dag):
+        assert "fetch_cert_domains" in dag.nodes
+
+    def test_fetch_cert_domains_operator_is_callable(self, dag):
+        n = dag.nodes["fetch_cert_domains"]
+        assert callable(n.operator)
+
+    def test_fetch_cert_domains_params(self, dag):
+        n = dag.nodes["fetch_cert_domains"]
+        assert "db_path" in n.params
+        assert "domains" in n.params
+        assert "days_back" in n.params
+        assert isinstance(n.params["domains"], list)
+        assert len(n.params["domains"]) == 20
+        assert n.params["days_back"] == 30
+
+    def test_fetch_cert_domains_timeout(self, dag):
+        n = dag.nodes["fetch_cert_domains"]
+        assert n.timeout >= 120
+
+    def test_fetch_dns_domains_present(self, dag):
+        assert "fetch_dns_domains" in dag.nodes
+
+    def test_fetch_dns_domains_config(self, dag):
+        n = dag.nodes["fetch_dns_domains"]
+        assert n.operator == "dns_monitor"
+        assert n.params["mode"] == "bulk_resolve"
+        assert isinstance(n.params["domains"], list)
+        assert len(n.params["domains"]) == 20
+        assert n.timeout > 0
+        assert n.retries >= 1
+
+    def test_financial_domains_no_duplicates(self, dag):
+        from agent.pipeline.dags.daily_collection import FINANCIAL_DOMAINS
+
+        assert len(FINANCIAL_DOMAINS) == len(set(FINANCIAL_DOMAINS))
+
+    def test_financial_domains_all_valid_format(self, dag):
+        from agent.pipeline.dags.daily_collection import FINANCIAL_DOMAINS
+
+        for domain in FINANCIAL_DOMAINS:
+            assert "." in domain, f"Invalid domain: {domain}"
+            assert " " not in domain, f"Domain has space: {domain}"
+            assert domain == domain.lower(), f"Domain not lowercase: {domain}"
+
+    def test_both_nodes_share_same_domain_list(self, dag):
+        cert_node = dag.nodes["fetch_cert_domains"]
+        dns_node = dag.nodes["fetch_dns_domains"]
+        assert cert_node.params["domains"] == dns_node.params["domains"]
