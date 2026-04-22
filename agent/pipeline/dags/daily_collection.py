@@ -591,6 +591,248 @@ def build_daily_collection_dag(
         retries=2,
     )
 
+    # ══════════════════════════════════════════════════════════════
+    # Phase 45.3 — Remaining 23 unwired tools
+    # All nodes are independent (no deps); single parallel layer.
+    # L2-ready tools (have _persist_entities): entity observations
+    # accumulate daily. L1 aggregate tools: global conditioning
+    # variables consumed as country/market-level node features.
+    # ══════════════════════════════════════════════════════════════
+
+    # ── Academic preprints — research entity tracking ──────────
+    dag.add(
+        "fetch_academic_preprints",
+        operator="academic_preprints",
+        table_name="academic_preprints",
+        params={"mode": "papers"},
+        timeout=60,
+        retries=1,
+    )
+
+    # ── Bankruptcy / insolvency — L2 entity observations ───────
+    # us_bankruptcy = PACER RSS from 6 major courts (SDNY, Delaware,
+    # S.D. Texas, …). Covers ~90% of large corporate Chapter 11.
+    dag.add(
+        "fetch_bankruptcy_court",
+        operator="bankruptcy_court",
+        table_name="bankruptcy_court",
+        params={"mode": "us_bankruptcy"},
+        timeout=60,
+        retries=2,
+    )
+
+    # ── Building permits — FRED housing cycle indicator ─────────
+    dag.add(
+        "fetch_building_permits",
+        operator="building_permits",
+        table_name="building_permits",
+        params={"mode": "permits"},
+        timeout=60,
+        retries=1,
+    )
+
+    # ── Consumer sentiment — macro conditioning variable ────────
+    dag.add(
+        "fetch_consumer_sentiment",
+        operator="consumer_sentiment",
+        table_name="consumer_sentiment",
+        params={"mode": "us_sentiment"},
+        timeout=60,
+        retries=1,
+    )
+
+    # ── Creditor filings — entity stress scan ──────────────────
+    dag.add(
+        "fetch_creditor_filings",
+        operator="creditor_filings",
+        table_name="creditor_filings",
+        params={"mode": "stress_scan"},
+        timeout=90,
+        retries=1,
+    )
+
+    # ── Disease surveillance — wastewater pathogen tracking ─────
+    # CDC NWSS wastewater: pathogen PCR concentrations. Physics
+    # that can't be faked. Detects waves 2-3 weeks before hospitals.
+    dag.add(
+        "fetch_disease_surveillance",
+        operator="disease_surveillance",
+        table_name="disease_surveillance",
+        params={"mode": "wastewater"},
+        timeout=60,
+        retries=2,
+    )
+
+    # ── Drug regulatory — FDA approval entity tracking ──────────
+    dag.add(
+        "fetch_drug_regulatory",
+        operator="drug_regulatory",
+        table_name="drug_regulatory",
+        params={"mode": "approvals"},
+        timeout=60,
+        retries=1,
+    )
+
+    # ── Earthquake proximity — USGS seismic + infrastructure ───
+    dag.add(
+        "fetch_earthquake_proximity",
+        operator="earthquake_proximity",
+        table_name="earthquake_proximity",
+        params={"mode": "recent"},
+        timeout=45,
+        retries=2,
+    )
+
+    # ── Electricity monitor — EIA regional demand entities ─────
+    dag.add(
+        "fetch_electricity_monitor",
+        operator="electricity_monitor",
+        table_name="electricity_monitor",
+        params={"mode": "demand"},
+        timeout=60,
+        retries=1,
+    )
+
+    # ── Energy supply — EIA petroleum stocks (macro L1) ────────
+    dag.add(
+        "fetch_energy_supply",
+        operator="energy_supply",
+        table_name="energy_supply",
+        params={"mode": "petroleum_stocks"},
+        timeout=60,
+        retries=1,
+    )
+
+    # ── FOIA requests — entity cluster (L2 entity-level) ───────
+    dag.add(
+        "fetch_foia_requests",
+        operator="foia_requests",
+        table_name="foia_requests",
+        params={"mode": "entity_cluster"},
+        timeout=90,
+        retries=1,
+    )
+
+    # ── Food security — FAO production entity tracking ──────────
+    dag.add(
+        "fetch_food_security",
+        operator="food_security",
+        table_name="food_security",
+        params={"mode": "production"},
+        timeout=60,
+        retries=1,
+    )
+
+    # ── Grid interconnection queue — energy project entities ────
+    dag.add(
+        "fetch_interconnection_queue",
+        operator="interconnection_queue",
+        table_name="interconnection_queue",
+        params={"mode": "queue"},
+        timeout=90,
+        retries=1,
+    )
+
+    # ── Internet infrastructure — IODA country-level outages ───
+    dag.add(
+        "fetch_internet_infrastructure",
+        operator="internet_infrastructure",
+        table_name="internet_infrastructure",
+        params={"mode": "outages"},
+        timeout=60,
+        retries=2,
+    )
+
+    # ── Internet outages — network health entity tracking ───────
+    dag.add(
+        "fetch_internet_outages",
+        operator="internet_outages",
+        table_name="internet_outages",
+        params={"mode": "network_health"},
+        timeout=60,
+        retries=2,
+    )
+
+    # ── Job postings — BLS JOLTS via FRED ──────────────────────
+    dag.add(
+        "fetch_job_postings",
+        operator="job_postings",
+        table_name="job_postings",
+        params={"mode": "jolts"},
+        timeout=60,
+        retries=1,
+    )
+
+    # ── Labor disruptions — BLS work stoppages (macro L1) ──────
+    dag.add(
+        "fetch_labor_disruptions",
+        operator="labor_disruptions",
+        table_name="labor_disruptions",
+        params={"mode": "work_stoppages"},
+        timeout=45,
+        retries=1,
+    )
+
+    # ── Migration flows — UNHCR displacement entity tracking ───
+    dag.add(
+        "fetch_migration_flows",
+        operator="migration_flows",
+        table_name="migration_flows",
+        params={"mode": "displacement"},
+        timeout=90,
+        retries=1,
+    )
+
+    # ── Polymarket whales — smart money wallet tracking ─────────
+    dag.add(
+        "fetch_polymarket_whales",
+        operator="polymarket_whales",
+        table_name="polymarket_whales",
+        params={"mode": "recent_signals"},
+        timeout=60,
+        retries=2,
+    )
+
+    # ── Satellite activity — NASA FIRMS fire near infrastructure
+    dag.add(
+        "fetch_satellite_activity",
+        operator="satellite_activity",
+        table_name="satellite_activity",
+        params={"mode": "fire"},
+        timeout=60,
+        retries=2,
+    )
+
+    # ── Transport throughput — BTS border crossing entities ─────
+    dag.add(
+        "fetch_transport_throughput",
+        operator="transport_throughput",
+        table_name="transport_throughput",
+        params={"mode": "recent"},
+        timeout=90,
+        retries=1,
+    )
+
+    # ── Treasury receipts — US Daily Treasury Statement ─────────
+    dag.add(
+        "fetch_treasury_receipts",
+        operator="treasury_receipts",
+        table_name="treasury_receipts",
+        params={"mode": "cash_balance"},
+        timeout=45,
+        retries=1,
+    )
+
+    # ── Weather alerts — NOAA NWS severe + NASA FIRMS fire ─────
+    dag.add(
+        "fetch_weather_alerts",
+        operator="weather_alerts",
+        table_name="weather_alerts",
+        params={"mode": "summary"},
+        timeout=60,
+        retries=2,
+    )
+
     # ── Change 12: Apply tool routing decisions ────────────
     if tool_router is not None:
         decisions = tool_router.decide(tool_context)

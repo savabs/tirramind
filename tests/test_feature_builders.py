@@ -214,10 +214,12 @@ class TestConvergenceFeatureBuilderBasic:
 
 class TestConvergenceFeatureBuilderEdgeCases:
     def test_no_signals_no_data_returns_empty(self):
-        """Empty store (no pipeline data at all) → empty list."""
+        """Empty store → 3 None-valued features (consistent GNN dimensionality)."""
         store = _store()
         features = ConvergenceFeatureBuilder().build(store, _NOW)
-        assert features == []
+        assert len(features) == 3
+        assert all(f.value is None for f in features)
+        assert all(f.missing_reason == "no_convergence_activity" for f in features)
         store.close()
 
     def test_signals_outside_window_are_ignored(self):
@@ -569,10 +571,11 @@ class TestLiquidityPressure:
 
 class TestMacroEdgeCases:
     def test_no_macro_data_at_all(self):
-        """Empty store (no FRED data) → empty list."""
+        """Empty store → 3 None-valued features (consistent GNN dimensionality)."""
         store = _store()
         features = MacroStateFeatureBuilder().build(store, _NOW)
-        assert features == []
+        assert len(features) == 3
+        assert all(f.value is None for f in features)
         store.close()
 
     def test_dot_values_from_fred_skipped(self):
@@ -664,8 +667,9 @@ class TestMacroEdgeCases:
         data = {"DFF": [{"date": old_date, "value": "5.00"}]}
         _insert_macro_data(store, data, fetched_at=_NOW - 120 * _DAY)
         features = MacroStateFeatureBuilder().build(store, _NOW)
-        # Old data outside window → empty list (no usable macro data)
-        assert features == []
+        # Old data outside 90d window → query returns nothing → 3 missing features.
+        assert len(features) == 3
+        assert all(f.value is None for f in features)
         store.close()
 
     def test_effective_at_equals_as_of(self):
@@ -782,9 +786,10 @@ class TestBuilderToStorePersistence:
         store.close()
 
     def test_missing_features_persist(self):
-        """Empty store produces no features to persist."""
+        """Empty store produces 3 None-valued features that persist correctly."""
         store = _store()
         features = ConvergenceFeatureBuilder().build(store, _NOW)
-        # Phase 39: empty store → empty list (no features to store)
-        assert features == []
+        # Phase 45.3: empty store → 3 missing features with no_convergence_activity reason
+        assert len(features) == 3
+        assert all(f.value is None for f in features)
         store.close()

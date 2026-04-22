@@ -178,7 +178,9 @@ class TestMacroBuilderGraceful:
 
         features = builder.build(store, as_of=time.time())
 
-        assert features == []
+        # Empty store returns 3 None-valued features for consistent GNN dimensionality.
+        assert len(features) == 3
+        assert all(f.value is None for f in features)
         store.query_data.assert_called_once()
 
     def test_with_macro_data_returns_features(self):
@@ -257,7 +259,10 @@ class TestConvergenceFeatureSemantics:
 
         features = builder.build(store, as_of=time.time())
 
-        assert features == []
+        # Empty store returns 3 None-valued features for consistent GNN dimensionality.
+        assert len(features) == 3
+        assert all(f.value is None for f in features)
+        assert all(f.missing_reason == "no_convergence_activity" for f in features)
 
     def test_data_present_no_convergence_returns_zeros(self):
         from agent.features.builders import ConvergenceFeatureBuilder
@@ -326,7 +331,7 @@ class TestFeatureGenerationIntegration:
         assert isinstance(features, list)
 
     def test_macro_builder_with_empty_store(self):
-        """MacroStateFeatureBuilder on empty store returns empty."""
+        """MacroStateFeatureBuilder on empty store returns 3 missing features."""
         from agent.features.builders import MacroStateFeatureBuilder
 
         builder = MacroStateFeatureBuilder()
@@ -334,7 +339,9 @@ class TestFeatureGenerationIntegration:
         store.query_data.return_value = []
 
         features = builder.build(store, as_of=time.time())
-        assert features == []
+        # Empty store returns 3 None-valued features for consistent GNN dimensionality.
+        assert len(features) == 3
+        assert all(f.value is None for f in features)
 
     def test_hetero_memory_resize_multiple_times(self):
         """Sequential resizes work correctly."""

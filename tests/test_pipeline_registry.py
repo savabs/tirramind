@@ -174,7 +174,7 @@ class TestDailyCollectionStructure:
         assert dag.validate() == []
 
     def test_node_count(self, dag):
-        assert len(dag.nodes) == 29
+        assert len(dag.nodes) == 52
 
     def test_expected_node_ids(self, dag):
         expected = {
@@ -211,6 +211,30 @@ class TestDailyCollectionStructure:
             # Phase 45 — cert/dns domain wiring
             "fetch_cert_domains",
             "fetch_dns_domains",
+            # Phase 45.3 — remaining 23 unwired tools
+            "fetch_academic_preprints",
+            "fetch_bankruptcy_court",
+            "fetch_building_permits",
+            "fetch_consumer_sentiment",
+            "fetch_creditor_filings",
+            "fetch_disease_surveillance",
+            "fetch_drug_regulatory",
+            "fetch_earthquake_proximity",
+            "fetch_electricity_monitor",
+            "fetch_energy_supply",
+            "fetch_foia_requests",
+            "fetch_food_security",
+            "fetch_interconnection_queue",
+            "fetch_internet_infrastructure",
+            "fetch_internet_outages",
+            "fetch_job_postings",
+            "fetch_labor_disruptions",
+            "fetch_migration_flows",
+            "fetch_polymarket_whales",
+            "fetch_satellite_activity",
+            "fetch_transport_throughput",
+            "fetch_treasury_receipts",
+            "fetch_weather_alerts",
         }
         assert set(dag.nodes.keys()) == expected
 
@@ -222,10 +246,10 @@ class TestDailyCollectionStructure:
     def test_single_parallel_layer(self, dag):
         layers = dag.topo_sort()
         assert len(layers) == 1
-        assert len(layers[0]) == 29
+        assert len(layers[0]) == 52
 
     def test_all_roots(self, dag):
-        assert len(dag.roots()) == 29
+        assert len(dag.roots()) == 52
 
     def test_whale_alert_node_config(self, dag):
         n = dag.nodes["fetch_whale_alert"]
@@ -560,3 +584,59 @@ class TestPhase45Nodes:
         cert_node = dag.nodes["fetch_cert_domains"]
         dns_node = dag.nodes["fetch_dns_domains"]
         assert cert_node.params["domains"] == dns_node.params["domains"]
+
+
+class TestPhase453Nodes:
+    """Phase 45.3 — verify all 23 newly-wired tools are present and configured."""
+
+    @pytest.fixture
+    def dag(self):
+        return build_daily_collection_dag()
+
+    _PHASE_453_NODES = [
+        ("fetch_academic_preprints", "academic_preprints", "papers"),
+        ("fetch_bankruptcy_court", "bankruptcy_court", "us_bankruptcy"),
+        ("fetch_building_permits", "building_permits", "permits"),
+        ("fetch_consumer_sentiment", "consumer_sentiment", "us_sentiment"),
+        ("fetch_creditor_filings", "creditor_filings", "stress_scan"),
+        ("fetch_disease_surveillance", "disease_surveillance", "wastewater"),
+        ("fetch_drug_regulatory", "drug_regulatory", "approvals"),
+        ("fetch_earthquake_proximity", "earthquake_proximity", "recent"),
+        ("fetch_electricity_monitor", "electricity_monitor", "demand"),
+        ("fetch_energy_supply", "energy_supply", "petroleum_stocks"),
+        ("fetch_foia_requests", "foia_requests", "entity_cluster"),
+        ("fetch_food_security", "food_security", "production"),
+        ("fetch_interconnection_queue", "interconnection_queue", "queue"),
+        ("fetch_internet_infrastructure", "internet_infrastructure", "outages"),
+        ("fetch_internet_outages", "internet_outages", "network_health"),
+        ("fetch_job_postings", "job_postings", "jolts"),
+        ("fetch_labor_disruptions", "labor_disruptions", "work_stoppages"),
+        ("fetch_migration_flows", "migration_flows", "displacement"),
+        ("fetch_polymarket_whales", "polymarket_whales", "recent_signals"),
+        ("fetch_satellite_activity", "satellite_activity", "fire"),
+        ("fetch_transport_throughput", "transport_throughput", "recent"),
+        ("fetch_treasury_receipts", "treasury_receipts", "cash_balance"),
+        ("fetch_weather_alerts", "weather_alerts", "summary"),
+    ]
+
+    def test_all_23_nodes_present(self, dag):
+        for node_id, _, _ in self._PHASE_453_NODES:
+            assert node_id in dag.nodes, f"Missing node: {node_id}"
+
+    @pytest.mark.parametrize("node_id,operator,mode", _PHASE_453_NODES)
+    def test_node_operator_and_mode(self, dag, node_id, operator, mode):
+        n = dag.nodes[node_id]
+        assert n.operator == operator, f"{node_id}: operator mismatch"
+        assert n.params.get("mode") == mode, f"{node_id}: mode mismatch"
+
+    def test_all_phase_453_nodes_independent(self, dag):
+        for node_id, _, _ in self._PHASE_453_NODES:
+            assert dag.nodes[node_id].depends_on == []
+
+    def test_total_node_count_52(self, dag):
+        assert len(dag.nodes) == 52
+
+    def test_all_nodes_single_parallel_layer(self, dag):
+        layers = dag.topo_sort()
+        assert len(layers) == 1
+        assert len(layers[0]) == 52

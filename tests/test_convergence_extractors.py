@@ -30,7 +30,7 @@ class TestFramework:
         assert isinstance(names, list)
         assert names == sorted(names)
 
-    def test_all_49_tools_registered(self):
+    def test_all_51_tools_registered(self):
         expected = {
             "academic_preprints",
             "ais_vessel_tracking",
@@ -60,12 +60,14 @@ class TestFramework:
             "insider_filings",
             "interconnection_queue",
             "internet_infrastructure",
+            "internet_outages",
             "job_postings",
             "labor_disruptions",
             "liquidity_regime",
             "lobbying",
             "macro_data",
             "market_data",
+            "migration_flows",
             "patent_filings",
             "political_risk",
             "polymarket",

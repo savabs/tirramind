@@ -313,7 +313,7 @@ class TestMacroFeatureBuilderIntegration:
         assert lp.value is not None, "liquidity_pressure should have a value"
 
     def test_macro_builder_missing_when_no_data(self, tmp_path):
-        """MacroStateFeatureBuilder returns empty list with no data (Phase 39)."""
+        """MacroStateFeatureBuilder returns 3 missing features with no data."""
         from agent.pipeline.store import PipelineStore
         from agent.features.builders import MacroStateFeatureBuilder
 
@@ -323,7 +323,10 @@ class TestMacroFeatureBuilderIntegration:
         features = builder.build(store, time.time())
         store.close()
 
-        assert features == []
+        # Empty store now returns 3 None-valued features for consistent
+        # GNN dimensionality (value=None, missing_reason set).
+        assert len(features) == 3
+        assert all(f.value is None for f in features)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -468,8 +471,9 @@ class TestDagStructureUpdated:
         return build_daily_collection_dag()
 
     def test_node_count(self, dag):
-        # 26 tool nodes + fetch_instruments (callable) = 27
-        assert len(dag.nodes) == 27
+        # 50 string-operator nodes + 2 callable nodes
+        # (fetch_instruments + fetch_cert_domains) = 52
+        assert len(dag.nodes) == 52
 
     def test_expected_node_ids(self, dag):
         expected = {
@@ -500,6 +504,33 @@ class TestDagStructureUpdated:
             "fetch_supply_chain",
             "fetch_whale_alert",
             "fetch_wikipedia_pageviews",
+            # Phase 45 — cert/dns
+            "fetch_cert_domains",
+            "fetch_dns_domains",
+            # Phase 45.3 — remaining 23 tools
+            "fetch_academic_preprints",
+            "fetch_bankruptcy_court",
+            "fetch_building_permits",
+            "fetch_consumer_sentiment",
+            "fetch_creditor_filings",
+            "fetch_disease_surveillance",
+            "fetch_drug_regulatory",
+            "fetch_earthquake_proximity",
+            "fetch_electricity_monitor",
+            "fetch_energy_supply",
+            "fetch_foia_requests",
+            "fetch_food_security",
+            "fetch_interconnection_queue",
+            "fetch_internet_infrastructure",
+            "fetch_internet_outages",
+            "fetch_job_postings",
+            "fetch_labor_disruptions",
+            "fetch_migration_flows",
+            "fetch_polymarket_whales",
+            "fetch_satellite_activity",
+            "fetch_transport_throughput",
+            "fetch_treasury_receipts",
+            "fetch_weather_alerts",
         }
         assert set(dag.nodes.keys()) == expected
 
@@ -510,14 +541,16 @@ class TestDagStructureUpdated:
     def test_single_parallel_layer(self, dag):
         layers = dag.topo_sort()
         assert len(layers) == 1
-        assert len(layers[0]) == 27
+        assert len(layers[0]) == 52
 
     def test_all_roots(self, dag):
-        assert len(dag.roots()) == 27
+        assert len(dag.roots()) == 52
 
     def test_tool_nodes_have_string_operators(self, dag):
         """Tool-backed nodes have string operators; callable nodes are allowed."""
         tool_nodes = [n for n in dag.nodes.values() if isinstance(n.operator, str)]
-        assert len(tool_nodes) == 26  # all except fetch_instruments
+        assert (
+            len(tool_nodes) == 50
+        )  # all except fetch_instruments + fetch_cert_domains
         callable_nodes = [n for n in dag.nodes.values() if callable(n.operator)]
-        assert len(callable_nodes) == 1  # fetch_instruments
+        assert len(callable_nodes) == 2  # fetch_instruments + fetch_cert_domains

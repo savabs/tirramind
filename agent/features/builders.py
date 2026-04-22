@@ -113,9 +113,9 @@ class ConvergenceFeatureBuilder(FeatureBuilder):
         rows = self._query_convergence_signals(store, since, as_of)
 
         if not rows:
-            # Check if pipeline has any data at all — if yes, emit
-            # zero-valued features (data observed, no convergence detected)
-            # rather than None (no data available).
+            # Always emit features so dimensionality is consistent.
+            # No convergence signals AND no pipeline data → explicit None features.
+            # No convergence signals but data present → zero-valued (no stress).
             has_data = bool(
                 store.query_data("cftc", since=since, limit=1)
                 or store.query_data("gdelt", since=since, limit=1)
@@ -123,7 +123,7 @@ class ConvergenceFeatureBuilder(FeatureBuilder):
             )
             if has_data:
                 return self._zero_features(as_of)
-            return []
+            return self._missing_features(as_of, "no_convergence_activity")
 
         # ── stress_breadth: count of distinct signal names ─────
         distinct_names = {r["signal_name"] for r in rows}
@@ -297,13 +297,10 @@ class MacroStateFeatureBuilder(FeatureBuilder):
         # Load all macro_data rows from last 90 days
         rows = store.query_data("macro_data", since=as_of - _90D, limit=500)
 
-        if not rows:
-            # No macro data available (e.g. FRED API key not configured).
-            # Return empty rather than emitting missing-valued features.
-            return []
-
-        # Extract series from all rows (merge across fetches)
-        series = self._extract_series(rows)
+        # Extract series from all rows (merge across fetches).
+        # Use empty dict when no rows — sub-builders handle missing data by
+        # returning None-valued features, keeping dimensionality consistent.
+        series = self._extract_series(rows) if rows else {}
 
         features: list[EngineeredFeature] = []
         features.append(self._build_rate_momentum(series, as_of))

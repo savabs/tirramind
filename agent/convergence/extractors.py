@@ -4643,3 +4643,5 @@ def _extract_academic_preprints(tool_name: str, data: Any) -> list[Evidence]:
 
 
 register_extractor("academic_preprints", _extract_academic_preprints)
+register_extractor("internet_outages", _stub_extractor)
+register_extractor("migration_flows", _stub_extractor)

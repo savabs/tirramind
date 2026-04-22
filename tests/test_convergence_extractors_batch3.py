@@ -31,8 +31,8 @@ def _sigs(tool: str, data: dict) -> dict:
 # ════════════════════════════════════════════════════════════════
 
 class TestRegistration:
-    def test_49_total_extractors(self):
-        assert len(registered_tools()) == 49
+    def test_51_total_extractors(self):
+        assert len(registered_tools()) == 51
 
     @pytest.mark.parametrize("name", ["labor_disruptions", "gov_contracts", "academic_preprints"])
     def test_new_extractors_registered(self, name: str):
