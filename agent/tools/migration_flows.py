@@ -37,12 +37,21 @@ Market relevance:
 from __future__ import annotations
 
 import logging
-from typing import Any
+import time
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from agent.data.cache import DataCache
 from agent.tools.base import Tool, ToolResult
+
+if TYPE_CHECKING:
+    from agent.pipeline.store import PipelineStore
+
+try:
+    from agent.pipeline.entity import entity_id_from_key as _entity_id_from_key
+except ImportError:  # pragma: no cover -- optional dependency
+    _entity_id_from_key = None  # type: ignore[assignment]
 
 log = logging.getLogger(__name__)
 
@@ -57,12 +66,54 @@ WB_REMITTANCE_INDICATOR = "BX.TRF.PWKR.CD.DT"
 
 VALID_MODES = {"displacement", "asylum", "remittances"}
 
+ISO3_TO_ISO2: dict[str, str] = {
+    "AFG": "AF",
+    "AUS": "AU",
+    "BRA": "BR",
+    "CAN": "CA",
+    "CHN": "CN",
+    "COL": "CO",
+    "DEU": "DE",
+    "EGY": "EG",
+    "ESP": "ES",
+    "ETH": "ET",
+    "FRA": "FR",
+    "GBR": "GB",
+    "IND": "IN",
+    "IRN": "IR",
+    "IRQ": "IQ",
+    "ITA": "IT",
+    "JPN": "JP",
+    "JOR": "JO",
+    "LBN": "LB",
+    "MEX": "MX",
+    "PAK": "PK",
+    "PHL": "PH",
+    "POL": "PL",
+    "RUS": "RU",
+    "SDN": "SD",
+    "SOM": "SO",
+    "SYR": "SY",
+    "TCD": "TD",
+    "TUR": "TR",
+    "UKR": "UA",
+    "USA": "US",
+    "VEN": "VE",
+    "YEM": "YE",
+    "ZAF": "ZA",
+}
+
 
 class MigrationFlowsTool(Tool):
     """Monitor global migration and refugee flows via UNHCR + World Bank."""
 
-    def __init__(self, cache: DataCache | None = None) -> None:
+    def __init__(
+        self,
+        cache: DataCache | None = None,
+        pipeline_store: "PipelineStore | None" = None,
+    ) -> None:
         self._cache = cache
+        self._store = pipeline_store
 
     @property
     def name(self) -> str:
@@ -133,16 +184,29 @@ class MigrationFlowsTool(Tool):
         limit = min(kwargs.get("limit") or 20, 100)
 
         if mode == "displacement":
-            return self._handle_displacement(country, year, kwargs.get("role", "asylum"), limit)
+            result = self._handle_displacement(
+                country, year, kwargs.get("role", "asylum"), limit
+            )
         elif mode == "asylum":
-            return self._handle_asylum(country, year, kwargs.get("role", "asylum"), limit)
+            result = self._handle_asylum(
+                country, year, kwargs.get("role", "asylum"), limit
+            )
         else:
-            return self._handle_remittances(country, year, limit)
+            result = self._handle_remittances(country, year, limit)
+
+        if result.success and result.data:
+            self._persist_entities(result.data, mode)
+
+        return result
 
     # ── Mode handlers ───────────────────────────────────────
 
     def _handle_displacement(
-        self, country: str, year: int | None, role: str, limit: int,
+        self,
+        country: str,
+        year: int | None,
+        role: str,
+        limit: int,
     ) -> ToolResult:
         cache_key = f"migration:displacement:{country}:{year}:{role}:{limit}"
         if self._cache:
@@ -177,12 +241,18 @@ class MigrationFlowsTool(Tool):
         }
 
         if self._cache:
-            self._cache.set(cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL)
+            self._cache.set(
+                cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL
+            )
 
         return ToolResult(success=True, output=summary, data=result_data)
 
     def _handle_asylum(
-        self, country: str, year: int | None, role: str, limit: int,
+        self,
+        country: str,
+        year: int | None,
+        role: str,
+        limit: int,
     ) -> ToolResult:
         cache_key = f"migration:asylum:{country}:{year}:{role}:{limit}"
         if self._cache:
@@ -217,12 +287,17 @@ class MigrationFlowsTool(Tool):
         }
 
         if self._cache:
-            self._cache.set(cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL)
+            self._cache.set(
+                cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL
+            )
 
         return ToolResult(success=True, output=summary, data=result_data)
 
     def _handle_remittances(
-        self, country: str, year: int | None, limit: int,
+        self,
+        country: str,
+        year: int | None,
+        limit: int,
     ) -> ToolResult:
         if not country:
             return ToolResult(
@@ -236,6 +311,7 @@ class MigrationFlowsTool(Tool):
             )
 
         from datetime import datetime, timezone
+
         now_year = datetime.now(timezone.utc).year
         end_year = year or now_year
         start_year = end_year - 9  # 10 years of data
@@ -251,7 +327,9 @@ class MigrationFlowsTool(Tool):
             return ToolResult(success=False, output=err)
 
         signals = _compute_remittance_signals(records)
-        summary = _format_remittance_summary(records, signals, country, start_year, end_year)
+        summary = _format_remittance_summary(
+            records, signals, country, start_year, end_year
+        )
 
         result_data = {
             "records": records,
@@ -263,21 +341,79 @@ class MigrationFlowsTool(Tool):
         }
 
         if self._cache:
-            self._cache.set(cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL)
+            self._cache.set(
+                cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL
+            )
 
         return ToolResult(success=True, output=summary, data=result_data)
+
+    # ── L2 entity persistence (Phase 31) ──────────────────────
+
+    def _persist_entities(
+        self,
+        data: dict[str, Any],
+        mode: str,
+    ) -> dict[str, int]:
+        if self._store is None or _entity_id_from_key is None:
+            return {"migration_pressure_obs": 0}
+        try:
+            return self._persist_entities_inner(data, mode)
+        except Exception:
+            log.exception("Migration flows entity persistence failed (non-fatal)")
+            return {"migration_pressure_obs": 0}
+
+    def _persist_entities_inner(
+        self,
+        data: dict[str, Any],
+        mode: str,
+    ) -> dict[str, int]:
+        assert self._store is not None  # noqa: S101 -- guarded
+        assert _entity_id_from_key is not None  # noqa: S101
+
+        country_code = _normalize_country_code(data.get("country"))
+        if country_code is None:
+            return {"migration_pressure_obs": 0}
+
+        signals = data.get("signals", {})
+        country_eid = _entity_id_from_key("country", country_code)
+        self._store.register_entity("country", country_code, country_eid)
+        self._store.store_entity_observation(
+            entity_id=country_eid,
+            source_tool="migration_flows",
+            observed_at=time.time(),
+            observation_type="migration_pressure",
+            value={
+                "mode": mode,
+                "role": data.get("role"),
+                "year": data.get("year") or data.get("end_year"),
+                "total_displaced": signals.get("total_displaced"),
+                "acceptance_rate": signals.get("acceptance_rate"),
+                "latest_value": signals.get("latest_value"),
+                "yoy_change_pct": signals.get("yoy_change_pct"),
+                "trend": signals.get("trend"),
+                "alert": signals.get("alert"),
+            },
+            depth_level=2,
+        )
+        log.info(
+            "Migration flows L2: 1 migration_pressure obs persisted for %s",
+            country_code,
+        )
+        return {"migration_pressure_obs": 1}
 
 
 # ── UNHCR fetch (module-level for testability) ──────────────────
 
 
 def _fetch_unhcr(
-    url: str, params: dict,
+    url: str,
+    params: dict,
 ) -> tuple[list[dict], str | None]:
     """Fetch from UNHCR API. Returns (items, error_or_None)."""
     try:
         with httpx.Client(
-            timeout=_TIMEOUT, headers={"User-Agent": _UA},
+            timeout=_TIMEOUT,
+            headers={"User-Agent": _UA},
         ) as client:
             resp = client.get(url, params=params)
     except httpx.TimeoutException:
@@ -313,24 +449,26 @@ def _parse_population_records(items: list[dict]) -> list[dict]:
     """Parse UNHCR population items into normalized records."""
     records = []
     for item in items:
-        records.append({
-            "year": _safe_int(item.get("year")),
-            "coo": item.get("coo", ""),
-            "coo_name": item.get("coo_name", ""),
-            "coo_iso": item.get("coo_iso", ""),
-            "coa": item.get("coa", ""),
-            "coa_name": item.get("coa_name", ""),
-            "coa_iso": item.get("coa_iso", ""),
-            "refugees": _safe_int(item.get("refugees")),
-            "asylum_seekers": _safe_int(item.get("asylum_seekers")),
-            "returned_refugees": _safe_int(item.get("returned_refugees")),
-            "idps": _safe_int(item.get("idps")),
-            "returned_idps": _safe_int(item.get("returned_idps")),
-            "stateless": _safe_int(item.get("stateless")),
-            "ooc": _safe_int(item.get("ooc")),
-            "oip": _safe_int(item.get("oip")),
-            "hst": _safe_int(item.get("hst")),
-        })
+        records.append(
+            {
+                "year": _safe_int(item.get("year")),
+                "coo": item.get("coo", ""),
+                "coo_name": item.get("coo_name", ""),
+                "coo_iso": item.get("coo_iso", ""),
+                "coa": item.get("coa", ""),
+                "coa_name": item.get("coa_name", ""),
+                "coa_iso": item.get("coa_iso", ""),
+                "refugees": _safe_int(item.get("refugees")),
+                "asylum_seekers": _safe_int(item.get("asylum_seekers")),
+                "returned_refugees": _safe_int(item.get("returned_refugees")),
+                "idps": _safe_int(item.get("idps")),
+                "returned_idps": _safe_int(item.get("returned_idps")),
+                "stateless": _safe_int(item.get("stateless")),
+                "ooc": _safe_int(item.get("ooc")),
+                "oip": _safe_int(item.get("oip")),
+                "hst": _safe_int(item.get("hst")),
+            }
+        )
     return records
 
 
@@ -338,22 +476,24 @@ def _parse_asylum_records(items: list[dict]) -> list[dict]:
     """Parse UNHCR asylum-decisions items into normalized records."""
     records = []
     for item in items:
-        records.append({
-            "year": _safe_int(item.get("year")),
-            "coo": item.get("coo", ""),
-            "coo_name": item.get("coo_name", ""),
-            "coo_iso": item.get("coo_iso", ""),
-            "coa": item.get("coa", ""),
-            "coa_name": item.get("coa_name", ""),
-            "coa_iso": item.get("coa_iso", ""),
-            "procedure_type": item.get("procedure_type", ""),
-            "dec_level": item.get("dec_level", ""),
-            "dec_recognized": _safe_int(item.get("dec_recognized")),
-            "dec_other": _safe_int(item.get("dec_other")),
-            "dec_rejected": _safe_int(item.get("dec_rejected")),
-            "dec_closed": _safe_int(item.get("dec_closed")),
-            "dec_total": _safe_int(item.get("dec_total")),
-        })
+        records.append(
+            {
+                "year": _safe_int(item.get("year")),
+                "coo": item.get("coo", ""),
+                "coo_name": item.get("coo_name", ""),
+                "coo_iso": item.get("coo_iso", ""),
+                "coa": item.get("coa", ""),
+                "coa_name": item.get("coa_name", ""),
+                "coa_iso": item.get("coa_iso", ""),
+                "procedure_type": item.get("procedure_type", ""),
+                "dec_level": item.get("dec_level", ""),
+                "dec_recognized": _safe_int(item.get("dec_recognized")),
+                "dec_other": _safe_int(item.get("dec_other")),
+                "dec_rejected": _safe_int(item.get("dec_rejected")),
+                "dec_closed": _safe_int(item.get("dec_closed")),
+                "dec_total": _safe_int(item.get("dec_total")),
+            }
+        )
     return records
 
 
@@ -361,7 +501,10 @@ def _parse_asylum_records(items: list[dict]) -> list[dict]:
 
 
 def _fetch_wb_remittances(
-    country: str, start_year: int, end_year: int, limit: int,
+    country: str,
+    start_year: int,
+    end_year: int,
+    limit: int,
 ) -> tuple[list[dict], str | None]:
     """Fetch remittance data from World Bank."""
     url = f"{_WB_BASE}/country/{country}/indicator/{WB_REMITTANCE_INDICATOR}"
@@ -373,7 +516,8 @@ def _fetch_wb_remittances(
 
     try:
         with httpx.Client(
-            timeout=_TIMEOUT, headers={"User-Agent": _UA},
+            timeout=_TIMEOUT,
+            headers={"User-Agent": _UA},
         ) as client:
             resp = client.get(url, params=params)
     except httpx.TimeoutException:
@@ -398,6 +542,20 @@ def _fetch_wb_remittances(
     return records, None
 
 
+def _normalize_country_code(country: Any) -> str | None:
+    """Normalize alpha-2/alpha-3 country codes to ISO-2 for country entities."""
+    if not country:
+        return None
+    code = str(country).strip().upper()
+    if not code or code in {"ALL", "WLD"}:
+        return None
+    if len(code) == 2:
+        return code
+    if len(code) == 3:
+        return ISO3_TO_ISO2.get(code)
+    return None
+
+
 def _parse_wb_records(raw: list) -> list[dict]:
     """Parse World Bank indicator response into records."""
     records = []
@@ -410,13 +568,15 @@ def _parse_wb_records(raw: list) -> list[dict]:
             value = float(value)
         except (ValueError, TypeError):
             continue
-        records.append({
-            "year": year,
-            "value": value,
-            "country": entry.get("country", {}).get("id", ""),
-            "country_name": entry.get("country", {}).get("value", ""),
-            "indicator": entry.get("indicator", {}).get("id", ""),
-        })
+        records.append(
+            {
+                "year": year,
+                "value": value,
+                "country": entry.get("country", {}).get("id", ""),
+                "country_name": entry.get("country", {}).get("value", ""),
+                "indicator": entry.get("indicator", {}).get("id", ""),
+            }
+        )
 
     # Sort chronologically (WB returns newest-first)
     records.sort(key=lambda r: r["year"])
@@ -582,7 +742,11 @@ def _compute_remittance_signals(records: list[dict]) -> dict:
 
 
 def _format_displacement_summary(
-    records: list[dict], signals: dict, country: str, year: int | None, role: str,
+    records: list[dict],
+    signals: dict,
+    country: str,
+    year: int | None,
+    role: str,
 ) -> str:
     """Format displacement summary."""
     scope = f"{country} ({role})" if country else "Global"
@@ -602,9 +766,15 @@ def _format_displacement_summary(
         return str(n)
 
     lines.append(f"Total displaced: {_fmt(signals.get('total_displaced', 0))}")
-    lines.append(f"  Refugees: {_fmt(signals.get('total_refugees', 0))} ({signals.get('refugee_pct', 0)}%)")
-    lines.append(f"  IDPs: {_fmt(signals.get('total_idps', 0))} ({signals.get('idp_pct', 0)}%)")
-    lines.append(f"  Asylum seekers: {_fmt(signals.get('total_asylum_seekers', 0))} ({signals.get('asylum_pct', 0)}%)")
+    lines.append(
+        f"  Refugees: {_fmt(signals.get('total_refugees', 0))} ({signals.get('refugee_pct', 0)}%)"
+    )
+    lines.append(
+        f"  IDPs: {_fmt(signals.get('total_idps', 0))} ({signals.get('idp_pct', 0)}%)"
+    )
+    lines.append(
+        f"  Asylum seekers: {_fmt(signals.get('total_asylum_seekers', 0))} ({signals.get('asylum_pct', 0)}%)"
+    )
     lines.append(f"  Stateless: {_fmt(signals.get('total_stateless', 0))}")
 
     alert = signals.get("alert")
@@ -615,7 +785,11 @@ def _format_displacement_summary(
 
 
 def _format_asylum_summary(
-    records: list[dict], signals: dict, country: str, year: int | None, role: str,
+    records: list[dict],
+    signals: dict,
+    country: str,
+    year: int | None,
+    role: str,
 ) -> str:
     """Format asylum decision summary."""
     scope = f"{country} ({role})" if country else "Global"
@@ -649,7 +823,11 @@ def _format_asylum_summary(
 
 
 def _format_remittance_summary(
-    records: list[dict], signals: dict, country: str, start: int, end: int,
+    records: list[dict],
+    signals: dict,
+    country: str,
+    start: int,
+    end: int,
 ) -> str:
     """Format remittance summary."""
     lines = [f"World Bank Remittances — {country} ({start}-{end})"]

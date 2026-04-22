@@ -71,6 +71,13 @@ _VALID_CATEGORIES = {
     "all",
 }
 
+# Map our normalized categories → instrument tickers for topic→instrument links.
+# Only categories with clear, tradeable instrument mappings are included.
+_TOPIC_INSTRUMENT_MAP: dict[str, list[str]] = {
+    "crypto": ["BTC-USD", "ETH-USD"],
+    "finance": ["ES=F", "SPY", "ZN=F"],
+}
+
 
 class PolymarketTool(Tool):
 
@@ -357,6 +364,18 @@ class PolymarketTool(Tool):
                     },
                 )
                 counts["topics"] += 1
+
+                # Link topic → instruments based on category (Phase 36)
+                category = mkt.get("category", "")
+                for ticker in _TOPIC_INSTRUMENT_MAP.get(category, []):
+                    inst_eid = entity_id_from_key("instrument", ticker)
+                    store.link_entities(
+                        entity_id_a=topic_eid,
+                        entity_id_b=inst_eid,
+                        link_type="topic_relates_to_instrument",
+                        source="polymarket",
+                        confidence=0.7,
+                    )
 
             # Store market_probability observation
             import time as _time

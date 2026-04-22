@@ -377,7 +377,7 @@ class TestXMLParser:
         assert result is not None
         assert result["insider_name"] == "STEPHEN BRINKLEY"
         assert result["relationship"] == "Officer"
-        assert result["shares_to_sell"] == 4454
+        assert result["shares_to_sell"] == 4154
         assert abs(result["dollar_value"] - 884428.56) < 0.01
         assert result["shares_outstanding"] == 323444928
         assert result["approx_sale_date"] == "2026-03-24"
@@ -589,11 +589,11 @@ class TestHelpers:
         assert _safe_float("not-a-num") == 0.0
 
     def test_safe_int(self):
-        assert _safe_int("4154") == 4454
+        assert _safe_int("4154") == 4154
         assert _safe_int("323,444,928") == 323444928
         assert _safe_int(None) == 0
         assert _safe_int("not-a-num") == 0
-        assert _safe_int("4154.0") == 4454
+        assert _safe_int("4154.0") == 4154
 
 
 # ─── Cluster Detection ──────────────────────────────────────────────

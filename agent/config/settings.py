@@ -68,6 +68,9 @@ class AgentConfig:
     max_plan_depth: int = 3                           # hierarchical planning depth
     memory_dir: str = ".tirra_memory"                 # local memory persistence path
     tool_timeout: int = 30                            # subprocess timeout for code/shell tools (seconds)
+    lesson_min_support: int = 3                       # min episodes before lesson promotion
+    lesson_min_runs: int = 2                          # min distinct runs before lesson promotion
+    episode_ttl_days: int = 30                        # episodic memory decay window
     verbose: bool = False
 
     @classmethod
@@ -80,6 +83,9 @@ class AgentConfig:
             max_plan_depth=int(os.getenv("TIRRA_MAX_PLAN_DEPTH", "3")),
             memory_dir=os.getenv("TIRRA_MEMORY_DIR", ".tirra_memory"),
             tool_timeout=int(os.getenv("TIRRA_TOOL_TIMEOUT", "30")),
+            lesson_min_support=int(os.getenv("TIRRA_LESSON_MIN_SUPPORT", "3")),
+            lesson_min_runs=int(os.getenv("TIRRA_LESSON_MIN_RUNS", "2")),
+            episode_ttl_days=int(os.getenv("TIRRA_EPISODE_TTL_DAYS", "30")),
             verbose=os.getenv("TIRRA_VERBOSE", "").lower() in ("1", "true", "yes"),
         )
 

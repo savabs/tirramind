@@ -62,11 +62,11 @@ class TestObsTypeRegistration:
     def test_research_velocity_in_obs_types(self):
         assert "research_velocity" in OBSERVATION_TYPES
 
-    def test_enrichment_dim_is_44(self):
-        assert ENRICHMENT_DIM == 44
+    def test_enrichment_dim(self):
+        assert ENRICHMENT_DIM == 55
 
-    def test_obs_types_count_is_35(self):
-        assert len(OBSERVATION_TYPES) == 35
+    def test_obs_types_count(self):
+        assert len(OBSERVATION_TYPES) == 46
 
 
 # ── 2. Single-tool persistence flows through to graph ────────────

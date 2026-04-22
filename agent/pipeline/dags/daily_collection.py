@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from agent.pipeline.dag import DAG
@@ -146,6 +147,7 @@ def build_daily_collection_dag(
     dag.add(
         "fetch_cftc",
         operator="cftc",
+        table_name="cftc",
         params={"mode": "latest"},
         timeout=120,
         retries=2,
@@ -155,6 +157,7 @@ def build_daily_collection_dag(
     dag.add(
         "fetch_finra_scan",
         operator="finra_short_volume",
+        table_name="finra_short_volume",
         params={"mode": "short_volume"},  # no ticker → scan mode
         timeout=180,
         retries=2,
@@ -164,6 +167,7 @@ def build_daily_collection_dag(
     dag.add(
         "fetch_power_demand",
         operator="power_grid",
+        table_name="power_grid",
         params={"mode": "demand"},
         timeout=60,
         retries=2,
@@ -173,6 +177,7 @@ def build_daily_collection_dag(
     dag.add(
         "fetch_power_fuel",
         operator="power_grid",
+        table_name="power_grid",
         params={"mode": "fuel_mix"},
         timeout=60,
         retries=2,
@@ -182,6 +187,7 @@ def build_daily_collection_dag(
     dag.add(
         "fetch_gdelt",
         operator="gdelt",
+        table_name="gdelt",
         params={"mode": "events", "hours_back": 24, "limit": 500},
         timeout=120,
         retries=2,
@@ -191,8 +197,272 @@ def build_daily_collection_dag(
     dag.add(
         "fetch_polymarket",
         operator="polymarket",
+        table_name="polymarket",
         params={"category": "all", "limit": 100},
         timeout=60,
+        retries=2,
+    )
+
+    # ── BTC Whale Alert (confirmed-block, L2 entity persistence) ──
+    # Phase 41: scheduled to widen observation diversity. The tool is
+    # free (blockchain.info), no auth, and persists wallet entities +
+    # wallet→instrument links for BTC-USD (see whale_alert L2).
+    dag.add(
+        "fetch_whale_alert",
+        operator="whale_alert",
+        table_name="whale_alert",
+        params={"mode": "confirmed", "min_btc": 10.0, "limit": 100},
+        timeout=60,
+        retries=2,
+    )
+
+    # ═══════════════════════════════════════════════════════════════
+    # Phase 42 — Entity Diversity Expansion
+    # Wires 8 dormant L2-capable tools into the daily schedule to lift
+    # entity-type observation entropy from ~0.17 → ≥1.0 nats and
+    # activate every dead entity type (company, protocol, person).
+    # See [[phase42_entity_diversity_expansion]].
+    # ═══════════════════════════════════════════════════════════════
+
+    # ── SEC Form 4 insider purchases (company + person entities) ──
+    # Flagship "cheap+weird" signal per project memory: executives
+    # revealing private info through their own open-market buys.
+    # SEC EDGAR is rate-limited to 10 req/s; 14 days at min_cluster_size=3
+    # reliably finishes under 5 minutes.
+    dag.add(
+        "fetch_insider_filings",
+        operator="insider_filings",
+        table_name="insider_filings",
+        params={"days_back": 14, "min_cluster_size": 3},
+        timeout=300,
+        retries=2,
+    )
+
+    # ── Central bank balance sheets (country entities, monetary state) ──
+    # Fed/ECB/BOJ/BOE/PBOC balance sheets FX-normalised. Densifies the
+    # 82 sparsely-observed country nodes beyond GDELT event counts.
+    dag.add(
+        "fetch_central_bank_balance",
+        operator="central_bank_balance",
+        table_name="central_bank_balance",
+        params={"mode": "balance_sheets", "period": "1y"},
+        timeout=120,
+        retries=2,
+    )
+
+    # ── Sovereign yield curves — US (growth/inflation expectations) ──
+    dag.add(
+        "fetch_sovereign_debt_us",
+        operator="sovereign_debt",
+        table_name="sovereign_debt",
+        params={"mode": "us_yields"},
+        timeout=120,
+        retries=2,
+    )
+
+    # ── Sovereign yield curves — EU (Bund, Gilt, OAT) ──
+    dag.add(
+        "fetch_sovereign_debt_eu",
+        operator="sovereign_debt",
+        table_name="sovereign_debt",
+        params={"mode": "eu_yields"},
+        timeout=120,
+        retries=2,
+    )
+
+    # ── OECD Composite Leading Indicators (country-level leading econ) ──
+    # CLI is the broadest single OECD series; covers G7 + major EM by default.
+    dag.add(
+        "fetch_global_pmi",
+        operator="global_pmi",
+        table_name="global_pmi",
+        params={"mode": "cli"},
+        timeout=120,
+        retries=2,
+    )
+
+    # ── US TIC capital flows (foreign holdings of Treasuries by country) ──
+    # Bilateral concentration — who holds whose debt — cross-country edges.
+    dag.add(
+        "fetch_capital_flows",
+        operator="capital_flows",
+        table_name="capital_flows",
+        params={"mode": "holdings"},
+        timeout=120,
+        retries=2,
+    )
+
+    # ── DeFi TVL (activates dead protocol nodes: Uniswap, Aave, etc.) ──
+    dag.add(
+        "fetch_defi_flows",
+        operator="defi_flows",
+        table_name="defi_flows",
+        params={"mode": "tvl", "limit": 20},
+        timeout=120,
+        retries=2,
+    )
+
+    # ── Wikipedia pageview spikes (attention leading indicator on topics) ──
+    # Densifies the 729 topic nodes beyond GDELT event counts.
+    dag.add(
+        "fetch_wikipedia_pageviews",
+        operator="wikipedia_pageviews",
+        table_name="wikipedia_pageviews",
+        params={
+            "mode": "spike",
+            "days_back": 30,
+            "z_threshold": 2.0,
+            "limit": 50,
+        },
+        timeout=120,
+        retries=2,
+    )
+
+    # ── US Senate LDA lobbying filings (company strategic-intent signal) ──
+    # Use `search` mode with a year filter — broad coverage of all registrants
+    # and clients filing in the current year. `spending` mode requires a
+    # specific registrant/client and would narrow coverage to one entity.
+    dag.add(
+        "fetch_lobbying",
+        operator="lobbying",
+        table_name="lobbying",
+        params={"mode": "search", "year": datetime.now(timezone.utc).year},
+        timeout=120,
+        retries=2,
+    )
+
+    # ═══════════════════════════════════════════════════════════════
+    # Phase 43 — High-Volume Entity DAG Wiring
+    # Adds 4 already-L2-ready tools that generate high entity volume per
+    # run: vessel entities (500+/run), company/org entities (gov awards),
+    # person/company entities (sanctions), company entities (patents).
+    # See [[phase43_high_volume_dag_wiring]].
+    # ═══════════════════════════════════════════════════════════════
+
+    # ── AIS vessel positions (vessel entity type, 500+/run) ────────
+    # Digitraffic Baltic AIS: 18K+ vessel source pool, zero cost/key.
+    # area=full_baltic: bbox (54–66°N, 9–31°E). Persists vessel entities
+    # with vessel_position obs. timeout=180 covers per-vessel metadata.
+    dag.add(
+        "fetch_ais_vessel",
+        operator="ais_vessel_tracking",
+        table_name="ais_vessel_tracking",
+        params={"mode": "area", "area": "full_baltic", "limit": 500},
+        timeout=180,
+        retries=2,
+    )
+
+    # ── US federal contract awards (company + organization entities) ──
+    # USASpending.gov: latest 100 award records → company + agency nodes
+    # with contract_award obs and awarded_by links.
+    dag.add(
+        "fetch_gov_contracts",
+        operator="gov_contracts",
+        table_name="gov_contracts",
+        params={"mode": "recent", "limit": 100},
+        timeout=120,
+        retries=2,
+    )
+
+    # ── OFAC/UN sanctions designations (person + company entities) ──
+    # Recent 90-day window across OFAC SDN + UN consolidated lists.
+    # Persists person/company entities with sanctions_listing obs +
+    # located_in country links.
+    dag.add(
+        "fetch_sanctions_monitor",
+        operator="sanctions_monitor",
+        table_name="sanctions_monitor",
+        params={"mode": "recent", "days_back": 90, "limit": 100},
+        timeout=120,
+        retries=2,
+    )
+
+    # ── USPTO AI/ML patent filings (company entities) ──────────────
+    # PatentsView search mode with CPC class G06N (machine learning).
+    # Creates company entities for major tech assignees with patent_filing
+    # obs. search is the only mode that calls _persist_entities.
+    dag.add(
+        "fetch_patent_filings",
+        operator="patent_filings",
+        table_name="patent_filings",
+        params={"mode": "search", "cpc_class": "G06N", "limit": 50},
+        timeout=120,
+        retries=2,
+    )
+
+    # ═══════════════════════════════════════════════════════════════
+    # Phase 44 — Batch 2 Entity DAG Wiring
+    # Wires 5 more L2-ready tools: regulatory_gazette, form144,
+    # supply_chain_monitor, political_risk, comtrade.
+    # No new tool code — all tools already have _persist_entities.
+    # Observation types already in schema: regulatory_velocity,
+    # sell_intent, price_movement, campaign_finance, trade_flow.
+    # See [[phase44_batch2_dag_wiring]].
+    # ═══════════════════════════════════════════════════════════════
+
+    # ── Federal Register regulatory filings (org entities) ────────
+    dag.add(
+        "fetch_regulatory_gazette",
+        operator="regulatory_gazette",
+        table_name="regulatory_gazette",
+        params={"days_back": 7, "limit": 50},
+        timeout=120,
+        retries=2,
+    )
+
+    # ── SEC Form 144 pre-trade intent notices (company + person) ──
+    # Form 144 = insider pre-announces intent to sell restricted stock.
+    # Signals near-term insider selling pressure 90 days in advance.
+    dag.add(
+        "fetch_form144",
+        operator="form144",
+        table_name="form144",
+        params={"days_back": 14},
+        timeout=180,
+        retries=2,
+    )
+
+    # ── BLS Producer Price Index (industry-sector org entities) ───
+    dag.add(
+        "fetch_supply_chain",
+        operator="supply_chain_prices",
+        table_name="supply_chain_prices",
+        params={"mode": "producer_prices"},
+        timeout=120,
+        retries=2,
+    )
+
+    # ── FEC campaign finance — candidate filings (person entities) ─
+    # Candidates mode: broadest FEC coverage, creates person entities
+    # for candidates with campaign_finance observations.
+    dag.add(
+        "fetch_political_risk",
+        operator="political_risk",
+        table_name="political_risk",
+        params={"mode": "candidates"},
+        timeout=120,
+        retries=2,
+    )
+
+    # ── UN Comtrade — US top trading partners (country entities) ──
+    # partners mode: requires only reporter; returns top bilateral
+    # trade flows by value. Creates trade_flow obs on country nodes.
+    dag.add(
+        "fetch_comtrade",
+        operator="comtrade",
+        table_name="comtrade",
+        params={"mode": "partners", "reporter": "USA"},
+        timeout=120,
+        retries=2,
+    )
+
+    # ── FRED Macro Data (rates, yields, balance sheet) ─────
+    dag.add(
+        "fetch_macro",
+        operator="macro_data",
+        table_name="macro_data",
+        params={"series_id": "DFF,GS10,GS2,WALCL"},
+        timeout=120,
         retries=2,
     )
 

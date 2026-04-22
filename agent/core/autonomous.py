@@ -24,6 +24,7 @@ from agent.learning.evaluator import Evaluation, Evaluator
 from agent.learning.goal_generator import Goal, GoalGenerator
 from agent.learning.reflection import ReflectionResult, Reflector
 from agent.learning.reward import RewardWeightOptimizer, compute_reward
+from agent.memory.candidates import CandidateStore
 from agent.memory.store import (
     EpisodicMemory,
     LearningEntry,
@@ -142,6 +143,11 @@ class AutonomousRunner:
         # Shared memory (across all iterations)
         self._episodic = EpisodicMemory(persist_path=mem_dir / "episodic.jsonl")
         self._semantic = SemanticMemory(persist_path=mem_dir / "semantic.jsonl")
+        self._candidates = CandidateStore(
+            persist_path=mem_dir / "candidates.jsonl",
+            min_support=config.lesson_min_support,
+            min_runs=config.lesson_min_runs,
+        )
 
     def run(self) -> AutonomousRunSummary:
         """Execute the autonomous loop with RL-driven decisions.
@@ -167,6 +173,7 @@ class AutonomousRunner:
             learned_weights.dead_end_penalty,
         )
 
+        run_id = f"run_{int(time.time())}"
         iterations: list[LoopIteration] = []
         consecutive_failures = 0
         stop_reason = "max_iterations_reached"
@@ -175,6 +182,8 @@ class AutonomousRunner:
             log.info("=== Autonomous iteration %d/%d ===", i, self._max_iterations)
 
             # 1. REFLECT on history (LLM — context gathering)
+            # Use validated learnings for dead-end checks;
+            # all goals for dedup (avoid re-attempting even unvalidated ones)
             attempted = self._semantic.get_attempted_goals()
             reflection = self._reflector.reflect(
                 episodes=self._episodic.recent(20),
@@ -249,17 +258,30 @@ class AutonomousRunner:
                     )
 
             # 8. Store learning with arm + reward info
-            self._semantic.store_learning(
-                LearningEntry(
-                    goal=goal.description,
-                    score=evaluation.score,
-                    success=evaluation.success,
-                    dead_end=evaluation.dead_end,
-                    lessons=evaluation.lessons,
-                    arm=arm.name,
-                    reward=reward,
-                )
+            learning_entry = LearningEntry(
+                goal=goal.description,
+                score=evaluation.score,
+                success=evaluation.success,
+                dead_end=evaluation.dead_end,
+                lessons=evaluation.lessons,
+                arm=arm.name,
+                reward=reward,
+                run_id=run_id,
             )
+            self._semantic.store_learning(learning_entry)
+
+            # 9. CANDIDATE PROMOTION — stage + evaluate lessons
+            promo = self._candidates.process([learning_entry], run_id=run_id)
+            if promo.promoted:
+                for key in promo.promoted:
+                    # Mark the originating LearningEntry as validated
+                    self._semantic.mark_validated(goal.description, run_id)
+                log.info(
+                    "Candidate pipeline: %d updated, %d promoted, %d rejected",
+                    promo.candidates_updated,
+                    len(promo.promoted),
+                    len(promo.rejected),
+                )
 
             # Record iteration
             iteration = LoopIteration(
@@ -299,6 +321,15 @@ class AutonomousRunner:
                 mean_reward,
                 len(iterations),
             )
+
+        # Episodic decay — remove old episodes, archive before deletion
+        archive_dir = Path(self._config.memory_dir) / "episodic_archive"
+        decayed = self._episodic.decay(
+            max_age_days=self._config.episode_ttl_days,
+            archive_dir=archive_dir,
+        )
+        if decayed:
+            log.info("Decayed %d old episodes (TTL=%dd)", decayed, self._config.episode_ttl_days)
 
         summary = AutonomousRunSummary(
             iterations_completed=len(iterations),

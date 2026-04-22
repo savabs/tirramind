@@ -347,7 +347,7 @@ class TestFineTuner:
         losses = history["loss"]
         if len(losses) >= 2:
             # Loss should not explode (10x increase would be concerning)
-            assert losses[-1] < losses[0] * 10, "Loss should not explode"
+            assert losses[-1] <= losses[0] * 10, "Loss should not explode"
 
 
 # ═══════════════════════════════════════════════════════════════

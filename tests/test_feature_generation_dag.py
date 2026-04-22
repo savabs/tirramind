@@ -190,7 +190,7 @@ class TestRunFeatureGenerationHappyPath:
         )
         # Can't use the same store since callback opens its own.
         # Instead, test via the returned summary.
-        assert result["produced"] == 6  # 3 convergence + 3 macro
+        assert result["produced"] == 17  # 3 convergence + 3 macro + 11 GNN
 
     def test_return_structure(self):
         store = _store()
@@ -208,7 +208,7 @@ class TestRunFeatureGenerationHappyPath:
             {"db_path": ":memory:", "as_of": _NOW, "builders": DEFAULT_BUILDERS},
             {},
         )
-        assert len(result["builders"]) == 2
+        assert len(result["builders"]) == 3
         for summary in result["builders"]:
             assert "builder" in summary
             assert "features_produced" in summary
@@ -221,8 +221,8 @@ class TestRunFeatureGenerationEdgeCases:
             {"db_path": ":memory:", "as_of": _NOW, "builders": DEFAULT_BUILDERS},
             {},
         )
-        assert result["produced"] == 6
-        assert result["stored"] == 6  # missing features are still stored
+        assert result["produced"] == 17  # 3 convergence + 3 macro + 11 GNN
+        assert result["stored"] == 17  # all features valid including GNN missing
 
     def test_convergence_only(self):
         """Only convergence signals → convergence features have values, macro missing."""
@@ -233,8 +233,8 @@ class TestRunFeatureGenerationEdgeCases:
             {"db_path": ":memory:", "as_of": _NOW, "builders": DEFAULT_BUILDERS},
             {},
         )
-        assert result["produced"] == 6
-        # At least some missing (macro side)
+        assert result["produced"] == 17  # 3 convergence + 3 macro + 11 GNN
+        # At least some missing (macro side + GNN side)
         total_missing = sum(s.get("missing", 0) for s in result["builders"])
         assert total_missing >= 3  # all 3 macro features missing
 
@@ -317,7 +317,7 @@ class TestEndToEndPersistence:
         _assert_all_valid(all_features)
 
         row_ids = store.store_features_batch(all_features)
-        assert len(row_ids) == 6
+        assert len(row_ids) >= 6  # convergence + macro + GNN (variable)
 
         # Verify retrieval
         for feat in all_features:

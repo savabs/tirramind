@@ -92,7 +92,9 @@ def _make_belief(
 
 
 def _seed_features(
-    store: PipelineStore, n_days: int, base_ts: float,
+    store: PipelineStore,
+    n_days: int,
+    base_ts: float,
 ) -> list[float]:
     """Seed store with n_days of features. Returns effective_at timestamps."""
     from agent.pipeline.dags.world_model_update import _FEATURE_NAMES
@@ -146,7 +148,9 @@ class TestShouldFit:
         store = _make_store(tmp_path)
         store.store_data(_FIT_SOURCE, {"as_of": _BASE_TS}, {"result": "ok"})
         should, reason = _should_fit(
-            store, _BASE_TS + 3 * _DAY_SECONDS, fit_interval_days=7,
+            store,
+            _BASE_TS + 3 * _DAY_SECONDS,
+            fit_interval_days=7,
         )
         assert should is False
         assert "3.0d" in reason
@@ -155,7 +159,9 @@ class TestShouldFit:
         store = _make_store(tmp_path)
         store.store_data(_FIT_SOURCE, {"as_of": _BASE_TS}, {"result": "ok"})
         should, reason = _should_fit(
-            store, _BASE_TS + 10 * _DAY_SECONDS, fit_interval_days=7,
+            store,
+            _BASE_TS + 10 * _DAY_SECONDS,
+            fit_interval_days=7,
         )
         assert should is True
         assert "10.0d" in reason
@@ -165,7 +171,9 @@ class TestShouldFit:
         store = _make_store(tmp_path)
         store.store_data(_FIT_SOURCE, {"as_of": _BASE_TS}, {})
         should, _ = _should_fit(
-            store, _BASE_TS + 7 * _DAY_SECONDS, fit_interval_days=7,
+            store,
+            _BASE_TS + 7 * _DAY_SECONDS,
+            fit_interval_days=7,
         )
         assert should is True
 
@@ -174,7 +182,9 @@ class TestShouldFit:
         store = _make_store(tmp_path)
         # Marker stored now but logically as_of is from 20 days ago
         store.store_data(
-            _FIT_SOURCE, {"as_of": _BASE_TS - 20 * _DAY_SECONDS}, {},
+            _FIT_SOURCE,
+            {"as_of": _BASE_TS - 20 * _DAY_SECONDS},
+            {},
         )
         should, _ = _should_fit(store, _BASE_TS, fit_interval_days=7)
         assert should is True
@@ -184,7 +194,9 @@ class TestShouldFit:
         store.store_data(_FIT_SOURCE, {"as_of": _BASE_TS}, {})
         # 23 hours later → still < 1 day
         should, _ = _should_fit(
-            store, _BASE_TS + 23 * 3600, fit_interval_days=1,
+            store,
+            _BASE_TS + 23 * 3600,
+            fit_interval_days=1,
         )
         assert should is False
 
@@ -198,7 +210,9 @@ class TestLoadFeatureHistory:
     def test_empty_store(self, tmp_path):
         store = _make_store(tmp_path)
         snapshots = _load_feature_history(
-            store, _BASE_TS - 90 * _DAY_SECONDS, _BASE_TS,
+            store,
+            _BASE_TS - 90 * _DAY_SECONDS,
+            _BASE_TS,
         )
         assert snapshots == []
 
@@ -206,7 +220,9 @@ class TestLoadFeatureHistory:
         store = _make_store(tmp_path)
         _seed_features(store, n_days=5, base_ts=_BASE_TS)
         snapshots = _load_feature_history(
-            store, _BASE_TS - _DAY_SECONDS, _BASE_TS + 6 * _DAY_SECONDS,
+            store,
+            _BASE_TS - _DAY_SECONDS,
+            _BASE_TS + 6 * _DAY_SECONDS,
         )
         assert len(snapshots) == 5
         from agent.pipeline.dags.world_model_update import _FEATURE_NAMES
@@ -219,7 +235,9 @@ class TestLoadFeatureHistory:
         store = _make_store(tmp_path)
         _seed_features(store, n_days=3, base_ts=_BASE_TS)
         snapshots = _load_feature_history(
-            store, _BASE_TS - _DAY_SECONDS, _BASE_TS + 4 * _DAY_SECONDS,
+            store,
+            _BASE_TS - _DAY_SECONDS,
+            _BASE_TS + 4 * _DAY_SECONDS,
         )
         assert snapshots[0][0].effective_at < snapshots[-1][0].effective_at
 
@@ -249,13 +267,25 @@ class TestLoadFeatureHistory:
             "(feature_name, version, effective_at, computed_at, horizon, "
             "value, quality, source_signals_json, builder, unit) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            ("macro.yield_curve_slope.spot", 1, ts, ts, "spot",
-             2.0, 1.0, "[]", "test", "raw"),
+            (
+                "macro.yield_curve_slope.spot",
+                1,
+                ts,
+                ts,
+                "spot",
+                2.0,
+                1.0,
+                "[]",
+                "test",
+                "raw",
+            ),
         )
         conn.commit()
 
         snapshots = _load_feature_history(
-            store, _BASE_TS, _BASE_TS + 2 * _DAY_SECONDS,
+            store,
+            _BASE_TS,
+            _BASE_TS + 2 * _DAY_SECONDS,
         )
         # Should still get at least the valid feature
         assert len(snapshots) >= 1
@@ -285,23 +315,29 @@ class TestLoadRegimeLabels:
         store = _make_store(tmp_path)
         ts0 = _BASE_TS + 3600
         ts2 = _BASE_TS + 2 * _DAY_SECONDS + 3600
-        store.store_belief(_make_belief(
-            "regime.macro", ts0,
-            probabilities={"expansion": 0.8, "contraction": 0.1, "crisis": 0.1},
-        ))
-        store.store_belief(_make_belief(
-            "regime.macro", ts2,
-            probabilities={"expansion": 0.1, "contraction": 0.2, "crisis": 0.7},
-        ))
+        store.store_belief(
+            _make_belief(
+                "regime.macro",
+                ts0,
+                probabilities={"expansion": 0.8, "contraction": 0.1, "crisis": 0.1},
+            )
+        )
+        store.store_belief(
+            _make_belief(
+                "regime.macro",
+                ts2,
+                probabilities={"expansion": 0.1, "contraction": 0.2, "crisis": 0.7},
+            )
+        )
         day_keys = [
             int(_BASE_TS // _DAY_SECONDS),
             int((_BASE_TS + _DAY_SECONDS) // _DAY_SECONDS),
             int((_BASE_TS + 2 * _DAY_SECONDS) // _DAY_SECONDS),
         ]
         labels = _load_regime_labels(store, day_keys, default_regime="expansion")
-        assert labels[0] == "expansion"     # MAP from belief
-        assert labels[1] == "expansion"     # default (no belief for day 1)
-        assert labels[2] == "crisis"        # MAP from belief
+        assert labels[0] == "expansion"  # MAP from belief
+        assert labels[1] == "expansion"  # default (no belief for day 1)
+        assert labels[2] == "crisis"  # MAP from belief
 
     def test_empty_day_keys(self, tmp_path):
         store = _make_store(tmp_path)
@@ -387,7 +423,9 @@ class TestMaybeFitParams:
         store.store_data(_FIT_SOURCE, {"as_of": _BASE_TS}, {})
         wm = MagicMock()
         result = _maybe_fit_params(
-            store, wm, _BASE_TS + 2 * _DAY_SECONDS,
+            store,
+            wm,
+            _BASE_TS + 2 * _DAY_SECONDS,
             fit_interval_days=7,
         )
         assert result["skipped"] is True
@@ -397,7 +435,9 @@ class TestMaybeFitParams:
         _seed_features(store, n_days=5, base_ts=_BASE_TS)
         wm = MagicMock()
         result = _maybe_fit_params(
-            store, wm, _BASE_TS + 6 * _DAY_SECONDS,
+            store,
+            wm,
+            _BASE_TS + 6 * _DAY_SECONDS,
             fit_interval_days=1,
             history_window_days=90,
         )
@@ -411,19 +451,27 @@ class TestMaybeFitParams:
 
         wm = MagicMock()
         wm.fit_cpds.return_value = {
-            "fitted": True, "n_samples": 60, "nodes_fitted": ["obs.a"],
+            "fitted": True,
+            "n_samples": 60,
+            "nodes_fitted": ["obs.a"],
         }
         wm._filter._regime_configs = {
-            "expansion": MagicMock(), "contraction": MagicMock(),
+            "expansion": MagicMock(),
+            "contraction": MagicMock(),
         }
         wm._filter.fit_filter_params.return_value = {
-            "fitted": True, "n_samples": 60,
-            "iterations": 5, "log_likelihoods": [-100, -90],
+            "fitted": True,
+            "n_samples": 60,
+            "iterations": 5,
+            "log_likelihoods": [-100, -90],
         }
 
         result = _maybe_fit_params(
-            store, wm, _BASE_TS + 61 * _DAY_SECONDS,
-            fit_interval_days=1, history_window_days=90,
+            store,
+            wm,
+            _BASE_TS + 61 * _DAY_SECONDS,
+            fit_interval_days=1,
+            history_window_days=90,
         )
 
         assert result["skipped"] is False
@@ -449,13 +497,18 @@ class TestMaybeFitParams:
         wm.fit_cpds.side_effect = RuntimeError("pgmpy exploded")
         wm._filter._regime_configs = {"expansion": MagicMock()}
         wm._filter.fit_filter_params.return_value = {
-            "fitted": True, "n_samples": 40,
-            "iterations": 3, "log_likelihoods": [-50],
+            "fitted": True,
+            "n_samples": 40,
+            "iterations": 3,
+            "log_likelihoods": [-50],
         }
 
         result = _maybe_fit_params(
-            store, wm, _BASE_TS + 41 * _DAY_SECONDS,
-            fit_interval_days=1, history_window_days=90,
+            store,
+            wm,
+            _BASE_TS + 41 * _DAY_SECONDS,
+            fit_interval_days=1,
+            history_window_days=90,
         )
 
         assert result["cpd_result"]["fitted"] is False
@@ -469,14 +522,19 @@ class TestMaybeFitParams:
 
         wm = MagicMock()
         wm.fit_cpds.return_value = {
-            "fitted": True, "n_samples": 40, "nodes_fitted": [],
+            "fitted": True,
+            "n_samples": 40,
+            "nodes_fitted": [],
         }
         wm._filter._regime_configs = {"expansion": MagicMock()}
         wm._filter.fit_filter_params.side_effect = ValueError("EM diverged")
 
         result = _maybe_fit_params(
-            store, wm, _BASE_TS + 41 * _DAY_SECONDS,
-            fit_interval_days=1, history_window_days=90,
+            store,
+            wm,
+            _BASE_TS + 41 * _DAY_SECONDS,
+            fit_interval_days=1,
+            history_window_days=90,
         )
 
         assert result["cpd_result"]["fitted"] is True
@@ -493,13 +551,18 @@ class TestMaybeFitParams:
 
         wm = MagicMock()
         wm.fit_cpds.return_value = {
-            "fitted": True, "n_samples": 20, "nodes_fitted": ["obs.a"],
+            "fitted": True,
+            "n_samples": 20,
+            "nodes_fitted": ["obs.a"],
         }
         wm._filter._regime_configs = {"expansion": MagicMock()}
 
         result = _maybe_fit_params(
-            store, wm, _BASE_TS + 21 * _DAY_SECONDS,
-            fit_interval_days=1, history_window_days=90,
+            store,
+            wm,
+            _BASE_TS + 21 * _DAY_SECONDS,
+            fit_interval_days=1,
+            history_window_days=90,
         )
 
         assert result["cpd_result"]["fitted"] is True
@@ -517,12 +580,18 @@ class TestMaybeFitParams:
         wm.fit_cpds.return_value = {"fitted": True, "n_samples": 40, "nodes_fitted": []}
         wm._filter._regime_configs = {"expansion": MagicMock()}
         wm._filter.fit_filter_params.return_value = {
-            "fitted": True, "n_samples": 40, "iterations": 2, "log_likelihoods": [-10],
+            "fitted": True,
+            "n_samples": 40,
+            "iterations": 2,
+            "log_likelihoods": [-10],
         }
 
         _maybe_fit_params(
-            store, wm, _BASE_TS + 41 * _DAY_SECONDS,
-            fit_interval_days=1, history_window_days=90,
+            store,
+            wm,
+            _BASE_TS + 41 * _DAY_SECONDS,
+            fit_interval_days=1,
+            history_window_days=90,
         )
 
         call_args = wm._filter.fit_filter_params.call_args
@@ -545,18 +614,29 @@ class TestMaybeFitParams:
         wm.fit_cpds.return_value = {"fitted": True, "n_samples": 40, "nodes_fitted": []}
         wm._filter._regime_configs = {"expansion": MagicMock()}
         wm._filter.fit_filter_params.return_value = {
-            "fitted": True, "n_samples": 40, "iterations": 2, "log_likelihoods": [-10],
+            "fitted": True,
+            "n_samples": 40,
+            "iterations": 2,
+            "log_likelihoods": [-10],
         }
 
         as_of = _BASE_TS + 41 * _DAY_SECONDS
         r1 = _maybe_fit_params(
-            store, wm, as_of, fit_interval_days=7, history_window_days=90,
+            store,
+            wm,
+            as_of,
+            fit_interval_days=7,
+            history_window_days=90,
         )
         assert r1["skipped"] is False
 
         # Second call — same day, should skip
         r2 = _maybe_fit_params(
-            store, wm, as_of + 100, fit_interval_days=7, history_window_days=90,
+            store,
+            wm,
+            as_of + 100,
+            fit_interval_days=7,
+            history_window_days=90,
         )
         assert r2["skipped"] is True
 
@@ -581,7 +661,8 @@ class TestRunWorldModelUpdateWithFitting:
         mock_fit.return_value = {"skipped": True, "reason": "test"}
 
         result = run_world_model_update(
-            {"db_path": str(tmp_path / "t.db"), "as_of": _BASE_TS}, {},
+            {"db_path": str(tmp_path / "t.db"), "as_of": _BASE_TS},
+            {},
         )
         assert "fit_result" in result
         assert result["fit_result"]["skipped"] is True
@@ -635,7 +716,8 @@ class TestRunWorldModelUpdateWithFitting:
         mock_build.return_value = mock_wm
 
         run_world_model_update(
-            {"db_path": str(tmp_path / "t.db"), "as_of": _BASE_TS}, {},
+            {"db_path": str(tmp_path / "t.db"), "as_of": _BASE_TS},
+            {},
         )
         assert call_order == ["fit", "update"]
 
@@ -652,7 +734,12 @@ class TestRunWorldModelUpdateWithFitting:
         mock_fit.return_value = {"skipped": True, "reason": "test"}
 
         run_world_model_update(
-            {"db_path": str(tmp_path / "t.db"), "as_of": _BASE_TS}, {},
+            {
+                "db_path": str(tmp_path / "t.db"),
+                "as_of": _BASE_TS,
+                "use_scheduler": False,
+            },
+            {},
         )
 
         call_kwargs = mock_fit.call_args.kwargs

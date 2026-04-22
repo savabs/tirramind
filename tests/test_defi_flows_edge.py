@@ -516,7 +516,7 @@ class TestCacheInteraction:
             mock_client.return_value.__exit__ = MagicMock(return_value=False)
             r = tool.execute(mode="tvl")
             assert r.success
-            cache.set.assert_called()
+            cache.put.assert_called()
 
     def test_no_cache(self):
         tool = _tool(cache=None)

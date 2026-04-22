@@ -68,12 +68,14 @@ def load_instrument_returns(
 
     obs = store.query_all_observations(since=since, until=until)
 
-    # Filter to daily_return observations for requested tickers
+    # Filter to daily return observations for requested tickers.
+    # Support both legacy "daily_return" and current "instrument_daily" obs types.
+    _RETURN_OBS_TYPES = {"daily_return", "instrument_daily"}
     ticker_set = set(tickers)
     # date_str → {ticker → log_return}
     data: dict[str, dict[str, float]] = defaultdict(dict)
     for o in obs:
-        if o["observation_type"] != "daily_return":
+        if o["observation_type"] not in _RETURN_OBS_TYPES:
             continue
         eid = o["entity_id"]
         if eid not in ticker_set:
@@ -87,7 +89,7 @@ def load_instrument_returns(
         data[day][eid] = float(lr)
 
     if not data:
-        raise ValueError("No daily_return observations found for given tickers/dates.")
+        raise ValueError("No daily return observations found for given tickers/dates.")
 
     dates = sorted(data.keys())
     ticker_idx = {t: i for i, t in enumerate(tickers)}

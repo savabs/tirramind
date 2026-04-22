@@ -16,6 +16,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+postgres = ["psycopg2-binary>=2.9"]
 quant = [
     "numpy>=1.24",
     "scipy>=1.10",

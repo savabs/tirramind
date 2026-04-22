@@ -30,13 +30,22 @@ Signal theory:
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from agent.data.cache import DataCache
 from agent.tools.base import Tool, ToolResult
+
+if TYPE_CHECKING:
+    from agent.pipeline.store import PipelineStore
+
+try:
+    from agent.pipeline.entity import entity_id_from_key as _entity_id_from_key
+except ImportError:  # pragma: no cover -- optional dependency
+    _entity_id_from_key = None  # type: ignore[assignment]
 
 log = logging.getLogger(__name__)
 
@@ -55,13 +64,40 @@ VALID_MODES = frozenset({"flows", "commodity", "partners"})
 
 # Key M49 country codes (ISO-3166 numeric, which Comtrade uses)
 M49_CODES: dict[str, int] = {
-    "USA": 842, "CHN": 156, "JPN": 392, "DEU": 276, "GBR": 826,
-    "FRA": 250, "IND": 356, "KOR": 410, "CAN": 124, "AUS": 36,
-    "BRA": 76, "RUS": 643, "MEX": 484, "IDN": 360, "SAU": 682,
-    "TWN": 158, "NLD": 528, "CHE": 756, "TUR": 792, "SGP": 702,
-    "ARE": 784, "THA": 764, "VNM": 704, "MYS": 458, "PHL": 608,
-    "ZAF": 710, "NGA": 566, "EGY": 818, "ISR": 376, "NOR": 578,
-    "SWE": 752, "POL": 616, "ITA": 380, "ESP": 724,
+    "USA": 842,
+    "CHN": 156,
+    "JPN": 392,
+    "DEU": 276,
+    "GBR": 826,
+    "FRA": 250,
+    "IND": 356,
+    "KOR": 410,
+    "CAN": 124,
+    "AUS": 36,
+    "BRA": 76,
+    "RUS": 643,
+    "MEX": 484,
+    "IDN": 360,
+    "SAU": 682,
+    "TWN": 158,
+    "NLD": 528,
+    "CHE": 756,
+    "TUR": 792,
+    "SGP": 702,
+    "ARE": 784,
+    "THA": 764,
+    "VNM": 704,
+    "MYS": 458,
+    "PHL": 608,
+    "ZAF": 710,
+    "NGA": 566,
+    "EGY": 818,
+    "ISR": 376,
+    "NOR": 578,
+    "SWE": 752,
+    "POL": 616,
+    "ITA": 380,
+    "ESP": 724,
 }
 
 # Reverse lookup
@@ -87,6 +123,44 @@ STRATEGIC_COMMODITIES: dict[str, str] = {
     "3004": "Medicaments (packaged)",
     "8703": "Motor vehicles",
     "8802": "Aircraft",
+}
+
+# ISO-3 alpha → ISO-2 alpha for entity graph country keys
+_ISO3_TO_ISO2: dict[str, str] = {
+    "USA": "US",
+    "CHN": "CN",
+    "JPN": "JP",
+    "DEU": "DE",
+    "GBR": "GB",
+    "FRA": "FR",
+    "IND": "IN",
+    "KOR": "KR",
+    "CAN": "CA",
+    "AUS": "AU",
+    "BRA": "BR",
+    "RUS": "RU",
+    "MEX": "MX",
+    "IDN": "ID",
+    "SAU": "SA",
+    "TWN": "TW",
+    "NLD": "NL",
+    "CHE": "CH",
+    "TUR": "TR",
+    "SGP": "SG",
+    "ARE": "AE",
+    "THA": "TH",
+    "VNM": "VN",
+    "MYS": "MY",
+    "PHL": "PH",
+    "ZAF": "ZA",
+    "NGA": "NG",
+    "EGY": "EG",
+    "ISR": "IL",
+    "NOR": "NO",
+    "SWE": "SE",
+    "POL": "PL",
+    "ITA": "IT",
+    "ESP": "ES",
 }
 
 
@@ -117,9 +191,7 @@ def _resolve_country(code_or_name: str) -> int | None:
     return None
 
 
-def _fetch_json(
-    url: str, client: httpx.Client, **params: Any
-) -> dict | None:
+def _fetch_json(url: str, client: httpx.Client, **params: Any) -> dict | None:
     """Fetch URL and parse as JSON.  Returns dict or None."""
     try:
         r = client.get(url, params=params)
@@ -136,26 +208,29 @@ def _parse_trade_records(data: dict) -> list[dict[str, Any]]:
     """Parse Comtrade response into clean trade records."""
     records = []
     for item in data.get("data", []):
-        records.append({
-            "period": item.get("period", ""),
-            "reporter": item.get("reporterDesc", "Unknown"),
-            "reporter_code": item.get("reporterCode", 0),
-            "partner": item.get("partnerDesc", "Unknown"),
-            "partner_code": item.get("partnerCode", 0),
-            "flow": item.get("flowDesc", ""),
-            "flow_code": item.get("flowCode", ""),
-            "commodity_code": item.get("cmdCode", ""),
-            "commodity": item.get("cmdDesc", ""),
-            "trade_value_usd": item.get("primaryValue", 0),
-            "quantity": item.get("qty", 0),
-            "quantity_unit": item.get("qtUnit", ""),
-        })
+        records.append(
+            {
+                "period": item.get("period", ""),
+                "reporter": item.get("reporterDesc", "Unknown"),
+                "reporter_code": item.get("reporterCode", 0),
+                "partner": item.get("partnerDesc", "Unknown"),
+                "partner_code": item.get("partnerCode", 0),
+                "flow": item.get("flowDesc", ""),
+                "flow_code": item.get("flowCode", ""),
+                "commodity_code": item.get("cmdCode", ""),
+                "commodity": item.get("cmdDesc", ""),
+                "trade_value_usd": item.get("primaryValue", 0),
+                "quantity": item.get("qty", 0),
+                "quantity_unit": item.get("qtUnit", ""),
+            }
+        )
     return records
 
 
 def _get_api_key() -> str | None:
     """Get Comtrade API key from environment."""
     import os
+
     key = os.environ.get("TIRRA_UN_COMTRADE_KEY", "").strip()
     return key if key else None
 
@@ -215,8 +290,14 @@ class ComtradeTool(Tool):
         "required": ["mode"],
     }
 
-    def __init__(self, *, cache: DataCache | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        cache: DataCache | None = None,
+        pipeline_store: "PipelineStore | None" = None,
+    ) -> None:
         self._cache = cache
+        self._store = pipeline_store
 
     def execute(self, **kwargs: Any) -> ToolResult:
         mode = (kwargs.get("mode") or "").strip().lower()
@@ -227,10 +308,16 @@ class ComtradeTool(Tool):
             )
 
         if mode == "flows":
-            return self._flows(**kwargs)
-        if mode == "commodity":
-            return self._commodity(**kwargs)
-        return self._partners(**kwargs)
+            result = self._flows(**kwargs)
+        elif mode == "commodity":
+            result = self._commodity(**kwargs)
+        else:
+            result = self._partners(**kwargs)
+
+        if result.success and result.data:
+            self._persist_entities(result.data, mode)
+
+        return result
 
     # ── flows mode ───────────────────────────────────────────────────
 
@@ -264,11 +351,15 @@ class ComtradeTool(Tool):
         if flow not in ("X", "M"):
             flow = "X"
 
-        cache_key = f"ct_flows_{reporter_m49}_{partner_m49}_{flow}_{commodity_code}_{period}"
+        cache_key = (
+            f"ct_flows_{reporter_m49}_{partner_m49}_{flow}_{commodity_code}_{period}"
+        )
         if self._cache:
             cached = self._cache.get("comtrade", cache_key)
             if cached is not None:
-                return self._format_flows(cached, reporter_raw, partner_raw, flow, from_cache=True)
+                return self._format_flows(
+                    cached, reporter_raw, partner_raw, flow, from_cache=True
+                )
 
         params: dict[str, str] = {
             "reporterCode": str(reporter_m49),
@@ -306,12 +397,14 @@ class ComtradeTool(Tool):
             "",
         ]
         # Sort by trade value descending
-        sorted_recs = sorted(records, key=lambda r: r.get("trade_value_usd", 0) or 0, reverse=True)
+        sorted_recs = sorted(
+            records, key=lambda r: r.get("trade_value_usd", 0) or 0, reverse=True
+        )
         for r in sorted_recs[:15]:
             val = r.get("trade_value_usd", 0) or 0
             val_str = f"${val:,.0f}" if val else "N/A"
             lines.append(
-                f"  [{r.get('period', '?')}] {r.get('commodity', 'N/A')[:50]} "
+                f"  [{r.get('period', '?')}] {(r.get('commodity') or 'N/A')[:50]} "
                 f"({r.get('commodity_code', '?')}) — {val_str}"
             )
         if len(records) > 15:
@@ -356,7 +449,9 @@ class ComtradeTool(Tool):
         if self._cache:
             cached = self._cache.get("comtrade", cache_key)
             if cached is not None:
-                return self._format_commodity(cached, commodity_code, flow, from_cache=True)
+                return self._format_commodity(
+                    cached, commodity_code, flow, from_cache=True
+                )
 
         params: dict[str, str] = {
             "cmdCode": commodity_code,
@@ -390,7 +485,9 @@ class ComtradeTool(Tool):
             f"Records: {len(records)}",
             "",
         ]
-        sorted_recs = sorted(records, key=lambda r: r.get("trade_value_usd", 0) or 0, reverse=True)
+        sorted_recs = sorted(
+            records, key=lambda r: r.get("trade_value_usd", 0) or 0, reverse=True
+        )
         for r in sorted_recs[:15]:
             val = r.get("trade_value_usd", 0) or 0
             val_str = f"${val:,.0f}" if val else "N/A"
@@ -442,7 +539,9 @@ class ComtradeTool(Tool):
         if self._cache:
             cached = self._cache.get("comtrade", cache_key)
             if cached is not None:
-                return self._format_partners(cached, reporter_raw, flow, from_cache=True)
+                return self._format_partners(
+                    cached, reporter_raw, flow, from_cache=True
+                )
 
         params: dict[str, str] = {
             "reporterCode": str(reporter_m49),
@@ -475,7 +574,9 @@ class ComtradeTool(Tool):
             f"Records: {len(records)}",
             "",
         ]
-        sorted_recs = sorted(records, key=lambda r: r.get("trade_value_usd", 0) or 0, reverse=True)
+        sorted_recs = sorted(
+            records, key=lambda r: r.get("trade_value_usd", 0) or 0, reverse=True
+        )
         for r in sorted_recs[:15]:
             val = r.get("trade_value_usd", 0) or 0
             val_str = f"${val:,.0f}" if val else "N/A"
@@ -520,3 +621,55 @@ class ComtradeTool(Tool):
             return None
 
         return _parse_trade_records(data)
+
+    # ── L2 entity persistence (Phase 32) ──────────────────────
+
+    def _persist_entities(
+        self,
+        data: dict[str, Any],
+        mode: str,
+    ) -> dict[str, int]:
+        if self._store is None or _entity_id_from_key is None:
+            return {"trade_flow_obs": 0}
+        try:
+            return self._persist_entities_inner(data, mode)
+        except Exception:
+            log.exception("Comtrade entity persistence failed (non-fatal)")
+            return {"trade_flow_obs": 0}
+
+    def _persist_entities_inner(
+        self,
+        data: dict[str, Any],
+        mode: str,
+    ) -> dict[str, int]:
+        assert self._store is not None  # noqa: S101 -- guarded
+        assert _entity_id_from_key is not None  # noqa: S101
+
+        reporter_iso3 = str(data.get("reporter", "")).strip().upper()
+        reporter_iso2 = _ISO3_TO_ISO2.get(reporter_iso3)
+        if not reporter_iso2:
+            return {"trade_flow_obs": 0}
+
+        records = data.get("records", [])
+        top_record = records[0] if records else {}
+
+        country_eid = _entity_id_from_key("country", reporter_iso2)
+        self._store.register_entity("country", reporter_iso2, country_eid)
+        self._store.store_entity_observation(
+            entity_id=country_eid,
+            source_tool="comtrade",
+            observed_at=time.time(),
+            observation_type="trade_flow",
+            value={
+                "mode": mode,
+                "partner": data.get("partner"),
+                "flow": data.get("flow"),
+                "commodity_code": top_record.get("commodity_code"),
+                "trade_value_usd": top_record.get("trade_value_usd"),
+                "record_count": data.get("record_count", len(records)),
+                "period": top_record.get("period"),
+            },
+            depth_level=2,
+        )
+        log.info("Comtrade L2: 1 trade_flow obs persisted for %s", reporter_iso2)
+        return {"trade_flow_obs": 1}

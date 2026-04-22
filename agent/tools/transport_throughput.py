@@ -31,13 +31,22 @@ Modes:
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from agent.data.cache import DataCache
 from agent.tools.base import Tool, ToolResult
+
+if TYPE_CHECKING:
+    from agent.pipeline.store import PipelineStore
+
+try:
+    from agent.pipeline.entity import entity_id_from_key as _entity_id_from_key
+except ImportError:  # pragma: no cover -- optional dependency
+    _entity_id_from_key = None  # type: ignore[assignment]
 
 log = logging.getLogger(__name__)
 
@@ -186,8 +195,13 @@ class TransportThroughputTool(Tool):
         "required": [],
     }
 
-    def __init__(self, cache: DataCache | None = None) -> None:
+    def __init__(
+        self,
+        cache: DataCache | None = None,
+        pipeline_store: "PipelineStore | None" = None,
+    ) -> None:
         self._cache = cache
+        self._store = pipeline_store
 
     def execute(
         self,
@@ -229,29 +243,35 @@ class TransportThroughputTool(Tool):
                 )
 
         if mode == "recent":
-            return self._execute_recent(
+            result = self._execute_recent(
                 measure=resolved_measure,
                 border=resolved_border,
                 limit=limit,
             )
-        if mode == "trend":
-            return self._execute_trend(
+        elif mode == "trend":
+            result = self._execute_trend(
                 measure=resolved_measure,
                 border=resolved_border,
                 months_back=months_back,
             )
-        if mode == "port":
-            return self._execute_port(
+        elif mode == "port":
+            result = self._execute_port(
                 measure=resolved_measure,
                 border=resolved_border,
                 state=state.strip(),
                 limit=limit,
             )
-        # compare
-        return self._execute_compare(
-            measure=resolved_measure,
-            months_back=months_back,
-        )
+        else:
+            # compare
+            result = self._execute_compare(
+                measure=resolved_measure,
+                months_back=months_back,
+            )
+
+        if result.success and result.data:
+            self._persist_entities(result.data, mode)
+
+        return result
 
     # ------------------------------------------------------------------
     # recent mode
@@ -624,3 +644,70 @@ class TransportThroughputTool(Tool):
             self._cache.put("transport_throughput", cache_key, data, ttl=7200)
 
         return data, None
+
+    # ── L2 entity persistence (Phase 32) ──────────────────────
+
+    _BORDER_TO_COUNTRIES: dict[str, list[str]] = {
+        "US-Canada Border": ["US", "CA"],
+        "US-Mexico Border": ["US", "MX"],
+    }
+
+    def _persist_entities(
+        self,
+        data: dict[str, Any],
+        mode: str,
+    ) -> dict[str, int]:
+        if self._store is None or _entity_id_from_key is None:
+            return {"border_throughput_obs": 0}
+        try:
+            return self._persist_entities_inner(data, mode)
+        except Exception:
+            log.exception("Transport throughput entity persistence failed (non-fatal)")
+            return {"border_throughput_obs": 0}
+
+    def _persist_entities_inner(
+        self,
+        data: dict[str, Any],
+        mode: str,
+    ) -> dict[str, int]:
+        assert self._store is not None  # noqa: S101 -- guarded
+        assert _entity_id_from_key is not None  # noqa: S101
+
+        # Collect all countries mentioned in the data
+        countries: set[str] = set()
+        records = (
+            data.get("records")
+            or data.get("series")
+            or data.get("ports")
+            or data.get("comparison")
+            or []
+        )
+        for rec in records:
+            border = rec.get("border", "")
+            for cc in self._BORDER_TO_COUNTRIES.get(border, []):
+                countries.add(cc)
+
+        if not countries:
+            return {"border_throughput_obs": 0}
+
+        now = time.time()
+        count = 0
+        for cc in sorted(countries):
+            country_eid = _entity_id_from_key("country", cc)
+            self._store.register_entity("country", cc, country_eid)
+            self._store.store_entity_observation(
+                entity_id=country_eid,
+                source_tool="transport_throughput",
+                observed_at=now,
+                observation_type="border_throughput",
+                value={
+                    "mode": mode,
+                    "record_count": len(records),
+                    "period": data.get("period"),
+                },
+                depth_level=2,
+            )
+            count += 1
+
+        log.info("Transport throughput L2: %d border_throughput obs persisted", count)
+        return {"border_throughput_obs": count}

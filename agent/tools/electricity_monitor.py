@@ -31,13 +31,22 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from datetime import datetime, timezone, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from agent.data.cache import DataCache
 from agent.tools.base import Tool, ToolResult
+
+if TYPE_CHECKING:
+    from agent.pipeline.store import PipelineStore
+
+try:
+    from agent.pipeline.entity import entity_id_from_key as _entity_id_from_key
+except ImportError:
+    _entity_id_from_key = None
 
 log = logging.getLogger(__name__)
 
@@ -228,8 +237,14 @@ class ElectricityMonitorTool(Tool):
         "required": ["mode", "region"],
     }
 
-    def __init__(self, *, cache: DataCache | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        cache: DataCache | None = None,
+        pipeline_store: "PipelineStore | None" = None,
+    ) -> None:
         self._cache = cache
+        self._store = pipeline_store
         self._api_key = self._get_api_key()
 
     @staticmethod
@@ -265,10 +280,15 @@ class ElectricityMonitorTool(Tool):
         days = max(1, min(7, days))
 
         if mode == "demand":
-            return self._demand(region, days)
-        if mode == "generation":
-            return self._generation(region, days)
-        return self._interchange(region, days)
+            result = self._demand(region, days)
+        elif mode == "generation":
+            result = self._generation(region, days)
+        else:
+            result = self._interchange(region, days)
+
+        if result.success:
+            self._persist_entities(region, mode)
+        return result
 
     # ------------------------------------------------------------------
     # Mode: demand
@@ -466,3 +486,40 @@ class ElectricityMonitorTool(Tool):
         if self._cache:
             self._cache.put(cache_ns, cache_key, result)
         return ToolResult(success=True, output=result)
+
+    # ------------------------------------------------------------------
+    # L2 entity persistence
+    # ------------------------------------------------------------------
+
+    def _persist_entities(self, region: str, mode: str) -> dict[str, int]:
+        if self._store is None or _entity_id_from_key is None:
+            return {"grid_demand_obs": 0}
+        try:
+            return self._persist_entities_inner(region, mode)
+        except Exception:
+            log.exception("Electricity monitor entity persistence failed (non-fatal)")
+            return {"grid_demand_obs": 0}
+
+    def _persist_entities_inner(self, region: str, mode: str) -> dict[str, int]:
+        assert self._store is not None
+        assert _entity_id_from_key is not None
+
+        if not region:
+            return {"grid_demand_obs": 0}
+
+        region_name = KNOWN_REGIONS.get(region, region)
+        eid = _entity_id_from_key("organization", region)
+        self._store.register_entity("organization", region, eid)
+        self._store.store_entity_observation(
+            entity_id=eid,
+            source_tool="electricity_monitor",
+            observed_at=time.time(),
+            observation_type="grid_demand",
+            value={
+                "mode": mode,
+                "region": region,
+                "region_name": region_name,
+            },
+            depth_level=2,
+        )
+        return {"grid_demand_obs": 1}

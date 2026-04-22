@@ -179,6 +179,25 @@ class HeteroMemory(nn.Module):
         self.memory.zero_()
         self.last_update.zero_()
 
+    def resize(self, new_num_nodes: int) -> None:
+        """Expand memory buffers to accommodate more nodes.
+
+        Preserves existing memory rows and zero-initializes new ones.
+        No-op if *new_num_nodes* <= current size.
+        """
+        if new_num_nodes <= self.num_nodes:
+            return
+        new_memory = torch.zeros(
+            new_num_nodes, self.memory_dim, device=self.memory.device
+        )
+        new_memory[: self.num_nodes] = self.memory
+        new_last = torch.zeros(new_num_nodes, device=self.last_update.device)
+        new_last[: self.num_nodes] = self.last_update
+        # Replace registered buffers
+        self.memory = new_memory
+        self.last_update = new_last
+        self.num_nodes = new_num_nodes
+
     def get_memory(self, node_ids: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """Retrieve memory vectors and last-update times for given nodes.
 

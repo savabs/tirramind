@@ -89,6 +89,13 @@ tags:
 **Generated:** {datetime.datetime.now().isoformat(timespec='minutes')}
 **Summary:** {summary}
 
+> **Single-owner rule:** Do NOT copy raw metric values (test counts, node counts,
+> ENRICHMENT_DIM, DAG size, failure counts) into this checkpoint.
+> Reference the canonical owners instead:
+> - Current metrics → [[tirramind_structure]] (`memories/repo/tirramind_structure.md`)
+> - Roadmap / next phases → [[quant_training_ground]] (`tasks/active/quant_training_ground.md`)
+> This checkpoint is an **append-only historical record**. Never edit it after the session ends.
+
 ---
 
 ## Active Tasks
@@ -106,6 +113,12 @@ tags:
 ```
 {changed if changed else "(no changes)"}
 ```
+
+## Canonical State References
+
+- Current metrics: see [[tirramind_structure]]
+- Roadmap / next phases: see [[quant_training_ground]]
+- Architecture decisions: see `docs/adr/`
 
 ## Related
 

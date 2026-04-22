@@ -594,23 +594,25 @@ class TestWhaleAlertTransactsWith:
         links = store.query_entity_links(sender_eid, link_type="transacts_with")
         assert len(links) == 1
 
-    def test_no_inputs_no_links(self):
-        """Transaction with no inputs → no links."""
+    def test_no_inputs_no_transacts_with_links(self):
+        """Transaction with no inputs → no transacts_with links (trades_instrument may exist)."""
         tool, store = _make_tool_with_store(WhaleAlertTool)
         tx = _make_whale_tx(inputs=[], outputs=[{"addr": "1Recv", "value_btc": 5.0}])
         tool._persist_entities([tx])
 
-        all_links = store.query_all_entity_links()
-        assert len(all_links) == 0
+        recv_eid = entity_id_from_key("wallet", "1Recv")
+        tw_links = store.query_entity_links(recv_eid, link_type="transacts_with")
+        assert len(tw_links) == 0
 
-    def test_no_outputs_no_links(self):
-        """Transaction with no outputs → no links."""
+    def test_no_outputs_no_transacts_with_links(self):
+        """Transaction with no outputs → no transacts_with links (trades_instrument may exist)."""
         tool, store = _make_tool_with_store(WhaleAlertTool)
         tx = _make_whale_tx(inputs=[{"addr": "1Send", "value_btc": 5.0}], outputs=[])
         tool._persist_entities([tx])
 
-        all_links = store.query_all_entity_links()
-        assert len(all_links) == 0
+        sender_eid = entity_id_from_key("wallet", "1Send")
+        tw_links = store.query_entity_links(sender_eid, link_type="transacts_with")
+        assert len(tw_links) == 0
 
     def test_no_store_no_crash(self):
         """WhaleAlertTool without a pipeline_store doesn't crash."""

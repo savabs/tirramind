@@ -35,13 +35,22 @@ Market relevance:
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from agent.data.cache import DataCache
 from agent.tools.base import Tool, ToolResult
+
+if TYPE_CHECKING:
+    from agent.pipeline.store import PipelineStore
+
+try:
+    from agent.pipeline.entity import entity_id_from_key as _entity_id_from_key
+except ImportError:  # pragma: no cover -- optional dependency
+    _entity_id_from_key = None  # type: ignore[assignment]
 
 log = logging.getLogger(__name__)
 
@@ -73,8 +82,13 @@ VALID_TESTS = {
 class InternetOutagesTool(Tool):
     """Monitor internet censorship and outages via OONI + RIPE Atlas."""
 
-    def __init__(self, cache: DataCache | None = None) -> None:
+    def __init__(
+        self,
+        cache: DataCache | None = None,
+        pipeline_store: "PipelineStore | None" = None,
+    ) -> None:
         self._cache = cache
+        self._store = pipeline_store
 
     @property
     def name(self) -> str:
@@ -121,9 +135,7 @@ class InternetOutagesTool(Tool):
                 },
                 "since": {
                     "type": "string",
-                    "description": (
-                        "Start date YYYY-MM-DD (default: 7 days ago)."
-                    ),
+                    "description": ("Start date YYYY-MM-DD (default: 7 days ago)."),
                 },
                 "until": {
                     "type": "string",
@@ -143,8 +155,7 @@ class InternetOutagesTool(Tool):
             return ToolResult(
                 success=False,
                 output=(
-                    f"Invalid mode '{mode}'. "
-                    f"Must be one of: {sorted(VALID_MODES)}"
+                    f"Invalid mode '{mode}'. " f"Must be one of: {sorted(VALID_MODES)}"
                 ),
             )
 
@@ -153,34 +164,38 @@ class InternetOutagesTool(Tool):
             return ToolResult(
                 success=False,
                 output=(
-                    f"Invalid country code '{country}'. "
-                    f"Must be 2-letter ISO code."
+                    f"Invalid country code '{country}'. " f"Must be 2-letter ISO code."
                 ),
             )
 
         limit = min(kwargs.get("limit") or 50, 200)
 
         if mode == "censorship":
-            return self._handle_censorship(country, kwargs, limit)
+            result = self._handle_censorship(country, kwargs, limit)
         elif mode == "network_health":
-            return self._handle_network_health(country, kwargs, limit)
+            result = self._handle_network_health(country, kwargs, limit)
         else:
-            return self._handle_outage_detection(country, kwargs, limit)
+            result = self._handle_outage_detection(country, kwargs, limit)
+
+        if result.success and result.data:
+            self._persist_entities(result.data, mode)
+
+        return result
 
     # ── Mode handlers ───────────────────────────────────────
 
     def _handle_censorship(
-        self, country: str, kwargs: dict, limit: int,
+        self,
+        country: str,
+        kwargs: dict,
+        limit: int,
     ) -> ToolResult:
-        test_name = (
-            kwargs.get("test_name") or "web_connectivity"
-        ).strip().lower()
+        test_name = (kwargs.get("test_name") or "web_connectivity").strip().lower()
         if test_name not in VALID_TESTS:
             return ToolResult(
                 success=False,
                 output=(
-                    f"Invalid test_name '{test_name}'. "
-                    f"Valid: {sorted(VALID_TESTS)}"
+                    f"Invalid test_name '{test_name}'. " f"Valid: {sorted(VALID_TESTS)}"
                 ),
             )
 
@@ -199,13 +214,14 @@ class InternetOutagesTool(Tool):
         if country:
             params["probe_cc"] = country
 
-        cache_key = (
-            f"ooni:censorship:{country}:{test_name}:{since}:{until}:{limit}"
-        )
+        cache_key = f"ooni:censorship:{country}:{test_name}:{since}:{until}:{limit}"
         return self._fetch_ooni_measurements(params, cache_key, country)
 
     def _handle_network_health(
-        self, country: str, kwargs: dict, limit: int,
+        self,
+        country: str,
+        kwargs: dict,
+        limit: int,
     ) -> ToolResult:
         if not country:
             return ToolResult(
@@ -222,17 +238,17 @@ class InternetOutagesTool(Tool):
         return self._fetch_ripe_probes(params, cache_key, country)
 
     def _handle_outage_detection(
-        self, country: str, kwargs: dict, limit: int,
+        self,
+        country: str,
+        kwargs: dict,
+        limit: int,
     ) -> ToolResult:
-        test_name = (
-            kwargs.get("test_name") or "web_connectivity"
-        ).strip().lower()
+        test_name = (kwargs.get("test_name") or "web_connectivity").strip().lower()
         if test_name not in VALID_TESTS:
             return ToolResult(
                 success=False,
                 output=(
-                    f"Invalid test_name '{test_name}'. "
-                    f"Valid: {sorted(VALID_TESTS)}"
+                    f"Invalid test_name '{test_name}'. " f"Valid: {sorted(VALID_TESTS)}"
                 ),
             )
 
@@ -250,31 +266,42 @@ class InternetOutagesTool(Tool):
 
         cache_key = f"ooni:aggregation:{country}:{test_name}:{since}:{until}"
         return self._fetch_ooni_aggregation(
-            params, cache_key, country, test_name,
+            params,
+            cache_key,
+            country,
+            test_name,
         )
 
     # ── OONI measurements fetch ─────────────────────────────
 
     def _fetch_ooni_measurements(
-        self, params: dict, cache_key: str, country: str,
+        self,
+        params: dict,
+        cache_key: str,
+        country: str,
     ) -> ToolResult:
         if self._cache:
             hit = self._cache.get(cache_key)
             if hit is not None:
                 return ToolResult(
-                    success=True, output=hit["output"], data=hit["data"],
+                    success=True,
+                    output=hit["output"],
+                    data=hit["data"],
                 )
 
         try:
             with httpx.Client(
-                timeout=_TIMEOUT, headers={"User-Agent": _UA},
+                timeout=_TIMEOUT,
+                headers={"User-Agent": _UA},
             ) as client:
                 resp = client.get(
-                    f"{_OONI_BASE}/measurements", params=params,
+                    f"{_OONI_BASE}/measurements",
+                    params=params,
                 )
         except httpx.TimeoutException:
             return ToolResult(
-                success=False, output="OONI API request timed out.",
+                success=False,
+                output="OONI API request timed out.",
             )
         except httpx.HTTPError as exc:
             return ToolResult(success=False, output=f"HTTP error: {exc}")
@@ -294,7 +321,8 @@ class InternetOutagesTool(Tool):
             body = resp.json()
         except Exception:
             return ToolResult(
-                success=False, output="Failed to parse OONI API response.",
+                success=False,
+                output="Failed to parse OONI API response.",
             )
 
         raw = body.get("results", [])
@@ -331,26 +359,32 @@ class InternetOutagesTool(Tool):
             hit = self._cache.get(cache_key)
             if hit is not None:
                 return ToolResult(
-                    success=True, output=hit["output"], data=hit["data"],
+                    success=True,
+                    output=hit["output"],
+                    data=hit["data"],
                 )
 
         try:
             with httpx.Client(
-                timeout=_TIMEOUT, headers={"User-Agent": _UA},
+                timeout=_TIMEOUT,
+                headers={"User-Agent": _UA},
             ) as client:
                 resp = client.get(
-                    f"{_OONI_BASE}/aggregation", params=params,
+                    f"{_OONI_BASE}/aggregation",
+                    params=params,
                 )
         except httpx.TimeoutException:
             return ToolResult(
-                success=False, output="OONI aggregation API timed out.",
+                success=False,
+                output="OONI aggregation API timed out.",
             )
         except httpx.HTTPError as exc:
             return ToolResult(success=False, output=f"HTTP error: {exc}")
 
         if resp.status_code == 429:
             return ToolResult(
-                success=False, output="OONI API rate limit reached.",
+                success=False,
+                output="OONI API rate limit reached.",
             )
         if resp.status_code != 200:
             return ToolResult(
@@ -410,18 +444,24 @@ class InternetOutagesTool(Tool):
     # ── RIPE Atlas fetch ────────────────────────────────────
 
     def _fetch_ripe_probes(
-        self, params: dict, cache_key: str, country: str,
+        self,
+        params: dict,
+        cache_key: str,
+        country: str,
     ) -> ToolResult:
         if self._cache:
             hit = self._cache.get(cache_key)
             if hit is not None:
                 return ToolResult(
-                    success=True, output=hit["output"], data=hit["data"],
+                    success=True,
+                    output=hit["output"],
+                    data=hit["data"],
                 )
 
         try:
             with httpx.Client(
-                timeout=_TIMEOUT, headers={"User-Agent": _UA},
+                timeout=_TIMEOUT,
+                headers={"User-Agent": _UA},
             ) as client:
                 resp = client.get(f"{_RIPE_BASE}/probes/", params=params)
         except httpx.TimeoutException:
@@ -454,13 +494,21 @@ class InternetOutagesTool(Tool):
         probes_raw = body.get("results", [])
         total_count = body.get("count", len(probes_raw))
         records, status_counts, asns = _parse_ripe_probes(
-            probes_raw, country,
+            probes_raw,
+            country,
         )
         signals = _network_health_signals(
-            status_counts, asns, total_count, country,
+            status_counts,
+            asns,
+            total_count,
+            country,
         )
         summary = _format_network_health(
-            records, signals, total_count, country, asns,
+            records,
+            signals,
+            total_count,
+            country,
+            asns,
         )
 
         result_data = {
@@ -477,6 +525,58 @@ class InternetOutagesTool(Tool):
             )
 
         return ToolResult(success=True, output=summary, data=result_data)
+
+    # ── L2 entity persistence (Phase 31) ──────────────────────
+
+    def _persist_entities(
+        self,
+        data: dict[str, Any],
+        mode: str,
+    ) -> dict[str, int]:
+        if self._store is None or _entity_id_from_key is None:
+            return {"internet_disruption_obs": 0}
+        try:
+            return self._persist_entities_inner(data, mode)
+        except Exception:
+            log.exception("Internet outages entity persistence failed (non-fatal)")
+            return {"internet_disruption_obs": 0}
+
+    def _persist_entities_inner(
+        self,
+        data: dict[str, Any],
+        mode: str,
+    ) -> dict[str, int]:
+        assert self._store is not None  # noqa: S101 -- guarded
+        assert _entity_id_from_key is not None  # noqa: S101
+
+        country = str(data.get("country", "")).upper()
+        if country in {"", "ALL"} or len(country) != 2:
+            return {"internet_disruption_obs": 0}
+
+        signals = data.get("signals", {})
+        country_eid = _entity_id_from_key("country", country)
+        self._store.register_entity("country", country, country_eid)
+        self._store.store_entity_observation(
+            entity_id=country_eid,
+            source_tool="internet_outages",
+            observed_at=time.time(),
+            observation_type="internet_disruption",
+            value={
+                "mode": mode,
+                "test_name": data.get("test_name"),
+                "anomaly_rate_pct": signals.get("anomaly_rate_pct"),
+                "disconnect_rate_pct": signals.get("disconnect_rate_pct"),
+                "confirmed_count": signals.get("confirmed_count"),
+                "failure_count": signals.get("failure_count"),
+                "alert": signals.get("alert"),
+            },
+            depth_level=2,
+        )
+        log.info(
+            "Internet outages L2: 1 internet_disruption obs persisted for %s",
+            country,
+        )
+        return {"internet_disruption_obs": 1}
 
 
 # ── Helpers (module-level for testability) ──────────────────────
@@ -517,24 +617,27 @@ def _parse_ooni_measurements(
         if is_failure:
             counts["failure"] += 1
 
-        records.append({
-            "measurement_uid": r.get("measurement_uid", ""),
-            "probe_cc": r.get("probe_cc", ""),
-            "probe_asn": r.get("probe_asn", ""),
-            "test_name": r.get("test_name", ""),
-            "input": r.get("input", ""),
-            "anomaly": is_anomaly,
-            "confirmed": is_confirmed,
-            "failure": is_failure,
-            "measurement_start_time": r.get("measurement_start_time", ""),
-            "scores": r.get("scores", {}),
-        })
+        records.append(
+            {
+                "measurement_uid": r.get("measurement_uid", ""),
+                "probe_cc": r.get("probe_cc", ""),
+                "probe_asn": r.get("probe_asn", ""),
+                "test_name": r.get("test_name", ""),
+                "input": r.get("input", ""),
+                "anomaly": is_anomaly,
+                "confirmed": is_confirmed,
+                "failure": is_failure,
+                "measurement_start_time": r.get("measurement_start_time", ""),
+                "scores": r.get("scores", {}),
+            }
+        )
 
     return records, counts
 
 
 def _censorship_signals(
-    counts: dict[str, int], country: str,
+    counts: dict[str, int],
+    country: str,
 ) -> dict[str, Any]:
     """Derive censorship alert signals from measurement counts."""
     total = counts["total"]
@@ -549,23 +652,19 @@ def _censorship_signals(
     }
 
     if anomaly_rate > 50:
-        signals["alert"] = (
-            "CRITICAL: >50% anomaly rate — possible internet shutdown"
-        )
+        signals["alert"] = "CRITICAL: >50% anomaly rate — possible internet shutdown"
     elif anomaly_rate > 20:
-        signals["alert"] = (
-            "WARNING: >20% anomaly rate — significant censorship/outage"
-        )
+        signals["alert"] = "WARNING: >20% anomaly rate — significant censorship/outage"
     elif counts["confirmed"] > 0:
-        signals["alert"] = (
-            f"NOTICE: {counts['confirmed']} confirmed blocking events"
-        )
+        signals["alert"] = f"NOTICE: {counts['confirmed']} confirmed blocking events"
 
     return signals
 
 
 def _format_censorship(
-    records: list[dict], signals: dict, country: str,
+    records: list[dict],
+    signals: dict,
+    country: str,
 ) -> str:
     """Format censorship measurement summary."""
     cc = country or "ALL"
@@ -585,13 +684,10 @@ def _format_censorship(
         parts.append("\nConfirmed blocked:")
         for b in blocked[:10]:
             parts.append(
-                f"  {b.get('input', 'N/A')} "
-                f"(ASN: {b.get('probe_asn', '?')})"
+                f"  {b.get('input', 'N/A')} " f"(ASN: {b.get('probe_asn', '?')})"
             )
 
-    anomalies = [
-        r for r in records if r.get("anomaly") and not r.get("confirmed")
-    ]
+    anomalies = [r for r in records if r.get("anomaly") and not r.get("confirmed")]
     if anomalies:
         parts.append(f"\nAnomaly measurements: {len(anomalies)}")
         for a in anomalies[:5]:
@@ -617,7 +713,8 @@ def _extract_aggregation(body: dict) -> dict[str, int]:
     failure = agg.get("failure_count", 0)
     ok = agg.get("ok_count", 0)
     total = agg.get(
-        "measurement_count", anomaly + confirmed + failure + ok,
+        "measurement_count",
+        anomaly + confirmed + failure + ok,
     )
     return {
         "anomaly": anomaly,
@@ -649,15 +746,14 @@ def _aggregation_signals(agg: dict[str, int]) -> dict[str, Any]:
     elif anomaly_rate > 20:
         signals["alert"] = "WARNING: >20% anomaly rate"
     elif failure_rate > 30:
-        signals["alert"] = (
-            "WARNING: >30% failure rate — possible infrastructure issue"
-        )
+        signals["alert"] = "WARNING: >30% failure rate — possible infrastructure issue"
 
     return signals
 
 
 def _parse_ripe_probes(
-    probes: list[dict], country: str,
+    probes: list[dict],
+    country: str,
 ) -> tuple[list[dict], dict[str, int], dict[int, int]]:
     """Parse RIPE Atlas probe data into records, status counts, ASN counts."""
     records = []
@@ -690,16 +786,18 @@ def _parse_ripe_probes(
             if isinstance(t, dict):
                 tags.append(t.get("name", ""))
 
-        records.append({
-            "probe_id": p.get("id"),
-            "asn_v4": asn,
-            "country": p.get("country_code", country),
-            "status": status_name,
-            "status_since": status_since,
-            "address_v4": p.get("address_v4", ""),
-            "is_anchor": p.get("is_anchor", False),
-            "tags": tags,
-        })
+        records.append(
+            {
+                "probe_id": p.get("id"),
+                "asn_v4": asn,
+                "country": p.get("country_code", country),
+                "status": status_name,
+                "status_since": status_since,
+                "address_v4": p.get("address_v4", ""),
+                "is_anchor": p.get("is_anchor", False),
+                "tags": tags,
+            }
+        )
 
     return records, status_counts, asns
 
@@ -736,18 +834,13 @@ def _network_health_signals(
         )
     elif disconnect_rate > 20:
         signals["alert"] = (
-            "WARNING: >20% probes disconnected — "
-            "significant connectivity issues"
+            "WARNING: >20% probes disconnected — " "significant connectivity issues"
         )
     elif disconnected > 10:
-        signals["alert"] = (
-            f"NOTICE: {disconnected} probes disconnected in {country}"
-        )
+        signals["alert"] = f"NOTICE: {disconnected} probes disconnected in {country}"
 
     top_asns = sorted(asns.items(), key=lambda x: x[1], reverse=True)[:5]
-    signals["top_asns"] = [
-        {"asn": a, "probe_count": c} for a, c in top_asns
-    ]
+    signals["top_asns"] = [{"asn": a, "probe_count": c} for a, c in top_asns]
 
     return signals
 
@@ -768,9 +861,7 @@ def _format_network_health(
         f"Disconnected: {signals['disconnected']} | "
         f"Abandoned: {signals['abandoned']}"
     )
-    parts.append(
-        f"Disconnect rate: {signals['disconnect_rate_pct']:.1f}%"
-    )
+    parts.append(f"Disconnect rate: {signals['disconnect_rate_pct']:.1f}%")
     parts.append(f"Unique ASNs: {signals['unique_asns']}")
 
     if "alert" in signals:

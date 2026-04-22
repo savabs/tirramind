@@ -213,15 +213,11 @@ class TestConvergenceFeatureBuilderBasic:
 
 
 class TestConvergenceFeatureBuilderEdgeCases:
-    def test_no_signals_produces_missing(self):
+    def test_no_signals_no_data_returns_empty(self):
+        """Empty store (no pipeline data at all) → empty list."""
         store = _store()
         features = ConvergenceFeatureBuilder().build(store, _NOW)
-        assert len(features) == 3
-        for f in features:
-            assert f.value is None
-            assert f.missing_reason == "no_convergence_activity"
-            assert f.quality == 0.0
-        _assert_all_valid(features)
+        assert features == []
         store.close()
 
     def test_signals_outside_window_are_ignored(self):
@@ -573,13 +569,10 @@ class TestLiquidityPressure:
 
 class TestMacroEdgeCases:
     def test_no_macro_data_at_all(self):
+        """Empty store (no FRED data) → empty list."""
         store = _store()
         features = MacroStateFeatureBuilder().build(store, _NOW)
-        assert len(features) == 3
-        for f in features:
-            assert f.value is None
-            assert f.missing_reason is not None
-        _assert_all_valid(features)
+        assert features == []
         store.close()
 
     def test_dot_values_from_fred_skipped(self):
@@ -671,9 +664,8 @@ class TestMacroEdgeCases:
         data = {"DFF": [{"date": old_date, "value": "5.00"}]}
         _insert_macro_data(store, data, fetched_at=_NOW - 120 * _DAY)
         features = MacroStateFeatureBuilder().build(store, _NOW)
-        momentum = next(f for f in features if "rate_momentum" in f.feature_name)
-        # No data in 90d window → missing
-        assert momentum.value is None
+        # Old data outside window → empty list (no usable macro data)
+        assert features == []
         store.close()
 
     def test_effective_at_equals_as_of(self):
@@ -790,13 +782,9 @@ class TestBuilderToStorePersistence:
         store.close()
 
     def test_missing_features_persist(self):
-        """Features with value=None should persist correctly."""
+        """Empty store produces no features to persist."""
         store = _store()
         features = ConvergenceFeatureBuilder().build(store, _NOW)
-        for f in features:
-            store.store_feature(f)
-        r = store.get_latest_feature("convergence.stress_breadth.7d")
-        assert r is not None
-        assert r["value"] is None
-        assert r["missing_reason"] == "no_convergence_activity"
+        # Phase 39: empty store → empty list (no features to store)
+        assert features == []
         store.close()

@@ -113,7 +113,17 @@ class ConvergenceFeatureBuilder(FeatureBuilder):
         rows = self._query_convergence_signals(store, since, as_of)
 
         if not rows:
-            return self._missing_features(as_of, "no_convergence_activity")
+            # Check if pipeline has any data at all — if yes, emit
+            # zero-valued features (data observed, no convergence detected)
+            # rather than None (no data available).
+            has_data = bool(
+                store.query_data("cftc", since=since, limit=1)
+                or store.query_data("gdelt", since=since, limit=1)
+                or store.query_data("polymarket", since=since, limit=1)
+            )
+            if has_data:
+                return self._zero_features(as_of)
+            return []
 
         # ── stress_breadth: count of distinct signal names ─────
         distinct_names = {r["signal_name"] for r in rows}
@@ -221,6 +231,29 @@ class ConvergenceFeatureBuilder(FeatureBuilder):
             for fname, unit in names
         ]
 
+    def _zero_features(self, as_of: float) -> list[EngineeredFeature]:
+        """Emit zero-valued features: data observed but no convergence detected."""
+        names = [
+            ("convergence.stress_breadth.7d", "count"),
+            ("convergence.stress_intensity.7d", "probability"),
+            ("convergence.regime_persistence.7d", "duration_days"),
+        ]
+        return [
+            EngineeredFeature(
+                feature_name=fname,
+                version=self.VERSION,
+                effective_at=as_of,
+                computed_at=as_of,
+                horizon="7d",
+                value=0.0,
+                quality=1.0,
+                source_signals=("convergence",),
+                builder=self.name,
+                unit=unit,
+            )
+            for fname, unit in names
+        ]
+
 
 # ── Macro Continuous-State Feature Builder ─────────────────────
 
@@ -263,6 +296,11 @@ class MacroStateFeatureBuilder(FeatureBuilder):
     ) -> list[EngineeredFeature]:
         # Load all macro_data rows from last 90 days
         rows = store.query_data("macro_data", since=as_of - _90D, limit=500)
+
+        if not rows:
+            # No macro data available (e.g. FRED API key not configured).
+            # Return empty rather than emitting missing-valued features.
+            return []
 
         # Extract series from all rows (merge across fetches)
         series = self._extract_series(rows)

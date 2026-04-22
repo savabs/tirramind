@@ -37,6 +37,12 @@ _RAW_BLOCK_URL = "https://blockchain.info/rawblock/{hash}"
 
 _SATS_PER_BTC = 1e8
 
+# Pre-computed BTC-USD instrument entity ID (Phase 30).
+# Must match instrument_universe._entity_id("BTC-USD").
+_BTC_INSTRUMENT_EID: str | None = None
+if entity_id_from_key is not None:
+    _BTC_INSTRUMENT_EID = entity_id_from_key("instrument", "BTC-USD")
+
 
 class WhaleAlertTool(Tool):
     name = "whale_alert"
@@ -416,6 +422,21 @@ class WhaleAlertTool(Tool):
                         entity_id_a=entity_id_from_key("wallet", s_addr),
                         entity_id_b=entity_id_from_key("wallet", r_addr),
                         link_type="transacts_with",
+                        source="whale_alert",
+                        confidence=1.0,
+                        metadata={"tx_hash": tx_hash},
+                    )
+
+            # ── Link wallets → BTC-USD instrument (Phase 30) ──
+            if _BTC_INSTRUMENT_EID is not None:
+                all_addrs = sender_addrs + receiver_addrs
+                for addr in all_addrs:
+                    if not addr:
+                        continue
+                    store.link_entities(
+                        entity_id_a=entity_id_from_key("wallet", addr),
+                        entity_id_b=_BTC_INSTRUMENT_EID,
+                        link_type="trades_instrument",
                         source="whale_alert",
                         confidence=1.0,
                         metadata={"tx_hash": tx_hash},

@@ -28,15 +28,24 @@ Auth: None. Free. 470+ agencies. JSON. Up to 1000 results per page.
 from __future__ import annotations
 
 import logging
+import time
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlencode
 
 import httpx
 
 from agent.data.cache import DataCache
 from agent.tools.base import Tool, ToolResult
+
+if TYPE_CHECKING:
+    from agent.pipeline.store import PipelineStore
+
+try:
+    from agent.pipeline.entity import entity_id_from_key as _entity_id_from_key
+except ImportError:
+    _entity_id_from_key = None
 
 log = logging.getLogger(__name__)
 
@@ -257,8 +266,13 @@ class RegulatoryGazetteTool(Tool):
         "required": [],
     }
 
-    def __init__(self, cache: DataCache | None = None) -> None:
+    def __init__(
+        self,
+        cache: DataCache | None = None,
+        pipeline_store: "PipelineStore | None" = None,
+    ) -> None:
         self._cache = cache
+        self._store = pipeline_store
 
     def execute(
         self,
@@ -293,18 +307,21 @@ class RegulatoryGazetteTool(Tool):
                     success=False,
                     output="Search mode requires a 'keyword' parameter.",
                 )
-            return self._execute_search(
+            result = self._execute_search(
                 keyword=keyword,
                 types=types,
                 days_back=days_back,
                 significant_only=significant_only,
                 limit=limit,
             )
+            if result.success and result.data:
+                self._persist_entities(result.data, mode)
+            return result
 
         if mode == "agency":
             if not agency:
                 return self._list_agencies()
-            return self._execute_agency(
+            result = self._execute_agency(
                 agency=agency,
                 keyword=keyword,
                 types=types,
@@ -312,17 +329,23 @@ class RegulatoryGazetteTool(Tool):
                 significant_only=significant_only,
                 limit=limit,
             )
+            if result.success and result.data:
+                self._persist_entities(result.data, mode)
+            return result
 
         if mode == "upcoming":
-            return self._execute_upcoming(
+            result = self._execute_upcoming(
                 keyword=keyword,
                 agency=agency,
                 significant_only=significant_only,
                 limit=limit,
             )
+            if result.success and result.data:
+                self._persist_entities(result.data, mode)
+            return result
 
         # mode == "recent"
-        return self._execute_recent(
+        result = self._execute_recent(
             keyword=keyword,
             agency=agency,
             types=types,
@@ -330,6 +353,9 @@ class RegulatoryGazetteTool(Tool):
             significant_only=significant_only,
             limit=limit,
         )
+        if result.success and result.data:
+            self._persist_entities(result.data, mode)
+        return result
 
     # ------------------------------------------------------------------
     # recent mode
@@ -652,6 +678,91 @@ class RegulatoryGazetteTool(Tool):
             output="\n".join(lines),
             data={"documents": docs, "count": len(docs), "total": total},
         )
+
+    # ------------------------------------------------------------------
+    # L2 entity persistence
+    # ------------------------------------------------------------------
+
+    # Reverse lookup: agency slug → short alias for entity key
+    _SLUG_TO_ALIAS: dict[str, str] = {
+        info["slug"]: alias for alias, info in MARKET_AGENCIES.items()
+    }
+
+    def _persist_entities(self, data: dict[str, Any], mode: str) -> dict[str, int]:
+        if self._store is None or _entity_id_from_key is None:
+            return {"regulatory_velocity_obs": 0}
+        try:
+            return self._persist_entities_inner(data, mode)
+        except Exception:
+            log.exception("Regulatory gazette entity persistence failed (non-fatal)")
+            return {"regulatory_velocity_obs": 0}
+
+    def _persist_entities_inner(
+        self, data: dict[str, Any], mode: str
+    ) -> dict[str, int]:
+        assert self._store is not None
+        assert _entity_id_from_key is not None
+
+        docs = data.get("documents", [])
+        if not docs:
+            return {"regulatory_velocity_obs": 0}
+
+        # Aggregate per agency
+        agency_stats: dict[str, dict[str, Any]] = {}
+        for doc in docs:
+            agencies = doc.get("agencies", [])
+            for agency_name in agencies:
+                if not agency_name or not agency_name.strip():
+                    continue
+                # Resolve to short alias if known
+                slug = agency_name.lower().replace(" ", "-")
+                key = self._SLUG_TO_ALIAS.get(slug, "")
+                if not key:
+                    # Try matching from MARKET_AGENCIES by name substring
+                    for alias, info in MARKET_AGENCIES.items():
+                        if info["slug"] in slug or slug in info["slug"]:
+                            key = alias
+                            break
+                if not key:
+                    key = agency_name.strip().lower().replace(" ", "_")[:40]
+                if not key:
+                    continue
+
+                if key not in agency_stats:
+                    agency_stats[key] = {
+                        "name": agency_name.strip(),
+                        "doc_count": 0,
+                        "significant_count": 0,
+                        "types": set(),
+                    }
+                agency_stats[key]["doc_count"] += 1
+                if doc.get("significant"):
+                    agency_stats[key]["significant_count"] += 1
+                if doc.get("type"):
+                    agency_stats[key]["types"].add(doc["type"])
+
+        count = 0
+        now = time.time()
+        for agency_key, stats in agency_stats.items():
+            eid = _entity_id_from_key("organization", agency_key)
+            self._store.register_entity("organization", agency_key, eid)
+            self._store.store_entity_observation(
+                entity_id=eid,
+                source_tool="regulatory_gazette",
+                observed_at=now,
+                observation_type="regulatory_velocity",
+                value={
+                    "mode": mode,
+                    "name": stats["name"],
+                    "doc_count": stats["doc_count"],
+                    "significant_count": stats["significant_count"],
+                    "types": sorted(stats["types"]),
+                },
+                depth_level=2,
+            )
+            count += 1
+
+        return {"regulatory_velocity_obs": count}
 
 
 # ------------------------------------------------------------------

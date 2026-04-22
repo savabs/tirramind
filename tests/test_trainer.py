@@ -10,6 +10,8 @@ Covers:
 
 from __future__ import annotations
 
+import math
+
 import pytest
 import torch
 
@@ -86,13 +88,18 @@ class TestSyntheticGraphGenerator:
         assert stats["entities"]["company"] == 4
         assert stats["entities"]["country"] == 2
         entities = store.query_all_entities()
-        assert len(entities) == 10  # 4+2+2+2
+        assert len(entities) == 16  # 4+2+2+2+3topics+3domains
 
     def test_creates_links(self, populated_store):
         store, stats = populated_store
-        assert stats["links"] == 8  # 4 company + 2 vessel + 2 wallet
+        # Phase 35 expanded link types:
+        # headquartered_in=4, operates_in=2, market_authorized_in=1,
+        # lobbies_for=3, debtor_of=2, port_call_to=2,
+        # exchange_based_in=2, transacts_with=1, sanctioned_under=1
+        # Phase 36: domain_owned_by=3 (3 domains, each→1 company)
+        assert stats["links"] == 21
         links = store.query_all_entity_links()
-        assert len(links) == 8
+        assert len(links) == 21
 
     def test_creates_observations(self, populated_store):
         store, stats = populated_store
@@ -407,3 +414,119 @@ class TestEvaluate:
         model = trainer.build_model()
         metrics = evaluate(model, store, cfg, split="val")
         assert metrics["num_predictions"] == 0
+
+
+# ═══════════════════════════════════════════════════════════════
+# Phase 41 — Kendall log-variance clamp tests
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestLogVarClamp:
+    """Verify the Phase 41 fix: log-variance clamping in the
+    uncertainty-weighted multi-task loss (Kendall et al. 2018).
+
+    Without the clamp, when a component loss reaches 0 the optimizer
+    drives the log-variance parameter toward -inf; the total loss
+    becomes -inf and effective weights explode. See Phase 40 Run 2
+    post-mortem. The clamp bounds the reported and applied weights
+    to exp(-log_var_bounds)."""
+
+    def _make_trainer(self, store, **cfg_overrides):
+        cfg = TrainerConfig(
+            hidden_dim=8,
+            memory_dim=8,
+            message_dim=8,
+            auto_tune_loss_weights=True,
+            **cfg_overrides,
+        )
+        trainer = Trainer(store, cfg)
+        trainer.build_model()
+        return trainer
+
+    def test_defaults_well_ordered(self):
+        cfg = TrainerConfig()
+        assert cfg.log_var_min < cfg.log_var_max
+
+    def test_effective_weights_clamped_when_log_vars_extreme(self, populated_store):
+        store, _ = populated_store
+        trainer = self._make_trainer(store)
+        assert trainer._log_vars is not None
+
+        # Drive every log-variance far outside the clamp window.
+        with torch.no_grad():
+            trainer._log_vars["obs_type"].fill_(-50.0)  # would give exp(50) unclamped
+            trainer._log_vars["time_delta"].fill_(
+                +50.0
+            )  # would give exp(-50) unclamped
+            trainer._log_vars["contrastive"].fill_(-100.0)
+            trainer._log_vars["value"].fill_(+100.0)
+
+        eff = trainer.effective_loss_weights()
+
+        cfg = trainer.config
+        hi = math.exp(-cfg.log_var_min)
+        lo = math.exp(-cfg.log_var_max)
+        for k, w in eff.items():
+            assert (
+                lo - 1e-9 <= w <= hi + 1e-9
+            ), f"{k} weight {w} outside clamp window [{lo}, {hi}]"
+
+    def test_total_loss_finite_on_zero_components(self, populated_store):
+        """Replay the Phase 40 failure mode: component losses are all
+        ~0 and the log-variances have drifted negative. With the clamp,
+        the total loss must stay finite (bounded below by 4 * log_var_min)."""
+        store, _ = populated_store
+        trainer = self._make_trainer(store)
+        assert trainer._log_vars is not None
+
+        with torch.no_grad():
+            for p in trainer._log_vars.values():
+                p.fill_(-50.0)
+
+        cfg = trainer.config
+        lv = trainer._log_vars
+        zero = torch.tensor(0.0)
+        obs_loss = zero
+        dt_loss = zero
+        c_loss = zero
+        val_loss = zero
+
+        # Mirror the clamp logic from Trainer.train() exactly.
+        lv_min = cfg.log_var_min
+        lv_max = cfg.log_var_max
+        clamped = {k: torch.clamp(p, min=lv_min, max=lv_max) for k, p in lv.items()}
+        total = (
+            torch.exp(-clamped["obs_type"]) * obs_loss
+            + clamped["obs_type"]
+            + torch.exp(-clamped["time_delta"]) * dt_loss
+            + clamped["time_delta"]
+            + torch.exp(-clamped["contrastive"]) * c_loss
+            + clamped["contrastive"]
+            + torch.exp(-clamped["value"]) * val_loss
+            + clamped["value"]
+        )
+
+        t = total.item()
+        assert math.isfinite(t)
+        # Bound: with zero component losses, total == sum of clamped log_vars
+        # each bounded in [lv_min, lv_max].
+        assert 4 * lv_min - 1e-6 <= t <= 4 * lv_max + 1e-6
+
+    def test_fixed_weights_unaffected_by_clamp(self):
+        cfg = TrainerConfig(
+            auto_tune_loss_weights=False,
+            obs_type_weight=1.5,
+            time_delta_weight=0.2,
+            contrastive_weight=0.7,
+            value_weight=0.4,
+            log_var_min=0.0,
+            log_var_max=0.0,  # would collapse all weights to 1.0 if applied
+        )
+        store = PipelineStore(db_path=":memory:")
+        trainer = Trainer(store, cfg)
+        # No build_model required: fixed-weight branch does not touch _log_vars.
+        eff = trainer.effective_loss_weights()
+        assert eff["obs_type"] == 1.5
+        assert eff["time_delta"] == 0.2
+        assert eff["contrastive"] == 0.7
+        assert eff["value"] == 0.4

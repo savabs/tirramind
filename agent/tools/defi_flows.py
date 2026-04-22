@@ -403,8 +403,9 @@ class DefiFlowsTool(Tool):
 
     def _fetch_json(self, url: str) -> Any:
         """Fetch JSON from DefiLlama with caching."""
+        cache_params = {"url": url}
         if self._cache:
-            cached = self._cache.get(url)
+            cached = self._cache.get("defi_flows", cache_params)
             if cached is not None:
                 return cached
 
@@ -417,5 +418,5 @@ class DefiFlowsTool(Tool):
             data = resp.json()
 
         if self._cache and data is not None:
-            self._cache.set(url, data)
+            self._cache.put("defi_flows", cache_params, data)
         return data

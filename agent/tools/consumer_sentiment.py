@@ -26,12 +26,21 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any
+import time
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from agent.data.cache import DataCache
 from agent.tools.base import Tool, ToolResult
+
+if TYPE_CHECKING:
+    from agent.pipeline.store import PipelineStore
+
+try:
+    from agent.pipeline.entity import entity_id_from_key as _entity_id_from_key
+except ImportError:  # pragma: no cover -- optional dependency
+    _entity_id_from_key = None  # type: ignore[assignment]
 
 log = logging.getLogger(__name__)
 
@@ -45,13 +54,42 @@ _EUROSTAT_BASE = (
 )
 
 # Known EU geo codes
-_EU_GEOS = frozenset({
-    "EU27_2020", "EA20", "DE", "FR", "IT", "ES", "NL", "BE", "AT", "PT",
-    "GR", "FI", "IE", "SE", "DK", "PL", "CZ", "RO", "HU", "BG",
-    "HR", "SK", "SI", "LT", "LV", "EE", "CY", "LU", "MT",
-})
+_EU_GEOS = frozenset(
+    {
+        "EU27_2020",
+        "EA20",
+        "DE",
+        "FR",
+        "IT",
+        "ES",
+        "NL",
+        "BE",
+        "AT",
+        "PT",
+        "GR",
+        "FI",
+        "IE",
+        "SE",
+        "DK",
+        "PL",
+        "CZ",
+        "RO",
+        "HU",
+        "BG",
+        "HR",
+        "SK",
+        "SI",
+        "LT",
+        "LV",
+        "EE",
+        "CY",
+        "LU",
+        "MT",
+    }
+)
 
 _DEFAULT_EU_COUNTRIES = "EU27_2020,DE,FR,IT,ES"
+_EU_AGGREGATES = frozenset({"EU27_2020", "EA20"})
 
 # ── FRED ────────────────────────────────────────────────────────
 _FRED_BASE = "https://api.stlouisfed.org/fred/series/observations"
@@ -93,8 +131,13 @@ def _get_fred_key() -> str | None:
 class ConsumerSentimentTool(Tool):
     """Consumer confidence + inflation expectations across US and EU."""
 
-    def __init__(self, cache: DataCache | None = None) -> None:
+    def __init__(
+        self,
+        cache: DataCache | None = None,
+        pipeline_store: "PipelineStore | None" = None,
+    ) -> None:
         self._cache = cache
+        self._store = pipeline_store
 
     @property
     def name(self) -> str:
@@ -162,11 +205,16 @@ class ConsumerSentimentTool(Tool):
 
         if mode == "eu_confidence":
             countries_str = kwargs.get("countries") or _DEFAULT_EU_COUNTRIES
-            return self._handle_eu_confidence(countries_str, months)
+            result = self._handle_eu_confidence(countries_str, months)
         elif mode == "us_sentiment":
-            return self._handle_us_sentiment(months)
+            result = self._handle_us_sentiment(months)
         else:
-            return self._handle_inflation_reality(months)
+            result = self._handle_inflation_reality(months)
+
+        if result.success and result.data:
+            self._persist_entities(result.data, mode)
+
+        return result
 
     # ── EU Confidence ───────────────────────────────────────────
 
@@ -177,7 +225,7 @@ class ConsumerSentimentTool(Tool):
             return ToolResult(
                 success=False,
                 output=f"No valid Eurostat geo codes in '{countries_str}'. "
-                       f"Available: {', '.join(sorted(_EU_GEOS))}",
+                f"Available: {', '.join(sorted(_EU_GEOS))}",
             )
 
         cache_key = f"consumer_sentiment:eu:{','.join(sorted(valid_geos))}:{months}"
@@ -202,7 +250,9 @@ class ConsumerSentimentTool(Tool):
         }
 
         if self._cache:
-            self._cache.set(cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL)
+            self._cache.set(
+                cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL
+            )
 
         return ToolResult(success=True, output=summary, data=result_data)
 
@@ -245,7 +295,9 @@ class ConsumerSentimentTool(Tool):
         }
 
         if self._cache:
-            self._cache.set(cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL)
+            self._cache.set(
+                cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL
+            )
 
         return ToolResult(success=True, output=summary, data=result_data)
 
@@ -281,16 +333,127 @@ class ConsumerSentimentTool(Tool):
         }
 
         if self._cache:
-            self._cache.set(cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL)
+            self._cache.set(
+                cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL
+            )
 
         return ToolResult(success=True, output=summary, data=result_data)
+
+    # ── L2 entity persistence (Phase 31) ──────────────────────
+
+    def _persist_entities(
+        self,
+        data: dict[str, Any],
+        mode: str,
+    ) -> dict[str, int]:
+        if self._store is None or _entity_id_from_key is None:
+            return {"consumer_confidence_obs": 0}
+        try:
+            return self._persist_entities_inner(data, mode)
+        except Exception:
+            log.exception("Consumer sentiment entity persistence failed (non-fatal)")
+            return {"consumer_confidence_obs": 0}
+
+    def _persist_entities_inner(
+        self,
+        data: dict[str, Any],
+        mode: str,
+    ) -> dict[str, int]:
+        assert self._store is not None  # noqa: S101 -- guarded
+        assert _entity_id_from_key is not None  # noqa: S101
+
+        store = self._store
+        counts = {"consumer_confidence_obs": 0}
+        now_ts = time.time()
+
+        if mode == "eu_confidence":
+            by_geo = data.get("data", {})
+            country_signals = data.get("signals", {}).get("countries", {})
+            for geo, series in by_geo.items():
+                if geo in _EU_AGGREGATES or len(geo) != 2 or not series:
+                    continue
+                latest = series[-1]
+                signal = country_signals.get(geo, {})
+                country_eid = _entity_id_from_key("country", geo)
+                store.register_entity("country", geo, country_eid)
+                store.store_entity_observation(
+                    entity_id=country_eid,
+                    source_tool="consumer_sentiment",
+                    observed_at=now_ts,
+                    observation_type="consumer_confidence",
+                    value={
+                        "mode": "eu_confidence",
+                        "source": "eurostat",
+                        "latest": latest.get("value"),
+                        "period": latest.get("period"),
+                        "mom_change": signal.get("mom_change"),
+                        "trend": signal.get("trend"),
+                        "consecutive_decline": signal.get("consecutive_decline"),
+                    },
+                    depth_level=2,
+                )
+                counts["consumer_confidence_obs"] += 1
+
+        elif mode == "us_sentiment":
+            signals = data.get("signals", {})
+            country_eid = _entity_id_from_key("country", "US")
+            store.register_entity("country", "US", country_eid)
+            store.store_entity_observation(
+                entity_id=country_eid,
+                source_tool="consumer_sentiment",
+                observed_at=now_ts,
+                observation_type="consumer_confidence",
+                value={
+                    "mode": "us_sentiment",
+                    "source": "fred",
+                    "latest": signals.get("sentiment_latest"),
+                    "period": signals.get("sentiment_date"),
+                    "mom_change": signals.get("sentiment_mom"),
+                    "trend": signals.get("sentiment_alert"),
+                    "inflation_exp_1yr": signals.get("inflation_exp_1yr"),
+                    "inflation_anchor": signals.get("inflation_anchor"),
+                },
+                depth_level=2,
+            )
+            counts["consumer_confidence_obs"] += 1
+
+        elif mode == "inflation_reality":
+            signals = data.get("signals", {})
+            country_eid = _entity_id_from_key("country", "US")
+            store.register_entity("country", "US", country_eid)
+            store.store_entity_observation(
+                entity_id=country_eid,
+                source_tool="consumer_sentiment",
+                observed_at=now_ts,
+                observation_type="consumer_confidence",
+                value={
+                    "mode": "inflation_reality",
+                    "source": "bls",
+                    "latest": signals.get("cpi_latest"),
+                    "period": signals.get("cpi_period"),
+                    "mom_change": signals.get("cpi_mom_pct"),
+                    "trend": signals.get("gap_signal"),
+                    "cpi_yoy_pct": signals.get("cpi_yoy_pct"),
+                    "expectation_gap": signals.get("expectation_gap"),
+                },
+                depth_level=2,
+            )
+            counts["consumer_confidence_obs"] += 1
+
+        if counts["consumer_confidence_obs"]:
+            log.info(
+                "Consumer sentiment L2: %d consumer_confidence obs persisted",
+                counts["consumer_confidence_obs"],
+            )
+        return counts
 
 
 # ── Eurostat fetch & parse ──────────────────────────────────────
 
 
 def _fetch_eurostat(
-    geos: list[str], months: int,
+    geos: list[str],
+    months: int,
 ) -> tuple[dict[str, list[dict]], str | None]:
     """Fetch Eurostat ei_bsco_m consumer confidence. Returns {geo: [{period, value}]}."""
     params = {
@@ -322,7 +485,8 @@ def _fetch_eurostat(
 
 
 def _parse_eurostat_jsonstat(
-    body: dict, requested_geos: list[str],
+    body: dict,
+    requested_geos: list[str],
 ) -> dict[str, list[dict]]:
     """Parse JSON-stat 2.0 response into {geo: [{period, value}]}."""
     values = body.get("value", {})
@@ -378,11 +542,13 @@ def _parse_eurostat_jsonstat(
 
         if geo_code not in result:
             result[geo_code] = []
-        result[geo_code].append({
-            "period": time_label,
-            "value": fval,
-            "geo_label": geo_labels.get(geo_code, geo_code),
-        })
+        result[geo_code].append(
+            {
+                "period": time_label,
+                "value": fval,
+                "geo_label": geo_labels.get(geo_code, geo_code),
+            }
+        )
 
     # Sort each series chronologically
     for geo in result:
@@ -395,7 +561,9 @@ def _parse_eurostat_jsonstat(
 
 
 def _fetch_fred_series(
-    api_key: str, series_id: str, limit: int,
+    api_key: str,
+    series_id: str,
+    limit: int,
 ) -> tuple[list[dict], str | None]:
     """Fetch FRED series observations."""
     params = {
@@ -433,10 +601,12 @@ def _fetch_fred_series(
         val = _safe_float(obs.get("value"))
         if val is None:
             continue
-        records.append({
-            "date": obs.get("date", ""),
-            "value": val,
-        })
+        records.append(
+            {
+                "date": obs.get("date", ""),
+                "value": val,
+            }
+        )
 
     # Sort chronologically (FRED returns desc)
     records.sort(key=lambda r: r["date"])
@@ -496,11 +666,13 @@ def _fetch_bls_cpi(months: int) -> tuple[list[dict], str | None]:
         val = _safe_float(entry.get("value"))
         if val is None:
             continue
-        records.append({
-            "year": entry.get("year", ""),
-            "period": period,
-            "value": val,
-        })
+        records.append(
+            {
+                "year": entry.get("year", ""),
+                "period": period,
+                "value": val,
+            }
+        )
 
     records.sort(key=lambda r: (r["year"], r["period"]))
 
@@ -515,7 +687,8 @@ def _fetch_bls_cpi(months: int) -> tuple[list[dict], str | None]:
 
 
 def _compute_eu_signals(
-    data: dict[str, list[dict]], geos: list[str],
+    data: dict[str, list[dict]],
+    geos: list[str],
 ) -> dict[str, Any]:
     """Compute signals from Eurostat consumer confidence data."""
     if not data:
@@ -578,7 +751,9 @@ def _compute_eu_signals(
             for g in geos
             if g in signals["countries"]
         ]
-        signals["synchronized_decline"] = all(t == "DETERIORATING" for t in trends) and len(trends) >= 2
+        signals["synchronized_decline"] = (
+            all(t == "DETERIORATING" for t in trends) and len(trends) >= 2
+        )
     else:
         signals["cross_country_spread"] = None
         signals["synchronized_decline"] = False
@@ -638,7 +813,8 @@ def _compute_us_signals(series_data: dict) -> dict[str, Any]:
 
 
 def _compute_cpi_signals(
-    cpi_records: list[dict], mich_records: list[dict],
+    cpi_records: list[dict],
+    mich_records: list[dict],
 ) -> dict[str, Any]:
     """Compute CPI signals and expectation gap."""
     if not cpi_records:
@@ -682,9 +858,13 @@ def _compute_cpi_signals(
         gap = latest_exp - actual_yoy
         signals["expectation_gap"] = round(gap, 2)
         if gap > 1.5:
-            signals["gap_signal"] = "EXPECTATIONS_ABOVE_REALITY — consumers more worried than warranted"
+            signals["gap_signal"] = (
+                "EXPECTATIONS_ABOVE_REALITY — consumers more worried than warranted"
+            )
         elif gap < -1.0:
-            signals["gap_signal"] = "EXPECTATIONS_BELOW_REALITY — inflation underestimated"
+            signals["gap_signal"] = (
+                "EXPECTATIONS_BELOW_REALITY — inflation underestimated"
+            )
         else:
             signals["gap_signal"] = "ALIGNED"
     else:
@@ -723,7 +903,9 @@ def _format_eu_summary(
     if spread is not None:
         best = signals.get("most_optimistic", "?")
         worst = signals.get("most_pessimistic", "?")
-        lines.append(f"\n  Divergence: spread={spread} pts (best: {best}, worst: {worst})")
+        lines.append(
+            f"\n  Divergence: spread={spread} pts (best: {best}, worst: {worst})"
+        )
 
     if signals.get("synchronized_decline"):
         lines.append("  ⚠ SYNCHRONIZED DECLINE — all tracked countries deteriorating")
@@ -732,16 +914,24 @@ def _format_eu_summary(
 
 
 def _format_us_summary(
-    series_data: dict, signals: dict, months: int,
+    series_data: dict,
+    signals: dict,
+    months: int,
 ) -> str:
     lines = [f"US Consumer Sentiment ({months} months, UMichigan via FRED):\n"]
 
     sentinel_val = signals.get("sentiment_latest")
     if sentinel_val is not None:
         mom = signals.get("sentiment_mom")
-        mom_str = f" (MoM: {'+' if mom and mom > 0 else ''}{mom})" if mom is not None else ""
+        mom_str = (
+            f" (MoM: {'+' if mom and mom > 0 else ''}{mom})" if mom is not None else ""
+        )
         vs_avg = signals.get("sentiment_vs_avg")
-        vs_str = f", vs {months}mo avg: {'+' if vs_avg and vs_avg > 0 else ''}{vs_avg}" if vs_avg is not None else ""
+        vs_str = (
+            f", vs {months}mo avg: {'+' if vs_avg and vs_avg > 0 else ''}{vs_avg}"
+            if vs_avg is not None
+            else ""
+        )
         lines.append(f"  Headline: {sentinel_val}{mom_str}{vs_str}")
         alert = signals.get("sentiment_alert")
         if alert:
@@ -779,7 +969,9 @@ def _format_cpi_summary(
 
     lines.append(f"  CPI-U SA: {cpi_val} ({period})")
     if mom is not None:
-        lines.append(f"  MoM: {'+' if mom > 0 else ''}{mom}% (annualized: {'+' if ann and ann > 0 else ''}{ann}%)")
+        lines.append(
+            f"  MoM: {'+' if mom > 0 else ''}{mom}% (annualized: {'+' if ann and ann > 0 else ''}{ann}%)"
+        )
     if yoy is not None:
         lines.append(f"  YoY: {'+' if yoy > 0 else ''}{yoy}%")
 
@@ -787,7 +979,9 @@ def _format_cpi_summary(
     if gap is not None:
         gap_sig = signals.get("gap_signal", "")
         exp = mich_records[-1]["value"] if mich_records else "?"
-        lines.append(f"\n  Expectation Gap: UMich expects {exp}%, actual YoY {yoy}% → gap {'+' if gap > 0 else ''}{gap}pp")
+        lines.append(
+            f"\n  Expectation Gap: UMich expects {exp}%, actual YoY {yoy}% → gap {'+' if gap > 0 else ''}{gap}pp"
+        )
         lines.append(f"  [{gap_sig}]")
     elif not mich_records:
         lines.append("\n  (FRED key not available — expectation gap analysis skipped)")

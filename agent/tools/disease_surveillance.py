@@ -37,13 +37,22 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from agent.data.cache import DataCache
 from agent.tools.base import Tool, ToolResult
+
+if TYPE_CHECKING:
+    from agent.pipeline.store import PipelineStore
+
+try:
+    from agent.pipeline.entity import entity_id_from_key as _entity_id_from_key
+except ImportError:  # pragma: no cover -- optional dependency
+    _entity_id_from_key = None  # type: ignore[assignment]
 
 log = logging.getLogger(__name__)
 
@@ -308,8 +317,13 @@ class DiseaseSurveillanceTool(Tool):
         "required": [],
     }
 
-    def __init__(self, cache: DataCache | None = None) -> None:
+    def __init__(
+        self,
+        cache: DataCache | None = None,
+        pipeline_store: "PipelineStore | None" = None,
+    ) -> None:
         self._cache = cache
+        self._store = pipeline_store
 
     def execute(
         self,
@@ -339,22 +353,28 @@ class DiseaseSurveillanceTool(Tool):
         limit = max(1, min(int(limit), 1000))
 
         if mode == "wastewater":
-            return self._execute_wastewater(
+            result = self._execute_wastewater(
                 pathogen=pathogen,
                 state=state,
                 days_back=days_back,
                 limit=limit,
             )
-        if mode == "outbreaks":
-            return self._execute_outbreaks(disease=disease, limit=limit)
-        if mode == "eu_surveillance":
-            return self._execute_eu_surveillance(
+        elif mode == "outbreaks":
+            result = self._execute_outbreaks(disease=disease, limit=limit)
+        elif mode == "eu_surveillance":
+            result = self._execute_eu_surveillance(
                 dataset=dataset,
                 country=country,
                 limit=limit,
             )
-        # genomics
-        return self._execute_genomics(organism=organism)
+        else:
+            # genomics — skip persistence (no country dimension)
+            return self._execute_genomics(organism=organism)
+
+        if result.success and result.data:
+            self._persist_entities(result.data, mode)
+
+        return result
 
     # ------------------------------------------------------------------
     # wastewater mode — CDC NWSS Socrata
@@ -1177,3 +1197,124 @@ class DiseaseSurveillanceTool(Tool):
             return int(count_str), None
         except (ValueError, TypeError):
             return 0, f"NCBI: Could not parse count from response: {count_str}"
+
+    # ── L2 entity persistence (Phase 32) ──────────────────────
+
+    def _persist_entities(
+        self,
+        data: dict[str, Any],
+        mode: str,
+    ) -> dict[str, int]:
+        if self._store is None or _entity_id_from_key is None:
+            return {"pathogen_level_obs": 0}
+        try:
+            return self._persist_entities_inner(data, mode)
+        except Exception:
+            log.exception("Disease surveillance entity persistence failed (non-fatal)")
+            return {"pathogen_level_obs": 0}
+
+    def _persist_entities_inner(
+        self,
+        data: dict[str, Any],
+        mode: str,
+    ) -> dict[str, int]:
+        assert self._store is not None  # noqa: S101 -- guarded
+        assert _entity_id_from_key is not None  # noqa: S101
+
+        now = time.time()
+        count = 0
+
+        if mode == "wastewater":
+            # US-only data — aggregate to country US
+            country_eid = _entity_id_from_key("country", "US")
+            self._store.register_entity("country", "US", country_eid)
+            self._store.store_entity_observation(
+                entity_id=country_eid,
+                source_tool="disease_surveillance",
+                observed_at=now,
+                observation_type="pathogen_level",
+                value={
+                    "mode": "wastewater",
+                    "pathogen": data.get("pathogen"),
+                    "total_samples": data.get("total_samples"),
+                    "states_count": data.get("states_count"),
+                    "hot_states": data.get("hot_states"),
+                    "surge_count": data.get("surge_count"),
+                },
+                depth_level=2,
+            )
+            count = 1
+
+        elif mode == "outbreaks":
+            # Extract unique countries from WHO DON entries
+            entries = data.get("entries", [])
+            countries_seen: set[str] = set()
+            for entry in entries:
+                cc = str(entry.get("country_parsed", "")).strip()
+                if cc and len(cc) >= 2 and cc not in countries_seen:
+                    countries_seen.add(cc)
+            for cc in sorted(countries_seen):
+                # Use first 2 chars as ISO-2 approximation for well-known countries
+                cc_key = cc[:2].upper()
+                if len(cc_key) < 2:
+                    continue
+                country_eid = _entity_id_from_key("country", cc_key)
+                self._store.register_entity("country", cc_key, country_eid)
+                self._store.store_entity_observation(
+                    entity_id=country_eid,
+                    source_tool="disease_surveillance",
+                    observed_at=now,
+                    observation_type="pathogen_level",
+                    value={
+                        "mode": "outbreaks",
+                        "country_name": cc,
+                        "entry_count": sum(
+                            1
+                            for e in entries
+                            if e.get("country_parsed", "").strip() == cc
+                        ),
+                    },
+                    depth_level=2,
+                )
+                count += 1
+
+        elif mode == "eu_surveillance":
+            # Extract unique country codes from ECDC records
+            records = data.get("records", [])
+            countries_seen_eu: set[str] = set()
+            for rec in records:
+                cc = (
+                    str(rec.get("country_code", rec.get("country", ""))).strip().upper()
+                )
+                if cc and len(cc) == 2 and cc not in countries_seen_eu:
+                    countries_seen_eu.add(cc)
+            for cc in sorted(countries_seen_eu):
+                country_eid = _entity_id_from_key("country", cc)
+                self._store.register_entity("country", cc, country_eid)
+                self._store.store_entity_observation(
+                    entity_id=country_eid,
+                    source_tool="disease_surveillance",
+                    observed_at=now,
+                    observation_type="pathogen_level",
+                    value={
+                        "mode": "eu_surveillance",
+                        "dataset": data.get("dataset"),
+                        "record_count": sum(
+                            1
+                            for r in records
+                            if str(r.get("country_code", r.get("country", "")))
+                            .strip()
+                            .upper()
+                            == cc
+                        ),
+                    },
+                    depth_level=2,
+                )
+                count += 1
+
+        log.info(
+            "Disease surveillance L2: %d pathogen_level obs persisted (mode=%s)",
+            count,
+            mode,
+        )
+        return {"pathogen_level_obs": count}

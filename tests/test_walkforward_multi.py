@@ -419,7 +419,7 @@ class TestDataLoading:
         """Raises ValueError when no observations match."""
         store = MagicMock()
         store.query_all_observations.return_value = []
-        with pytest.raises(ValueError, match="No daily_return observations"):
+        with pytest.raises(ValueError, match="No daily return observations"):
             load_instrument_returns(store, ["AAA"])
 
     def test_non_daily_return_obs_ignored(self) -> None:
@@ -433,7 +433,7 @@ class TestDataLoading:
                 "value": {"volume": 1000},
             },
         ]
-        with pytest.raises(ValueError, match="No daily_return observations"):
+        with pytest.raises(ValueError, match="No daily return observations"):
             load_instrument_returns(store, ["AAA"])
 
 

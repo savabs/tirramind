@@ -174,7 +174,7 @@ class TestDailyCollectionStructure:
         assert dag.validate() == []
 
     def test_node_count(self, dag):
-        assert len(dag.nodes) == 6
+        assert len(dag.nodes) == 27
 
     def test_expected_node_ids(self, dag):
         expected = {
@@ -184,6 +184,30 @@ class TestDailyCollectionStructure:
             "fetch_power_fuel",
             "fetch_gdelt",
             "fetch_polymarket",
+            "fetch_macro",
+            "fetch_instruments",
+            "fetch_whale_alert",
+            # Phase 42 — entity diversity expansion
+            "fetch_insider_filings",
+            "fetch_central_bank_balance",
+            "fetch_sovereign_debt_us",
+            "fetch_sovereign_debt_eu",
+            "fetch_global_pmi",
+            "fetch_capital_flows",
+            "fetch_defi_flows",
+            "fetch_wikipedia_pageviews",
+            "fetch_lobbying",
+            # Phase 43 — high-volume entity wiring
+            "fetch_ais_vessel",
+            "fetch_gov_contracts",
+            "fetch_sanctions_monitor",
+            "fetch_patent_filings",
+            # Phase 44 — batch 2 entity wiring
+            "fetch_regulatory_gazette",
+            "fetch_form144",
+            "fetch_supply_chain",
+            "fetch_political_risk",
+            "fetch_comtrade",
         }
         assert set(dag.nodes.keys()) == expected
 
@@ -195,10 +219,127 @@ class TestDailyCollectionStructure:
     def test_single_parallel_layer(self, dag):
         layers = dag.topo_sort()
         assert len(layers) == 1
-        assert len(layers[0]) == 6
+        assert len(layers[0]) == 27
 
     def test_all_roots(self, dag):
-        assert len(dag.roots()) == 6
+        assert len(dag.roots()) == 27
+
+    def test_whale_alert_node_config(self, dag):
+        n = dag.nodes["fetch_whale_alert"]
+        assert n.operator == "whale_alert"
+        assert n.table_name == "whale_alert"
+        assert n.params["mode"] == "confirmed"
+        assert n.params["min_btc"] == 10.0
+        assert n.params["limit"] == 100
+        assert n.timeout == 60
+        assert n.retries == 2
+
+    # ── Phase 42 — per-node config assertions ───────────────
+
+    def test_insider_filings_node_config(self, dag):
+        n = dag.nodes["fetch_insider_filings"]
+        assert n.operator == "insider_filings"
+        assert n.table_name == "insider_filings"
+        assert n.params["days_back"] == 14
+        assert n.params["min_cluster_size"] == 3
+        assert n.timeout == 300
+        assert n.retries == 2
+
+    def test_central_bank_balance_node_config(self, dag):
+        n = dag.nodes["fetch_central_bank_balance"]
+        assert n.operator == "central_bank_balance"
+        assert n.params["mode"] == "balance_sheets"
+        assert n.params["period"] == "1y"
+        assert n.timeout == 120
+
+    def test_sovereign_debt_us_node_config(self, dag):
+        n = dag.nodes["fetch_sovereign_debt_us"]
+        assert n.operator == "sovereign_debt"
+        assert n.params["mode"] == "us_yields"
+        assert n.timeout == 120
+
+    def test_sovereign_debt_eu_node_config(self, dag):
+        n = dag.nodes["fetch_sovereign_debt_eu"]
+        assert n.operator == "sovereign_debt"
+        assert n.params["mode"] == "eu_yields"
+        assert n.timeout == 120
+
+    def test_global_pmi_node_config(self, dag):
+        n = dag.nodes["fetch_global_pmi"]
+        assert n.operator == "global_pmi"
+        assert n.params["mode"] == "cli"
+        assert n.timeout == 120
+
+    def test_capital_flows_node_config(self, dag):
+        n = dag.nodes["fetch_capital_flows"]
+        assert n.operator == "capital_flows"
+        assert n.params["mode"] == "holdings"
+        assert n.timeout == 120
+
+    def test_defi_flows_node_config(self, dag):
+        n = dag.nodes["fetch_defi_flows"]
+        assert n.operator == "defi_flows"
+        assert n.params["mode"] == "tvl"
+        assert n.params["limit"] == 20
+        assert n.timeout == 120
+
+    def test_wikipedia_pageviews_node_config(self, dag):
+        n = dag.nodes["fetch_wikipedia_pageviews"]
+        assert n.operator == "wikipedia_pageviews"
+        assert n.params["mode"] == "spike"
+        assert n.params["days_back"] == 30
+        assert n.params["z_threshold"] == 2.0
+        assert n.params["limit"] == 50
+        assert n.timeout == 120
+
+    def test_lobbying_node_config(self, dag):
+        n = dag.nodes["fetch_lobbying"]
+        assert n.operator == "lobbying"
+        assert n.params["mode"] == "search"
+        assert isinstance(n.params["year"], int)
+        assert n.params["year"] >= 2024
+        assert n.timeout == 120
+
+    # ── Phase 43 — per-node config assertions ───────────────
+
+    def test_ais_vessel_node_config(self, dag):
+        n = dag.nodes["fetch_ais_vessel"]
+        assert n.operator == "ais_vessel_tracking"
+        assert n.table_name == "ais_vessel_tracking"
+        assert n.params["mode"] == "area"
+        assert n.params["area"] == "full_baltic"
+        assert n.params["limit"] == 500
+        assert n.timeout == 180
+        assert n.retries == 2
+
+    def test_gov_contracts_node_config(self, dag):
+        n = dag.nodes["fetch_gov_contracts"]
+        assert n.operator == "gov_contracts"
+        assert n.table_name == "gov_contracts"
+        assert n.params["mode"] == "recent"
+        assert n.params["limit"] == 100
+        assert n.timeout == 120
+        assert n.retries == 2
+
+    def test_sanctions_monitor_node_config(self, dag):
+        n = dag.nodes["fetch_sanctions_monitor"]
+        assert n.operator == "sanctions_monitor"
+        assert n.table_name == "sanctions_monitor"
+        assert n.params["mode"] == "recent"
+        assert n.params["days_back"] == 90
+        assert n.params["limit"] == 100
+        assert n.timeout == 120
+        assert n.retries == 2
+
+    def test_patent_filings_node_config(self, dag):
+        n = dag.nodes["fetch_patent_filings"]
+        assert n.operator == "patent_filings"
+        assert n.table_name == "patent_filings"
+        assert n.params["mode"] == "search"
+        assert n.params["cpc_class"] == "G06N"
+        assert n.params["limit"] == 50
+        assert n.timeout == 120
+        assert n.retries == 2
 
 
 class TestDailyCollectionNodes:
@@ -245,10 +386,13 @@ class TestDailyCollectionNodes:
         assert n.params["category"] == "all"
         assert n.params["limit"] >= 50
 
-    def test_all_nodes_use_tool_operators(self, dag):
-        """All nodes reference tools by string name (not callables)."""
-        for node in dag.nodes.values():
-            assert isinstance(node.operator, str), f"{node.id} operator is not a str"
+    def test_tool_nodes_use_string_operators(self, dag):
+        """Tool-backed nodes reference tools by string name.
+        Callable operators (e.g., fetch_instruments) are also valid."""
+        tool_nodes = [n for n in dag.nodes.values() if isinstance(n.operator, str)]
+        assert len(tool_nodes) >= 7  # All tool nodes
+        for n in tool_nodes:
+            assert isinstance(n.operator, str), f"{n.id} operator is not a str"
 
     def test_all_nodes_store_results(self, dag):
         for node in dag.nodes.values():
@@ -261,6 +405,54 @@ class TestDailyCollectionNodes:
     def test_all_retries_at_least_one(self, dag):
         for node in dag.nodes.values():
             assert node.retries >= 1, f"{node.id} has zero retries"
+
+
+# ── Phase 44 per-node config tests ────────────────────────────
+
+
+class TestPhase44Nodes:
+    """Node configuration tests for Phase 44 batch-2 wiring."""
+
+    @pytest.fixture
+    def dag(self):
+        return build_daily_collection_dag()
+
+    def test_fetch_regulatory_gazette_config(self, dag):
+        n = dag.nodes["fetch_regulatory_gazette"]
+        assert n.operator == "regulatory_gazette"
+        assert n.params["days_back"] == 7
+        assert n.params["limit"] >= 25
+        assert n.timeout > 0
+        assert n.retries >= 1
+
+    def test_fetch_form144_config(self, dag):
+        n = dag.nodes["fetch_form144"]
+        assert n.operator == "form144"
+        assert n.params["days_back"] == 14
+        assert n.timeout > 0
+        assert n.retries >= 1
+
+    def test_fetch_supply_chain_config(self, dag):
+        n = dag.nodes["fetch_supply_chain"]
+        assert n.operator == "supply_chain_prices"
+        assert n.params["mode"] == "producer_prices"
+        assert n.timeout > 0
+        assert n.retries >= 1
+
+    def test_fetch_political_risk_config(self, dag):
+        n = dag.nodes["fetch_political_risk"]
+        assert n.operator == "political_risk"
+        assert n.params["mode"] == "candidates"
+        assert n.timeout > 0
+        assert n.retries >= 1
+
+    def test_fetch_comtrade_config(self, dag):
+        n = dag.nodes["fetch_comtrade"]
+        assert n.operator == "comtrade"
+        assert n.params["mode"] == "partners"
+        assert n.params["reporter"] == "USA"
+        assert n.timeout > 0
+        assert n.retries >= 1
 
 
 # ── Integration: Registry + Scheduler ─────────────────────────

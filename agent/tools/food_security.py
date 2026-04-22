@@ -33,13 +33,22 @@ Market relevance:
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from agent.data.cache import DataCache
 from agent.tools.base import Tool, ToolResult
+
+if TYPE_CHECKING:
+    from agent.pipeline.store import PipelineStore
+
+try:
+    from agent.pipeline.entity import entity_id_from_key as _entity_id_from_key
+except ImportError:  # pragma: no cover -- optional dependency
+    _entity_id_from_key = None  # type: ignore[assignment]
 
 log = logging.getLogger(__name__)
 
@@ -77,8 +86,13 @@ VULNERABLE_IMPORTERS = {"EG", "LB", "YE", "SD", "SO", "AF", "HT", "BD", "PK", "N
 class FoodSecurityTool(Tool):
     """Monitor global food security via World Bank agricultural indicators."""
 
-    def __init__(self, cache: DataCache | None = None) -> None:
+    def __init__(
+        self,
+        cache: DataCache | None = None,
+        pipeline_store: "PipelineStore | None" = None,
+    ) -> None:
         self._cache = cache
+        self._store = pipeline_store
 
     @property
     def name(self) -> str:
@@ -172,25 +186,44 @@ class FoodSecurityTool(Tool):
             )
 
         if mode == "production":
-            return self._handle_production(
-                country, start_year, end_year,
-                kwargs.get("indicator", "food"), limit,
+            result = self._handle_production(
+                country,
+                start_year,
+                end_year,
+                kwargs.get("indicator", "food"),
+                limit,
             )
         elif mode == "cereal_yield":
-            return self._handle_cereal_yield(
-                country, start_year, end_year,
-                kwargs.get("indicator", "yield_kg_per_ha"), limit,
+            result = self._handle_cereal_yield(
+                country,
+                start_year,
+                end_year,
+                kwargs.get("indicator", "yield_kg_per_ha"),
+                limit,
             )
         else:
-            return self._handle_food_trade(
-                country, start_year, end_year,
-                kwargs.get("indicator", "food_import_pct"), limit,
+            result = self._handle_food_trade(
+                country,
+                start_year,
+                end_year,
+                kwargs.get("indicator", "food_import_pct"),
+                limit,
             )
+
+        if result.success and result.data:
+            self._persist_entities(result.data, mode)
+
+        return result
 
     # ── Mode handlers ───────────────────────────────────────
 
     def _handle_production(
-        self, country: str, start: int, end: int, indicator: str, limit: int,
+        self,
+        country: str,
+        start: int,
+        end: int,
+        indicator: str,
+        limit: int,
     ) -> ToolResult:
         ind_code = _PRODUCTION_INDICATORS.get(indicator)
         if not ind_code:
@@ -202,11 +235,21 @@ class FoodSecurityTool(Tool):
                 ),
             )
         return self._fetch_indicator(
-            country, ind_code, start, end, limit, f"production:{indicator}",
+            country,
+            ind_code,
+            start,
+            end,
+            limit,
+            f"production:{indicator}",
         )
 
     def _handle_cereal_yield(
-        self, country: str, start: int, end: int, indicator: str, limit: int,
+        self,
+        country: str,
+        start: int,
+        end: int,
+        indicator: str,
+        limit: int,
     ) -> ToolResult:
         ind_code = _CEREAL_INDICATORS.get(indicator)
         if not ind_code:
@@ -218,11 +261,21 @@ class FoodSecurityTool(Tool):
                 ),
             )
         return self._fetch_indicator(
-            country, ind_code, start, end, limit, f"cereal_yield:{indicator}",
+            country,
+            ind_code,
+            start,
+            end,
+            limit,
+            f"cereal_yield:{indicator}",
         )
 
     def _handle_food_trade(
-        self, country: str, start: int, end: int, indicator: str, limit: int,
+        self,
+        country: str,
+        start: int,
+        end: int,
+        indicator: str,
+        limit: int,
     ) -> ToolResult:
         ind_code = _TRADE_INDICATORS.get(indicator)
         if not ind_code:
@@ -234,7 +287,12 @@ class FoodSecurityTool(Tool):
                 ),
             )
         return self._fetch_indicator(
-            country, ind_code, start, end, limit, f"food_trade:{indicator}",
+            country,
+            ind_code,
+            start,
+            end,
+            limit,
+            f"food_trade:{indicator}",
         )
 
     # ── Core fetch ──────────────────────────────────────────
@@ -253,7 +311,9 @@ class FoodSecurityTool(Tool):
             hit = self._cache.get(cache_key)
             if hit is not None:
                 return ToolResult(
-                    success=True, output=hit["output"], data=hit["data"],
+                    success=True,
+                    output=hit["output"],
+                    data=hit["data"],
                 )
 
         url = f"{_WB_BASE}/country/{country}/indicator/{indicator_code}"
@@ -265,12 +325,14 @@ class FoodSecurityTool(Tool):
 
         try:
             with httpx.Client(
-                timeout=_TIMEOUT, headers={"User-Agent": _UA},
+                timeout=_TIMEOUT,
+                headers={"User-Agent": _UA},
             ) as client:
                 resp = client.get(url, params=params)
         except httpx.TimeoutException:
             return ToolResult(
-                success=False, output="World Bank API request timed out.",
+                success=False,
+                output="World Bank API request timed out.",
             )
         except httpx.HTTPError as exc:
             return ToolResult(success=False, output=f"HTTP error: {exc}")
@@ -334,24 +396,84 @@ class FoodSecurityTool(Tool):
 
         return ToolResult(success=True, output=summary, data=result_data)
 
+    # ── L2 entity persistence (Phase 31) ──────────────────────
+
+    def _persist_entities(
+        self,
+        data: dict[str, Any],
+        mode: str,
+    ) -> dict[str, int]:
+        if self._store is None or _entity_id_from_key is None:
+            return {"food_security_obs": 0}
+        try:
+            return self._persist_entities_inner(data, mode)
+        except Exception:
+            log.exception("Food security entity persistence failed (non-fatal)")
+            return {"food_security_obs": 0}
+
+    def _persist_entities_inner(
+        self,
+        data: dict[str, Any],
+        mode: str,
+    ) -> dict[str, int]:
+        assert self._store is not None  # noqa: S101 -- guarded
+        assert _entity_id_from_key is not None  # noqa: S101
+
+        country = str(data.get("country", "")).upper()
+        if country in {"", "WLD"} or len(country) != 2:
+            return {"food_security_obs": 0}
+
+        records = data.get("records", [])
+        latest_valid = next(
+            (record for record in reversed(records) if record.get("value") is not None),
+            None,
+        )
+
+        country_eid = _entity_id_from_key("country", country)
+        self._store.register_entity("country", country, country_eid)
+        self._store.store_entity_observation(
+            entity_id=country_eid,
+            source_tool="food_security",
+            observed_at=time.time(),
+            observation_type="food_security",
+            value={
+                "mode": mode,
+                "indicator": data.get("indicator"),
+                "latest_value": latest_valid.get("value") if latest_valid else None,
+                "latest_year": latest_valid.get("year") if latest_valid else None,
+                "yoy_change_pct": data.get("signals", {}).get("yoy_change_pct"),
+                "trend_direction": data.get("signals", {}).get("trend_direction"),
+                "consecutive_years": data.get("signals", {}).get("consecutive_years"),
+                "stress_alert": data.get("signals", {}).get("stress_alert"),
+                "vulnerability": data.get("signals", {}).get("vulnerability"),
+            },
+            depth_level=2,
+        )
+        log.info("Food security L2: 1 food_security obs persisted for %s", country)
+        return {"food_security_obs": 1}
+
 
 # ── Helpers (module-level for testability) ──────────────────────
 
 
 def _parse_wb_records(
-    entries: list[dict], country: str, indicator_code: str,
+    entries: list[dict],
+    country: str,
+    indicator_code: str,
 ) -> list[dict]:
     """Parse World Bank API response entries into normalized records."""
     records = []
     for entry in entries:
-        records.append({
-            "country": entry.get("country", {}).get("id", country),
-            "country_name": entry.get("country", {}).get("value", ""),
-            "year": entry.get("date", ""),
-            "value": entry.get("value"),
-            "indicator": entry.get("indicator", {}).get("id", indicator_code),
-            "indicator_name": entry.get("indicator", {}).get("value", ""),
-        })
+        records.append(
+            {
+                "country": entry.get("country", {}).get("id", country),
+                "country_name": entry.get("country", {}).get("value", ""),
+                "year": entry.get("date", ""),
+                "value": entry.get("value"),
+                "indicator": entry.get("indicator", {}).get("id", indicator_code),
+                "indicator_name": entry.get("indicator", {}).get("value", ""),
+            }
+        )
     return records
 
 
@@ -409,9 +531,7 @@ def _compute_signals(valid: list[dict], label: str) -> dict[str, Any]:
             signals.get("trend_direction") == "down"
             and signals.get("consecutive_years", 0) >= 2
         ):
-            signals["stress_alert"] = (
-                "Production declining 2+ consecutive years"
-            )
+            signals["stress_alert"] = "Production declining 2+ consecutive years"
         elif signals.get("deviation_from_avg_pct", 0) < -10:
             signals["stress_alert"] = (
                 f"Production {signals['deviation_from_avg_pct']:.1f}% "

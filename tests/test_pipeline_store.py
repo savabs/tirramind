@@ -49,6 +49,7 @@ class TestSchemaInit:
         assert "pipeline_data" in tables
         assert "signals" in tables
         assert "features" in tables
+        assert "schema_migrations" in tables
 
     def test_indexes_created(self, store: PipelineStore):
         conn = store._get_conn()
@@ -81,6 +82,21 @@ class TestSchemaInit:
             ).fetchall()
         ]
         assert "dag_runs" in tables
+        baseline_count = conn.execute(
+            "SELECT COUNT(*) FROM schema_migrations "
+            "WHERE schema_name='pipeline_store' AND version=1"
+        ).fetchone()[0]
+        assert baseline_count == 1
+
+    def test_baseline_schema_version_recorded(self, store: PipelineStore):
+        assert store.get_schema_version() == 1
+
+    def test_query_schema_migrations(self, store: PipelineStore):
+        rows = store.query_schema_migrations()
+        assert len(rows) == 1
+        assert rows[0]["schema_name"] == "pipeline_store"
+        assert rows[0]["version"] == 1
+        assert "Baseline portable schema" in rows[0]["description"]
 
     def test_directory_creation(self, tmp_path):
         """Store creates parent directory if it doesn't exist."""

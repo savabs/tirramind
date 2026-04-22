@@ -611,6 +611,7 @@ class TestAutonomousRunnerIntegration:
         config.memory_dir = str(tmp_path / "memory")
         Path(config.memory_dir).mkdir(parents=True, exist_ok=True)
         config.llm = MagicMock()
+        config.episode_ttl_days = 30
         return config
 
     def test_runner_creates_reward_optimizer(self, tmp_path):

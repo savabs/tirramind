@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import json
 import logging
+import bisect
 import math
 import random
 from dataclasses import dataclass, field
@@ -93,24 +94,45 @@ class SyntheticGraphGenerator:
 
     The generated data is inserted directly into a PipelineStore,
     which can then be consumed by GraphBuilder and HetTGN.
+
+    Covers all 11 entity types, 45 observation types, and 21 link
+    types in the TirraMind schema (expanded in Phase 36).
     """
 
     def __init__(
         self,
         num_companies: int = 8,
-        num_countries: int = 3,
+        num_countries: int = 5,
         num_vessels: int = 4,
         num_wallets: int = 4,
+        num_instruments: int = 0,
+        num_persons: int = 0,
+        num_cftc_contracts: int = 0,
+        num_organizations: int = 0,
+        num_protocols: int = 0,
+        num_topics: int = 3,
+        num_domains: int = 3,
         time_span: float = 86400.0 * 30,  # 30 days
         base_event_rate: float = 0.001,  # events per entity per second
         seed: int = 42,
         patterns: list[InjectedPattern] | None = None,
     ) -> None:
         self.num_entities = {
-            "company": num_companies,
-            "country": num_countries,
-            "vessel": num_vessels,
-            "wallet": num_wallets,
+            k: v
+            for k, v in {
+                "company": num_companies,
+                "country": num_countries,
+                "vessel": num_vessels,
+                "wallet": num_wallets,
+                "instrument": num_instruments,
+                "person": num_persons,
+                "cftc_contract": num_cftc_contracts,
+                "organization": num_organizations,
+                "protocol": num_protocols,
+                "topic": num_topics,
+                "domain": num_domains,
+            }.items()
+            if v > 0
         }
         self.time_span = time_span
         self.base_event_rate = base_event_rate
@@ -154,6 +176,58 @@ class SyntheticGraphGenerator:
             )
             link_count += 1
 
+        # company → country (operates_in) — subset of companies
+        for cid in entities.get("company", [])[
+            : max(1, len(entities.get("company", [])) // 2)
+        ]:
+            co_id = self._rng.choice(entities.get("country", ["default"]))
+            store.link_entities(cid, co_id, "operates_in", "synthetic", confidence=0.8)
+            link_count += 1
+
+        # company → country (market_authorized_in) — pharma companies
+        for cid in entities.get("company", [])[
+            : max(1, len(entities.get("company", [])) // 3)
+        ]:
+            co_id = self._rng.choice(entities.get("country", ["default"]))
+            store.link_entities(
+                cid, co_id, "market_authorized_in", "synthetic", confidence=0.85
+            )
+            link_count += 1
+
+        # company → company (lobbies_for) — some business relationships
+        comps = entities.get("company", [])
+        for i in range(min(3, len(comps) - 1)):
+            store.link_entities(
+                comps[i], comps[i + 1], "lobbies_for", "synthetic", confidence=0.7
+            )
+            link_count += 1
+
+        # company → company (debtor_of) — creditor relationships
+        for i in range(min(2, len(comps) - 1)):
+            src, tgt = comps[i], comps[-(i + 1)]
+            if src == tgt:
+                continue
+            store.link_entities(src, tgt, "debtor_of", "synthetic", confidence=0.75)
+            link_count += 1
+
+        # company → organization (awarded_by) — government contracts
+        for cid in entities.get("company", [])[
+            : max(1, len(entities.get("company", [])) // 2)
+        ]:
+            if entities.get("organization"):
+                org_id = self._rng.choice(entities["organization"])
+                store.link_entities(
+                    cid, org_id, "awarded_by", "synthetic", confidence=0.9
+                )
+                link_count += 1
+
+        # person → company (works_for)
+        for pid in entities.get("person", []):
+            if entities.get("company"):
+                cid = self._rng.choice(entities["company"])
+                store.link_entities(pid, cid, "works_for", "synthetic", confidence=0.95)
+                link_count += 1
+
         # vessel → country (port_call_to)
         for vid in entities.get("vessel", []):
             co_id = self._rng.choice(entities.get("country", ["default"]))
@@ -167,6 +241,129 @@ class SyntheticGraphGenerator:
                 wid, co_id, "exchange_based_in", "synthetic", confidence=0.7
             )
             link_count += 1
+
+        # wallet → wallet (transacts_with) — inter-wallet transfers
+        wallets = entities.get("wallet", [])
+        for i in range(min(3, len(wallets) - 1)):
+            store.link_entities(
+                wallets[i],
+                wallets[i + 1],
+                "transacts_with",
+                "synthetic",
+                confidence=0.8,
+            )
+            link_count += 1
+
+        # wallet → instrument (trades_instrument) — crypto wallets
+        for wid in entities.get("wallet", []):
+            if entities.get("instrument"):
+                # Pick a crypto-like instrument
+                inst_id = self._rng.choice(entities["instrument"])
+                store.link_entities(
+                    wid, inst_id, "trades_instrument", "synthetic", confidence=0.75
+                )
+                link_count += 1
+
+        # instrument → company (tracks_issuer) — stocks/ETFs
+        for inst_id in entities.get("instrument", [])[
+            : max(1, len(entities.get("instrument", [])) * 2 // 3)
+        ]:
+            if entities.get("company"):
+                cid = self._rng.choice(entities["company"])
+                store.link_entities(
+                    inst_id, cid, "tracks_issuer", "synthetic", confidence=0.95
+                )
+                link_count += 1
+
+        # instrument → country (located_in) — domicile
+        for inst_id in entities.get("instrument", []):
+            co_id = self._rng.choice(entities.get("country", ["default"]))
+            store.link_entities(
+                inst_id, co_id, "located_in", "synthetic", confidence=0.9
+            )
+            link_count += 1
+
+        # instrument → country (fx_base_country / fx_quote_country) — subset
+        fx_insts = entities.get("instrument", [])[
+            : max(1, len(entities.get("instrument", [])) // 3)
+        ]
+        for inst_id in fx_insts:
+            countries = entities.get("country", [])
+            if len(countries) >= 2:
+                base_co, quote_co = self._rng.sample(countries, 2)
+                store.link_entities(
+                    inst_id, base_co, "fx_base_country", "synthetic", confidence=0.95
+                )
+                store.link_entities(
+                    inst_id, quote_co, "fx_quote_country", "synthetic", confidence=0.95
+                )
+                link_count += 2
+
+        # instrument → country (exchange_country) — commodity futures
+        for inst_id in entities.get("instrument", [])[
+            -max(1, len(entities.get("instrument", [])) // 3) :
+        ]:
+            co_id = self._rng.choice(entities.get("country", ["default"]))
+            store.link_entities(
+                inst_id, co_id, "exchange_country", "synthetic", confidence=0.95
+            )
+            link_count += 1
+
+        # instrument → protocol (tracks_protocol) — crypto instruments
+        for inst_id in entities.get("instrument", [])[
+            : max(1, len(entities.get("instrument", [])) // 5)
+        ]:
+            if entities.get("protocol"):
+                proto_id = self._rng.choice(entities["protocol"])
+                store.link_entities(
+                    inst_id, proto_id, "tracks_protocol", "synthetic", confidence=0.9
+                )
+                link_count += 1
+
+        # cftc_contract → instrument (cftc_tracks)
+        for cid in entities.get("cftc_contract", []):
+            if entities.get("instrument"):
+                inst_id = self._rng.choice(entities["instrument"])
+                store.link_entities(
+                    cid, inst_id, "cftc_tracks", "synthetic", confidence=0.95
+                )
+                link_count += 1
+
+        # country → country (sanctioned_under) — geopolitical
+        countries = entities.get("country", [])
+        if len(countries) >= 2:
+            # 1-2 sanction relationships
+            for _ in range(min(2, len(countries) - 1)):
+                a, b = self._rng.sample(countries, 2)
+                store.link_entities(
+                    a, b, "sanctioned_under", "synthetic", confidence=0.85
+                )
+                link_count += 1
+
+        # domain → company (domain_owned_by) — Phase 36
+        for did in entities.get("domain", []):
+            if entities.get("company"):
+                cid = self._rng.choice(entities["company"])
+                store.link_entities(
+                    did, cid, "domain_owned_by", "synthetic", confidence=0.8
+                )
+                link_count += 1
+
+        # topic → instrument (topic_relates_to_instrument) — Phase 36
+        for tid in entities.get("topic", []):
+            if entities.get("instrument"):
+                # Each topic links to 1-2 instruments
+                n_links = min(2, len(entities["instrument"]))
+                targets = self._rng.sample(entities["instrument"], n_links)
+                for inst_id in targets:
+                    store.link_entities(
+                        tid,
+                        inst_id,
+                        "topic_relates_to_instrument",
+                        "synthetic",
+                        confidence=0.7,
+                    )
+                    link_count += 1
 
         stats["links"] = link_count
 
@@ -270,12 +467,63 @@ class SyntheticGraphGenerator:
 
     @staticmethod
     def _obs_types_for(entity_type: str) -> list[str]:
-        """Return plausible observation types for an entity type."""
-        mapping = {
-            "company": ["insider_trade", "form144_filing", "sell_intent"],
-            "country": ["geopolitical_event"],
+        """Return plausible observation types for an entity type.
+
+        Covers all 45 OBSERVATION_TYPES across all 11 ENTITY_TYPES.
+        Mapping reflects real tool outputs from the L2 expansion
+        (Phases 17–34).
+        """
+        mapping: dict[str, list[str]] = {
+            "cftc_contract": ["futures_positioning"],
+            "company": [
+                "insider_trade",
+                "form144_filing",
+                "sell_intent",
+                "patent_filing",
+                "contract_award",
+                "creditor_filing",
+                "lobbying_spend",
+                "drug_approval",
+                "short_interest",
+                "bankruptcy_status",
+                "investigation_signal",
+            ],
+            "country": [
+                "geopolitical_event",
+                "sanctions_listing",
+                "cb_balance_sheet",
+                "cb_policy_rate",
+                "economic_activity",
+                "capital_flow",
+                "sovereign_yield",
+                "consumer_confidence",
+                "food_security",
+                "internet_disruption",
+                "migration_pressure",
+                "trade_flow",
+                "border_throughput",
+                "pathogen_level",
+                "campaign_finance",
+                "grid_demand",
+            ],
+            "domain": ["cert_issued", "dns_change"],
+            "instrument": [
+                "instrument_return",
+                "instrument_volatility",
+                "instrument_volume",
+                "price_movement",
+            ],
+            "organization": ["regulatory_velocity", "contract_award"],
+            "person": ["insider_trade", "sell_intent", "campaign_finance"],
+            "protocol": ["tvl_change"],
+            "topic": [
+                "pageview_spike",
+                "market_probability",
+                "research_velocity",
+                "price_movement",
+            ],
             "vessel": ["port_call", "vessel_position"],
-            "wallet": ["btc_transfer"],
+            "wallet": ["btc_transfer", "whale_trade"],
         }
         return mapping.get(entity_type, ["cross_entity_pattern"])
 
@@ -311,6 +559,19 @@ class TrainerConfig:
     """When True, use learnable uncertainty-based loss weighting
     (Kendall et al. 2018 "Multi-Task Learning Using Uncertainty
     to Weigh Losses") instead of fixed config weights."""
+    log_var_min: float = -3.0
+    """Lower clamp for the learnable log-variance parameters s_k = ln(sigma_k^2)
+    used by the uncertainty-weighted loss. Effective task weight is
+    exp(-s_k), so this bounds the weight ABOVE at exp(-log_var_min).
+    Prevents the Phase 40 divergence where s_k -> -inf when a component
+    loss reaches 0 (see Kendall et al. 2018, Liebel & Körner 2018)."""
+    log_var_max: float = 3.0
+    """Upper clamp for s_k = ln(sigma_k^2). Bounds the effective weight
+    BELOW at exp(-log_var_max)."""
+    obs_since: float | None = None
+    """When set, exclude observations with observed_at < obs_since
+    from training/val/test splits. Useful for skipping sparse early
+    data (e.g. GDELT 1970-era timestamps)."""
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -341,6 +602,7 @@ class Trainer:
         self.config = config or TrainerConfig()
         self._model: HetTGN | None = None
         self._optimizer: torch.optim.Optimizer | None = None
+        self._log_vars: dict[str, torch.nn.Parameter] | None = None
         self._graph_builder = GraphBuilder(store)
 
     @property
@@ -413,6 +675,11 @@ class Trainer:
         """Chronological 70/15/15 split of all observations."""
         all_obs = self.store.query_all_observations()
         all_obs.sort(key=lambda o: o.get("observed_at", 0.0))
+        # Apply obs_since filter if configured
+        if self.config.obs_since is not None:
+            all_obs = [
+                o for o in all_obs if o.get("observed_at", 0.0) >= self.config.obs_since
+            ]
         n = len(all_obs)
         n_train = int(n * self.config.train_ratio)
         n_val = int(n * (self.config.train_ratio + self.config.val_ratio))
@@ -425,22 +692,23 @@ class Trainer:
         """Split observations into fixed-length temporal windows.
 
         Returns list of (start, end, obs_in_window).
+        Observations must be sorted by observed_at (ascending).
+        Uses O(n) single-pass bucketing instead of O(n*w) scanning.
         """
         if not observations:
             return []
-        t_min = observations[0].get("observed_at", 0.0)
-        t_max = observations[-1].get("observed_at", 0.0)
         ws = self.config.window_size
+        # Bucket observations by window index, single pass O(n)
+        buckets: dict[int, list[dict]] = {}
+        for o in observations:
+            t = o.get("observed_at", 0.0)
+            bucket_idx = int(t // ws)
+            buckets.setdefault(bucket_idx, []).append(o)
+        # Convert to sorted (start, end, obs) tuples
         windows = []
-        t = t_min
-        while t < t_max:
-            t_end = t + ws
-            win_obs = [
-                o for o in observations if t <= o.get("observed_at", 0.0) < t_end
-            ]
-            if win_obs:
-                windows.append((t, t_end, win_obs))
-            t = t_end
+        for idx in sorted(buckets):
+            t_start = idx * ws
+            windows.append((t_start, t_start + ws, buckets[idx]))
         return windows
 
     def _compute_targets(
@@ -466,9 +734,11 @@ class Trainer:
             if eid and eid not in entity_next:
                 entity_next[eid] = o
 
-        # Also need entity_type for each entity_id
-        all_entities = self.store.query_all_entities()
-        eid_to_type = {e["entity_id"]: e["entity_type"] for e in all_entities}
+        # Also need entity_type for each entity_id — use cache if available
+        eid_to_type = getattr(self, "_eid_to_type_cache", None)
+        if eid_to_type is None:
+            all_entities = self.store.query_all_entities()
+            eid_to_type = {e["entity_id"]: e["entity_type"] for e in all_entities}
 
         global_ids = []
         obs_types = []
@@ -500,7 +770,7 @@ class Trainer:
             dt = max(0.0, o.get("observed_at", 0.0) - t_end)
             global_ids.append(gid)
             obs_types.append(obs_idx)
-            time_deltas.append(dt)
+            time_deltas.append(math.log1p(dt))  # log(1+dt) for numerical stability
 
             # Extract value for value prediction target
             val = 0.0
@@ -618,6 +888,22 @@ class Trainer:
         train_obs, _, _ = self._split_observations()
         windows = self._make_windows(train_obs)
 
+        # Cache entity type lookups — entities don't change during training
+        all_entities = self.store.query_all_entities()
+        self._eid_to_type_cache = {
+            e["entity_id"]: e["entity_type"] for e in all_entities
+        }
+
+        # Pre-fetch static graph structure (entities + links) once
+        cached_id_map, _, cached_links = self._graph_builder.prepare_static()
+
+        # Pre-fetch ALL observations once, sorted by time.
+        # Per-window slicing via bisect eliminates the DB query per window.
+        # NOTE: No since= filter here — graph features need full history
+        # (original code used build(since=None, until=t_end)).
+        all_prefetched_obs = self._graph_builder.prefetch_observations()
+        _obs_timestamps = [o.get("observed_at", 0.0) for o in all_prefetched_obs]
+
         history: dict[str, list[float]] = {
             "total": [],
             "obs_type": [],
@@ -636,15 +922,27 @@ class Trainer:
                 "value": 0.0,
             }
             n_windows = 0
+            total_windows = len(windows) - 1
 
-            for i in range(len(windows) - 1):
+            for i in range(total_windows):
+                if (i + 1) % 50 == 0 or i == 0:
+                    log.info(
+                        "  Epoch %d/%d — window %d/%d",
+                        epoch + 1,
+                        cfg.epochs,
+                        i + 1,
+                        total_windows,
+                    )
                 t_start, t_end, curr_obs = windows[i]
                 _, _, next_obs = windows[i + 1]
 
-                # Build graph snapshot for current window
-                data, id_map, events = self._graph_builder.build(
-                    since=None,
-                    until=t_end,
+                # Build graph snapshot for current window (fully cached)
+                cutoff = bisect.bisect_right(_obs_timestamps, t_end)
+                window_obs = all_prefetched_obs[:cutoff]
+                data, id_map, events = self._graph_builder.build_from_cached(
+                    cached_id_map,
+                    cached_links,
+                    observations=window_obs,
                 )
                 if not data.node_types:
                     continue
@@ -663,12 +961,12 @@ class Trainer:
 
                 # ── obs_type loss ────────────────────────
                 obs_loss = torch.tensor(0.0)
+                target_embs = []
+                valid_indices = []
+                target_emb_tensor = None
                 if len(obs_targets) > 0:
-                    # Gather embeddings for target entities
-                    all_entities = self.store.query_all_entities()
-                    eid_to_type = {
-                        e["entity_id"]: e["entity_type"] for e in all_entities
-                    }
+                    # Gather embeddings for target entities — use cached entity types
+                    eid_to_type = self._eid_to_type_cache
 
                     target_embs = []
                     valid_indices = []
@@ -713,16 +1011,30 @@ class Trainer:
                     # Uncertainty-weighted multi-task loss
                     # (Kendall et al. 2018): L_k / (2 * sigma_k^2) + ln(sigma_k)
                     # With log_var = ln(sigma^2): exp(-log_var) * L_k + log_var
+                    #
+                    # Phase 41 hardening: clamp log_var to [log_var_min,
+                    # log_var_max]. Without this, when any L_k -> 0 the
+                    # optimizer drives log_var -> -inf, the total loss
+                    # collapses to -inf, and effective weights explode
+                    # (see Phase 40 Run 2 post-mortem; Liebel & Körner 2018).
+                    # Clamping still lets gradients flow inside the interval
+                    # and saturates at the bounds without mutating the
+                    # stored Parameter tensors.
                     lv = self._log_vars
+                    lv_min = cfg.log_var_min
+                    lv_max = cfg.log_var_max
+                    clamped = {
+                        k: torch.clamp(p, min=lv_min, max=lv_max) for k, p in lv.items()
+                    }
                     total = (
-                        torch.exp(-lv["obs_type"]) * obs_loss
-                        + lv["obs_type"]
-                        + torch.exp(-lv["time_delta"]) * dt_loss
-                        + lv["time_delta"]
-                        + torch.exp(-lv["contrastive"]) * c_loss
-                        + lv["contrastive"]
-                        + torch.exp(-lv["value"]) * val_loss
-                        + lv["value"]
+                        torch.exp(-clamped["obs_type"]) * obs_loss
+                        + clamped["obs_type"]
+                        + torch.exp(-clamped["time_delta"]) * dt_loss
+                        + clamped["time_delta"]
+                        + torch.exp(-clamped["contrastive"]) * c_loss
+                        + clamped["contrastive"]
+                        + torch.exp(-clamped["value"]) * val_loss
+                        + clamped["value"]
                     )
                 else:
                     total = (
@@ -780,12 +1092,18 @@ class Trainer:
     def effective_loss_weights(self) -> dict[str, float]:
         """Return current effective loss weights.
 
-        When auto_tune_loss_weights is on, these are exp(-log_var)
-        for each task (the learned precision).  Otherwise returns
-        the fixed config weights.
+        When auto_tune_loss_weights is on, these are exp(-clamp(log_var))
+        for each task — i.e. the learned precision after applying the
+        [log_var_min, log_var_max] clamp so that the reported weights
+        always match what the training step actually applied. Otherwise
+        returns the fixed config weights.
         """
         if self._log_vars is not None:
-            return {k: math.exp(-p.item()) for k, p in self._log_vars.items()}
+            cfg = self.config
+            return {
+                k: math.exp(-max(cfg.log_var_min, min(cfg.log_var_max, p.item())))
+                for k, p in self._log_vars.items()
+            }
         cfg = self.config
         return {
             "obs_type": cfg.obs_type_weight,
@@ -826,6 +1144,15 @@ class Trainer:
             data, id_map, _ = self._graph_builder.build(until=until)
             if not data.node_types:
                 return {}, id_map
+            # Resize memory if entity count grew since last training
+            if id_map.num_nodes > model.memory.num_nodes:
+                log.warning(
+                    "Entity count grew %d → %d since last training; "
+                    "resizing GNN memory buffer.",
+                    model.memory.num_nodes,
+                    id_map.num_nodes,
+                )
+                model.memory.resize(id_map.num_nodes)
             embeddings = model(data, id_map)
 
         return embeddings, id_map
@@ -876,6 +1203,8 @@ class Trainer:
                 "contrastive_weight": self.config.contrastive_weight,
                 "contrastive_margin": self.config.contrastive_margin,
                 "num_negative_samples": self.config.num_negative_samples,
+                "value_weight": self.config.value_weight,
+                "auto_tune_loss_weights": self.config.auto_tune_loss_weights,
             },
             "metadata_node_types": metadata[0],
             "metadata_edge_types": [list(t) for t in metadata[1]],
@@ -974,6 +1303,9 @@ def evaluate(
     # Get split observations
     all_obs = store.query_all_observations()
     all_obs.sort(key=lambda o: o.get("observed_at", 0.0))
+    # Apply obs_since filter if configured
+    if cfg.obs_since is not None:
+        all_obs = [o for o in all_obs if o.get("observed_at", 0.0) >= cfg.obs_since]
     n = len(all_obs)
     n_train = int(n * cfg.train_ratio)
     n_val = int(n * (cfg.train_ratio + cfg.val_ratio))
@@ -993,18 +1325,17 @@ def evaluate(
             "num_predictions": 0,
         }
 
-    # Build windows
+    # Build windows — O(n) single-pass bucketing
     ws = cfg.window_size
-    t_min = eval_obs[0].get("observed_at", 0.0)
-    t_max = eval_obs[-1].get("observed_at", 0.0)
+    buckets: dict[int, list[dict]] = {}
+    for o in eval_obs:
+        t = o.get("observed_at", 0.0)
+        bucket_idx = int(t // ws)
+        buckets.setdefault(bucket_idx, []).append(o)
     windows = []
-    t = t_min
-    while t < t_max:
-        t_end = t + ws
-        win_obs = [o for o in eval_obs if t <= o.get("observed_at", 0.0) < t_end]
-        if win_obs:
-            windows.append((t, t_end, win_obs))
-        t = t_end
+    for idx in sorted(buckets):
+        t_start = idx * ws
+        windows.append((t_start, t_start + ws, buckets[idx]))
 
     all_entities = store.query_all_entities()
     eid_to_type = {e["entity_id"]: e["entity_type"] for e in all_entities}
@@ -1014,13 +1345,27 @@ def evaluate(
     total_dt_ae = 0.0
     num_preds = 0
 
+    # Pre-fetch static graph structure for cached builds
+    cached_id_map, _, cached_links = graph_builder.prepare_static()
+
+    # Pre-fetch ALL observations sorted by time for bisect slicing
+    # No since= filter — graph features need full history.
+    all_prefetched_obs = graph_builder.prefetch_observations()
+    _obs_timestamps = [o.get("observed_at", 0.0) for o in all_prefetched_obs]
+
     with torch.no_grad():
         for i in range(len(windows) - 1):
             t_start, t_end, curr_obs = windows[i]
             _, _, next_obs = windows[i + 1]
 
-            # Build graph up to current window end (includes train data)
-            data, id_map, events = graph_builder.build(since=None, until=t_end)
+            # Build graph up to current window end (fully cached)
+            cutoff = bisect.bisect_right(_obs_timestamps, t_end)
+            window_obs = all_prefetched_obs[:cutoff]
+            data, id_map, events = graph_builder.build_from_cached(
+                cached_id_map,
+                cached_links,
+                observations=window_obs,
+            )
             if not data.node_types:
                 continue
 
@@ -1063,7 +1408,7 @@ def evaluate(
                     correct_top5 += 1
 
                 dt_pred = model.time_delta_head(emb.unsqueeze(0)).squeeze().item()
-                dt_true = max(0.0, o.get("observed_at", 0.0) - t_ref)
+                dt_true = math.log1p(max(0.0, o.get("observed_at", 0.0) - t_ref))
                 total_dt_ae += abs(dt_pred - dt_true)
                 num_preds += 1
 

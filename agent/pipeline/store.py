@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import json
 import logging
-import sqlite3
 import time
 import uuid
 from pathlib import Path
@@ -35,10 +34,29 @@ from typing import Any
 
 from agent.features.protocol import EngineeredFeature, validate_feature
 from agent.models.belief import BeliefState, validate_belief
+from agent.pipeline.storage_backend import SQLiteBackend, StorageBackend
 
 log = logging.getLogger(__name__)
 
 _DEFAULT_DB_PATH = ".tirra_pipeline/pipeline.db"
+_PIPELINE_SCHEMA_NAME = "pipeline_store"
+_PIPELINE_SCHEMA_VERSION = 1
+_PIPELINE_SCHEMA_DESCRIPTION = (
+    "Baseline portable schema: epoch timestamps, integer booleans, JSON text payloads"
+)
+
+_SCHEMA_MIGRATIONS_SQL = """
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    schema_name TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    applied_at REAL NOT NULL,
+    description TEXT NOT NULL,
+    PRIMARY KEY (schema_name, version)
+);
+
+CREATE INDEX IF NOT EXISTS idx_schema_migrations_applied
+    ON schema_migrations(schema_name, applied_at);
+"""
 
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS dag_runs (
@@ -357,39 +375,97 @@ CREATE TABLE IF NOT EXISTS entity_type_registry (
 
 
 class PipelineStore:
-    """SQLite-backed storage for pipeline runs, data, and signals."""
+    """SQLite-backed storage for pipeline runs, data, and signals.
 
-    def __init__(self, db_path: str | Path = _DEFAULT_DB_PATH) -> None:
-        self._db_path = str(db_path)
-        self._is_memory = self._db_path == ":memory:"
-        if not self._is_memory:
-            Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
-        self._conn: sqlite3.Connection | None = None
+    Accepts an optional ``backend`` (:class:`StorageBackend`) to
+    decouple domain logic from the database driver.  When no backend
+    is supplied, a :class:`SQLiteBackend` is created from *db_path*.
+    """
+
+    def __init__(
+        self,
+        db_path: str | Path = _DEFAULT_DB_PATH,
+        *,
+        backend: StorageBackend | None = None,
+    ) -> None:
+        if backend is not None:
+            self._backend = backend
+        else:
+            self._backend = SQLiteBackend(db_path)
         self._init_schema()
+
+    # ── backward-compat properties ────────────────────────────
+
+    @property
+    def _db_path(self) -> str:
+        return self._backend.db_path
+
+    @property
+    def _is_memory(self) -> bool:
+        return self._backend.is_memory
+
+    @property
+    def _conn(self) -> Any:
+        """Expose the raw connection for legacy test access.
+
+        Returns ``None`` when the backend connection is closed,
+        preserving the behavior tests expect after ``close()``.
+        """
+        # Access the backend's internal connection state directly
+        # so that ``store._conn is None`` works after close().
+        return getattr(self._backend, "_conn", None)
 
     # ── connection management ──────────────────────────────────
 
-    def _get_conn(self) -> sqlite3.Connection:
-        if self._conn is None:
-            self._conn = sqlite3.connect(
-                self._db_path,
-                check_same_thread=False,
-                timeout=10.0,
-            )
-            self._conn.row_factory = sqlite3.Row
-            self._conn.execute("PRAGMA journal_mode=WAL")
-            self._conn.execute("PRAGMA busy_timeout=5000")
-        return self._conn
+    def _get_conn(self) -> Any:
+        return self._backend.get_connection()
 
     def _init_schema(self) -> None:
+        """Re-run schema initialization (idempotent)."""
+        self._backend.init_schema(_SCHEMA_MIGRATIONS_SQL)
+        self._backend.init_schema(_SCHEMA_SQL)
+        self._record_schema_version()
+
+    def _record_schema_version(self) -> None:
         conn = self._get_conn()
-        conn.executescript(_SCHEMA_SQL)
-        conn.commit()
+        existing = conn.execute(
+            "SELECT 1 FROM schema_migrations WHERE schema_name=? AND version=?",
+            (_PIPELINE_SCHEMA_NAME, _PIPELINE_SCHEMA_VERSION),
+        ).fetchone()
+        if existing is None:
+            conn.execute(
+                "INSERT INTO schema_migrations "
+                "(schema_name, version, applied_at, description) "
+                "VALUES (?, ?, ?, ?)",
+                (
+                    _PIPELINE_SCHEMA_NAME,
+                    _PIPELINE_SCHEMA_VERSION,
+                    time.time(),
+                    _PIPELINE_SCHEMA_DESCRIPTION,
+                ),
+            )
+            conn.commit()
+
+    def get_schema_version(self) -> int:
+        row = self._get_conn().execute(
+            "SELECT MAX(version) AS version FROM schema_migrations WHERE schema_name=?",
+            (_PIPELINE_SCHEMA_NAME,),
+        ).fetchone()
+        if row is None or row["version"] is None:
+            return 0
+        return int(row["version"])
+
+    def query_schema_migrations(self) -> list[dict[str, Any]]:
+        rows = self._get_conn().execute(
+            "SELECT schema_name, version, applied_at, description "
+            "FROM schema_migrations WHERE schema_name=? "
+            "ORDER BY version ASC",
+            (_PIPELINE_SCHEMA_NAME,),
+        ).fetchall()
+        return [dict(row) for row in rows]
 
     def close(self) -> None:
-        if self._conn is not None:
-            self._conn.close()
-            self._conn = None
+        self._backend.close()
 
     def __enter__(self) -> PipelineStore:
         return self
@@ -1144,6 +1220,26 @@ class PipelineStore:
         ).fetchall()
         return [self._entity_obs_row_to_dict(r) for r in rows]
 
+    def count_entity_observations(
+        self,
+        entity_id: str,
+        *,
+        source_tool: str | None = None,
+    ) -> int:
+        """Return the number of observations for an entity."""
+        conn = self._get_conn()
+        clauses = ["entity_id=?"]
+        params: list[Any] = [entity_id]
+        if source_tool is not None:
+            clauses.append("source_tool=?")
+            params.append(source_tool)
+        where = " AND ".join(clauses)
+        row = conn.execute(
+            f"SELECT COUNT(*) FROM entity_observations WHERE {where}",  # noqa: S608
+            params,
+        ).fetchone()
+        return row[0] if row else 0
+
     # ── entity links ───────────────────────────────────────────
 
     def link_entities(
@@ -1648,7 +1744,7 @@ class PipelineStore:
     # ── helpers ────────────────────────────────────────────────
 
     @staticmethod
-    def _feature_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+    def _feature_row_to_dict(row: Any) -> dict[str, Any]:
         d = dict(row)
         try:
             d["source_signals"] = tuple(json.loads(d.pop("source_signals_json", "[]")))
@@ -1661,7 +1757,7 @@ class PipelineStore:
         return d
 
     @staticmethod
-    def _row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+    def _row_to_dict(row: Any) -> dict[str, Any]:
         d = dict(row)
         if d.get("node_results_json"):
             try:
@@ -1674,7 +1770,7 @@ class PipelineStore:
         return d
 
     @staticmethod
-    def _data_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+    def _data_row_to_dict(row: Any) -> dict[str, Any]:
         d = dict(row)
         try:
             d["params"] = json.loads(d.pop("params_json", "{}"))
@@ -1687,7 +1783,7 @@ class PipelineStore:
         return d
 
     @staticmethod
-    def _signal_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+    def _signal_row_to_dict(row: Any) -> dict[str, Any]:
         d = dict(row)
         try:
             d["metadata"] = json.loads(d.pop("metadata_json", "null"))
@@ -1696,7 +1792,7 @@ class PipelineStore:
         return d
 
     @staticmethod
-    def _belief_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+    def _belief_row_to_dict(row: Any) -> dict[str, Any]:
         d = dict(row)
         try:
             d["probabilities"] = json.loads(d.pop("probabilities_json", "null"))
@@ -1710,7 +1806,7 @@ class PipelineStore:
         return d
 
     @staticmethod
-    def _entity_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+    def _entity_row_to_dict(row: Any) -> dict[str, Any]:
         d = dict(row)
         try:
             d["metadata"] = json.loads(d.pop("metadata_json", "null"))
@@ -1719,7 +1815,7 @@ class PipelineStore:
         return d
 
     @staticmethod
-    def _entity_obs_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+    def _entity_obs_row_to_dict(row: Any) -> dict[str, Any]:
         d = dict(row)
         try:
             d["value"] = json.loads(d.pop("value_json", "{}"))
@@ -1732,7 +1828,7 @@ class PipelineStore:
         return d
 
     @staticmethod
-    def _depth_eval_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+    def _depth_eval_row_to_dict(row: Any) -> dict[str, Any]:
         d = dict(row)
         try:
             d["metadata"] = json.loads(d.pop("metadata_json", "null"))
@@ -1741,7 +1837,7 @@ class PipelineStore:
         return d
 
     @staticmethod
-    def _entity_link_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+    def _entity_link_row_to_dict(row: Any) -> dict[str, Any]:
         d = dict(row)
         try:
             d["metadata"] = json.loads(d.pop("metadata_json", "null"))
@@ -1750,7 +1846,7 @@ class PipelineStore:
         return d
 
     @staticmethod
-    def _entity_alert_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+    def _entity_alert_row_to_dict(row: Any) -> dict[str, Any]:
         d = dict(row)
         try:
             d["evidence_sources"] = tuple(
@@ -1765,7 +1861,7 @@ class PipelineStore:
         return d
 
     @staticmethod
-    def _convergence_cluster_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+    def _convergence_cluster_row_to_dict(row: Any) -> dict[str, Any]:
         d = dict(row)
         try:
             d["member_entity_ids"] = json.loads(d.pop("member_entity_ids_json", "[]"))
@@ -2175,7 +2271,7 @@ class PipelineStore:
         return [self._pnl_row_to_dict(r) for r in rows]
 
     @staticmethod
-    def _pnl_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+    def _pnl_row_to_dict(row: Any) -> dict[str, Any]:
         d = dict(row)
         try:
             d["metadata"] = json.loads(d.pop("metadata_json", "null"))
@@ -2288,7 +2384,7 @@ class PipelineStore:
         return [self._source_row_to_dict(r) for r in rows]
 
     @staticmethod
-    def _source_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+    def _source_row_to_dict(row: Any) -> dict[str, Any]:
         d = dict(row)
         for key in ("topic_tags_json", "probe_result_json", "tool_config_json", "metadata_json"):
             plain = key.replace("_json", "")

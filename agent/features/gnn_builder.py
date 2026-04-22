@@ -82,8 +82,16 @@ def get_connected_types(
     candidates = set(_SEED_CONNECTED_TYPES)
 
     try:
-        type_rows = registry.query_entity_types(active_only=True) if hasattr(registry, "query_entity_types") else []
-        known_active = registry.known_entity_types() if hasattr(registry, "known_entity_types") else set()
+        type_rows = (
+            registry.query_entity_types(active_only=True)
+            if hasattr(registry, "query_entity_types")
+            else []
+        )
+        known_active = (
+            registry.known_entity_types()
+            if hasattr(registry, "known_entity_types")
+            else set()
+        )
     except Exception:
         return _SEED_CONNECTED_TYPES
 
@@ -455,7 +463,7 @@ class GNNFeatureBuilder(FeatureBuilder):
                 value=None,
                 quality=0.0,
                 missing_reason=reason,
-                source_signals=(),
+                source_signals=tuple(f"gnn.{t}.centroid" for t in _CONNECTED_TYPES),
                 builder=self.name,
                 unit="z_score",
             )

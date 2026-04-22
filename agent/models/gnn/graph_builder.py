@@ -58,37 +58,48 @@ ENTITY_TYPES: list[str] = [
 
 OBSERVATION_TYPES: list[str] = [
     "bankruptcy_status",
+    "border_throughput",
     "btc_transfer",
+    "campaign_finance",
     "capital_flow",
     "cb_balance_sheet",
     "cb_policy_rate",
     "cert_issued",
+    "consumer_confidence",
     "contract_award",
     "creditor_filing",
     "cross_entity_pattern",
     "dns_change",
     "drug_approval",
     "economic_activity",
+    "food_security",
     "form144_filing",
     "futures_positioning",
     "geopolitical_event",
+    "grid_demand",
     "insider_trade",
+    "instrument_daily",
     "instrument_return",
     "instrument_volatility",
     "instrument_volume",
+    "internet_disruption",
     "investigation_signal",
     "lobbying_spend",
     "market_probability",
+    "migration_pressure",
     "pageview_spike",
     "patent_filing",
+    "pathogen_level",
     "port_call",
     "price_movement",
     "project_status",
+    "regulatory_velocity",
     "research_velocity",
     "sanctions_listing",
     "sell_intent",
     "short_interest",
     "sovereign_yield",
+    "trade_flow",
     "tvl_change",
     "vessel_position",
     "whale_trade",
@@ -195,7 +206,7 @@ def _compute_obs_stats(
 #   cusum_state (1) + hawkes_intensity (1) + event_study_score (1) +
 #   bocpd_prob (1) + value_variance (1) + value_min (1) + value_max (1) +
 #   value_iqr (1) + num_source_tools (1) + obs_type_dist (35) = 44
-ENRICHMENT_DIM = 44
+ENRICHMENT_DIM = 55
 BASE_FEAT_DIM = len(ENTITY_TYPES) + 3  # one-hot type + count + recency + mean_val
 
 
@@ -505,5 +516,91 @@ class GraphBuilder:
             edge_ct,
             len(events),
         )
+
+        return data, id_map, events
+
+    def prepare_static(
+        self,
+    ) -> tuple[IDMap, list[dict[str, Any]], list[dict[str, Any]]]:
+        """Pre-fetch entities and links for caching across multiple build() calls.
+
+        Returns:
+            (id_map, entities, links) — reusable across windows that share
+            the same entity/link set.
+        """
+        entities = self._store.query_all_entities()
+        links = self._store.query_all_entity_links()
+        id_map = IDMap()
+        for ent in entities:
+            id_map.add(ent["entity_type"], ent["entity_id"])
+        return id_map, entities, links
+
+    def prefetch_observations(
+        self,
+        *,
+        since: float | None = None,
+        until: float | None = None,
+    ) -> list[dict[str, Any]]:
+        """Fetch all observations once, sorted by time.
+
+        Use with build_from_cached(observations=...) to avoid per-window
+        DB queries. Caller can slice by time using bisect.
+        """
+        obs = self._store.query_all_observations(since=since, until=until)
+        obs.sort(key=lambda o: o.get("observed_at", 0.0))
+        return obs
+
+    def build_from_cached(
+        self,
+        id_map: IDMap,
+        links: list[dict[str, Any]],
+        *,
+        since: float | None = None,
+        until: float | None = None,
+        observations: list[dict[str, Any]] | None = None,
+        enrichment: dict[str, dict[str, float]] | None = None,
+    ) -> tuple[HeteroData, IDMap, list[dict[str, Any]]]:
+        """Build graph reusing pre-fetched entities/links (skips 2 of 3 DB queries).
+
+        Use with prepare_static() for training loops where entities/links
+        are constant across windows.
+
+        If ``observations`` is provided, skips the DB observation query too
+        (caller is responsible for time-filtering).
+        """
+        if observations is None:
+            observations = self._store.query_all_observations(since=since, until=until)
+
+        if observations:
+            current_time = max(o.get("observed_at", 0.0) for o in observations)
+        else:
+            current_time = 0.0
+
+        data = HeteroData()
+
+        all_types = sorted(set(ENTITY_TYPES) | set(id_map.type_local.keys()))
+        for etype in all_types:
+            local_map = id_map.type_local.get(etype, {})
+            if not local_map:
+                continue
+            ordered_ids = [""] * len(local_map)
+            for eid, lidx in local_map.items():
+                ordered_ids[lidx] = eid
+            features = _build_node_features(
+                etype,
+                ordered_ids,
+                observations,
+                current_time,
+                enrichment=enrichment,
+            )
+            data[etype].x = features
+            data[etype].node_ids = ordered_ids
+
+        edge_data = _build_edge_data(links, id_map)
+        for triplet, tensors in edge_data.items():
+            data[triplet].edge_index = tensors["edge_index"]
+            data[triplet].edge_attr = tensors["edge_attr"]
+
+        events = sorted(observations, key=lambda o: o.get("observed_at", 0.0))
 
         return data, id_map, events

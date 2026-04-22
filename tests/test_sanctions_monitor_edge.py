@@ -704,9 +704,17 @@ class TestSearchMode:
 
 class TestRecentMode:
     def test_recent_finds_entries(self, tool):
-        with patch("httpx.get", side_effect=_mock_responses()):
-            # HASSAN was listed on 2026-03-15 — should appear in recent
-            result = tool.execute(mode="recent", days_back=30)
+        from datetime import datetime, timezone
+
+        # Fix "now" to 2026-03-22 so HASSAN (listed 2026-03-15, updated 2026-03-20)
+        # falls within the 30-day window regardless of real wall-clock date.
+        fixed_now = datetime(2026, 3, 22, 12, 0, 0, tzinfo=timezone.utc)
+        with patch("agent.tools.sanctions_monitor.datetime") as mock_dt:
+            mock_dt.now.return_value = fixed_now
+            mock_dt.fromisoformat.side_effect = datetime.fromisoformat
+            with patch("httpx.get", side_effect=_mock_responses()):
+                # HASSAN was listed on 2026-03-15 — should appear in recent
+                result = tool.execute(mode="recent", days_back=30)
         assert result.success
         # Should find at least the recent UN entry
         assert result.data["count"] >= 1

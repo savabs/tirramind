@@ -31,12 +31,21 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any
+import time
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from agent.data.cache import DataCache
 from agent.tools.base import Tool, ToolResult
+
+if TYPE_CHECKING:
+    from agent.pipeline.store import PipelineStore
+
+try:
+    from agent.pipeline.entity import entity_id_from_key as _entity_id_from_key
+except ImportError:  # pragma: no cover -- optional dependency
+    _entity_id_from_key = None  # type: ignore[assignment]
 
 log = logging.getLogger(__name__)
 
@@ -58,8 +67,13 @@ def _get_api_key() -> str:
 class PoliticalRiskTool(Tool):
     """Monitor US political risk via FEC campaign finance data."""
 
-    def __init__(self, cache: DataCache | None = None) -> None:
+    def __init__(
+        self,
+        cache: DataCache | None = None,
+        pipeline_store: "PipelineStore | None" = None,
+    ) -> None:
         self._cache = cache
+        self._store = pipeline_store
 
     @property
     def name(self) -> str:
@@ -138,11 +152,16 @@ class PoliticalRiskTool(Tool):
             )
 
         if mode == "candidates":
-            return self._handle_candidates(kwargs, limit)
+            result = self._handle_candidates(kwargs, limit)
         elif mode == "filings":
-            return self._handle_filings(kwargs, limit)
+            result = self._handle_filings(kwargs, limit)
         else:
-            return self._handle_expenditures(kwargs, limit)
+            result = self._handle_expenditures(kwargs, limit)
+
+        if result.success and result.data:
+            self._persist_entities(result.data, mode)
+
+        return result
 
     # ── Mode handlers ───────────────────────────────────────
 
@@ -171,7 +190,10 @@ class PoliticalRiskTool(Tool):
 
         cache_key = f"fec:candidates:{query}:{office}:{cycle}:{limit}"
         return self._fetch_fec(
-            f"{_FEC_BASE}/candidates/search/", params, cache_key, "candidates",
+            f"{_FEC_BASE}/candidates/search/",
+            params,
+            cache_key,
+            "candidates",
         )
 
     def _handle_filings(self, kwargs: dict, limit: int) -> ToolResult:
@@ -182,9 +204,7 @@ class PoliticalRiskTool(Tool):
         params: dict[str, str] = {
             "api_key": _get_api_key(),
             "per_page": str(limit),
-            "sort": (
-                "-receipt_date" if sort_order == "desc" else "receipt_date"
-            ),
+            "sort": ("-receipt_date" if sort_order == "desc" else "receipt_date"),
         }
         if query:
             params["committee_id"] = query
@@ -193,7 +213,10 @@ class PoliticalRiskTool(Tool):
 
         cache_key = f"fec:filings:{query}:{cycle}:{limit}"
         return self._fetch_fec(
-            f"{_FEC_BASE}/filings/", params, cache_key, "filings",
+            f"{_FEC_BASE}/filings/",
+            params,
+            cache_key,
+            "filings",
         )
 
     def _handle_expenditures(self, kwargs: dict, limit: int) -> ToolResult:
@@ -205,8 +228,7 @@ class PoliticalRiskTool(Tool):
             "api_key": _get_api_key(),
             "per_page": str(limit),
             "sort": (
-                "-expenditure_date" if sort_order == "desc"
-                else "expenditure_date"
+                "-expenditure_date" if sort_order == "desc" else "expenditure_date"
             ),
         }
         if query:
@@ -217,29 +239,39 @@ class PoliticalRiskTool(Tool):
         cache_key = f"fec:expenditures:{query}:{cycle}:{limit}"
         return self._fetch_fec(
             f"{_FEC_BASE}/schedules/schedule_e/",
-            params, cache_key, "expenditures",
+            params,
+            cache_key,
+            "expenditures",
         )
 
     # ── Core fetch ──────────────────────────────────────────
 
     def _fetch_fec(
-        self, url: str, params: dict, cache_key: str, result_type: str,
+        self,
+        url: str,
+        params: dict,
+        cache_key: str,
+        result_type: str,
     ) -> ToolResult:
         if self._cache:
             hit = self._cache.get(cache_key)
             if hit is not None:
                 return ToolResult(
-                    success=True, output=hit["output"], data=hit["data"],
+                    success=True,
+                    output=hit["output"],
+                    data=hit["data"],
                 )
 
         try:
             with httpx.Client(
-                timeout=_TIMEOUT, headers={"User-Agent": _UA},
+                timeout=_TIMEOUT,
+                headers={"User-Agent": _UA},
             ) as client:
                 resp = client.get(url, params=params)
         except httpx.TimeoutException:
             return ToolResult(
-                success=False, output="FEC API request timed out.",
+                success=False,
+                output="FEC API request timed out.",
             )
         except httpx.HTTPError as exc:
             return ToolResult(success=False, output=f"HTTP error: {exc}")
@@ -267,7 +299,8 @@ class PoliticalRiskTool(Tool):
             body = resp.json()
         except Exception:
             return ToolResult(
-                success=False, output="Failed to parse FEC API response.",
+                success=False,
+                output="Failed to parse FEC API response.",
             )
 
         results = body.get("results", [])
@@ -301,6 +334,112 @@ class PoliticalRiskTool(Tool):
 
         return ToolResult(success=True, output=summary, data=result_data)
 
+    # ── L2 entity persistence (Phase 32) ──────────────────────
+
+    def _persist_entities(
+        self,
+        data: dict[str, Any],
+        mode: str,
+    ) -> dict[str, int]:
+        if self._store is None or _entity_id_from_key is None:
+            return {"campaign_finance_obs": 0}
+        try:
+            return self._persist_entities_inner(data, mode)
+        except Exception:
+            log.exception("Political risk entity persistence failed (non-fatal)")
+            return {"campaign_finance_obs": 0}
+
+    def _persist_entities_inner(
+        self,
+        data: dict[str, Any],
+        mode: str,
+    ) -> dict[str, int]:
+        assert self._store is not None  # noqa: S101 -- guarded
+        assert _entity_id_from_key is not None  # noqa: S101
+
+        result_type = data.get("result_type", mode)
+
+        # Filings are committee-level, not person entities — skip
+        if result_type == "filings":
+            return {"campaign_finance_obs": 0}
+
+        records = data.get("records", [])
+        now = time.time()
+        count = 0
+
+        if result_type == "candidates":
+            for rec in records:
+                cand_id = str(rec.get("candidate_id", "")).strip()
+                if not cand_id:
+                    continue
+                person_eid = _entity_id_from_key("person", cand_id)
+                self._store.register_entity("person", cand_id, person_eid)
+                self._store.store_entity_observation(
+                    entity_id=person_eid,
+                    source_tool="political_risk",
+                    observed_at=now,
+                    observation_type="campaign_finance",
+                    value={
+                        "mode": "candidates",
+                        "name": rec.get("name"),
+                        "party": rec.get("party"),
+                        "office": rec.get("office"),
+                        "state": rec.get("state"),
+                        "has_raised_funds": rec.get("has_raised_funds"),
+                        "candidate_status": rec.get("candidate_status"),
+                    },
+                    depth_level=2,
+                )
+                count += 1
+
+        elif result_type == "expenditures":
+            # Aggregate per candidate
+            by_candidate: dict[str, dict[str, Any]] = {}
+            for rec in records:
+                cand_id = str(rec.get("candidate_id", "")).strip()
+                if not cand_id:
+                    continue
+                if cand_id not in by_candidate:
+                    by_candidate[cand_id] = {
+                        "name": rec.get("candidate_name"),
+                        "support": 0.0,
+                        "oppose": 0.0,
+                        "total": 0.0,
+                    }
+                amt = rec.get("expenditure_amount") or 0
+                so = rec.get("support_oppose", "")
+                if so == "S":
+                    by_candidate[cand_id]["support"] += amt
+                elif so == "O":
+                    by_candidate[cand_id]["oppose"] += amt
+                by_candidate[cand_id]["total"] += amt
+
+            for cand_id, agg in by_candidate.items():
+                person_eid = _entity_id_from_key("person", cand_id)
+                self._store.register_entity("person", cand_id, person_eid)
+                self._store.store_entity_observation(
+                    entity_id=person_eid,
+                    source_tool="political_risk",
+                    observed_at=now,
+                    observation_type="campaign_finance",
+                    value={
+                        "mode": "expenditures",
+                        "name": agg["name"],
+                        "total_support": round(agg["support"], 2),
+                        "total_oppose": round(agg["oppose"], 2),
+                        "total_spent": round(agg["total"], 2),
+                    },
+                    depth_level=2,
+                )
+                count += 1
+
+        log.info(
+            "Political risk L2: %d campaign_finance obs persisted (mode=%s)",
+            count,
+            result_type,
+        )
+        return {"campaign_finance_obs": count}
+
 
 # ── Parsers (module-level for testability) ──────────────────────
 
@@ -308,38 +447,42 @@ class PoliticalRiskTool(Tool):
 def _parse_candidates(results: list) -> list[dict]:
     records = []
     for r in results:
-        records.append({
-            "candidate_id": r.get("candidate_id", ""),
-            "name": r.get("name", ""),
-            "party": r.get("party", ""),
-            "office": r.get("office", ""),
-            "office_full": r.get("office_full", ""),
-            "state": r.get("state", ""),
-            "district": r.get("district", ""),
-            "incumbent_challenge": r.get("incumbent_challenge", ""),
-            "cycles": r.get("cycles", []),
-            "has_raised_funds": r.get("has_raised_funds", False),
-            "candidate_status": r.get("candidate_status", ""),
-        })
+        records.append(
+            {
+                "candidate_id": r.get("candidate_id", ""),
+                "name": r.get("name", ""),
+                "party": r.get("party", ""),
+                "office": r.get("office", ""),
+                "office_full": r.get("office_full", ""),
+                "state": r.get("state", ""),
+                "district": r.get("district", ""),
+                "incumbent_challenge": r.get("incumbent_challenge", ""),
+                "cycles": r.get("cycles", []),
+                "has_raised_funds": r.get("has_raised_funds", False),
+                "candidate_status": r.get("candidate_status", ""),
+            }
+        )
     return records
 
 
 def _parse_filings(results: list) -> list[dict]:
     records = []
     for r in results:
-        records.append({
-            "committee_id": r.get("committee_id", ""),
-            "committee_name": r.get("committee_name", ""),
-            "form_type": r.get("form_type", ""),
-            "receipt_date": r.get("receipt_date", ""),
-            "coverage_start_date": r.get("coverage_start_date", ""),
-            "coverage_end_date": r.get("coverage_end_date", ""),
-            "total_receipts": r.get("total_receipts"),
-            "total_disbursements": r.get("total_disbursements"),
-            "cash_on_hand_end": r.get("cash_on_hand_end_period"),
-            "debts_owed_by": r.get("debts_owed_by_committee"),
-            "document_description": r.get("document_description", ""),
-        })
+        records.append(
+            {
+                "committee_id": r.get("committee_id", ""),
+                "committee_name": r.get("committee_name", ""),
+                "form_type": r.get("form_type", ""),
+                "receipt_date": r.get("receipt_date", ""),
+                "coverage_start_date": r.get("coverage_start_date", ""),
+                "coverage_end_date": r.get("coverage_end_date", ""),
+                "total_receipts": r.get("total_receipts"),
+                "total_disbursements": r.get("total_disbursements"),
+                "cash_on_hand_end": r.get("cash_on_hand_end_period"),
+                "debts_owed_by": r.get("debts_owed_by_committee"),
+                "document_description": r.get("document_description", ""),
+            }
+        )
     return records
 
 
@@ -352,19 +495,21 @@ def _parse_expenditures(results: list) -> list[dict]:
         else:
             committee_name = r.get("committee_name", "")
 
-        records.append({
-            "committee_id": r.get("committee_id", ""),
-            "committee_name": committee_name,
-            "candidate_id": r.get("candidate_id", ""),
-            "candidate_name": r.get("candidate_name", ""),
-            "support_oppose": r.get("support_oppose_indicator", ""),
-            "expenditure_amount": r.get("expenditure_amount"),
-            "expenditure_date": r.get("expenditure_date", ""),
-            "payee_name": r.get("payee_name", ""),
-            "expenditure_description": r.get("expenditure_description", ""),
-            "office": r.get("candidate_office", ""),
-            "state": r.get("candidate_office_state", ""),
-        })
+        records.append(
+            {
+                "committee_id": r.get("committee_id", ""),
+                "committee_name": committee_name,
+                "candidate_id": r.get("candidate_id", ""),
+                "candidate_name": r.get("candidate_name", ""),
+                "support_oppose": r.get("support_oppose_indicator", ""),
+                "expenditure_amount": r.get("expenditure_amount"),
+                "expenditure_date": r.get("expenditure_date", ""),
+                "payee_name": r.get("payee_name", ""),
+                "expenditure_description": r.get("expenditure_description", ""),
+                "office": r.get("candidate_office", ""),
+                "state": r.get("candidate_office_state", ""),
+            }
+        )
     return records
 
 
@@ -432,11 +577,12 @@ def _compute_signals(records: list[dict], result_type: str) -> dict[str, Any]:
             signals["oppose_ratio"] = round(oppose_total / combined, 3)
 
         top_targets = sorted(
-            by_candidate.items(), key=lambda x: x[1], reverse=True,
+            by_candidate.items(),
+            key=lambda x: x[1],
+            reverse=True,
         )[:5]
         signals["top_targets"] = [
-            {"candidate": c, "total_spent": round(s, 2)}
-            for c, s in top_targets
+            {"candidate": c, "total_spent": round(s, 2)} for c, s in top_targets
         ]
 
     return signals
@@ -484,17 +630,15 @@ def _format_summary(
                 f"({r.get('receipt_date', '?')}) — Cash: {cash}"
             )
         if "avg_cash_on_hand" in signals:
-            parts.append(
-                f"\nAvg cash on hand: ${signals['avg_cash_on_hand']:,.0f}"
-            )
+            parts.append(f"\nAvg cash on hand: ${signals['avg_cash_on_hand']:,.0f}")
 
     elif result_type == "expenditures" and records:
         parts.append("\nIndependent expenditures:")
         for r in records[:8]:
             so = (
-                "SUPPORT" if r.get("support_oppose") == "S"
-                else "OPPOSE" if r.get("support_oppose") == "O"
-                else "?"
+                "SUPPORT"
+                if r.get("support_oppose") == "S"
+                else "OPPOSE" if r.get("support_oppose") == "O" else "?"
             )
             amt = (
                 f"${r['expenditure_amount']:,.0f}"
@@ -516,14 +660,10 @@ def _format_summary(
                 f"({signals.get('oppose_count', 0)} items)"
             )
             if "oppose_ratio" in signals:
-                parts.append(
-                    f"Oppose ratio: {signals['oppose_ratio']:.1%}"
-                )
+                parts.append(f"Oppose ratio: {signals['oppose_ratio']:.1%}")
         if signals.get("top_targets"):
             parts.append("Top targeted candidates:")
             for t in signals["top_targets"]:
-                parts.append(
-                    f"  {t['candidate']}: ${t['total_spent']:,.0f}"
-                )
+                parts.append(f"  {t['candidate']}: ${t['total_spent']:,.0f}")
 
     return "\n".join(parts)

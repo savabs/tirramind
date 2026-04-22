@@ -104,7 +104,7 @@ class TestComparisonReport:
         discovery = CausalStructureDiscovery()
         report = discovery.compare_with_expert(disc_result, graph)
 
-        assert len(report.missing_edges) == 11  # all expert edges missing
+        assert len(report.missing_edges) == 19  # all expert edges missing
         assert report.summary["n_confirmed"] == 0
 
     def test_novel_edge(self) -> None:
@@ -152,7 +152,7 @@ class TestComparisonReport:
 
         assert report.summary["n_confirmed"] == 2
         assert report.summary["n_novel"] == 1
-        assert report.summary["total_expert_edges"] == 11
+        assert report.summary["total_expert_edges"] == 19
 
 
 class TestDataclasses:

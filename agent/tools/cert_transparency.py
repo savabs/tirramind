@@ -485,6 +485,9 @@ class CertTransparencyTool(Tool):
         )
         store.add_entity_alias(domain_eid, "domain_name", domain)
 
+        # Attempt domain → company link (Phase 36)
+        self._link_domain_to_company(store, domain, domain_eid)
+
         for cert in certs:
             ts_str = cert.get("entry_timestamp", "")
             try:
@@ -504,6 +507,36 @@ class CertTransparencyTool(Tool):
                     "issuer_name": cert.get("issuer_name", ""),
                 },
             )
+
+    @staticmethod
+    def _link_domain_to_company(
+        store: Any, domain: str, domain_eid: str
+    ) -> None:
+        """Attempt to link a domain entity to a company entity (Phase 36).
+
+        Extracts the base name from the domain (e.g. ``stripe`` from
+        ``api.stripe.com``) and looks it up in the instrument-universe
+        company keyword map.
+        """
+        from agent.tools.instrument_universe import build_domain_company_map
+
+        parts = domain.rsplit(".", 2)
+        base = parts[-2] if len(parts) >= 2 else parts[0]
+        base = base.lower()
+        if not base:
+            return
+        company_map = build_domain_company_map()
+        match = company_map.get(base)
+        if match is None:
+            return
+        _canon, company_eid = match
+        store.link_entities(
+            entity_id_a=domain_eid,
+            entity_id_b=company_eid,
+            link_type="domain_owned_by",
+            source="cert_transparency",
+            confidence=0.8,
+        )
 
     # ------------------------------------------------------------------
     # crt.sh fetch

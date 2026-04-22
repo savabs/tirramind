@@ -62,8 +62,8 @@ class TestObsTypeRegistration:
     def test_sovereign_yield_in_obs_types(self):
         assert "sovereign_yield" in OBSERVATION_TYPES
 
-    def test_enrichment_dim_is_44(self):
-        assert ENRICHMENT_DIM == 44
+    def test_enrichment_dim_is_48(self):
+        assert ENRICHMENT_DIM == 55
 
 
 # ── 2. Single-tool persistence flows through to graph ────────────

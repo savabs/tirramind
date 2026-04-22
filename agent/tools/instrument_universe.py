@@ -53,6 +53,15 @@ class InstrumentDef:
     # Deterministic two-country structure so both sides are graph-visible.
     base_country: str | None = None  # ISO code for base currency country
     quote_country: str | None = None  # ISO code for quote currency country
+    # Crypto protocol metadata (Phase 30).
+    protocol: str | None = (
+        None  # lowercased protocol name (e.g., "bitcoin", "ethereum")
+    )
+    # Exchange country metadata (Phase 34).
+    # ISO 3166-1 alpha-2 code for the country where the exchange is domiciled.
+    # Distinct from `country` (underlying domicile) — enables GNN to learn
+    # exchange-venue links separately from domicile links.
+    primary_exchange_country: str | None = None
 
 
 # ── Instrument universe ────────────────────────────────────────
@@ -60,35 +69,167 @@ class InstrumentDef:
 INSTRUMENTS: tuple[InstrumentDef, ...] = (
     # ── Commodity Futures (20) ─────────────────────────────
     # country=None for commodities: they trade globally, no single issuer country.
+    # primary_exchange_country="US": all trade on US exchanges (CME/NYMEX/CBOT/ICE US).
     # cftc_code: verified against CFTC disaggregated report (2026-04-15).
     InstrumentDef(
-        "CL=F", "WTI Crude Oil", "commodity_future", "Global", cftc_code="06765A"
+        "CL=F",
+        "WTI Crude Oil",
+        "commodity_future",
+        "Global",
+        cftc_code="06765A",
+        primary_exchange_country="US",
     ),
     InstrumentDef(
-        "BZ=F", "Brent Crude Oil", "commodity_future", "Global", cftc_code="06765T"
+        "BZ=F",
+        "Brent Crude Oil",
+        "commodity_future",
+        "Global",
+        cftc_code="06765T",
+        primary_exchange_country="US",
     ),
-    InstrumentDef("NG=F", "Natural Gas", "commodity_future", "US", cftc_code="023651"),
     InstrumentDef(
-        "RB=F", "RBOB Gasoline", "commodity_future", "US", cftc_code="111659"
+        "NG=F",
+        "Natural Gas",
+        "commodity_future",
+        "US",
+        cftc_code="023651",
+        primary_exchange_country="US",
     ),
-    InstrumentDef("GC=F", "Gold", "commodity_future", "Global", cftc_code="088691"),
-    InstrumentDef("SI=F", "Silver", "commodity_future", "Global", cftc_code="084691"),
-    InstrumentDef("PL=F", "Platinum", "commodity_future", "Global", cftc_code="076651"),
     InstrumentDef(
-        "PA=F", "Palladium", "commodity_future", "Global", cftc_code="075651"
+        "RB=F",
+        "RBOB Gasoline",
+        "commodity_future",
+        "US",
+        cftc_code="111659",
+        primary_exchange_country="US",
     ),
-    InstrumentDef("HG=F", "Copper", "commodity_future", "Global", cftc_code="085692"),
-    InstrumentDef("ZW=F", "Wheat", "commodity_future", "US", cftc_code="001602"),
-    InstrumentDef("ZC=F", "Corn", "commodity_future", "US", cftc_code="002602"),
-    InstrumentDef("ZS=F", "Soybeans", "commodity_future", "US", cftc_code="005602"),
-    InstrumentDef("KC=F", "Coffee", "commodity_future", "Global", cftc_code="083731"),
-    InstrumentDef("CC=F", "Cocoa", "commodity_future", "Global", cftc_code="073732"),
-    InstrumentDef("CT=F", "Cotton", "commodity_future", "US", cftc_code="033661"),
-    InstrumentDef("SB=F", "Sugar", "commodity_future", "Global", cftc_code="080732"),
-    InstrumentDef("ZO=F", "Oats", "commodity_future", "US"),  # no CFTC disagg code
-    InstrumentDef("OJ=F", "Orange Juice", "commodity_future", "US", cftc_code="040701"),
-    InstrumentDef("LE=F", "Live Cattle", "commodity_future", "US", cftc_code="057642"),
-    InstrumentDef("HE=F", "Lean Hogs", "commodity_future", "US", cftc_code="054642"),
+    InstrumentDef(
+        "GC=F",
+        "Gold",
+        "commodity_future",
+        "Global",
+        cftc_code="088691",
+        primary_exchange_country="US",
+    ),
+    InstrumentDef(
+        "SI=F",
+        "Silver",
+        "commodity_future",
+        "Global",
+        cftc_code="084691",
+        primary_exchange_country="US",
+    ),
+    InstrumentDef(
+        "PL=F",
+        "Platinum",
+        "commodity_future",
+        "Global",
+        cftc_code="076651",
+        primary_exchange_country="US",
+    ),
+    InstrumentDef(
+        "PA=F",
+        "Palladium",
+        "commodity_future",
+        "Global",
+        cftc_code="075651",
+        primary_exchange_country="US",
+    ),
+    InstrumentDef(
+        "HG=F",
+        "Copper",
+        "commodity_future",
+        "Global",
+        cftc_code="085692",
+        primary_exchange_country="US",
+    ),
+    InstrumentDef(
+        "ZW=F",
+        "Wheat",
+        "commodity_future",
+        "US",
+        cftc_code="001602",
+        primary_exchange_country="US",
+    ),
+    InstrumentDef(
+        "ZC=F",
+        "Corn",
+        "commodity_future",
+        "US",
+        cftc_code="002602",
+        primary_exchange_country="US",
+    ),
+    InstrumentDef(
+        "ZS=F",
+        "Soybeans",
+        "commodity_future",
+        "US",
+        cftc_code="005602",
+        primary_exchange_country="US",
+    ),
+    InstrumentDef(
+        "KC=F",
+        "Coffee",
+        "commodity_future",
+        "Global",
+        cftc_code="083731",
+        primary_exchange_country="US",
+    ),
+    InstrumentDef(
+        "CC=F",
+        "Cocoa",
+        "commodity_future",
+        "Global",
+        cftc_code="073732",
+        primary_exchange_country="US",
+    ),
+    InstrumentDef(
+        "CT=F",
+        "Cotton",
+        "commodity_future",
+        "US",
+        cftc_code="033661",
+        primary_exchange_country="US",
+    ),
+    InstrumentDef(
+        "SB=F",
+        "Sugar",
+        "commodity_future",
+        "Global",
+        cftc_code="080732",
+        primary_exchange_country="US",
+    ),
+    InstrumentDef(
+        "ZO=F",
+        "Oats",
+        "commodity_future",
+        "US",
+        primary_exchange_country="US",
+    ),  # no CFTC disagg code
+    InstrumentDef(
+        "OJ=F",
+        "Orange Juice",
+        "commodity_future",
+        "US",
+        cftc_code="040701",
+        primary_exchange_country="US",
+    ),
+    InstrumentDef(
+        "LE=F",
+        "Live Cattle",
+        "commodity_future",
+        "US",
+        cftc_code="057642",
+        primary_exchange_country="US",
+    ),
+    InstrumentDef(
+        "HE=F",
+        "Lean Hogs",
+        "commodity_future",
+        "US",
+        cftc_code="054642",
+        primary_exchange_country="US",
+    ),
     # ── FX Pairs (15) ─────────────────────────────────────
     # FX: base_country/quote_country capture both sides explicitly (Phase 27).
     # country retained for backward compat (non-USD side for USD pairs, base for crosses).
@@ -500,8 +641,8 @@ INSTRUMENTS: tuple[InstrumentDef, ...] = (
         country="US",
     ),
     # ── Crypto (2) ────────────────────────────────────────
-    InstrumentDef("BTC-USD", "Bitcoin", "crypto", "Global"),
-    InstrumentDef("ETH-USD", "Ethereum", "crypto", "Global"),
+    InstrumentDef("BTC-USD", "Bitcoin", "crypto", "Global", protocol="bitcoin"),
+    InstrumentDef("ETH-USD", "Ethereum", "crypto", "Global", protocol="ethereum"),
 )
 
 
@@ -528,6 +669,39 @@ def cftc_code_to_ticker() -> dict[str, str]:
     return {i.cftc_code: i.ticker for i in INSTRUMENTS if i.cftc_code}
 
 
+def build_domain_company_map() -> dict[str, tuple[str, str]]:
+    """Build lowercase domain-root keyword → (canonical_name, entity_id) map.
+
+    Derived from INSTRUMENTS issuer names via ``normalize_company_name()``.
+    Used by domain tools (cert_transparency, dns_monitor) to attempt
+    ``domain_owned_by`` linking from a domain's base name.
+
+    Returns:
+        Dict mapping lowercase keywords to (canonical_name, company_entity_id).
+        Keywords are the first word of the normalized issuer name, plus the
+        full normalized name.  E.g. ``"blackrock"`` and ``"blackrock"`` both
+        map to the same entity for issuer "BlackRock".
+    """
+    from agent.pipeline.entity import entity_id_from_key, normalize_company_name
+
+    result: dict[str, tuple[str, str]] = {}
+    for inst in INSTRUMENTS:
+        if not inst.issuer:
+            continue
+        try:
+            canon = normalize_company_name(inst.issuer)
+        except ValueError:
+            continue
+        eid = entity_id_from_key("company", canon)
+        # Map the full canonical name
+        result[canon] = (canon, eid)
+        # Also map the first word (e.g. "blackrock" from "blackrock")
+        first_word = canon.split()[0] if canon else ""
+        if first_word and first_word not in result:
+            result[first_word] = (canon, eid)
+    return result
+
+
 # ── Cross-domain link persistence (Phase 25) ──────────────────
 
 
@@ -540,6 +714,8 @@ def _persist_instrument_links(store: PipelineStore) -> dict[str, int]:
     - ``located_in``: company → country (issuer HQ → country, deduped)
     - ``fx_base_country``: instrument → country (FX base currency side, Phase 27)
     - ``fx_quote_country``: instrument → country (FX quote currency side, Phase 27)
+    - ``tracks_protocol``: instrument → protocol (crypto → blockchain protocol, Phase 30)
+    - ``exchange_country``: instrument → country (exchange domicile, Phase 34)
 
     Only explicit metadata is used.  Instruments without issuer/country are skipped.
 
@@ -554,6 +730,8 @@ def _persist_instrument_links(store: PipelineStore) -> dict[str, int]:
         "issuer_country": 0,
         "fx_base_country": 0,
         "fx_quote_country": 0,
+        "tracks_protocol": 0,
+        "exchange_country": 0,
     }
     seen_issuers: dict[str, str] = {}  # canonical_name → entity_id (dedup)
 
@@ -656,14 +834,55 @@ def _persist_instrument_links(store: PipelineStore) -> dict[str, int]:
             if link_id:
                 counts[side] += 1
 
+        # ── instrument → protocol (tracks_protocol, Phase 30) ──
+        if inst.protocol:
+            protocol_eid = entity_id_from_key("protocol", inst.protocol)
+            store.register_entity(
+                entity_type="protocol",
+                canonical_name=inst.protocol,
+                entity_id=protocol_eid,
+            )
+            link_id = store.link_entities(
+                entity_id_a=inst_eid,
+                entity_id_b=protocol_eid,
+                link_type="tracks_protocol",
+                source="instrument_universe",
+                confidence=1.0,
+                metadata={"ticker": inst.ticker},
+            )
+            if link_id:
+                counts["tracks_protocol"] += 1
+
+        # ── instrument → country (exchange_country, Phase 34) ──
+        if inst.primary_exchange_country:
+            exc_eid = entity_id_from_key("country", inst.primary_exchange_country)
+            store.register_entity(
+                entity_type="country",
+                canonical_name=inst.primary_exchange_country,
+                entity_id=exc_eid,
+            )
+            link_id = store.link_entities(
+                entity_id_a=inst_eid,
+                entity_id_b=exc_eid,
+                link_type="exchange_country",
+                source="instrument_universe",
+                confidence=1.0,
+                metadata={"ticker": inst.ticker},
+            )
+            if link_id:
+                counts["exchange_country"] += 1
+
     log.info(
         "Instrument links: %d tracks_issuer, %d inst→country, %d issuer→country, "
-        "%d fx_base_country, %d fx_quote_country",
+        "%d fx_base_country, %d fx_quote_country, %d tracks_protocol, "
+        "%d exchange_country",
         counts["tracks_issuer"],
         counts["inst_country"],
         counts["issuer_country"],
         counts["fx_base_country"],
         counts["fx_quote_country"],
+        counts["tracks_protocol"],
+        counts["exchange_country"],
     )
     return counts
 
@@ -876,6 +1095,208 @@ def ingest_daily_prices(
         fetched,
         total,
         obs_stored,
+    )
+    return summary
+
+
+# ── Historical backfill ────────────────────────────────────────
+
+
+def backfill_historical_prices(
+    store: PipelineStore,
+    lookback_years: int = 3,
+    batch_size: int = 20,
+    skip_existing: bool = True,
+) -> dict[str, Any]:
+    """Fetch multi-year daily prices and store each day as a separate observation.
+
+    Parameters
+    ----------
+    store : PipelineStore to write entities/observations.
+    lookback_years : How many years of history to fetch (default: 3).
+    batch_size : How many tickers to download per yfinance batch (default: 20).
+    skip_existing : If True, skip instruments that already have >=100 historical
+                    observations (resume capability).
+
+    Returns
+    -------
+    Summary dict with keys: instruments_backfilled, instruments_skipped,
+    instruments_failed, total_observations.
+    """
+    import yfinance as yf
+
+    instruments = tradeable_instruments()
+    ticker_map = {i.ticker: i for i in instruments}
+
+    # ── Determine which tickers need backfill ──────────────
+    tickers_to_fill: list[str] = []
+    skipped: list[str] = []
+
+    if skip_existing:
+        for inst in instruments:
+            eid = _entity_id(inst.ticker)
+            try:
+                existing = store.count_entity_observations(
+                    entity_id=eid,
+                    source_tool=_SOURCE_TOOL,
+                )
+            except Exception:
+                existing = 0
+            if existing >= 100:
+                skipped.append(inst.ticker)
+            else:
+                tickers_to_fill.append(inst.ticker)
+    else:
+        tickers_to_fill = [i.ticker for i in instruments]
+
+    log.info(
+        "Backfill: %d tickers to fill, %d skipped (existing data)",
+        len(tickers_to_fill),
+        len(skipped),
+    )
+
+    # ── Process in batches ─────────────────────────────────
+    total_obs = 0
+    filled: list[str] = []
+    failed: list[str] = []
+    period = f"{lookback_years}y"
+
+    for batch_start in range(0, len(tickers_to_fill), batch_size):
+        batch_tickers = tickers_to_fill[batch_start : batch_start + batch_size]
+        log.info(
+            "Backfill batch %d-%d / %d",
+            batch_start,
+            batch_start + len(batch_tickers),
+            len(tickers_to_fill),
+        )
+
+        try:
+            raw = yf.download(
+                batch_tickers,
+                period=period,
+                interval="1d",
+                group_by="ticker",
+                progress=False,
+                threads=True,
+            )
+        except Exception:
+            log.exception("Batch download failed for %s", batch_tickers[:5])
+            failed.extend(batch_tickers)
+            continue
+
+        for ticker in batch_tickers:
+            try:
+                # Extract per-ticker dataframe
+                if len(batch_tickers) == 1:
+                    df = raw
+                else:
+                    if ticker not in raw.columns.get_level_values(0):
+                        failed.append(ticker)
+                        continue
+                    df = raw[ticker]
+
+                df = df.dropna(subset=["Close"])
+                if df.empty:
+                    failed.append(ticker)
+                    continue
+
+                # Register entity
+                inst = ticker_map[ticker]
+                eid = _entity_id(ticker)
+                store.register_entity(
+                    entity_type=_ENTITY_TYPE,
+                    canonical_name=inst.name,
+                    entity_id=eid,
+                    metadata={
+                        "ticker": ticker,
+                        "asset_class": inst.asset_class,
+                        "region": inst.region,
+                    },
+                )
+
+                # Compute log returns
+                closes = df["Close"].values.astype(float)
+                volumes = (
+                    df["Volume"].values.astype(float)
+                    if "Volume" in df.columns
+                    else np.zeros(len(closes))
+                )
+
+                log_returns = np.diff(np.log(closes))
+                dates = df.index.tolist()
+                obs_count = 0
+
+                # Store each day as a separate observation (skip day 0 — no return)
+                for i in range(1, len(closes)):
+                    day = dates[i]
+                    if hasattr(day, "timestamp"):
+                        observed_at = day.timestamp()
+                    else:
+                        observed_at = time.mktime(day.timetuple())
+
+                    ret = float(log_returns[i - 1])
+                    close = float(closes[i])
+                    vol = float(volumes[i]) if i < len(volumes) else 0.0
+
+                    # 20d realized vol (annualised) — rolling window
+                    if i >= 20:
+                        rv = float(
+                            np.std(log_returns[i - 20 : i]) * math.sqrt(252)
+                        )
+                    elif i >= 2:
+                        rv = float(np.std(log_returns[:i]) * math.sqrt(252))
+                    else:
+                        rv = float("nan")
+
+                    value = {
+                        "close": close,
+                        "log_return": ret,
+                        "volume": vol,
+                    }
+                    if not math.isnan(rv):
+                        value["realized_vol_20d"] = rv
+
+                    store.store_entity_observation(
+                        entity_id=eid,
+                        source_tool=_SOURCE_TOOL,
+                        observed_at=observed_at,
+                        observation_type="instrument_daily",
+                        value=value,
+                        depth_level=1,
+                    )
+                    obs_count += 1
+
+                total_obs += obs_count
+                filled.append(ticker)
+                log.debug("Backfilled %s: %d observations", ticker, obs_count)
+
+            except Exception:
+                log.warning("Failed to backfill %s", ticker, exc_info=True)
+                failed.append(ticker)
+
+        # Rate limiting between batches
+        if batch_start + batch_size < len(tickers_to_fill):
+            time.sleep(2)
+
+    # Persist entity links
+    try:
+        _persist_instrument_links(store)
+    except Exception:
+        log.warning("Link persistence after backfill failed (non-fatal)", exc_info=True)
+
+    summary = {
+        "instruments_backfilled": len(filled),
+        "instruments_skipped": len(skipped),
+        "instruments_failed": failed,
+        "total_observations": total_obs,
+        "period": period,
+    }
+    log.info(
+        "Backfill complete: %d filled, %d skipped, %d failed, %d total obs",
+        len(filled),
+        len(skipped),
+        len(failed),
+        total_obs,
     )
     return summary
 

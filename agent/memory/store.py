@@ -57,6 +57,38 @@ class EpisodicMemory:
     def all(self) -> list[Episode]:
         return list(self._episodes)
 
+    def decay(
+        self, max_age_days: int = 30, archive_dir: Path | None = None
+    ) -> int:
+        """Remove episodes older than *max_age_days*.
+
+        If *archive_dir* is provided, the removed episodes are written there
+        before deletion.  Returns the number of decayed episodes.
+        """
+        cutoff = time.time() - max_age_days * 86_400
+        keep: list[Episode] = []
+        remove: list[Episode] = []
+        for ep in self._episodes:
+            (keep if ep.timestamp >= cutoff else remove).append(ep)
+        if not remove:
+            return 0
+        # Archive before deleting
+        if archive_dir is not None:
+            archive_dir.mkdir(parents=True, exist_ok=True)
+            ts_label = time.strftime("%Y%m%d")
+            archive_path = archive_dir / f"episodic_{ts_label}.jsonl"
+            with open(archive_path, "a") as f:
+                for ep in remove:
+                    f.write(json.dumps(asdict(ep)) + "\n")
+        self._episodes = keep
+        # Rewrite the main file with only retained episodes
+        if self._persist_path:
+            self._persist_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(self._persist_path, "w") as f:
+                for ep in keep:
+                    f.write(json.dumps(asdict(ep)) + "\n")
+        return len(remove)
+
     def summary(self, n: int = 10) -> str:
         """Human-readable summary of recent episodes."""
         lines = []
@@ -112,6 +144,8 @@ class LearningEntry:
     arm: str = ""  # bandit arm that was chosen (RL layer)
     reward: float = 0.0  # scalar reward fed to bandit (RL layer)
     timestamp: float = field(default_factory=time.time)
+    validated: bool = False  # True only after promotion pipeline accepts
+    run_id: str = ""  # identifies which autonomous run produced this
 
 
 class SemanticMemory:
@@ -185,6 +219,36 @@ class SemanticMemory:
     def get_learnings(self, n: int = 10) -> list[LearningEntry]:
         """Return the most recent learning entries."""
         return self._learnings[-n:]
+
+    def get_validated_learnings(self, n: int = 10) -> list[LearningEntry]:
+        """Return only lessons that passed the promotion pipeline."""
+        validated = [le for le in self._learnings if le.validated]
+        return validated[-n:]
+
+    def get_unvalidated_learnings(self) -> list[LearningEntry]:
+        """Return lessons still awaiting promotion review."""
+        return [le for le in self._learnings if not le.validated]
+
+    def mark_validated(self, goal: str, run_id: str) -> bool:
+        """Set validated=True on the matching LearningEntry and re-persist.
+
+        Matches by (goal, run_id) pair.  Returns True if a match was found.
+        """
+        for le in self._learnings:
+            if le.goal == goal and le.run_id == run_id:
+                le.validated = True
+                self._persist_learnings()
+                return True
+        return False
+
+    def _persist_learnings(self) -> None:
+        """Rewrite the full learnings file (used after in-place mutation)."""
+        if not self._learning_path:
+            return
+        self._learning_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(self._learning_path, "w") as f:
+            for le in self._learnings:
+                f.write(json.dumps(asdict(le)) + "\n")
 
     def _load_learnings(self) -> None:
         try:

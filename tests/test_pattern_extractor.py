@@ -82,6 +82,7 @@ def pattern_store(store):
 @pytest.fixture
 def trained_model(populated_store):
     """Quick-trained model for extraction tests."""
+    torch.manual_seed(42)
     cfg = TrainerConfig(
         hidden_dim=16,
         memory_dim=16,
@@ -140,7 +141,8 @@ class TestPatternExtractor:
             lt = lnk["link_type"]
             link_type_counts[lt] = link_type_counts.get(lt, 0) + 1
         for p in patterns:
-            assert p.frequency == link_type_counts.get(p.edge_type, 0)
+            if p.hops == 1:
+                assert p.frequency == link_type_counts.get(p.edge_type, 0)
 
     def test_empty_store(self, store):
         cfg = TrainerConfig(hidden_dim=8, memory_dim=8, message_dim=8)
