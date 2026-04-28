@@ -455,7 +455,7 @@ class FoiaRequestsTool(Tool):
     ) -> ToolResult:
         """Search FOIA/FOI requests by keyword."""
         key = _cache_key("search", query=query, days=str(days_back), jur=jurisdiction)
-        cached = self._cache.get(key) if self._cache else None
+        cached = self._cache.get("foia_requests", {"key": key}) if self._cache else None
         if cached is not None:
             return ToolResult(success=True, output=cached)
 
@@ -489,7 +489,7 @@ class FoiaRequestsTool(Tool):
 
         output = self._format_search_output(query, records, days_back, jurisdiction)
         if self._cache:
-            self._cache.put(key, output, ttl=_CACHE_TTL)
+            self._cache.put("foia_requests", {"key": key}, output)
         return ToolResult(
             success=True,
             output=output,
@@ -549,7 +549,7 @@ class FoiaRequestsTool(Tool):
     ) -> ToolResult:
         """Check FOIA request volume for a specific agency. Detect surges."""
         key = _cache_key("agency", agency=agency, days=str(days_back))
-        cached = self._cache.get(key) if self._cache else None
+        cached = self._cache.get("foia_requests", {"key": key}) if self._cache else None
         if cached is not None:
             return ToolResult(success=True, output=cached)
 
@@ -607,7 +607,7 @@ class FoiaRequestsTool(Tool):
             surge_ratio=surge_ratio,
         )
         if self._cache:
-            self._cache.put(key, output, ttl=_CACHE_TTL)
+            self._cache.put("foia_requests", {"key": key}, output)
         return ToolResult(
             success=True,
             output=output,
@@ -667,7 +667,7 @@ class FoiaRequestsTool(Tool):
     ) -> ToolResult:
         """Find all requests about an entity, group by agency/jurisdiction."""
         key = _cache_key("entity", query=query, days=str(days_back), jur=jurisdiction)
-        cached = self._cache.get(key) if self._cache else None
+        cached = self._cache.get("foia_requests", {"key": key}) if self._cache else None
         if cached is not None:
             return ToolResult(success=True, output=cached)
 
@@ -722,7 +722,7 @@ class FoiaRequestsTool(Tool):
             jurisdiction=jurisdiction,
         )
         if self._cache:
-            self._cache.put(key, output, ttl=_CACHE_TTL)
+            self._cache.put("foia_requests", {"key": key}, output)
         return ToolResult(
             success=True,
             output=output,

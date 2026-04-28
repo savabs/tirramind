@@ -33,6 +33,7 @@ from agent.learning.policy.weight_learner import SurpriseWeightLearner
 from agent.models.diff_kalman import DifferentiableKalmanFilter
 from agent.tools.instrument_universe import tradeable_instruments
 from agent.pipeline.dag import DAG
+from agent.pipeline.regime_gate import get_current_regime, sac_entropy_scale
 from agent.pipeline.store import PipelineStore
 
 log = logging.getLogger(__name__)
@@ -237,6 +238,26 @@ def _train_sac(
         regime_ctx = torch.zeros(regime_dim)
         trainer.set_regime_context(regime_ctx)
 
+    # ── Phase 49b: Adjust SAC target entropy based on regime ─────────
+    # During structural breaks (high changepoint posterior) we raise the
+    # target entropy so the policy explores more broadly while the world
+    # model re-estimates the new regime.  Normal: scale=-0.5, high
+    # changepoint: scale=-0.3 (less negative → higher target entropy).
+    # Ref: Haarnoja et al. 2018b, §5; regime_gate.sac_entropy_scale().
+    try:
+        regime_state = get_current_regime(store)
+        entropy_scale = sac_entropy_scale(regime_state)
+        trainer.set_regime_entropy_scale(entropy_scale)
+        log.info(
+            "Phase 49b: SAC entropy scale set to %.2f "
+            "(regime=%s, changepoint_posterior=%.3f)",
+            entropy_scale,
+            regime_state.regime_label,
+            regime_state.changepoint_posterior,
+        )
+    except Exception as exc:
+        log.warning("Phase 49b: could not set regime entropy scale: %s", exc)
+
     # Load existing transitions from store
     transitions = store.query_rl_transitions(limit=cfg.buffer_size)
     buffer = ReplayBuffer(cfg.buffer_size, state_dim, action_dim)
@@ -268,7 +289,13 @@ def _train_sac(
 
     # ── Model-based Kalman augmentation (Phase B) ─────────────
     aux_metrics = _kalman_augmentation(
-        store, config, trainer, assembler, tickers, alerts, action_dim,
+        store,
+        config,
+        trainer,
+        assembler,
+        tickers,
+        alerts,
+        action_dim,
     )
 
     # Save checkpoint
@@ -393,9 +420,7 @@ def _kalman_augmentation(
         aux_loss.backward()
 
         # Clip Kalman gradients
-        torch.nn.utils.clip_grad_norm_(
-            diff_kalman.parameters(), cfg.kalman_grad_clip
-        )
+        torch.nn.utils.clip_grad_norm_(diff_kalman.parameters(), cfg.kalman_grad_clip)
         kalman_optim.step()
 
         total_aux_loss += float(aux_loss.item())
@@ -444,9 +469,7 @@ def _load_diff_kalman(store: PipelineStore) -> DifferentiableKalmanFilter | None
         state_dict = torch.load(buf, map_location="cpu", weights_only=True)
         # Infer dimensions from state_dict
         # F has shape (state_dim, state_dim), H has shape (obs_dim, state_dim)
-        regime_names = [
-            k.split(".")[1] for k in state_dict if k.startswith("_F.")
-        ]
+        regime_names = [k.split(".")[1] for k in state_dict if k.startswith("_F.")]
         if not regime_names:
             return None
         first_F = state_dict[f"_F.{regime_names[0]}"]

@@ -186,7 +186,7 @@ class InternetInfrastructureTool(Tool):
         """HTTP GET with optional caching."""
         cache_key = f"iinfra:{url}:{params}"
         if self._cache:
-            cached = self._cache.get(cache_key)
+            cached = self._cache.get("internet_infrastructure", {"key": cache_key})
             if cached is not None:
                 return cached
 
@@ -204,7 +204,7 @@ class InternetInfrastructureTool(Tool):
                 return None
             data = r.json()
             if self._cache and data is not None:
-                self._cache.set(cache_key, data, ttl=ttl)
+                self._cache.put("internet_infrastructure", {"key": cache_key}, data)
             return data
         except (httpx.HTTPError, ValueError) as exc:
             logger.warning("Request failed for %s: %s", url, exc)
@@ -223,6 +223,7 @@ class InternetInfrastructureTool(Tool):
         hours_back: int = 24,
         days_back: int = 30,
         limit: int = 20,
+        _backfill: bool = False,
         **_: Any,
     ) -> ToolResult:
         mode = str(mode).lower().strip()
@@ -235,7 +236,8 @@ class InternetInfrastructureTool(Tool):
         country = str(country).upper().strip() if country else ""
         test = str(test).lower().strip()
         hours_back = max(1, min(_safe_int(hours_back, 24), 168))
-        days_back = max(1, min(_safe_int(days_back, 30), 90))
+        if not _backfill:
+            days_back = max(1, min(_safe_int(days_back, 30), 90))
         limit = max(1, min(_safe_int(limit, 20), 100))
 
         if mode == "censorship":

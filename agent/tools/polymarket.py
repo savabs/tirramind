@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import json
 import logging
+import time as _time
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -75,8 +77,36 @@ _VALID_CATEGORIES = {
 # Only categories with clear, tradeable instrument mappings are included.
 _TOPIC_INSTRUMENT_MAP: dict[str, list[str]] = {
     "crypto": ["BTC-USD", "ETH-USD"],
-    "finance": ["ES=F", "SPY", "ZN=F"],
+    "finance": ["ES=F", "SPY", "ZN=F", "TLT", "XLF"],
+    "politics": ["SPY", "ES=F", "ZN=F", "TLT", "VIXY"],
+    "geopolitics": ["GC=F", "CL=F", "VIXY", "BZ=F", "GDX"],
+    "tech": ["QQQ", "NQ=F", "XLK"],
+    "science": ["XLV", "XLK"],
+    "economics": ["SPY", "ZN=F", "TLT", "GC=F"],
 }
+
+
+def _iso_to_ts(s: str) -> float | None:
+    """Parse an ISO 8601 date/datetime string to a Unix timestamp.
+
+    Returns None if the string is empty or unparseable.
+    Only returns a value if the resulting timestamp is in the past,
+    so we never assign a future observed_at.
+    """
+    if not s:
+        return None
+    # Normalise trailing Z -> +00:00 for fromisoformat compatibility
+    s_norm = s.replace("Z", "+00:00")
+    # If date-only (YYYY-MM-DD) append midnight UTC
+    if len(s_norm) == 10:
+        s_norm += "T00:00:00+00:00"
+    try:
+        dt = datetime.fromisoformat(s_norm)
+        ts = dt.timestamp()
+    except ValueError:
+        return None
+    now = _time.time()
+    return ts if ts < now else None
 
 
 class PolymarketTool(Tool):
@@ -138,8 +168,15 @@ class PolymarketTool(Tool):
         category: str = "all",
         limit: int = 20,
         search: str = "",
+        mode: str = "active",
+        days_back: int = 730,
         **_: Any,
     ) -> ToolResult:
+        # --- Resolved-market backfill path ---
+        if mode == "resolved":
+            return self._execute_resolved(days_back=days_back)
+
+        # --- Active-market path (original) ---
         category = category.lower().strip()
         if category not in _VALID_CATEGORIES:
             return ToolResult(
@@ -221,6 +258,41 @@ class PolymarketTool(Tool):
     # Fetching
     # ------------------------------------------------------------------
 
+    def _execute_resolved(self, *, days_back: int) -> ToolResult:
+        """Backfill path: fetch resolved markets and persist with historical timestamps."""
+        cutoff_ts = _time.time() - days_back * 86400
+        try:
+            raw_events = self._fetch_resolved_events(limit=500)
+        except Exception as exc:
+            log.exception("Polymarket resolved fetch failed")
+            return ToolResult(
+                success=False, output=f"Polymarket resolved API error: {exc}"
+            )
+
+        if not raw_events:
+            return ToolResult(
+                success=True,
+                output="No resolved markets found.",
+                data={"markets": [], "count": 0},
+            )
+
+        markets = self._parse_resolved_markets(raw_events, cutoff_ts=cutoff_ts)
+
+        try:
+            counts = self._persist_entities(markets, use_end_date=True)
+        except Exception:
+            log.exception("Polymarket resolved persistence failed (non-fatal)")
+            counts = {"topics": 0, "observations": 0}
+
+        return ToolResult(
+            success=True,
+            output=(
+                f"Polymarket resolved backfill: {counts['observations']} observations "
+                f"from {counts['topics']} markets (days_back={days_back})."
+            ),
+            data={"markets": markets, "count": len(markets)},
+        )
+
     def _fetch_events(self, limit: int = 100) -> list[dict[str, Any]]:
         """Fetch active events from Gamma API. Returns raw event dicts."""
         cache_params = {"closed": False, "limit": limit}
@@ -243,9 +315,90 @@ class PolymarketTool(Tool):
 
         return events
 
+    def _fetch_resolved_events(self, limit: int = 500) -> list[dict[str, Any]]:
+        """Fetch resolved/closed markets from Gamma API (/markets endpoint).
+
+        Uses volume sort so we get the most liquid, signal-rich resolved markets.
+        Returns a flat list of market dicts (not event-wrapped).
+        """
+        cache_params = {"closed": True, "limit": limit, "order": "volume"}
+        if self._cache:
+            cached = self._cache.get("polymarket_resolved_markets", cache_params)
+            if cached is not None:
+                log.debug("Cache hit for polymarket resolved markets")
+                return cached
+
+        with httpx.Client(timeout=30) as client:
+            resp = client.get(
+                f"{_GAMMA_BASE}/markets",
+                params={
+                    "closed": "true",
+                    "limit": str(limit),
+                    "order": "volume",
+                    "ascending": "false",
+                },
+            )
+            resp.raise_for_status()
+            markets = resp.json()
+
+        if self._cache and markets:
+            self._cache.put("polymarket_resolved_markets", cache_params, markets)
+
+        return markets
+
     # ------------------------------------------------------------------
     # Parsing
     # ------------------------------------------------------------------
+
+    def _parse_resolved_markets(
+        self, markets: list[dict[str, Any]], *, cutoff_ts: float
+    ) -> list[dict[str, Any]]:
+        """Parse flat resolved market objects from the /markets endpoint.
+
+        Only includes markets whose endDate resolves to a past timestamp >= cutoff_ts.
+        """
+        result: list[dict[str, Any]] = []
+
+        for mkt in markets:
+            slug = (mkt.get("slug") or "").strip()
+            if not slug:
+                continue
+
+            # Prefer full ISO datetime (endDate) over date-only (endDateIso) for precision
+            end_date_str = mkt.get("endDate") or mkt.get("endDateIso", "")
+            end_ts = _iso_to_ts(end_date_str)
+            if end_ts is None or end_ts < cutoff_ts:
+                continue
+
+            question = mkt.get("question", slug)
+
+            prices_raw = mkt.get("outcomePrices", "")
+            yes_price, no_price = self._parse_prices(prices_raw)
+
+            volume_total = _safe_float(mkt.get("volumeNum") or mkt.get("volume"))
+            volume_24h = _safe_float(mkt.get("volume24hr"))
+            liquidity = _safe_float(mkt.get("liquidityNum") or mkt.get("liquidity"))
+
+            result.append(
+                {
+                    "question": question,
+                    "slug": slug,
+                    "yes_price": yes_price or 0.0,
+                    "no_price": no_price or 0.0,
+                    "volume_total": volume_total or 0.0,
+                    "volume_24h": volume_24h or 0.0,
+                    "liquidity": liquidity or 0.0,
+                    "spread": None,
+                    "price_change_24h": None,
+                    "price_change_1wk": None,
+                    "end_date": end_date_str,
+                    "end_ts": end_ts,
+                    "category": "",
+                    "resolved": True,
+                }
+            )
+
+        return result
 
     def _parse_markets(self, events: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Extract structured market data from Gamma API events."""
@@ -315,12 +468,17 @@ class PolymarketTool(Tool):
     # Entity persistence (L2)
     # ------------------------------------------------------------------
 
-    def _persist_entities(self, markets: list[dict[str, Any]]) -> dict[str, int]:
+    def _persist_entities(
+        self, markets: list[dict[str, Any]], *, use_end_date: bool = False
+    ) -> dict[str, int]:
         """Persist Polymarket markets as L2 topic entities with observations.
 
         Each market with a valid slug becomes a topic entity. A
         ``market_probability`` observation stores the current YES price,
         volume, liquidity, and price changes.
+
+        When use_end_date=True, uses the market's end_ts (from endDateIso) as
+        observed_at to give historical temporal depth for resolved markets.
 
         Skips silently if no PipelineStore is configured.
         Returns counts: {topics, observations}.
@@ -331,12 +489,14 @@ class PolymarketTool(Tool):
             return {"topics": 0, "observations": 0}
 
         try:
-            return self._persist_entities_inner(markets)
+            return self._persist_entities_inner(markets, use_end_date=use_end_date)
         except Exception:
             log.exception("Polymarket entity persistence failed (non-fatal)")
             return {"topics": 0, "observations": 0}
 
-    def _persist_entities_inner(self, markets: list[dict[str, Any]]) -> dict[str, int]:
+    def _persist_entities_inner(
+        self, markets: list[dict[str, Any]], *, use_end_date: bool = False
+    ) -> dict[str, int]:
         """Inner persistence logic separated for testability."""
         assert self._store is not None  # noqa: S101
         store = self._store
@@ -378,12 +538,21 @@ class PolymarketTool(Tool):
                     )
 
             # Store market_probability observation
-            import time as _time
+            # For resolved markets, use the actual resolution date so that
+            # observed_at reflects when the outcome was known, not when we ingested it.
+            if use_end_date:
+                obs_ts = (
+                    mkt.get("end_ts")
+                    or _iso_to_ts(mkt.get("end_date", ""))
+                    or _time.time()
+                )
+            else:
+                obs_ts = _time.time()
 
             store.store_entity_observation(
                 entity_id=topic_eid,
                 source_tool="polymarket",
-                observed_at=_time.time(),
+                observed_at=obs_ts,
                 observation_type="market_probability",
                 depth_level=2,
                 value={

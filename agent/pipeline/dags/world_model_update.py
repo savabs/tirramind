@@ -32,7 +32,12 @@ from agent.models.propagator import BeliefPropagator
 from agent.models.state_filter import ContinuousStateFilter, RegimeConfig
 from agent.models.world_model import WorldModel
 from agent.pipeline.dag import DAG
+from agent.pipeline.regime_gate import get_current_regime, world_model_prior_decay
 from agent.pipeline.store import PipelineStore
+from agent.models.gnn.alignment import (
+    compute_belief_log_likelihood_delta,
+    store_entity_alignment,
+)
 
 log = logging.getLogger(__name__)
 
@@ -269,6 +274,123 @@ _LEARNED_EDGES_SOURCE = "learned_graph_edges"
 _EDGE_TRACKER_STATE_SOURCE = "edge_confidence_tracker_state"
 _META_SCHEDULER_SOURCE = "meta_scheduler_state"
 _DAY_SECONDS = 86_400
+
+
+def _apply_prior_decay(wm: WorldModel, decay: float) -> None:
+    """Soften world model priors in-place to reflect regime uncertainty.
+
+    Called once after building a fresh WorldModel and before wm.update()
+    when the regime gate signals a structural change (decay < 1.0).
+    Has no effect when decay == 1.0 (stable regime).
+
+    Two operations:
+
+    1. **Kalman covariance inflation** — sets ``P_0 ← (1/decay) · P_0``.
+       The filter starts fresh each run with ``P = I``.  Inflating it
+       widens the prior uncertainty, which increases the Kalman gain K
+       during the first update step.  The filter then trusts incoming
+       observations more relative to the (stale) prior state, which is
+       exactly the right behaviour after a regime shift.
+
+       Derivation: K = P·H^T·(H·P·H^T + R)^{-1}.  Scaling P by α > 1
+       increases K monotonically (since H·P·H^T dominates for large α),
+       so the updated state x_{t|t} = x_{t|t-1} + K·innovation places
+       more weight on the innovation than on the prediction.
+
+       Reference: Sarkka (2013), Ch. 4 — process noise inflation as an
+       adaptive filter heuristic for non-stationary environments.
+
+    2. **CPD softening** — blends each TabularCPD toward the uniform
+       distribution: ``cpd_new = decay · cpd_old + (1-decay) · uniform``.
+       This is equivalent to reducing the effective Dirichlet concentration
+       parameter, expressing "our learned conditional distribution was
+       fitted on data from the previous regime; we are now less certain".
+       The softening preserves the MAP state ordering (the most probable
+       states remain most probable) while shrinking probability differences.
+
+       Mathematical note: for a CPD column p (a probability simplex vector
+       of length k), the softened version is:
+           p_new = decay · p + (1-decay) · [1/k, ..., 1/k]
+       which is a convex combination.  p_new still sums to 1 (valid CPD)
+       and is strictly positive (avoids zero-probability states).
+
+    Args:
+        wm: Freshly-built WorldModel (not yet updated with today's features).
+        decay: Factor in (0, 1].  1.0 = no change (stable regime).
+               0.8 = 20% blend toward uniform + 25% covariance inflation.
+    """
+    if decay >= 1.0:
+        return  # stable regime — nothing to do
+
+    inflation = 1.0 / decay  # e.g. 0.8 → 1.25
+
+    # ── 1. Kalman covariance inflation ─────────────────────────────
+    try:
+        sf = wm._filter
+        sf._P = sf._P * inflation
+        # Symmetrize (numerical safety after in-place scaling)
+        sf._P = 0.5 * (sf._P + sf._P.T)
+        log.debug(
+            "Prior decay: Kalman P inflated by %.3f (decay=%.2f).",
+            inflation,
+            decay,
+        )
+    except AttributeError:
+        # DifferentiableKalmanFilter has a torch covariance — skip for now
+        log.debug(
+            "Prior decay: skipping Kalman inflation for DifferentiableKalmanFilter "
+            "(torch covariance not directly mutable)."
+        )
+
+    # ── 2. CPD softening ────────────────────────────────────────
+    # Blend each discrete node's CPD toward uniform.
+    # We only soften non-regime, non-latent nodes — regime and latent nodes
+    # are inferred (not directly observed) and their CPDs are structural;
+    # softening them would distort the causal graph topology itself.
+    uniform_weight = 1.0 - decay  # e.g. 0.2 when decay=0.8
+    softened_count = 0
+
+    from pgmpy.factors.discrete import TabularCPD
+
+    for spec in ALL_NODES:
+        if spec.node_type not in ("observed",):
+            continue  # leave regime and latent CPDs unchanged
+        cpd = wm._graph.get_cpd(spec.name)
+        if cpd is None:
+            continue
+        if spec.cardinality is None or spec.cardinality < 2:
+            continue
+
+        k = spec.cardinality
+        values = cpd.get_values()  # shape (k, n_parent_configs)
+        # Blend each column toward uniform 1/k
+        uniform_col = np.full(k, 1.0 / k)
+        new_values = decay * values + uniform_weight * uniform_col[:, np.newaxis]
+        # Renormalise columns (floating-point safety)
+        col_sums = new_values.sum(axis=0, keepdims=True)
+        col_sums = np.where(col_sums == 0, 1.0, col_sums)  # avoid divide by zero
+        new_values = new_values / col_sums
+
+        parents = wm._graph.get_parents(spec.name)
+        parent_cards = [wm._graph.get_node(p).cardinality for p in parents]
+        new_cpd = TabularCPD(
+            variable=spec.name,
+            variable_card=k,
+            values=new_values,
+            evidence=parents if parents else None,
+            evidence_card=parent_cards if parent_cards else None,
+            state_names={spec.name: list(spec.states)} if spec.states else None,
+        )
+        wm._graph.set_cpd(spec.name, new_cpd)
+        softened_count += 1
+
+    log.debug(
+        "Prior decay: softened %d observed-node CPDs "
+        "(blend=%.0f%% uniform, decay=%.2f).",
+        softened_count,
+        uniform_weight * 100,
+        decay,
+    )
 
 
 def _snapshots_to_discretized_df(
@@ -984,7 +1106,69 @@ def run_world_model_update(params: dict, upstream: dict) -> dict:
             except Exception as exc:
                 log.debug("Failed to record history_window outcome: %s", exc)
 
+        # ── Phase 49b: Apply prior decay on regime change ─────────────
+        # Query the current regime state.  When the regime label has just
+        # changed (regime_changed=True), soften the world model priors
+        # before running the update cycle:
+        #   - Kalman P_0 inflated by 1/decay (widens prior uncertainty)
+        #   - Observed-node CPDs blended toward uniform by (1-decay)
+        # Both operations act on the freshly-built in-memory WorldModel
+        # and do NOT mutate any persisted data.
+        # See _apply_prior_decay() for the full mathematical justification.
+        try:
+            regime_ctx = get_current_regime(store)
+            decay = world_model_prior_decay(regime_ctx)
+            if decay < 1.0:
+                log.info(
+                    "Phase 49b: regime change detected — applying prior decay "
+                    "(decay=%.2f, regime=%s, changepoint_posterior=%.3f).",
+                    decay,
+                    regime_ctx.regime_label,
+                    regime_ctx.changepoint_posterior,
+                )
+                _apply_prior_decay(wm, decay)
+            else:
+                log.debug(
+                    "Phase 49b: regime stable (decay=1.0, regime=%s) — no prior decay.",
+                    regime_ctx.regime_label,
+                )
+        except Exception as exc:
+            log.warning(
+                "Phase 49b: prior decay check failed — continuing without decay: %s",
+                exc,
+            )
+
+        # ── Phase 49: Capture beliefs before update for alignment delta ─
+        try:
+            beliefs_before = store.query_all_latest_beliefs()
+        except Exception as exc:
+            log.debug("Phase 49: could not load prior beliefs for alignment: %s", exc)
+            beliefs_before = []
+
         beliefs = wm.update(features, as_of)
+
+        # ── Phase 49: Compute and store GNN alignment delta ────────────
+        # Compare beliefs before and after the update to measure how much
+        # world-model beliefs sharpened.  Results feed back into GNN training
+        # as per-entity-type loss weights (see alignment.py for math).
+        try:
+            beliefs_after_dicts = [b.to_dict() for b in beliefs]
+            variable_deltas = compute_belief_log_likelihood_delta(
+                beliefs_before, beliefs_after_dicts
+            )
+            if variable_deltas:
+                store_entity_alignment(store, variable_deltas, as_of=as_of)
+                log.debug(
+                    "Phase 49: stored %d alignment deltas " "(mean_delta=%.4f).",
+                    len(variable_deltas),
+                    sum(variable_deltas.values()) / len(variable_deltas),
+                )
+        except Exception as exc:
+            log.warning(
+                "Phase 49: alignment delta computation failed — "
+                "continuing without alignment signal: %s",
+                exc,
+            )
 
         # Persist beliefs
         stale_count = sum(1 for b in beliefs if b.stale)

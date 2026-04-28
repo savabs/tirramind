@@ -44,6 +44,7 @@ import logging
 import bisect
 import math
 import random
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -52,13 +53,22 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+try:
+    from tqdm import tqdm as _tqdm
+
+    _HAS_TQDM = True
+except ImportError:
+    _HAS_TQDM = False
+
 from agent.models.gnn.graph_builder import (
     ENTITY_TYPES,
     OBSERVATION_TYPES,
     GraphBuilder,
     IDMap,
 )
+from agent.models.gnn.ewc import EWCState, compute_fisher, ewc_penalty
 from agent.models.gnn.het_tgn import HetTGN
+from agent.models.gnn.alignment import load_alignment_weights
 from agent.pipeline.entity import entity_id_from_key
 from agent.pipeline.store import PipelineStore
 
@@ -572,6 +582,28 @@ class TrainerConfig:
     """When set, exclude observations with observed_at < obs_since
     from training/val/test splits. Useful for skipping sparse early
     data (e.g. GDELT 1970-era timestamps)."""
+    ewc_lambda: float = 1000.0
+    """EWC regularisation strength λ (Kirkpatrick et al. 2017).
+    L_total = L_new + λ · Σ F_i (θ_i − θ_i*)²
+    Higher → more conservative (less forgetting, less plasticity).
+    1000.0 is the value used in the original paper for Permuted MNIST;
+    the correct value for this domain should be validated empirically
+    once Phase 47 historical data is available."""
+    online_batch_threshold: int = 100
+    device: str = "cpu"
+    """Torch device string for model and data tensors.  Use 'cuda' to
+    enable GPU acceleration (recommended when a CUDA GPU is available).
+    Use 'cpu' when no GPU is present or for debugging."""
+    """Minimum number of new observations accumulated since the last
+    online_update (or full retrain) before the DAG operator triggers
+    another EWC gradient step.  Set higher to reduce compute overhead;
+    set lower to adapt more frequently to incoming data streams."""
+    checkpoint_dir: str | None = None
+    """Directory to save per-epoch checkpoints (epoch_001.pt, epoch_002.pt …).
+    If None, no per-epoch checkpoints are written."""
+    resume_from_epoch: int = 0
+    """Skip the first N epochs by loading the checkpoint for epoch N from
+    checkpoint_dir before training begins.  0 = start from scratch."""
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -600,10 +632,15 @@ class Trainer:
     ) -> None:
         self.store = store
         self.config = config or TrainerConfig()
+        self._device = torch.device(self.config.device)
         self._model: HetTGN | None = None
         self._optimizer: torch.optim.Optimizer | None = None
         self._log_vars: dict[str, torch.nn.Parameter] | None = None
         self._graph_builder = GraphBuilder(store)
+        self._ewc_state: EWCState | None = None
+        """Populated by train() after the final epoch.
+        Holds the Fisher diagonal + anchor weights for continual learning.
+        Persisted through save_model / load_model."""
 
     @property
     def model(self) -> HetTGN:
@@ -660,6 +697,14 @@ class Trainer:
                 "value": torch.nn.Parameter(
                     torch.tensor(-math.log(max(cfg.value_weight, 1e-6)))
                 ),
+            }
+
+        # Move model and log-var tensors to target device
+        self._model = self._model.to(self._device)
+        if self._log_vars is not None:
+            self._log_vars = {
+                k: torch.nn.Parameter(v.to(self._device))
+                for k, v in self._log_vars.items()
             }
 
         # Build optimizer — include log-var params when auto-tuning
@@ -815,13 +860,33 @@ class Trainer:
         """Margin-based contrastive loss on entity links.
 
         Linked pairs should be closer than random pairs by a margin.
+
+        Embeddings are L2-normalised before distance computation so that
+        the margin is scale-invariant.  Without normalisation, embedding
+        magnitudes driven by the time_delta / value MSE heads grow to
+        10^4–10^5 scale, making margin=1.0 permanently inactive.
+
+        Negative samples are drawn randomly (not front-loaded) to avoid
+        the degenerate case where the first k nodes of a type are always
+        chosen, biasing the neg_mean toward entities with similar features.
         """
+        import random
+
         links = self.store.query_all_entity_links()
         if not links:
             return torch.tensor(0.0)
 
-        all_entities = self.store.query_all_entities()
-        eid_to_type = {e["entity_id"]: e["entity_type"] for e in all_entities}
+        # Use cached type lookup if available (set by train() at epoch start)
+        if hasattr(self, "_eid_to_type_cache") and self._eid_to_type_cache:
+            eid_to_type = self._eid_to_type_cache
+        else:
+            all_entities = self.store.query_all_entities()
+            eid_to_type = {e["entity_id"]: e["entity_type"] for e in all_entities}
+
+        # Pre-normalise all embedding matrices once (scale-invariant distances)
+        norm_embeddings: dict[str, torch.Tensor] = {
+            ntype: F.normalize(emb, p=2, dim=-1) for ntype, emb in embeddings.items()
+        }
 
         pos_scores = []
         neg_scores = []
@@ -834,7 +899,7 @@ class Trainer:
             b_type = eid_to_type.get(b_id)
             if a_type is None or b_type is None:
                 continue
-            if a_type not in embeddings or b_type not in embeddings:
+            if a_type not in norm_embeddings or b_type not in norm_embeddings:
                 continue
 
             a_local = id_map.local_id(a_type, a_id)
@@ -842,26 +907,27 @@ class Trainer:
             if a_local is None or b_local is None:
                 continue
 
-            emb_a = embeddings[a_type][a_local]
-            emb_b = embeddings[b_type][b_local]
+            emb_a_n = norm_embeddings[a_type][a_local]
+            emb_b_n = norm_embeddings[b_type][b_local]
 
             pos_dist = F.pairwise_distance(
-                emb_a.unsqueeze(0),
-                emb_b.unsqueeze(0),
+                emb_a_n.unsqueeze(0),
+                emb_b_n.unsqueeze(0),
             ).squeeze()
             pos_scores.append(pos_dist)
 
-            # Negative: random entity of same type as b
-            b_embs = embeddings[b_type]
-            n_nodes = b_embs.size(0)
+            # Negative: randomly sampled entity of same type as b
+            b_embs_n = norm_embeddings[b_type]
+            n_nodes = b_embs_n.size(0)
             if n_nodes > 1:
-                neg_indices = [j for j in range(n_nodes) if j != b_local][
-                    : self.config.num_negative_samples
-                ]
+                pool = [j for j in range(n_nodes) if j != b_local]
+                neg_indices = random.sample(
+                    pool, min(self.config.num_negative_samples, len(pool))
+                )
                 for neg_idx in neg_indices:
                     neg_dist = F.pairwise_distance(
-                        emb_a.unsqueeze(0),
-                        b_embs[neg_idx].unsqueeze(0),
+                        emb_a_n.unsqueeze(0),
+                        b_embs_n[neg_idx].unsqueeze(0),
                     ).squeeze()
                     neg_scores.append(neg_dist)
 
@@ -870,7 +936,7 @@ class Trainer:
 
         pos_mean = torch.stack(pos_scores).mean()
         neg_mean = torch.stack(neg_scores).mean()
-        # Margin loss: positive pairs should be closer
+        # Margin loss: positive pairs should be closer than negative pairs
         loss = F.relu(pos_mean - neg_mean + margin)
         return loss
 
@@ -880,10 +946,45 @@ class Trainer:
         Returns:
             Dict with loss curves: 'total', 'obs_type', 'time_delta', 'contrastive'.
         """
+        import os
+
         model = self.model
         optimizer = self._optimizer
         cfg = self.config
         model.train()
+
+        # ── Resume from checkpoint if requested ───────────────────────────
+        start_epoch = 0
+        history: dict[str, list[float]] = {
+            "total": [],
+            "obs_type": [],
+            "time_delta": [],
+            "contrastive": [],
+            "value": [],
+        }
+        if cfg.resume_from_epoch > 0 and cfg.checkpoint_dir:
+            ckpt_path = os.path.join(
+                cfg.checkpoint_dir, f"epoch_{cfg.resume_from_epoch:03d}.pt"
+            )
+            if os.path.exists(ckpt_path):
+                ckpt = torch.load(ckpt_path, map_location=self._device)
+                model.load_state_dict(ckpt["model_state"])
+                optimizer.load_state_dict(ckpt["optimizer_state"])
+                if self._log_vars is not None and "log_vars" in ckpt:
+                    for k, v in ckpt["log_vars"].items():
+                        if k in self._log_vars:
+                            self._log_vars[k].data.copy_(v.to(self._device))
+                history = ckpt.get("history", history)
+                start_epoch = cfg.resume_from_epoch
+                log.info(
+                    "Resumed from checkpoint %s (epoch %d)",
+                    ckpt_path,
+                    start_epoch,
+                )
+            else:
+                log.warning(
+                    "Checkpoint %s not found — starting from scratch.", ckpt_path
+                )
 
         train_obs, _, _ = self._split_observations()
         windows = self._make_windows(train_obs)
@@ -893,6 +994,9 @@ class Trainer:
         self._eid_to_type_cache = {
             e["entity_id"]: e["entity_type"] for e in all_entities
         }
+
+        if cfg.checkpoint_dir:
+            os.makedirs(cfg.checkpoint_dir, exist_ok=True)
 
         # Pre-fetch static graph structure (entities + links) once
         cached_id_map, _, cached_links = self._graph_builder.prepare_static()
@@ -904,15 +1008,57 @@ class Trainer:
         all_prefetched_obs = self._graph_builder.prefetch_observations()
         _obs_timestamps = [o.get("observed_at", 0.0) for o in all_prefetched_obs]
 
-        history: dict[str, list[float]] = {
-            "total": [],
-            "obs_type": [],
-            "time_delta": [],
-            "contrastive": [],
-            "value": [],
-        }
+        # ── Phase 49: Load GNN alignment weights ──────────────────────────
+        # Alignment weights tell the training loop which entity types are
+        # not yet well-aligned with the world model (low belief sharpening
+        # → high weight → more training emphasis).  Loaded once per
+        # train() call — constant across all epochs and windows.
+        # Returns None if no alignment signals are stored (uniform weights).
+        entity_types_in_graph = list(
+            {e.get("entity_type") for e in all_entities if e.get("entity_type")}
+        )
+        try:
+            _alignment_weights: dict[str, float] | None = load_alignment_weights(
+                self.store, entity_types_in_graph
+            )
+        except Exception as exc:
+            log.debug("Phase 49: failed to load alignment weights: %s", exc)
+            _alignment_weights = None
 
-        for epoch in range(cfg.epochs):
+        # ── Pre-build all window graph snapshots (runs ONCE, reused each epoch) ──
+        # build_from_cached() is O(N_obs) Python per window — not the GPU forward
+        # pass.  Snapshots are static (depend only on obs up to t_end, not model
+        # state), so rebuilding identically each epoch wastes 49×(N_epochs-1) builds.
+        # Cache on CPU; first data.to(device) in epoch 1 moves tensors to GPU where
+        # they stay, so epochs 2-N incur zero CPU→GPU transfer overhead.
+        _total_windows = len(windows) - 1
+        log.info(
+            "Pre-building %d window graph snapshots (once; reused each epoch) ...",
+            _total_windows,
+        )
+        _window_snapshots: list = []
+        _snap_iter = range(_total_windows)
+        if _HAS_TQDM:
+            _snap_iter = _tqdm(
+                _snap_iter,
+                total=_total_windows,
+                desc="Building snapshots",
+                unit="win",
+                dynamic_ncols=True,
+                leave=False,
+            )
+        for _snap_i in _snap_iter:
+            _t_end_snap = windows[_snap_i][1]
+            _cutoff_snap = bisect.bisect_right(_obs_timestamps, _t_end_snap)
+            _snap_data, _, _ = self._graph_builder.build_from_cached(
+                cached_id_map,
+                cached_links,
+                observations=all_prefetched_obs[:_cutoff_snap],
+            )
+            _window_snapshots.append(_snap_data if _snap_data.node_types else None)
+        log.info("Snapshots ready — beginning training epochs.")
+
+        for epoch in range(start_epoch, cfg.epochs):
             model.reset_memory()
             epoch_losses = {
                 "total": 0.0,
@@ -922,10 +1068,21 @@ class Trainer:
                 "value": 0.0,
             }
             n_windows = 0
-            total_windows = len(windows) - 1
+            total_windows = _total_windows
 
-            for i in range(total_windows):
-                if (i + 1) % 50 == 0 or i == 0:
+            _window_iter = range(total_windows)
+            if _HAS_TQDM:
+                _window_iter = _tqdm(
+                    _window_iter,
+                    total=total_windows,
+                    desc=f"Epoch {epoch + 1}/{cfg.epochs}",
+                    unit="win",
+                    dynamic_ncols=True,
+                    leave=False,
+                )
+
+            for i in _window_iter:
+                if not _HAS_TQDM and ((i + 1) % 50 == 0 or i == 0):
                     log.info(
                         "  Epoch %d/%d — window %d/%d",
                         epoch + 1,
@@ -936,16 +1093,15 @@ class Trainer:
                 t_start, t_end, curr_obs = windows[i]
                 _, _, next_obs = windows[i + 1]
 
-                # Build graph snapshot for current window (fully cached)
-                cutoff = bisect.bisect_right(_obs_timestamps, t_end)
-                window_obs = all_prefetched_obs[:cutoff]
-                data, id_map, events = self._graph_builder.build_from_cached(
-                    cached_id_map,
-                    cached_links,
-                    observations=window_obs,
-                )
-                if not data.node_types:
+                # Load pre-built snapshot (no rebuild per epoch)
+                data = _window_snapshots[i]
+                id_map = cached_id_map
+                if data is None:
                     continue
+
+                # Move graph snapshot to target device (no-op after epoch 1 —
+                # tensors are already on device from the previous epoch's .to())
+                data = data.to(self._device)
 
                 # Forward
                 embeddings = model(data, id_map)
@@ -959,11 +1115,18 @@ class Trainer:
                     )
                 )
 
+                # Move supervision targets to device
+                obs_targets = obs_targets.to(self._device)
+                dt_targets = dt_targets.to(self._device)
+                val_targets = val_targets.to(self._device)
+
                 # ── obs_type loss ────────────────────────
-                obs_loss = torch.tensor(0.0)
+                obs_loss = torch.tensor(0.0, device=self._device)
                 target_embs = []
                 valid_indices = []
                 target_emb_tensor = None
+                # Also track per-example entity types for alignment weighting
+                _valid_ntypes: list[str] = []
                 if len(obs_targets) > 0:
                     # Gather embeddings for target entities — use cached entity types
                     eid_to_type = self._eid_to_type_cache
@@ -982,22 +1145,39 @@ class Trainer:
                             continue
                         target_embs.append(embeddings[ntype][local_idx])
                         valid_indices.append(idx)
+                        _valid_ntypes.append(ntype)
 
                     if target_embs:
                         target_emb_tensor = torch.stack(target_embs)
                         logits = model.obs_type_head(target_emb_tensor)
                         valid_targets = obs_targets[valid_indices]
-                        obs_loss = F.cross_entropy(logits, valid_targets)
+
+                        # Phase 49: apply per-entity-type alignment weights
+                        if _alignment_weights is not None and _valid_ntypes:
+                            per_example_w = torch.tensor(
+                                [
+                                    _alignment_weights.get(nt, 1.0)
+                                    for nt in _valid_ntypes
+                                ],
+                                dtype=torch.float32,
+                                device=logits.device,
+                            )
+                            raw_ce = F.cross_entropy(
+                                logits, valid_targets, reduction="none"
+                            )
+                            obs_loss = (raw_ce * per_example_w).mean()
+                        else:
+                            obs_loss = F.cross_entropy(logits, valid_targets)
 
                 # ── time_delta loss ──────────────────────
-                dt_loss = torch.tensor(0.0)
+                dt_loss = torch.tensor(0.0, device=self._device)
                 if target_embs:
                     dt_pred = model.time_delta_head(target_emb_tensor).squeeze(-1)
                     valid_dt = dt_targets[valid_indices]
                     dt_loss = F.mse_loss(dt_pred, valid_dt)
 
                 # ── value prediction loss ────────────────
-                val_loss = torch.tensor(0.0)
+                val_loss = torch.tensor(0.0, device=self._device)
                 if target_embs:
                     val_pred = model.value_pred_head(target_emb_tensor).squeeze(-1)
                     valid_val = val_targets[valid_indices]
@@ -1087,6 +1267,85 @@ class Trainer:
                     eff["value"],
                 )
 
+            # ── Per-epoch checkpoint ──────────────────────────────────────
+            if cfg.checkpoint_dir:
+                ckpt_path = os.path.join(
+                    cfg.checkpoint_dir, f"epoch_{epoch + 1:03d}.pt"
+                )
+                ckpt_payload: dict = {
+                    "epoch": epoch + 1,
+                    "model_state": model.state_dict(),
+                    "optimizer_state": optimizer.state_dict(),
+                    "history": history,
+                }
+                if self._log_vars is not None:
+                    ckpt_payload["log_vars"] = {
+                        k: v.data.cpu() for k, v in self._log_vars.items()
+                    }
+                torch.save(ckpt_payload, ckpt_path)
+                log.info("  Checkpoint saved → %s", ckpt_path)
+        # After all epochs complete, approximate F_i ≈ E[(dL/dθ_i)²] on
+        # the last training window pair.  This is the Laplace approximation
+        # of the posterior p(θ | data_old) that EWC uses to protect
+        # parameters important to previously learned tasks.
+        # Ref: Kirkpatrick et al. 2017, arXiv:1612.00796, Section 2.
+        if len(windows) >= 2 and all_prefetched_obs:
+            log.info("Computing Fisher Information diagonal for EWC (Phase 46) ...")
+            last_curr_obs = windows[-2][2]
+            last_next_obs = windows[-1][2]
+            last_t_end = windows[-2][1]
+            fisher_cutoff = bisect.bisect_right(_obs_timestamps, last_t_end)
+            fisher_window_obs = all_prefetched_obs[:fisher_cutoff]
+            fisher_data, fisher_id_map, _ = self._graph_builder.build_from_cached(
+                cached_id_map,
+                cached_links,
+                observations=fisher_window_obs,
+            )
+            if fisher_data.node_types:
+                # Move fisher snapshot to same device as model before closure.
+                fisher_data = fisher_data.to(self._device)
+
+                # Closure: zero-arg callable that rebuilds gradients from
+                # the fixed last-window snapshot.  Passed to compute_fisher
+                # so the EWC module stays decoupled from all data logic.
+                def _fisher_loss_fn(
+                    _fd=fisher_data,
+                    _fm=fisher_id_map,
+                    _co=last_curr_obs,
+                    _no=last_next_obs,
+                ) -> torch.Tensor:
+                    return self._loss_from_window(_fd, _fm, _co, _no)
+
+                fisher_diag = compute_fisher(model, _fisher_loss_fn, n_samples=1)
+                self._ewc_state = EWCState(
+                    fisher=fisher_diag,
+                    anchor={
+                        n: p.data.clone().cpu() for n, p in model.named_parameters()
+                    },
+                    lambda_=cfg.ewc_lambda,
+                    last_update_ts=time.time(),
+                    obs_count_at_update=len(all_prefetched_obs),
+                )
+                log.info(
+                    "EWC state computed: %d params in Fisher, lambda=%.1f, "
+                    "obs_count=%d",
+                    len(fisher_diag),
+                    cfg.ewc_lambda,
+                    len(all_prefetched_obs),
+                )
+            else:
+                log.warning(
+                    "Fisher computation skipped — last training window "
+                    "produced an empty graph (no nodes)."
+                )
+        else:
+            log.warning(
+                "Fisher computation skipped — need ≥ 2 training windows "
+                "(got %d). EWC will not be available until more data "
+                "accumulates.",
+                len(windows),
+            )
+
         return history
 
     def effective_loss_weights(self) -> dict[str, float]:
@@ -1157,6 +1416,272 @@ class Trainer:
 
         return embeddings, id_map
 
+    # ── Phase 46: continual learning helpers ─────────────────────────────
+
+    def _loss_from_window(
+        self,
+        data,
+        id_map: IDMap,
+        curr_obs: list[dict],
+        next_obs: list[dict],
+    ) -> torch.Tensor:
+        """Compute the full multi-task self-supervised loss for one window pair.
+
+        Identical loss formulation to the training loop (obs_type CE,
+        time_delta MSE, value Huber, contrastive margin), with the same
+        auto-tuning branch when ``config.auto_tune_loss_weights`` is True.
+
+        Used by:
+          - ``train()`` — to build the Fisher loss closure after final epoch.
+          - ``online_update()`` — as the L_new term in the EWC objective.
+
+        The training loop has its own identical inline copy and is left
+        unchanged for backward compatibility.
+
+        Args:
+            data:     HeteroData graph snapshot (already built by caller).
+            id_map:   IDMap matching ``data``.
+            curr_obs: Observations in the current window (for contrastive
+                      and memory update context).
+            next_obs: Observations in the next window (supervision targets).
+
+        Returns:
+            Scalar Tensor with requires_grad=True when the graph contains
+            at least one target entity; a detached zero Tensor otherwise.
+        """
+        model = self.model
+        cfg = self.config
+
+        embeddings = model(data, id_map)
+        global_ids, obs_targets, dt_targets, val_targets = self._compute_targets(
+            curr_obs, next_obs, id_map
+        )
+
+        # ── obs_type loss ────────────────────────────────────────────────
+        obs_loss = torch.tensor(0.0)
+        target_embs: list[torch.Tensor] = []
+        valid_indices: list[int] = []
+        target_emb_tensor: torch.Tensor | None = None
+
+        if len(obs_targets) > 0:
+            for idx, gid in enumerate(global_ids):
+                typed = id_map.global_to_typed.get(gid)
+                if typed is None:
+                    continue
+                ntype, eid = typed
+                local_idx = id_map.local_id(ntype, eid)
+                if local_idx is None or ntype not in embeddings:
+                    continue
+                if local_idx >= embeddings[ntype].size(0):
+                    continue
+                target_embs.append(embeddings[ntype][local_idx])
+                valid_indices.append(idx)
+
+            if target_embs:
+                target_emb_tensor = torch.stack(target_embs)
+                logits = model.obs_type_head(target_emb_tensor)
+                valid_targets = obs_targets[valid_indices].to(logits.device)
+                obs_loss = F.cross_entropy(logits, valid_targets)
+
+        # ── time_delta loss ──────────────────────────────────────────────
+        dt_loss = torch.tensor(0.0, device=self._device)
+        if target_embs and target_emb_tensor is not None:
+            dt_pred = model.time_delta_head(target_emb_tensor).squeeze(-1)
+            valid_dt = dt_targets[valid_indices].to(dt_pred.device)
+            dt_loss = F.mse_loss(dt_pred, valid_dt)
+
+        # ── value loss ───────────────────────────────────────────────────
+        val_loss = torch.tensor(0.0, device=self._device)
+        if target_embs and target_emb_tensor is not None:
+            val_pred = model.value_pred_head(target_emb_tensor).squeeze(-1)
+            valid_val = val_targets[valid_indices].to(val_pred.device)
+            val_loss = F.huber_loss(val_pred, valid_val)
+
+        # ── contrastive loss ─────────────────────────────────────────────
+        c_loss = self._contrastive_loss(embeddings, id_map)
+
+        # ── combine (mirror the training loop's auto-tune branch) ────────
+        if self._log_vars is not None:
+            lv = self._log_vars
+            lv_min = cfg.log_var_min
+            lv_max = cfg.log_var_max
+            clamped = {k: torch.clamp(p, min=lv_min, max=lv_max) for k, p in lv.items()}
+            total = (
+                torch.exp(-clamped["obs_type"]) * obs_loss
+                + clamped["obs_type"]
+                + torch.exp(-clamped["time_delta"]) * dt_loss
+                + clamped["time_delta"]
+                + torch.exp(-clamped["contrastive"]) * c_loss
+                + clamped["contrastive"]
+                + torch.exp(-clamped["value"]) * val_loss
+                + clamped["value"]
+            )
+        else:
+            total = (
+                cfg.obs_type_weight * obs_loss
+                + cfg.time_delta_weight * dt_loss
+                + cfg.contrastive_weight * c_loss
+                + cfg.value_weight * val_loss
+            )
+
+        return total
+
+    def online_update(self, new_events: list[dict]) -> dict[str, float]:
+        """Apply a single EWC-regularised gradient step on new observations.
+
+        This is the online continual learning path (Phase 46).  One gradient
+        step minimises:
+
+            L_total = L_new(new_events) + λ · Σ_i F_i (θ_i − θ_i*)²
+
+        where L_new is the full multi-task self-supervised loss (same
+        formulation as full training), and the second term is the EWC
+        penalty that prevents catastrophic forgetting.  High-Fisher
+        parameters (those critical to previously learned tasks) resist large
+        updates; low-Fisher parameters can freely adapt to new signals.
+
+        When to call:
+            After ``train()`` completes at least once.  Designed to be
+            called periodically by the ``gnn_inference`` DAG operator
+            whenever at least ``config.online_batch_threshold`` new
+            observations have accumulated since the last update.
+
+        Args:
+            new_events: Non-empty list of observation dicts with the same
+                        schema as ``PipelineStore.query_all_observations()``.
+                        Must have at least 1 entry.
+
+        Returns:
+            Dict with 4 float keys::
+
+                {
+                    "loss_new":   multi-task loss on new data (no regularisation),
+                    "loss_ewc":   EWC penalty term only,
+                    "loss_total": sum of above (what was back-propagated),
+                    "n_events":   float(len(new_events)),
+                }
+
+        Raises:
+            RuntimeError: If model is not built, EWC state is not computed,
+                          new_events is empty, or the graph has no nodes.
+        """
+        # ── Guards ───────────────────────────────────────────────────────
+        if self._model is None:
+            raise RuntimeError("Model not built — call train() before online_update().")
+        if self._ewc_state is None:
+            raise RuntimeError(
+                "EWC state not computed — train() must complete at least once "
+                "before calling online_update(). The Fisher diagonal is "
+                "computed after the final training epoch."
+            )
+        if not new_events:
+            raise RuntimeError(
+                "new_events must be non-empty — there is nothing to learn "
+                "from an empty observation batch."
+            )
+
+        model = self._model
+        optimizer = self._optimizer
+        cfg = self.config
+
+        # Sort new events chronologically (same invariant the training loop
+        # assumes; prevents temporal leakage in target construction).
+        new_events_sorted = sorted(new_events, key=lambda o: o.get("observed_at", 0.0))
+
+        # ── Build temporal windows from the new events ───────────────────
+        # _make_windows uses config.window_size (default 1 day). If all
+        # new events arrive within a single day, we get 0 or 1 windows —
+        # the degenerate case is handled by treating all events as curr_obs
+        # with an empty next_obs.  In this case obs_type/dt/value losses
+        # are zero; contrastive loss still fires if entity links exist.
+        windows_new = self._make_windows(new_events_sorted)
+
+        if len(windows_new) >= 2:
+            curr_obs = windows_new[-2][2]
+            next_obs = windows_new[-1][2]
+            t_end = windows_new[-2][1]
+        else:
+            # Sub-window batch: use all events for context, no supervision
+            curr_obs = new_events_sorted
+            next_obs = []
+            t_end = new_events_sorted[-1].get("observed_at", 0.0)
+
+        # ── Build full graph snapshot up to t_end ────────────────────────
+        # Use the live DB (not the pre-cached static snapshot) so that
+        # newly stored entities and links are included in the context.
+        # This is intentionally slower than build_from_cached — online
+        # updates run infrequently (~daily) so the cost is acceptable.
+        data, id_map, _ = self._graph_builder.build(until=t_end)
+
+        if not data.node_types:
+            raise RuntimeError(
+                f"online_update: graph has no nodes up to t={t_end:.0f}. "
+                "Ensure entities and observations are stored before calling "
+                "online_update()."
+            )
+
+        # Resize model memory buffer if entity population grew since the
+        # last full retrain (new entities start with zero memory state).
+        if id_map.num_nodes > model.memory.num_nodes:
+            log.warning(
+                "online_update: entity count grew %d → %d since last full "
+                "retrain. Resizing GNN memory buffer — new entities start "
+                "with zero memory state.",
+                model.memory.num_nodes,
+                id_map.num_nodes,
+            )
+            model.memory.resize(id_map.num_nodes)
+
+        # ── Forward: compute L_new ───────────────────────────────────────
+        model.train()
+        loss_new: torch.Tensor = self._loss_from_window(
+            data, id_map, curr_obs, next_obs
+        )
+
+        # ── EWC penalty: λ · Σ F_i (θ_i − θ_i*)² ───────────────────────
+        loss_ewc: torch.Tensor = ewc_penalty(model, self._ewc_state)
+
+        # ── Backward pass: optimise L_total ─────────────────────────────
+        loss_total: torch.Tensor = loss_new + loss_ewc
+
+        if loss_total.requires_grad:
+            optimizer.zero_grad()
+            loss_total.backward()
+            # Same grad-clipping as the training loop (prevents gradient
+            # explosion on small online batches).
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            optimizer.step()
+        else:
+            log.warning(
+                "online_update: loss_total.requires_grad=False — skipping "
+                "optimizer step. This usually means the graph is too sparse "
+                "to produce supervised targets and no entity links exist for "
+                "contrastive loss. Update will be a no-op."
+            )
+
+        # ── Bookkeeping ──────────────────────────────────────────────────
+        # Update EWC state timestamps so the DAG operator can decide when
+        # the next online update is due.
+        self._ewc_state.last_update_ts = time.time()
+        self._ewc_state.obs_count_at_update += len(new_events)
+
+        result = {
+            "loss_new": loss_new.item(),
+            "loss_ewc": loss_ewc.item(),
+            "loss_total": loss_total.item(),
+            "n_events": float(len(new_events)),
+        }
+        log.info(
+            "online_update: loss_new=%.4f loss_ewc=%.4f loss_total=%.4f "
+            "n_events=%d obs_count_at_update=%d",
+            result["loss_new"],
+            result["loss_ewc"],
+            result["loss_total"],
+            len(new_events),
+            self._ewc_state.obs_count_at_update,
+        )
+        return result
+
     def save_model(self, path: str | Path) -> None:
         """Persist trained model state to disk.
 
@@ -1205,12 +1730,30 @@ class Trainer:
                 "num_negative_samples": self.config.num_negative_samples,
                 "value_weight": self.config.value_weight,
                 "auto_tune_loss_weights": self.config.auto_tune_loss_weights,
+                # Phase 46 — EWC / online learning config
+                "ewc_lambda": self.config.ewc_lambda,
+                "online_batch_threshold": self.config.online_batch_threshold,
             },
             "metadata_node_types": metadata[0],
             "metadata_edge_types": [list(t) for t in metadata[1]],
             "in_channels": in_channels,
             "num_nodes": id_map.num_nodes,
         }
+
+        # Phase 46: persist EWC state when present.
+        # Old checkpoints that pre-date Phase 46 simply lack these keys;
+        # load_model treats their absence as _ewc_state=None (backward compat).
+        if self._ewc_state is not None:
+            checkpoint["ewc_fisher"] = self._ewc_state.fisher
+            checkpoint["ewc_anchor"] = self._ewc_state.anchor
+            checkpoint["ewc_lambda"] = self._ewc_state.lambda_
+            checkpoint["ewc_last_update_ts"] = self._ewc_state.last_update_ts
+            checkpoint["ewc_obs_count_at_update"] = self._ewc_state.obs_count_at_update
+            log.info(
+                "EWC state serialised: %d Fisher params.",
+                len(self._ewc_state.fisher),
+            )
+
         torch.save(checkpoint, path)
         log.info("Model saved to %s (%d nodes).", path, id_map.num_nodes)
 
@@ -1264,6 +1807,26 @@ class Trainer:
         trainer._optimizer = torch.optim.Adam(
             trainer._model.parameters(), lr=config.learning_rate
         )
+
+        # Phase 46: restore EWC state if present (absent = pre-Phase-46 checkpoint).
+        if "ewc_fisher" in checkpoint:
+            trainer._ewc_state = EWCState(
+                fisher=checkpoint["ewc_fisher"],
+                anchor=checkpoint["ewc_anchor"],
+                lambda_=checkpoint.get("ewc_lambda", 1000.0),
+                last_update_ts=checkpoint.get("ewc_last_update_ts", 0.0),
+                obs_count_at_update=checkpoint.get("ewc_obs_count_at_update", 0),
+            )
+            log.info(
+                "EWC state restored from checkpoint: %d Fisher params, lambda=%.1f.",
+                len(trainer._ewc_state.fisher),
+                trainer._ewc_state.lambda_,
+            )
+        else:
+            log.info(
+                "No EWC state in checkpoint (pre-Phase-46 model). "
+                "Run train() to compute Fisher diagonal."
+            )
 
         log.info("Model loaded from %s.", path)
         return trainer

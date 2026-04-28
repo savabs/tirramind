@@ -13,6 +13,7 @@ All functions follow the FunctionOperator contract:
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import time
 from typing import Any
@@ -25,6 +26,7 @@ from agent.features.builders import (
 from agent.features.gnn_builder import GNNFeatureBuilder
 from agent.features.protocol import EngineeredFeature, validate_feature
 from agent.pipeline.dag import DAG
+from agent.pipeline.regime_gate import feature_trust_scale, get_current_regime
 from agent.pipeline.store import PipelineStore
 
 log = logging.getLogger(__name__)
@@ -68,6 +70,25 @@ def run_feature_generation(params: dict, upstream: dict) -> dict:
 
     store = PipelineStore(db_path)
     try:
+        # ── Phase 49b: feature trust scale ────────────────────────────
+        # When the regime gate detects recent instability (stability < 3d),
+        # GNN-derived features are less trustworthy because the GNN was
+        # trained on distribution data that may no longer apply.
+        # Scale their values toward zero by the trust factor so downstream
+        # consumers (world model, entity scoring) de-weight them proportionally.
+        # Non-GNN features are unaffected — they come from stable structural
+        # sources (filings, macro) that are regime-independent.
+        # trust=1.0 in stable regimes → no change.
+        try:
+            regime_ctx = get_current_regime(store)
+            trust = feature_trust_scale(regime_ctx)
+        except Exception as exc:
+            log.warning(
+                "Phase 49b: feature trust scale check failed — defaulting to 1.0: %s",
+                exc,
+            )
+            trust = 1.0
+
         all_features: list[EngineeredFeature] = []
         builder_summaries: list[dict[str, Any]] = []
 
@@ -99,6 +120,25 @@ def run_feature_generation(params: dict, upstream: dict) -> dict:
                 )
 
         # Persist all features in one batch
+        # ── Phase 49b: apply trust scaling to GNN-derived features ────
+        if trust < 1.0:
+            scaled: list[EngineeredFeature] = []
+            n_scaled = 0
+            for feat in all_features:
+                if feat.feature_name.startswith("gnn.") and feat.value is not None:
+                    scaled.append(dataclasses.replace(feat, value=feat.value * trust))
+                    n_scaled += 1
+                else:
+                    scaled.append(feat)
+            all_features = scaled
+            log.info(
+                "Phase 49b: scaled %d GNN feature values by trust=%.2f "
+                "(stability < 3d, regime=%s).",
+                n_scaled,
+                trust,
+                regime_ctx.regime_label,
+            )
+
         stored_count = 0
         if all_features:
             try:

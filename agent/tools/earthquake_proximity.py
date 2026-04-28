@@ -346,6 +346,7 @@ class EarthquakeProximityTool(Tool):
         zone: str = "",
         infra_only: bool = False,
         limit: int = 25,
+        _backfill: bool = False,
         **_: Any,
     ) -> ToolResult:
         mode = mode.lower().strip()
@@ -355,7 +356,8 @@ class EarthquakeProximityTool(Tool):
                 output=f"Invalid mode '{mode}'. Use 'recent', 'monitor', or 'infrastructure'.",
             )
 
-        days_back = max(1, min(days_back, 30))
+        if not _backfill:
+            days_back = max(1, min(days_back, 30))
         limit = max(1, min(limit, 200))
         min_magnitude = max(0.0, min(min_magnitude, 10.0))
 

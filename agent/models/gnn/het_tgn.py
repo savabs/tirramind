@@ -207,7 +207,19 @@ class HeteroMemory(nn.Module):
         Returns:
             (memory, last_update) — shapes (N, memory_dim) and (N,).
         """
-        return self.memory[node_ids].detach(), self.last_update[node_ids].detach()
+        # Clamp to valid range: new entities added after training have IDs
+        # >= self.num_nodes. Return zero memory for those rather than crashing.
+        valid = node_ids < self.num_nodes
+        safe_ids = node_ids.clamp(max=self.num_nodes - 1)
+        mem = self.memory[safe_ids].detach()
+        last = self.last_update[safe_ids].detach()
+        # Zero out rows for out-of-range nodes
+        if not valid.all():
+            mem = mem.clone()
+            last = last.clone()
+            mem[~valid] = 0.0
+            last[~valid] = 0.0
+        return mem, last
 
     def update_memory(
         self,
@@ -438,7 +450,9 @@ class HetTGN(nn.Module):
             local_map = id_map.type_local.get(ntype, {})
             if local_map:
                 # Build global IDs in local order
-                global_ids = torch.zeros(len(local_map), dtype=torch.long)
+                global_ids = torch.zeros(
+                    len(local_map), dtype=torch.long, device=self.memory.memory.device
+                )
                 for eid, local_idx in local_map.items():
                     gid = id_map.global_id(ntype, eid)
                     if gid is not None:
@@ -601,9 +615,12 @@ class HetTGN(nn.Module):
         if not node_ids_list:
             return
 
-        node_ids = torch.tensor(node_ids_list, dtype=torch.long)
+        _msg_device = messages_list[0].device
+        node_ids = torch.tensor(node_ids_list, dtype=torch.long, device=_msg_device)
         messages = torch.stack(messages_list)
-        timestamps = torch.tensor(timestamps_list, dtype=torch.float)
+        timestamps = torch.tensor(
+            timestamps_list, dtype=torch.float, device=_msg_device
+        )
 
         self.memory.update_memory(node_ids, messages, timestamps)
 

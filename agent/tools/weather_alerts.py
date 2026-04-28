@@ -652,9 +652,7 @@ class WeatherAlertsTool(Tool):
         features = data.get("features", [])
 
         if self._cache and features:
-            self._cache.put(
-                "weather_alerts", cache_key, {"features": features}, ttl=600
-            )
+            self._cache.put("weather_alerts", cache_key, {"features": features})
 
         return features, None
 
@@ -686,6 +684,6 @@ class WeatherAlertsTool(Tool):
             return [], f"FIRMS fetch error: {exc}"
 
         if self._cache and fires:
-            self._cache.put("weather_alerts_firms", cache_key, fires, ttl=3600)
+            self._cache.put("weather_alerts_firms", cache_key, fires)
 
         return fires, None

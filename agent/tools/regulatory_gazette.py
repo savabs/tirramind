@@ -629,7 +629,7 @@ class RegulatoryGazetteTool(Tool):
         count = data.get("count", len(results))
 
         if self._cache and results:
-            self._cache.put("regulatory_gazette", cache_key, data, ttl=7200)
+            self._cache.put("regulatory_gazette", cache_key, data)
 
         return results, count, None
 

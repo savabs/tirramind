@@ -13,6 +13,7 @@ dependencies = [
     "yfinance>=0.2",
     "jsonschema>=4.0",
     "apscheduler>=3.10,<4.0",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
@@ -44,6 +45,7 @@ discovery = ["tigramite>=5.2"]
 tirra-agent = "agent.cli:main"
 tirra-workflow-check = "agent.workflow_guard:main"
 tirra-wiki-catalog = "agent.wiki.catalog:main"
+tirra-awos = "agent.awos.cli:main"
 
 [build-system]
 requires = ["setuptools>=68.0"]

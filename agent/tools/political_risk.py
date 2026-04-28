@@ -254,7 +254,7 @@ class PoliticalRiskTool(Tool):
         result_type: str,
     ) -> ToolResult:
         if self._cache:
-            hit = self._cache.get(cache_key)
+            hit = self._cache.get("political_risk", {"key": cache_key})
             if hit is not None:
                 return ToolResult(
                     success=True,
@@ -326,10 +326,10 @@ class PoliticalRiskTool(Tool):
         }
 
         if self._cache:
-            self._cache.set(
-                cache_key,
+            self._cache.put(
+                "political_risk",
+                {"key": cache_key},
                 {"output": summary, "data": result_data},
-                ttl=_CACHE_TTL,
             )
 
         return ToolResult(success=True, output=summary, data=result_data)

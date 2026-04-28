@@ -563,6 +563,7 @@ class SanctionsMonitorTool(Tool):
         program: str = "",
         days_back: int = 90,
         limit: int = 25,
+        _backfill: bool = False,
         **_: Any,
     ) -> ToolResult:
         mode = mode.lower().strip()
@@ -586,7 +587,8 @@ class SanctionsMonitorTool(Tool):
                 output=f"Invalid entity_type '{entity_type}'. Use: {', '.join(sorted(VALID_ENTITY_TYPES))}.",
             )
 
-        days_back = max(1, min(days_back, 365))
+        if not _backfill:
+            days_back = max(1, min(days_back, 365))
         limit = max(1, min(limit, 100))
 
         if mode == "search":

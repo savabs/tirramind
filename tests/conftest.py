@@ -61,6 +61,41 @@ def mock_cache_with_data():
 
 
 # ---------------------------------------------------------------------------
+# AWOS fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def awos_file(tmp_path: Path) -> Path:
+    """A minimal AWOS markdown file with all expected sections."""
+    p = tmp_path / "awos.md"
+    p.write_text(
+        "# AWOS\n\n"
+        "## 3. Agent Operating Principles\n\n"
+        "## 5. Codebase Structure\n\n"
+        "## 11. Changelog\n\n"
+        "## Lessons\n\n"
+    )
+    return p
+
+
+@pytest.fixture
+def awos_cfg(tmp_path: Path, awos_file: Path):
+    """A minimal AWOSConfig pointed at tmp_path state + tmp awos file."""
+    from agent.awos.config import AWOSConfig
+
+    return AWOSConfig(
+        repo_root=tmp_path,
+        state_dir=tmp_path / ".awos",
+        awos_file=awos_file,
+        classifier_mode="heuristic",
+        awos_auto_update_confidence=0.7,
+        dedup_window_s=600,
+        anthropic_api_key=None,
+    )
+
+
+# ---------------------------------------------------------------------------
 # HTTP fixtures
 # ---------------------------------------------------------------------------
 

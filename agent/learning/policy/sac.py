@@ -239,6 +239,24 @@ class AlphaScheduler:
         self._log_alpha.data.fill_(d["log_alpha"])
         self._optimizer.load_state_dict(d["optimizer"])
 
+    def set_entropy_scale(self, scale: float, action_dim: int) -> None:
+        """Adjust the target entropy based on a per-regime entropy scale.
+
+        Target entropy H̄ = scale × dim(A).  During regime shifts, scale is
+        raised toward zero (e.g. −0.3 vs the normal −0.5) so the policy
+        maintains higher entropy and explores more broadly while the world
+        model re-estimates the new regime's structure.
+
+        Parameters
+        ----------
+        scale :
+            Entropy scale factor (negative float).  Typical range: [−0.5, 0.0].
+            Normal: −0.5 (Haarnoja 2018b).  High-changepoint: −0.3.
+        action_dim :
+            Dimension of the action space (used to compute H̄ = scale × dim).
+        """
+        self._target = scale * action_dim
+
 
 # ── SAC Trainer ──────────────────────────────────────────────
 
@@ -301,6 +319,20 @@ class SACTrainer:
         """
         self._regime_context = regime_context
 
+    def set_regime_entropy_scale(self, scale: float) -> None:
+        """Adjust SAC target entropy for the current regime (Phase 49b).
+
+        Delegates to AlphaScheduler.set_entropy_scale().  Call once per
+        DAG run, after loading/creating the trainer and before update().
+
+        Parameters
+        ----------
+        scale :
+            Entropy scale factor (negative float) from regime_gate.
+            Normal regime: −0.5.  High-changepoint regime: −0.3.
+        """
+        self._alpha_sched.set_entropy_scale(scale, self._action_dim)
+
     def _encode_state(self, state: Tensor) -> Tensor:
         """Run state through encoder if present, otherwise pass through."""
         if self._encoder is not None:
@@ -354,10 +386,7 @@ class SACTrainer:
 
         # Change 11: feature gate entropy regularization
         gate_entropy = 0.0
-        if (
-            self._encoder is not None
-            and self._encoder.feature_gate is not None
-        ):
+        if self._encoder is not None and self._encoder.feature_gate is not None:
             gate_entropy = self._encoder.feature_gate.entropy_loss()
             actor_loss = actor_loss + gate_entropy
 
@@ -385,7 +414,11 @@ class SACTrainer:
             "q1_mean": float(q1.mean().item()),
             "q2_mean": float(q2.mean().item()),
             "log_prob_mean": float(log_probs.mean().item()),
-            "gate_entropy": float(gate_entropy) if isinstance(gate_entropy, (int, float)) else float(gate_entropy.item()),
+            "gate_entropy": (
+                float(gate_entropy)
+                if isinstance(gate_entropy, (int, float))
+                else float(gate_entropy.item())
+            ),
         }
 
     def select_action(

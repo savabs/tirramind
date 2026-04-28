@@ -337,6 +337,7 @@ class DiseaseSurveillanceTool(Tool):
         organism: str = "",
         days_back: int = 30,
         limit: int = 50,
+        _backfill: bool = False,
         **_: Any,
     ) -> ToolResult:
         mode = mode.lower().strip()
@@ -349,7 +350,8 @@ class DiseaseSurveillanceTool(Tool):
                 ),
             )
 
-        days_back = max(1, min(int(days_back), 180))
+        if not _backfill:
+            days_back = max(1, min(int(days_back), 180))
         limit = max(1, min(int(limit), 1000))
 
         if mode == "wastewater":

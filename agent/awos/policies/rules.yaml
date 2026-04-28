@@ -1,0 +1,93 @@
+# Default AWOS policies — compiled in so the system works out-of-the-box.
+# User overrides: set TIRRA_AWOS_POLICIES_FILE to point at another YAML
+# and those rules are appended (user rules take precedence on conflict).
+#
+# Rule schema:
+#   id            - unique identifier, stable across versions
+#   description   - short human-readable sentence
+#   match:        - conjunction of conditions (all must hold)
+#     category:   - list of TriggerCategory values
+#     min_confidence: float
+#     source_in:  - optional list of event sources
+#     payload_contains: - optional list of substrings found in payload json
+#   actions:      - list of actions to run in order
+#     type:       - action registry key
+#     params:     - dict passed to the action's run()
+
+rules:
+  - id: workflow_pattern_to_awos
+    description: >
+      A workflow pattern stated with confidence updates the AWOS operating
+      principles section (direct write if confidence >= threshold, else
+      proposal).
+    match:
+      category: [workflow_pattern]
+      min_confidence: 0.4
+    actions:
+      - type: awos_update
+        params:
+          section_hint: "3. Agent Operating Principles"
+
+  - id: architectural_to_awos
+    description: >
+      Architectural rules get appended to Codebase Structure.
+    match:
+      category: [architectural]
+      min_confidence: 0.5
+    actions:
+      - type: awos_update
+        params:
+          section_hint: "5. Codebase Structure"
+
+  - id: lesson_to_awos
+    description: >
+      Post-mortem lessons go into the Lessons section and are also mirrored
+      to the changelog.
+    match:
+      category: [lesson]
+      min_confidence: 0.4
+    actions:
+      - type: awos_update
+        params:
+          section_hint: "Lessons"
+
+  - id: decision_to_adr_proposal
+    description: >
+      Substantive design decisions produce an ADR proposal file (never a
+      direct write — ADRs are reviewed).
+    match:
+      category: [decision]
+      min_confidence: 0.6
+    actions:
+      - type: adr_propose
+
+  - id: roadmap_shift_to_proposal
+    description: >
+      Roadmap changes produce a proposal against tasks/active/quant_training_ground.md.
+    match:
+      category: [roadmap_shift]
+      min_confidence: 0.5
+    actions:
+      - type: roadmap_propose
+
+  - id: drift_to_triage
+    description: >
+      Drift findings surface as a proposal for the user to acknowledge.
+    match:
+      category: [drift]
+      min_confidence: 0.5
+    actions:
+      - type: drift_triage
+
+  - id: staleness_to_changelog
+    description: >
+      Staleness is recorded in the AWOS changelog only; no direct user action
+      required.
+    match:
+      category: [staleness]
+      min_confidence: 0.4
+    actions:
+      - type: awos_update
+        params:
+          section_hint: "11. Changelog"
+          changelog_only: true

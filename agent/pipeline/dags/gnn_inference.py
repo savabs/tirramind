@@ -20,6 +20,7 @@ from typing import Any
 
 from agent.learning.meta_scheduler import MetaScheduler, compute_refit_reward
 from agent.pipeline.dag import DAG
+from agent.pipeline.regime_gate import get_current_regime, is_high_changepoint
 from agent.pipeline.store import PipelineStore
 
 log = logging.getLogger(__name__)
@@ -120,6 +121,24 @@ def run_gnn_inference(params: dict, upstream: dict) -> dict:
         cfg = TrainerConfig(**trainer_config)
         trained = False
 
+        # ── Phase 49b: Force retrain when regime changepoint is high ────
+        # If a structural break was detected (changepoint_posterior ≥ 0.9),
+        # the existing model's learned representations may no longer be
+        # valid for the new regime.  Force a full retrain rather than an
+        # incremental EWC step, which cannot recover from a large structural
+        # shift.  The old checkpoint is deleted so the else-branch below runs.
+        regime_ctx = get_current_regime(store)
+        if model_path.exists() and is_high_changepoint(store, ctx=regime_ctx):
+            log.warning(
+                "Phase 49b: high changepoint detected (posterior=%.3f) — "
+                "forcing GNN retrain instead of loading checkpoint.",
+                regime_ctx.changepoint_posterior,
+            )
+            try:
+                model_path.unlink()
+            except OSError as exc:
+                log.warning("Could not remove old checkpoint: %s", exc)
+
         if model_path.exists():
             try:
                 trainer = Trainer.load_model(model_path, store)
@@ -136,7 +155,67 @@ def run_gnn_inference(params: dict, upstream: dict) -> dict:
             trainer.train()
             trained = True
 
-        # Save model
+        # ── Phase 46: EWC online update ─────────────────────────────────
+        # When we LOADED an existing model (not retrained from scratch), check
+        # whether enough new observations have accumulated since the last online
+        # update.  If so, apply one EWC-regularised gradient step to the loaded
+        # model before saving it back.  When we just ran a full train(), the
+        # EWC anchor is already set to now, so `since_ts` will return an empty
+        # list and we skip the step (correct — no point doing a second update
+        # immediately after training).
+        online_updated: bool = False
+        online_result: dict[str, float] = {}
+
+        if not trained and trainer._ewc_state is not None:
+            since_ts = trainer._ewc_state.last_update_ts
+            try:
+                new_obs = store.query_all_observations(since=since_ts)
+                log.info(
+                    "Phase 46 EWC check: %d new observations since last update "
+                    "(ts=%.0f), threshold=%d.",
+                    len(new_obs),
+                    since_ts,
+                    cfg.online_batch_threshold,
+                )
+                if len(new_obs) >= cfg.online_batch_threshold:
+                    log.info(
+                        "Triggering EWC online continual-learning step " "(%d events).",
+                        len(new_obs),
+                    )
+                    update_result = trainer.online_update(new_obs)
+                    online_updated = True
+                    online_result = update_result
+                    log.info(
+                        "EWC online update complete: loss_new=%.4f "
+                        "loss_ewc=%.4f loss_total=%.4f n_events=%d",
+                        update_result["loss_new"],
+                        update_result["loss_ewc"],
+                        update_result["loss_total"],
+                        int(update_result["n_events"]),
+                    )
+                else:
+                    log.info(
+                        "EWC online update skipped: %d new observations "
+                        "< threshold %d.",
+                        len(new_obs),
+                        cfg.online_batch_threshold,
+                    )
+            except Exception as exc:
+                # Non-fatal: online update failure should not abort the DAG run.
+                # The loaded model is still valid for inference.
+                log.warning(
+                    "EWC online update failed (non-fatal, continuing with "
+                    "loaded model): %s",
+                    exc,
+                )
+        elif not trained and trainer._ewc_state is None:
+            log.info(
+                "Phase 46 EWC: loaded model has no EWC state "
+                "(pre-Phase-46 checkpoint). Skipping online update. "
+                "Run a full retrain to compute Fisher diagonal."
+            )
+
+        # Save model (includes updated EWC bookkeeping when online_updated)
         try:
             trainer.save_model(model_path)
             log.info("Saved GNN model to %s.", model_path)
@@ -173,6 +252,9 @@ def run_gnn_inference(params: dict, upstream: dict) -> dict:
             "trained": trained,
             "epochs": epochs_arm,
             "using_scheduler": scheduler is not None,
+            # Phase 46
+            "online_updated": online_updated,
+            "online_update_result": online_result,
         }
 
     finally:

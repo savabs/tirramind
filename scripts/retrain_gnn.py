@@ -211,6 +211,25 @@ def main() -> None:
         help="Only use observations after this date (ISO format, e.g. 2023-01-01). "
         "Useful for skipping sparse early data.",
     )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default=None,
+        help="Torch device to use: 'cuda' or 'cpu'. Defaults to 'cuda' if available, else 'cpu'.",
+    )
+    parser.add_argument(
+        "--checkpoint-dir",
+        type=str,
+        default=".tirra_pipeline/checkpoints",
+        help="Directory to save per-epoch checkpoints (default: .tirra_pipeline/checkpoints).",
+    )
+    parser.add_argument(
+        "--resume",
+        type=int,
+        default=0,
+        metavar="EPOCH",
+        help="Resume training from this epoch number (loads epoch_NNN.pt from --checkpoint-dir).",
+    )
     args = parser.parse_args()
 
     db_path = Path(args.db_path)
@@ -256,6 +275,15 @@ def main() -> None:
                 console.print(f"[red]ERROR: Invalid --since date: {args.since}[/]")
                 sys.exit(1)
 
+        # ── Resolve device ──
+        import torch as _torch
+
+        if args.device is not None:
+            device = args.device
+        else:
+            device = "cuda" if _torch.cuda.is_available() else "cpu"
+        console.print(f"  device={device}")
+
         # ── Build Config ──
         config = TrainerConfig(
             hidden_dim=args.hidden_dim,
@@ -268,6 +296,9 @@ def main() -> None:
             window_size=args.window_size,
             auto_tune_loss_weights=args.auto_tune,
             obs_since=obs_since,
+            device=device,
+            checkpoint_dir=args.checkpoint_dir,
+            resume_from_epoch=args.resume,
         )
 
         console.print(f"\n[bold cyan]═══ Training Config ═══[/]")

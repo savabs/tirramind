@@ -220,8 +220,17 @@ class GDELTTool(Tool):
         event_codes: str = "",
         query: str = "",
         limit: int = 50,
+        _backfill: bool = False,
+        days_back: int = 730,
+        sample_every_days: int = 7,
         **_: Any,
     ) -> ToolResult:
+        if _backfill:
+            return self._execute_backfill(
+                days_back=max(1, days_back),
+                sample_every_days=max(1, sample_every_days),
+            )
+
         mode = mode.lower().strip()
         if mode not in ("events", "articles"):
             return ToolResult(
@@ -240,6 +249,107 @@ class GDELTTool(Tool):
             event_codes=event_codes.strip(),
             limit=max(1, min(limit, 500)),
         )
+
+    # ------------------------------------------------------------------
+    # Historical backfill mode
+    # ------------------------------------------------------------------
+
+    def _execute_backfill(self, days_back: int, sample_every_days: int) -> ToolResult:
+        """Sample one 15-min GDELT batch per sample_every_days going back days_back days.
+
+        Downloads evenly-spaced historical event batches and persists country
+        entities with the correct historical observed_at timestamp from the
+        event's own date field.  Cached batches are not re-fetched.
+        """
+        timestamps = self._compute_historical_sample_timestamps(
+            days_back, sample_every_days
+        )
+        if not timestamps:
+            return ToolResult(
+                success=True,
+                output="GDELT backfill: no timestamps to sample",
+                data={"batches": 0, "total_events": 0},
+            )
+
+        total_events = 0
+        batches_fetched = 0
+
+        with httpx.Client(timeout=20, follow_redirects=True) as client:
+            for ts in timestamps:
+                cache_key = {"batch": ts}
+                raw: str | None = None
+                if self._cache:
+                    raw = self._cache.get("gdelt_events", cache_key)
+
+                if raw is None:
+                    url = f"{_GDELT_BASE}/{ts}.export.CSV.zip"
+                    try:
+                        resp = client.get(url)
+                        if resp.status_code == 404:
+                            log.debug(
+                                "GDELT historical batch %s not found — skipping", ts
+                            )
+                            continue
+                        resp.raise_for_status()
+                        with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
+                            names = zf.namelist()
+                            if not names:
+                                continue
+                            raw = zf.read(names[0]).decode("utf-8", errors="replace")
+                    except (
+                        httpx.HTTPError,
+                        zipfile.BadZipFile,
+                        KeyError,
+                        UnicodeDecodeError,
+                    ) as exc:
+                        log.warning("GDELT historical batch %s failed: %s", ts, exc)
+                        continue
+
+                    if self._cache and raw:
+                        self._cache.put("gdelt_events", cache_key, raw)
+                    time.sleep(_BATCH_DELAY)
+
+                events = self._parse_events([raw])
+                total_events += len(events)
+                batches_fetched += 1
+                try:
+                    self._persist_entities(events)
+                except Exception:
+                    log.exception(
+                        "GDELT backfill persist failed for ts %s (non-fatal)", ts
+                    )
+
+        num_samples = len(timestamps)
+        return ToolResult(
+            success=True,
+            output=(
+                f"GDELT backfill: {batches_fetched}/{num_samples} batches fetched, "
+                f"{total_events} events parsed, {days_back}d history "
+                f"sampled every {sample_every_days}d"
+            ),
+            data={"batches": batches_fetched, "total_events": total_events},
+        )
+
+    @staticmethod
+    def _compute_historical_sample_timestamps(
+        days_back: int, sample_every_days: int
+    ) -> list[str]:
+        """Return GDELT batch timestamps sampled every sample_every_days going back days_back.
+
+        Uses noon UTC per sample so batches are almost certainly already archived.
+        """
+        now = datetime.now(timezone.utc)
+        samples: list[str] = []
+        offset = days_back
+        while offset > 0:
+            target = now - timedelta(days=offset)
+            target = target.replace(hour=12, minute=0, second=0, microsecond=0)
+            # Round down to nearest 15-min boundary
+            minute = (target.minute // 15) * 15
+            target = target.replace(minute=minute)
+            samples.append(target.strftime("%Y%m%d%H%M%S"))
+            offset -= sample_every_days
+        return samples
 
     # ------------------------------------------------------------------
     # Events mode
@@ -625,10 +735,29 @@ class GDELTTool(Tool):
 
     def _persist_entities_inner(self, events: list[dict[str, Any]]) -> None:
         seen: set[str] = set()
-        now = datetime.now(timezone.utc).isoformat()
+        now_ts = datetime.now(timezone.utc).timestamp()
         for ev in events:
             event_id = ev.get("id", "")
-            date_str = ev.get("date") or now
+            raw_date = ev.get("date", "")
+            # Convert YYYYMMDD string to Unix timestamp (noon UTC).
+            # observed_at must be a float — storing a date string was a latent bug.
+            observed_ts: float
+            if raw_date and len(raw_date) == 8:
+                try:
+                    dt = datetime(
+                        int(raw_date[:4]),
+                        int(raw_date[4:6]),
+                        int(raw_date[6:8]),
+                        12,
+                        0,
+                        0,
+                        tzinfo=timezone.utc,
+                    )
+                    observed_ts = dt.timestamp()
+                except ValueError:
+                    observed_ts = now_ts
+            else:
+                observed_ts = now_ts
 
             for role, actor_key, counterpart_key in [
                 ("initiator", "actor1", "actor2"),
@@ -659,7 +788,7 @@ class GDELTTool(Tool):
                 self._store.store_entity_observation(
                     entity_id=eid,
                     source_tool="gdelt",
-                    observed_at=date_str,
+                    observed_at=observed_ts,
                     observation_type="geopolitical_event",
                     value={
                         "event_id": event_id,

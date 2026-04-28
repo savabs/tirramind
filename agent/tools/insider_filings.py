@@ -100,9 +100,11 @@ class InsiderFilingsTool(Tool):
         days_back: int = 30,
         ticker: str = "",
         min_cluster_size: int = 3,
+        _backfill: bool = False,
         **_: Any,
     ) -> ToolResult:
-        days_back = max(1, min(days_back, 90))
+        if not _backfill:
+            days_back = max(1, min(days_back, 90))
         min_cluster_size = max(2, min_cluster_size)
         ticker = ticker.strip().upper()
 

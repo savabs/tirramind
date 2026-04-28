@@ -113,9 +113,11 @@ class Form144Tool(Tool):
         days_back: int = 14,
         ticker: str = "",
         min_cluster_size: int = 2,
+        _backfill: bool = False,
         **_: Any,
     ) -> ToolResult:
-        days_back = max(1, min(days_back, 60))
+        if not _backfill:
+            days_back = max(1, min(days_back, 60))
         min_cluster_size = max(2, min_cluster_size)
         ticker = ticker.strip().upper()
 

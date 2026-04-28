@@ -45,7 +45,7 @@ log = logging.getLogger(__name__)
 
 _UA = "TirraMind/0.1"
 _TIMEOUT = 20
-_CACHE_TTL = 7200   # 2 hours — weekly data updates on Wednesdays
+_CACHE_TTL = 7200  # 2 hours — weekly data updates on Wednesdays
 _CACHE_TTL_RIG = 21600  # 6 hours — rig count is monthly
 
 _EIA_BASE = "https://api.eia.gov/v2"
@@ -162,7 +162,10 @@ class EnergySupplyTool(Tool):
 
         return self._fetch_petroleum_data(
             "petroleum/stoc/wstk/data/",
-            series_map, weeks, "petroleum_stocks", _CACHE_TTL,
+            series_map,
+            weeks,
+            "petroleum_stocks",
+            _CACHE_TTL,
         )
 
     def _handle_supply(self, series_filter: str, weeks: int) -> ToolResult:
@@ -181,13 +184,16 @@ class EnergySupplyTool(Tool):
 
         return self._fetch_petroleum_data(
             "petroleum/sum/sndw/data/",
-            series_map, weeks, "petroleum_supply", _CACHE_TTL,
+            series_map,
+            weeks,
+            "petroleum_supply",
+            _CACHE_TTL,
         )
 
     def _handle_rig_count(self, months: int) -> ToolResult:
         cache_key = f"energy:rig_count:{months}"
         if self._cache:
-            hit = self._cache.get(cache_key)
+            hit = self._cache.get("energy_supply", {"key": cache_key})
             if hit is not None:
                 return ToolResult(success=True, output=hit["output"], data=hit["data"])
 
@@ -217,7 +223,11 @@ class EnergySupplyTool(Tool):
         }
 
         if self._cache:
-            self._cache.set(cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL_RIG)
+            self._cache.put(
+                "energy_supply",
+                {"key": cache_key},
+                {"output": summary, "data": result_data},
+            )
 
         return ToolResult(success=True, output=summary, data=result_data)
 
@@ -236,7 +246,7 @@ class EnergySupplyTool(Tool):
         for name, series_code in series_map.items():
             cache_key = f"energy:{label}:{name}:{weeks}"
             if self._cache:
-                hit = self._cache.get(cache_key)
+                hit = self._cache.get("energy_supply", {"key": cache_key})
                 if hit is not None:
                     all_records[name] = hit["data"]["records"]
                     all_signals[name] = hit["data"]["signals"]
@@ -264,10 +274,10 @@ class EnergySupplyTool(Tool):
             all_signals[name] = signals
 
             if self._cache:
-                self._cache.set(
-                    cache_key,
+                self._cache.put(
+                    "energy_supply",
+                    {"key": cache_key},
                     {"output": "", "data": {"records": parsed, "signals": signals}},
-                    ttl=cache_ttl,
                 )
 
         summary = _format_petroleum_summary(all_records, all_signals, label, weeks)
@@ -286,12 +296,14 @@ class EnergySupplyTool(Tool):
 
 
 def _fetch_eia(
-    url: str, params: dict,
+    url: str,
+    params: dict,
 ) -> tuple[list[dict], str | None]:
     """Fetch from EIA API v2. Returns (data_list, error_or_None)."""
     try:
         with httpx.Client(
-            timeout=_TIMEOUT, headers={"User-Agent": _UA},
+            timeout=_TIMEOUT,
+            headers={"User-Agent": _UA},
         ) as client:
             resp = client.get(url, params=params)
     except httpx.TimeoutException:
@@ -328,16 +340,18 @@ def _parse_eia_records(raw: list[dict]) -> list[dict]:
         if value is None:
             continue
 
-        records.append({
-            "period": entry.get("period", ""),
-            "area": entry.get("area-name", ""),
-            "product": entry.get("product-name", ""),
-            "process": entry.get("process-name", ""),
-            "series": entry.get("series", ""),
-            "series_description": entry.get("series-description", ""),
-            "value": value,
-            "units": entry.get("units", ""),
-        })
+        records.append(
+            {
+                "period": entry.get("period", ""),
+                "area": entry.get("area-name", ""),
+                "product": entry.get("product-name", ""),
+                "process": entry.get("process-name", ""),
+                "series": entry.get("series", ""),
+                "series_description": entry.get("series-description", ""),
+                "value": value,
+                "units": entry.get("units", ""),
+            }
+        )
 
     # Sort chronologically (EIA returns newest-first)
     records.sort(key=lambda r: r["period"])
@@ -381,7 +395,9 @@ def _compute_stock_signals(records: list[dict], name: str) -> dict:
     if len(values) >= 2:
         wow_change = latest - values[-2]
         signals["wow_change"] = round(wow_change, 1)
-        signals["wow_pct"] = round(100 * wow_change / values[-2], 2) if values[-2] != 0 else None
+        signals["wow_pct"] = (
+            round(100 * wow_change / values[-2], 2) if values[-2] != 0 else None
+        )
     else:
         signals["wow_change"] = None
         signals["wow_pct"] = None
@@ -415,7 +431,9 @@ def _compute_stock_signals(records: list[dict], name: str) -> dict:
     wow = signals.get("wow_change")
     if wow is not None:
         if abs(wow) > 5000:  # >5M barrel change
-            signals["alert"] = f"SURPRISE — {wow:+,.0f}K barrel {'build' if wow > 0 else 'draw'}"
+            signals["alert"] = (
+                f"SURPRISE — {wow:+,.0f}K barrel {'build' if wow > 0 else 'draw'}"
+            )
         elif direction == "draw" and consecutive >= 3:
             signals["alert"] = f"TIGHTENING — {consecutive} consecutive weekly draws"
         elif direction == "build" and consecutive >= 3:
@@ -449,7 +467,9 @@ def _compute_rig_signals(records: list[dict]) -> dict:
     if len(values) >= 2:
         mom_change = latest - values[-2]
         signals["mom_change"] = round(mom_change, 1)
-        signals["mom_pct"] = round(100 * mom_change / values[-2], 2) if values[-2] != 0 else None
+        signals["mom_pct"] = (
+            round(100 * mom_change / values[-2], 2) if values[-2] != 0 else None
+        )
     else:
         signals["mom_change"] = None
         signals["mom_pct"] = None
@@ -461,9 +481,13 @@ def _compute_rig_signals(records: list[dict]) -> dict:
             three_mo_change_pct = round(100 * (latest - three_mo_ago) / three_mo_ago, 1)
             signals["three_month_change_pct"] = three_mo_change_pct
             if three_mo_change_pct < -10:
-                signals["alert"] = f"WARNING — rig count down {abs(three_mo_change_pct)}% over 3 months"
+                signals["alert"] = (
+                    f"WARNING — rig count down {abs(three_mo_change_pct)}% over 3 months"
+                )
             elif three_mo_change_pct > 10:
-                signals["alert"] = f"NOTICE — rig count up {three_mo_change_pct}% over 3 months"
+                signals["alert"] = (
+                    f"NOTICE — rig count up {three_mo_change_pct}% over 3 months"
+                )
             else:
                 signals["alert"] = None
         else:
@@ -520,9 +544,17 @@ def _format_petroleum_summary(
 
         latest = signals.get("latest_value", "N/A")
         units = signals.get("units", "")
-        lines.append(f"    Latest: {latest:,.0f} {units}" if isinstance(latest, (int, float)) else f"    Latest: {latest}")
+        lines.append(
+            f"    Latest: {latest:,.0f} {units}"
+            if isinstance(latest, (int, float))
+            else f"    Latest: {latest}"
+        )
         avg = signals.get("period_average", "N/A")
-        lines.append(f"    Average: {avg:,.0f}" if isinstance(avg, (int, float)) else f"    Average: {avg}")
+        lines.append(
+            f"    Average: {avg:,.0f}"
+            if isinstance(avg, (int, float))
+            else f"    Average: {avg}"
+        )
 
         wow = signals.get("wow_change")
         wow_pct = signals.get("wow_pct")
@@ -543,7 +575,9 @@ def _format_petroleum_summary(
 
 
 def _format_rig_summary(
-    records: list[dict], signals: dict, months: int,
+    records: list[dict],
+    signals: dict,
+    months: int,
 ) -> str:
     """Format rig count summary."""
     lines = [f"EIA Rig Count — Last {months} months"]

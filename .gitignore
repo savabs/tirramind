@@ -49,3 +49,5 @@ tasks/
 *.csv
 *.pkl
 *.txt
+# AWOS runtime state
+.awos/
