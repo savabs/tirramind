@@ -968,7 +968,40 @@ class Trainer:
             )
             if os.path.exists(ckpt_path):
                 ckpt = torch.load(ckpt_path, map_location=self._device)
-                model.load_state_dict(ckpt["model_state"])
+                # ── Handle entity-count growth between checkpoints ───────
+                # If new entities were added to the store since the last
+                # checkpoint, memory.memory and memory.last_update will have
+                # grown (current model) vs shrunk (checkpoint).  Load with
+                # strict=False, then manually zero-pad the memory buffers so
+                # preserved history is carried forward and new rows are zeroed.
+                missing, unexpected = model.load_state_dict(
+                    ckpt["model_state"], strict=False
+                )
+                if missing or unexpected:
+                    log.warning(
+                        "Checkpoint state_dict mismatch — missing: %s, unexpected: %s",
+                        missing,
+                        unexpected,
+                    )
+                # Patch memory buffers if entity count grew
+                ckpt_state = ckpt["model_state"]
+                if "memory.memory" in ckpt_state:
+                    ckpt_mem = ckpt_state["memory.memory"].to(self._device)
+                    ckpt_lu = ckpt_state["memory.last_update"].to(self._device)
+                    ckpt_n = ckpt_mem.shape[0]
+                    cur_n = model.memory.memory.shape[0]
+                    if ckpt_n != cur_n:
+                        log.warning(
+                            "Entity count changed since checkpoint: "
+                            "checkpoint=%d, current=%d — zero-padding memory buffers.",
+                            ckpt_n,
+                            cur_n,
+                        )
+                        # Copy checkpoint rows; new rows stay zero-initialised
+                        copy_n = min(ckpt_n, cur_n)
+                        model.memory.memory[:copy_n].copy_(ckpt_mem[:copy_n])
+                        model.memory.last_update[:copy_n].copy_(ckpt_lu[:copy_n])
+                        model.memory.num_nodes = cur_n
                 optimizer.load_state_dict(ckpt["optimizer_state"])
                 if self._log_vars is not None and "log_vars" in ckpt:
                     for k, v in ckpt["log_vars"].items():
