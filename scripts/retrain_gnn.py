@@ -230,12 +230,74 @@ def main() -> None:
         metavar="EPOCH",
         help="Resume training from this epoch number (loads epoch_NNN.pt from --checkpoint-dir).",
     )
+    parser.add_argument(
+        "--gdelt-frac",
+        type=float,
+        default=0.05,
+        metavar="FRAC",
+        help="Fraction of geopolitical_event obs to keep (0.0–1.0, default: 0.05). "
+        "GDELT is 92%% of the DB; subsampling prevents OOM during snapshot pre-building.",
+    )
+    parser.add_argument(
+        "--max-windows",
+        type=int,
+        default=200,
+        metavar="N",
+        help="Cap training windows to last N time windows (default: 200). "
+        "Limits peak RAM to O(N * graph_size). Set 0 to use all windows.",
+    )
+    parser.add_argument(
+        "--max-ram-gb",
+        type=float,
+        default=8.0,
+        metavar="GB",
+        help="Hard virtual memory cap in GB (default: 8.0). "
+        "Process raises MemoryError cleanly instead of hanging the laptop.",
+    )
     args = parser.parse_args()
 
     db_path = Path(args.db_path)
     if not db_path.exists():
         console.print(f"[red]ERROR: {db_path} not found.[/]")
         sys.exit(1)
+
+    # ── RAM watchdog (prevents laptop hang on OOM) ────────────────────
+    # Spawns a background thread that checks actual RSS every 10 s.
+    # If RSS exceeds --max-ram-gb, logs the breach and exits cleanly
+    # (SIGTERM → Python exit) instead of letting the OS swap the laptop
+    # to a crawl. Uses psutil RSS (physical pages), NOT virtual address
+    # space — RLIMIT_AS would also cap PyTorch's mmap'd library pages and
+    # kills the process on import.
+    if args.max_ram_gb > 0:
+        try:
+            import psutil as _psutil
+            import threading as _threading
+            import os as _os
+
+            _ram_limit_bytes = int(args.max_ram_gb * 1024 ** 3)
+            _pid = _os.getpid()
+
+            def _ram_watchdog() -> None:
+                _proc = _psutil.Process(_pid)
+                while True:
+                    _threading.Event().wait(10)  # check every 10 s
+                    try:
+                        _rss = _proc.memory_info().rss
+                    except _psutil.NoSuchProcess:
+                        return
+                    if _rss > _ram_limit_bytes:
+                        console.print(
+                            f"\n[bold red]RAM watchdog: RSS {_rss / 1e9:.1f} GB "
+                            f"> limit {args.max_ram_gb:.1f} GB — exiting cleanly.[/]"
+                        )
+                        _os.kill(_pid, 15)  # SIGTERM → graceful exit
+                        return
+
+            _wd = _threading.Thread(target=_ram_watchdog, daemon=True, name="ram-watchdog")
+            _wd.start()
+            console.print(f"  [dim]RAM watchdog: exit if RSS > {args.max_ram_gb:.1f} GB[/]")
+        except ImportError:
+            console.print("  [yellow]Warning: psutil not installed — RAM watchdog disabled.[/]")
 
     model_out = Path(args.model_out)
 
@@ -299,6 +361,8 @@ def main() -> None:
             device=device,
             checkpoint_dir=args.checkpoint_dir,
             resume_from_epoch=args.resume,
+            gdelt_subsample_frac=args.gdelt_frac,
+            max_windows=args.max_windows,
         )
 
         console.print(f"\n[bold cyan]═══ Training Config ═══[/]")
@@ -311,7 +375,15 @@ def main() -> None:
         )
         console.print(
             f"  Loss weights: obs={config.obs_type_weight}, dt={config.time_delta_weight}, "
-            f"contr={config.contrastive_weight}, val={config.value_weight}"
+            f"contr={config.contrastive_weight}, val={config.value_weight}, ret={config.return_weight}"
+        )
+        console.print(
+            f"  GDELT subsample: {config.gdelt_subsample_frac:.3f} "
+            f"(~{int(901704 * config.gdelt_subsample_frac):,} GDELT rows kept)"
+        )
+        console.print(
+            f"  Max windows: {config.max_windows if config.max_windows > 0 else 'unlimited'} "
+            f"(most recent training windows used)"
         )
 
         # ── Build Model ──

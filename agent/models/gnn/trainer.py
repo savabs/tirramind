@@ -565,6 +565,19 @@ class TrainerConfig:
     contrastive_margin: float = 1.0
     num_negative_samples: int = 5
     value_weight: float = 0.3
+    return_weight: float = 1.0
+    """Weight for the instrument log_return auxiliary loss (Phase 41).
+    Higher than value_weight because this is the primary financial signal
+    we want the embedding to encode. Set to 0.0 to disable."""
+    gdelt_subsample_frac: float = 1.0
+    """Fraction of geopolitical_event observations to keep during training.
+    GDELT makes up ~92% of the DB (901K rows) and causes OOM during snapshot
+    pre-building. Set to e.g. 0.05 to keep 5% (~45K) while retaining all
+    other observation types. Applied once after prefetch_observations()."""
+    max_windows: int = 0
+    """Cap the number of training windows per epoch. 0 = use all windows.
+    Takes the LAST N windows (most recent data). Bounds peak RAM to
+    O(N * avg_graph_size). Recommended: 200 for <4 GB RAM usage."""
     auto_tune_loss_weights: bool = False
     """When True, use learnable uncertainty-based loss weighting
     (Kendall et al. 2018 "Multi-Task Learning Using Uncertainty
@@ -696,6 +709,9 @@ class Trainer:
                 ),
                 "value": torch.nn.Parameter(
                     torch.tensor(-math.log(max(cfg.value_weight, 1e-6)))
+                ),
+                "return": torch.nn.Parameter(
+                    torch.tensor(-math.log(max(cfg.return_weight, 1e-6)))
                 ),
             }
 
@@ -961,6 +977,7 @@ class Trainer:
             "time_delta": [],
             "contrastive": [],
             "value": [],
+            "return": [],
         }
         if cfg.resume_from_epoch > 0 and cfg.checkpoint_dir:
             ckpt_path = os.path.join(
@@ -974,12 +991,12 @@ class Trainer:
                 # approach: pop the variable-size memory buffers out of the
                 # state dict before calling load_state_dict, then copy them
                 # manually with zero-padding for any new rows.
-                ckpt_state = dict(ckpt["model_state"])  # shallow copy — don't mutate ckpt
+                ckpt_state = dict(
+                    ckpt["model_state"]
+                )  # shallow copy — don't mutate ckpt
                 MEMORY_BUFFER_KEYS = ("memory.memory", "memory.last_update")
                 saved_buffers = {
-                    k: ckpt_state.pop(k)
-                    for k in MEMORY_BUFFER_KEYS
-                    if k in ckpt_state
+                    k: ckpt_state.pop(k) for k in MEMORY_BUFFER_KEYS if k in ckpt_state
                 }
                 missing, unexpected = model.load_state_dict(ckpt_state, strict=False)
                 if missing or unexpected:
@@ -1025,6 +1042,19 @@ class Trainer:
         train_obs, _, _ = self._split_observations()
         windows = self._make_windows(train_obs)
 
+        # ── max_windows cap (Phase 41 resource guard) ─────────────────────────
+        # Take the LAST max_windows windows (most recent temporal data).
+        # This bounds peak RAM to O(max_windows * avg_graph_size) regardless
+        # of total DB size. 0 = use all windows (original behaviour).
+        if cfg.max_windows > 0 and len(windows) > cfg.max_windows + 1:
+            windows = windows[-(cfg.max_windows + 1) :]  # +1 because we need windows[i+1] as next
+            log.info(
+                "max_windows=%d: truncated to last %d windows (%.1f%% of training data)",
+                cfg.max_windows,
+                cfg.max_windows,
+                100.0 * cfg.max_windows / (len(windows)),
+            )
+
         # Cache entity type lookups — entities don't change during training
         all_entities = self.store.query_all_entities()
         self._eid_to_type_cache = {
@@ -1042,6 +1072,36 @@ class Trainer:
         # NOTE: No since= filter here — graph features need full history
         # (original code used build(since=None, until=t_end)).
         all_prefetched_obs = self._graph_builder.prefetch_observations()
+
+        # ── GDELT subsampling (Phase 41) ──────────────────────────────────
+        # geopolitical_event rows are 92% of the DB (~901K rows).  Loading
+        # and snapshot-building all of them at once causes OOM on CPU.
+        # Subsample deterministically (seed=42) so snapshots are reproducible.
+        # All non-GDELT obs are always kept; only GDELT rows are thinned.
+        if 0.0 < cfg.gdelt_subsample_frac < 1.0:
+            import random as _random
+            _rng = _random.Random(42)
+            _gdelt_kept: list[dict] = []
+            _other_kept: list[dict] = []
+            for _o in all_prefetched_obs:
+                if _o.get("observation_type") == "geopolitical_event":
+                    if _rng.random() < cfg.gdelt_subsample_frac:
+                        _gdelt_kept.append(_o)
+                else:
+                    _other_kept.append(_o)
+            _n_before = len(all_prefetched_obs)
+            all_prefetched_obs = sorted(
+                _gdelt_kept + _other_kept,
+                key=lambda o: o.get("observed_at", 0.0),
+            )
+            log.info(
+                "GDELT subsample frac=%.3f: %d → %d obs (kept %d GDELT + %d other)",
+                cfg.gdelt_subsample_frac,
+                _n_before,
+                len(all_prefetched_obs),
+                len(_gdelt_kept),
+                len(_other_kept),
+            )
         _obs_timestamps = [o.get("observed_at", 0.0) for o in all_prefetched_obs]
 
         # ── Phase 49: Load GNN alignment weights ──────────────────────────
@@ -1102,6 +1162,7 @@ class Trainer:
                 "time_delta": 0.0,
                 "contrastive": 0.0,
                 "value": 0.0,
+                "return": 0.0,
             }
             n_windows = 0
             total_windows = _total_windows
@@ -1222,6 +1283,44 @@ class Trainer:
                 # ── contrastive loss ─────────────────────
                 c_loss = self._contrastive_loss(embeddings, id_map)
 
+                # ── return auxiliary loss (Phase 41) ──────────────────────────────────
+                # Directly supervise instrument embeddings on log_return.
+                # Filters next_obs to instrument_daily with log_return only.
+                # This pushes the embedding to encode return-relevant info,
+                # separate from the generic value_pred_head which sees all types.
+                ret_loss = torch.tensor(0.0, device=self._device)
+                if cfg.return_weight > 0.0 and "instrument" in embeddings:
+                    _ret_embs: list[torch.Tensor] = []
+                    _ret_targets: list[float] = []
+                    for _o in next_obs:
+                        if _o.get("observation_type") != "instrument_daily":
+                            continue
+                        _v = _o.get("value", {})
+                        if not isinstance(_v, dict) or "log_return" not in _v:
+                            continue
+                        try:
+                            _lr = float(_v["log_return"])
+                        except (TypeError, ValueError):
+                            continue
+                        _eid = _o.get("entity_id")
+                        if _eid is None:
+                            continue
+                        _local_idx = id_map.local_id("instrument", _eid)
+                        if _local_idx is None:
+                            continue
+                        _inst_emb = embeddings["instrument"]
+                        if _local_idx >= _inst_emb.size(0):
+                            continue
+                        _ret_embs.append(_inst_emb[_local_idx])
+                        _ret_targets.append(_lr)
+                    if _ret_embs:
+                        _ret_emb_t = torch.stack(_ret_embs)
+                        _ret_tgt_t = torch.tensor(
+                            _ret_targets, dtype=torch.float32, device=self._device
+                        )
+                        _ret_pred = model.return_pred_head(_ret_emb_t).squeeze(-1)
+                        ret_loss = F.huber_loss(_ret_pred, _ret_tgt_t)
+
                 # ── total loss ───────────────────────────
                 if self._log_vars is not None:
                     # Uncertainty-weighted multi-task loss
@@ -1251,6 +1350,8 @@ class Trainer:
                         + clamped["contrastive"]
                         + torch.exp(-clamped["value"]) * val_loss
                         + clamped["value"]
+                        + torch.exp(-clamped["return"]) * ret_loss
+                        + clamped["return"]
                     )
                 else:
                     total = (
@@ -1258,6 +1359,7 @@ class Trainer:
                         + cfg.time_delta_weight * dt_loss
                         + cfg.contrastive_weight * c_loss
                         + cfg.value_weight * val_loss
+                        + cfg.return_weight * ret_loss
                     )
 
                 if total.requires_grad:
@@ -1277,6 +1379,7 @@ class Trainer:
                 epoch_losses["time_delta"] += dt_loss.item()
                 epoch_losses["contrastive"] += c_loss.item()
                 epoch_losses["value"] += val_loss.item()
+                epoch_losses["return"] += ret_loss.item()
                 n_windows += 1
 
             # Average over windows
@@ -1285,22 +1388,24 @@ class Trainer:
                 history[k].append(avg)
 
             log.info(
-                "Epoch %d/%d — loss: %.4f (obs_type: %.4f, dt: %.4f, contrastive: %.4f)",
+                "Epoch %d/%d — loss: %.4f (obs_type: %.4f, dt: %.4f, contrastive: %.4f, return: %.4f)",
                 epoch + 1,
                 cfg.epochs,
                 history["total"][-1],
                 history["obs_type"][-1],
                 history["time_delta"][-1],
                 history["contrastive"][-1],
+                history["return"][-1],
             )
             if self._log_vars is not None:
                 eff = self.effective_loss_weights()
                 log.info(
-                    "  Effective loss weights: obs=%.3f dt=%.3f contr=%.3f val=%.3f",
+                    "  Effective loss weights: obs=%.3f dt=%.3f contr=%.3f val=%.3f ret=%.3f",
                     eff["obs_type"],
                     eff["time_delta"],
                     eff["contrastive"],
                     eff["value"],
+                    eff["return"],
                 )
 
             # ── Per-epoch checkpoint ──────────────────────────────────────
@@ -1405,6 +1510,7 @@ class Trainer:
             "time_delta": cfg.time_delta_weight,
             "contrastive": cfg.contrastive_weight,
             "value": cfg.value_weight,
+            "return": cfg.return_weight,
         }
 
     # ── Inference (Phase 19a) ─────────────────────────────────

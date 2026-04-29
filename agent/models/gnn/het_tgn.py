@@ -416,6 +416,16 @@ class HetTGN(nn.Module):
             nn.Linear(hidden_dim // 2, 1),
         )
 
+        # Return prediction head (Phase 41): directly predict log_return for
+        # instrument nodes. Separate from value_pred_head so it can be
+        # supervised exclusively on instrument_daily log_return targets without
+        # dilution from other observation types.
+        self.return_pred_head = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim // 2),
+            nn.ReLU(),
+            nn.Linear(hidden_dim // 2, 1),
+        )
+
         # ── Entity-pair score for link prediction ──────────────
         # Score(u, v) = u^T W v
         self.link_weight = nn.Linear(hidden_dim, hidden_dim, bias=False)
@@ -520,6 +530,24 @@ class HetTGN(nn.Module):
             Dict node_type → value [N_type, 1].
         """
         return {ntype: self.value_pred_head(emb) for ntype, emb in embeddings.items()}
+
+    def predict_return(
+        self,
+        instrument_embeddings: torch.Tensor,
+    ) -> torch.Tensor:
+        """Predict log_return for instrument nodes (Phase 41 aux loss).
+
+        Separate head from predict_value() — supervised only on
+        instrument_daily log_return targets so the embedding is explicitly
+        pushed to encode return-relevant information.
+
+        Args:
+            instrument_embeddings: (N_instrument, hidden_dim)
+
+        Returns:
+            Predicted log_returns (N_instrument, 1).
+        """
+        return self.return_pred_head(instrument_embeddings)
 
     def link_score(self, emb_u: torch.Tensor, emb_v: torch.Tensor) -> torch.Tensor:
         """Bilinear link score: u^T W v.
