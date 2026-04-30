@@ -1003,7 +1003,8 @@ class Trainer:
                 # still raises RuntimeError on size mismatches even with strict=False.
                 current_state = model.state_dict()
                 shape_mismatches = [
-                    k for k, v in ckpt_state.items()
+                    k
+                    for k, v in ckpt_state.items()
                     if k in current_state and v.shape != current_state[k].shape
                 ]
                 if shape_mismatches:
@@ -1016,6 +1017,7 @@ class Trainer:
                     for k in shape_mismatches:
                         ckpt_state.pop(k)
                 missing, unexpected = model.load_state_dict(ckpt_state, strict=False)
+                arch_changed = bool(shape_mismatches or missing)
                 if missing or unexpected:
                     log.warning(
                         "Checkpoint state_dict mismatch — missing: %s, unexpected: %s",
@@ -1039,17 +1041,31 @@ class Trainer:
                             ckpt_n,
                             cur_n,
                         )
-                try:
-                    optimizer.load_state_dict(ckpt["optimizer_state"])
-                except ValueError:
-                    # Architecture changed since checkpoint (e.g. new heads added
-                    # in Phase 41 — return_pred_head). Optimizer parameter groups
-                    # no longer match. Start optimizer fresh; model weights already
-                    # loaded above so training continues correctly.
+                if arch_changed:
+                    # The model architecture changed (new or reshaped parameters).
+                    # PyTorch optimizer state is positional — inserting new params
+                    # in the middle shifts all subsequent indices, causing Adam to
+                    # apply stale exp_avg/exp_avg_sq tensors with wrong shapes to
+                    # new params, resulting in the "output with shape [] doesn't
+                    # match broadcast shape [1]" crash at optimizer.step().
+                    # Safest resolution: skip optimizer state entirely.
                     log.warning(
-                        "Optimizer state mismatch (architecture change) — "
-                        "starting optimizer fresh. Model weights loaded OK."
+                        "Architecture change detected (%d shape mismatches, "
+                        "%d new keys) — skipping optimizer state to avoid "
+                        "index-shift corruption. Model weights loaded OK, "
+                        "optimizer starts fresh.",
+                        len(shape_mismatches),
+                        len(missing),
                     )
+                else:
+                    try:
+                        optimizer.load_state_dict(ckpt["optimizer_state"])
+                    except (ValueError, RuntimeError) as exc:
+                        log.warning(
+                            "Optimizer state incompatible (%s) — starting fresh. "
+                            "Model weights loaded OK.",
+                            exc,
+                        )
                 if self._log_vars is not None and "log_vars" in ckpt:
                     for k, v in ckpt["log_vars"].items():
                         if k in self._log_vars:
@@ -1074,7 +1090,9 @@ class Trainer:
         # This bounds peak RAM to O(max_windows * avg_graph_size) regardless
         # of total DB size. 0 = use all windows (original behaviour).
         if cfg.max_windows > 0 and len(windows) > cfg.max_windows + 1:
-            windows = windows[-(cfg.max_windows + 1) :]  # +1 because we need windows[i+1] as next
+            windows = windows[
+                -(cfg.max_windows + 1) :
+            ]  # +1 because we need windows[i+1] as next
             log.info(
                 "max_windows=%d: truncated to last %d windows (%.1f%% of training data)",
                 cfg.max_windows,
@@ -1107,6 +1125,7 @@ class Trainer:
         # All non-GDELT obs are always kept; only GDELT rows are thinned.
         if 0.0 < cfg.gdelt_subsample_frac < 1.0:
             import random as _random
+
             _rng = _random.Random(42)
             _gdelt_kept: list[dict] = []
             _other_kept: list[dict] = []
