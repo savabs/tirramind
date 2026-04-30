@@ -1072,6 +1072,12 @@ class Trainer:
                         if k in self._log_vars:
                             self._log_vars[k].data.copy_(v.to(self._device))
                 history = ckpt.get("history", history)
+                # Backfill any keys added after the checkpoint was saved
+                # (e.g. "return" added in Phase 41).  Without this,
+                # history[k].append() raises KeyError on the first epoch.
+                for _hk in ("total", "obs_type", "time_delta", "contrastive", "value", "return"):
+                    if _hk not in history:
+                        history[_hk] = []
                 start_epoch = cfg.resume_from_epoch
                 log.info(
                     "Resumed from checkpoint %s (epoch %d)",
