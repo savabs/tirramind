@@ -274,7 +274,7 @@ def main() -> None:
             import threading as _threading
             import os as _os
 
-            _ram_limit_bytes = int(args.max_ram_gb * 1024 ** 3)
+            _ram_limit_bytes = int(args.max_ram_gb * 1024**3)
             _pid = _os.getpid()
 
             def _ram_watchdog() -> None:
@@ -293,11 +293,17 @@ def main() -> None:
                         _os.kill(_pid, 15)  # SIGTERM → graceful exit
                         return
 
-            _wd = _threading.Thread(target=_ram_watchdog, daemon=True, name="ram-watchdog")
+            _wd = _threading.Thread(
+                target=_ram_watchdog, daemon=True, name="ram-watchdog"
+            )
             _wd.start()
-            console.print(f"  [dim]RAM watchdog: exit if RSS > {args.max_ram_gb:.1f} GB[/]")
+            console.print(
+                f"  [dim]RAM watchdog: exit if RSS > {args.max_ram_gb:.1f} GB[/]"
+            )
         except ImportError:
-            console.print("  [yellow]Warning: psutil not installed — RAM watchdog disabled.[/]")
+            console.print(
+                "  [yellow]Warning: psutil not installed — RAM watchdog disabled.[/]"
+            )
 
     model_out = Path(args.model_out)
 
