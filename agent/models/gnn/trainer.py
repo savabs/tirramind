@@ -998,6 +998,23 @@ class Trainer:
                 saved_buffers = {
                     k: ckpt_state.pop(k) for k in MEMORY_BUFFER_KEYS if k in ckpt_state
                 }
+                # Filter out keys whose shape doesn't match the current model.
+                # strict=False already handles missing/extra keys, but PyTorch
+                # still raises RuntimeError on size mismatches even with strict=False.
+                current_state = model.state_dict()
+                shape_mismatches = [
+                    k for k, v in ckpt_state.items()
+                    if k in current_state and v.shape != current_state[k].shape
+                ]
+                if shape_mismatches:
+                    log.warning(
+                        "Skipping %d checkpoint keys with shape mismatches "
+                        "(e.g. hidden_dim changed). First few: %s",
+                        len(shape_mismatches),
+                        shape_mismatches[:4],
+                    )
+                    for k in shape_mismatches:
+                        ckpt_state.pop(k)
                 missing, unexpected = model.load_state_dict(ckpt_state, strict=False)
                 if missing or unexpected:
                     log.warning(
