@@ -309,7 +309,6 @@ def compute_diagnostics(
     import torch
 
     all_entities = store.query_all_entities()
-    all_obs = store.query_all_observations()
     all_links = store.query_all_entity_links()
 
     # 1. Entity-type density
@@ -320,11 +319,14 @@ def compute_diagnostics(
         entity_type_density[etype] = entity_type_density.get(etype, 0) + 1
         eid_to_type[e["entity_id"]] = etype
 
-    # 2. Observation density
-    obs_density: dict[str, int] = {}
-    for o in all_obs:
-        ot = o.get("observation_type", "unknown")
-        obs_density[ot] = obs_density.get(ot, 0) + 1
+    # 2. Observation density — aggregate via SQL to avoid loading ~1M rows
+    conn = store._get_conn()
+    obs_density: dict[str, int] = {
+        row[0]: row[1]
+        for row in conn.execute(
+            "SELECT observation_type, COUNT(*) FROM entity_observations GROUP BY observation_type"
+        ).fetchall()
+    }
 
     # 3. Edge-type attention from HGT layers
     edge_type_attention: dict[str, float] = {}
