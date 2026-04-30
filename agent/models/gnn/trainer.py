@@ -1020,9 +1020,10 @@ class Trainer:
                 arch_changed = bool(shape_mismatches or missing)
                 if missing or unexpected:
                     log.warning(
-                        "Checkpoint state_dict mismatch — missing: %s, unexpected: %s",
-                        missing,
-                        unexpected,
+                        "Checkpoint state_dict mismatch — %d missing keys "
+                        "(e.g. new Phase 41 heads), %d unexpected keys.",
+                        len(missing),
+                        len(unexpected),
                     )
                 # Restore memory buffers with zero-padding for any new entities
                 if "memory.memory" in saved_buffers:
@@ -1364,8 +1365,16 @@ class Trainer:
                         _ret_tgt_t = torch.tensor(
                             _ret_targets, dtype=torch.float32, device=self._device
                         )
-                        _ret_pred = model.return_pred_head(_ret_emb_t).squeeze(-1)
-                        ret_loss = F.huber_loss(_ret_pred, _ret_tgt_t)
+                        # Guard: filter out any NaN/Inf targets that came from
+                        # bad DB rows (stock splits, missing prices, etc.).
+                        # A single NaN target propagates through huber_loss →
+                        # total loss → backward → all weights become NaN silently.
+                        _finite_mask = torch.isfinite(_ret_tgt_t)
+                        if _finite_mask.any():
+                            _ret_pred = model.return_pred_head(_ret_emb_t).squeeze(-1)
+                            ret_loss = F.huber_loss(
+                                _ret_pred[_finite_mask], _ret_tgt_t[_finite_mask]
+                            )
 
                 # ── total loss ───────────────────────────
                 if self._log_vars is not None:
