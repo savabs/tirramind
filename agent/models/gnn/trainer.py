@@ -1022,7 +1022,17 @@ class Trainer:
                             ckpt_n,
                             cur_n,
                         )
-                optimizer.load_state_dict(ckpt["optimizer_state"])
+                try:
+                    optimizer.load_state_dict(ckpt["optimizer_state"])
+                except ValueError:
+                    # Architecture changed since checkpoint (e.g. new heads added
+                    # in Phase 41 — return_pred_head). Optimizer parameter groups
+                    # no longer match. Start optimizer fresh; model weights already
+                    # loaded above so training continues correctly.
+                    log.warning(
+                        "Optimizer state mismatch (architecture change) — "
+                        "starting optimizer fresh. Model weights loaded OK."
+                    )
                 if self._log_vars is not None and "log_vars" in ckpt:
                     for k, v in ckpt["log_vars"].items():
                         if k in self._log_vars:
