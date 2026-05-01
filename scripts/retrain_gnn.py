@@ -415,6 +415,7 @@ def main() -> None:
         tbl.add_column("contrastive", justify="right")
         tbl.add_column("value", justify="right")
         tbl.add_column("return", justify="right")
+        _ret_hist = history.get("return", [])
         for i in range(len(history["total"])):
             tbl.add_row(
                 str(i + 1),
@@ -423,7 +424,7 @@ def main() -> None:
                 f"{history['time_delta'][i]:.4f}",
                 f"{history['contrastive'][i]:.4f}",
                 f"{history['value'][i]:.4f}",
-                f"{history['return'][i]:.4f}" if "return" in history else "—",
+                f"{_ret_hist[i]:.4f}" if i < len(_ret_hist) else "—",
             )
         console.print(tbl)
 
