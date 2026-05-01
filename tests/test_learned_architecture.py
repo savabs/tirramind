@@ -247,6 +247,7 @@ class TestGNNLossAutoTuning:
             "time_delta",
             "contrastive",
             "value",
+            "return",
         }
         for p in trainer._log_vars.values():
             assert isinstance(p, torch.nn.Parameter)
@@ -267,6 +268,7 @@ class TestGNNLossAutoTuning:
                 mock_model.parameters.return_value = [
                     torch.nn.Parameter(torch.zeros(1))
                 ]
+                mock_model.to.return_value = mock_model  # .to(device) must return self
                 MockHetTGN.return_value = mock_model
                 trainer.build_model()
 

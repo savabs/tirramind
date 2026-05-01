@@ -99,6 +99,38 @@ class InjectedPattern:
     lag_jitter: float = 600.0
 
 
+# ═══════════════════════════════════════════════════════════════
+# ListNet ranking loss (Phase 41b)
+# ═══════════════════════════════════════════════════════════════
+
+
+def _listnet_loss(
+    scores: torch.Tensor, targets: torch.Tensor, tau: float = 1.0
+) -> torch.Tensor:
+    """ListNet top-1 approximation (Cao et al. 2007, ICML).
+
+    Minimises KL(p_target || p_pred) where p = softmax(x / tau).
+    Directly optimises cross-sectional rank ordering (IC metric),
+    unlike Huber/MSE which minimise absolute prediction error and
+    allow IC=0 (predict-the-mean) as a valid optimum.
+
+    Args:
+        scores:  Model predicted scores, shape (N,).  N must be >= 2.
+        targets: Realised returns (or any continuous ranking target), shape (N,).
+        tau:     Softmax temperature. 1.0 = standard; lower = harder ranking.
+
+    Returns:
+        Scalar loss tensor (non-negative).
+
+    Reference:
+        Cao et al. 2007 "Learning to Rank: From Pairwise Approach to
+        Listwise Approach" — top-1 probability formulation, ICML.
+    """
+    p_target = F.softmax(targets / tau, dim=0)
+    log_p_pred = F.log_softmax(scores / tau, dim=0)
+    return -(p_target * log_p_pred).sum()
+
+
 class SyntheticGraphGenerator:
     """Generate synthetic entity graphs with known temporal patterns.
 
@@ -569,6 +601,16 @@ class TrainerConfig:
     """Weight for the instrument log_return auxiliary loss (Phase 41).
     Higher than value_weight because this is the primary financial signal
     we want the embedding to encode. Set to 0.0 to disable."""
+    use_listnet_return_loss: bool = False
+    """When True, replace Huber return loss with ListNet cross-entropy ranking
+    loss (Cao et al. 2007, ICML).  Requires >= 2 instrument observations per
+    window; windows with < 2 finite-return instruments are skipped for the
+    return loss.  Directly optimises cross-sectional IC (Spearman rank
+    correlation) rather than minimising absolute prediction error."""
+    listnet_temperature: float = 1.0
+    """Softmax temperature tau for ListNet.  Higher = softer target distribution
+    (less peaked on best instrument).  1.0 is standard; lower values approach
+    hard argmax ranking.  Has no effect when use_listnet_return_loss=False."""
     gdelt_subsample_frac: float = 1.0
     """Fraction of geopolitical_event observations to keep during training.
     GDELT makes up ~92% of the DB (901K rows) and causes OOM during snapshot
@@ -1334,7 +1376,11 @@ class Trainer:
                 # outlier predictions, replacing the raw MSE that caused spikes.
                 dt_loss = torch.tensor(0.0, device=self._device)
                 if target_embs:
-                    dt_pred = model.time_delta_head(target_emb_tensor).squeeze(-1).clamp(-20.0, 20.0)
+                    dt_pred = (
+                        model.time_delta_head(target_emb_tensor)
+                        .squeeze(-1)
+                        .clamp(-20.0, 20.0)
+                    )
                     valid_dt = dt_targets[valid_indices]
                     dt_loss = F.huber_loss(dt_pred, valid_dt, delta=1.0)
 
@@ -1387,12 +1433,23 @@ class Trainer:
                         # bad DB rows (stock splits, missing prices, etc.).
                         # A single NaN target propagates through huber_loss →
                         # total loss → backward → all weights become NaN silently.
+                        # ListNet additionally requires >= 2 items to rank;
+                        # a single-item softmax is trivially 1.0 → loss = 0.
                         _finite_mask = torch.isfinite(_ret_tgt_t)
-                        if _finite_mask.any():
+                        _n_valid = int(_finite_mask.sum().item())
+                        _min_required = 2 if cfg.use_listnet_return_loss else 1
+                        if _n_valid >= _min_required:
                             _ret_pred = model.return_pred_head(_ret_emb_t).squeeze(-1)
-                            ret_loss = F.huber_loss(
-                                _ret_pred[_finite_mask], _ret_tgt_t[_finite_mask]
-                            )
+                            if cfg.use_listnet_return_loss:
+                                ret_loss = _listnet_loss(
+                                    _ret_pred[_finite_mask],
+                                    _ret_tgt_t[_finite_mask],
+                                    tau=cfg.listnet_temperature,
+                                )
+                            else:
+                                ret_loss = F.huber_loss(
+                                    _ret_pred[_finite_mask], _ret_tgt_t[_finite_mask]
+                                )
 
                 # ── total loss ───────────────────────────
                 if self._log_vars is not None:

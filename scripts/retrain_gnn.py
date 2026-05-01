@@ -172,6 +172,11 @@ def main() -> None:
         help="Enable Kendall et al. 2018 uncertainty-weighted loss",
     )
     parser.add_argument(
+        "--listnet",
+        action="store_true",
+        help="Use ListNet ranking loss for return head instead of Huber (Phase 41b).",
+    )
+    parser.add_argument(
         "--model-out",
         default=".tirra_pipeline/gnn_model.pt",
         help="Output path for trained model checkpoint",
@@ -363,6 +368,7 @@ def main() -> None:
             epochs=args.epochs,
             window_size=args.window_size,
             auto_tune_loss_weights=args.auto_tune,
+            use_listnet_return_loss=args.listnet,
             obs_since=obs_since,
             device=device,
             checkpoint_dir=args.checkpoint_dir,
