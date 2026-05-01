@@ -205,6 +205,123 @@ class GNNEmbeddingNormStrategy:
         return np.array(fold_ics, dtype=np.float64)
 
 
+class GNNReturnHeadStrategy:
+    """Cross-sectional signal: return_pred_head output for instrument nodes.
+
+    The return head (Phase 41) was directly supervised on log_return targets
+    from instrument_daily observations.  This is the head most likely to carry
+    forward-return IC — it is the only head trained on an explicitly return-
+    labelled objective.
+
+    Parameters: same as GNNEmbeddingNormStrategy.
+    """
+
+    def __init__(
+        self,
+        trainer: Any,
+        dates: list[str],
+        prefetched: list[dict],
+        id_map: Any,
+        links: list[dict],
+        temperature: float = TEMPERATURE,
+    ) -> None:
+        self._trainer = trainer
+        self._dates = dates
+        self._obs = prefetched
+        self._obs_ts = [o["observed_at"] for o in prefetched]
+        self._id_map = id_map
+        self._links = links
+        self._temperature = temperature
+        self._cache: dict[str, np.ndarray] = {}
+
+    @property
+    def name(self) -> str:
+        return "GNN-ReturnHead"
+
+    def generate_weights(
+        self,
+        train_returns: np.ndarray,
+        test_length: int,
+        instrument_names: list[str],
+        *,
+        train_extra: dict | None = None,
+        test_extra: dict | None = None,
+    ) -> np.ndarray:
+        fold_date = self._dates[len(train_returns)]
+        if fold_date not in self._cache:
+            self._cache[fold_date] = self._compute_weights(fold_date, instrument_names)
+        w = self._cache[fold_date]
+        return np.tile(w, (test_length, 1))
+
+    def _compute_weights(
+        self, fold_date: str, instrument_names: list[str]
+    ) -> np.ndarray:
+        import torch
+
+        N = len(instrument_names)
+
+        fold_ts = (
+            datetime.fromisoformat(fold_date).replace(tzinfo=timezone.utc).timestamp()
+        )
+
+        since_ts = fold_ts - GNN_LOOKBACK_DAYS * 86400
+        end_idx = bisect.bisect_left(self._obs_ts, fold_ts)
+        start_idx = bisect.bisect_left(self._obs_ts, since_ts)
+        obs_window = self._obs[start_idx:end_idx]
+
+        if not obs_window:
+            return np.ones(N) / N
+
+        data, id_map, _ = self._trainer._graph_builder.build_from_cached(
+            self._id_map, self._links, observations=obs_window
+        )
+
+        model = self._trainer._model
+        model.eval()
+        with torch.no_grad():
+            embeddings = model(data, id_map)
+            inst_emb = embeddings.get("instrument")
+
+        if inst_emb is None or inst_emb.shape[0] == 0:
+            return np.ones(N) / N
+
+        ret_preds = model.return_pred_head(inst_emb).squeeze(-1)  # (n_inst,)
+
+        scores = np.zeros(N, dtype=np.float64)
+        found = 0
+        for i, eid in enumerate(instrument_names):
+            local_idx = id_map.local_id("instrument", eid)
+            if local_idx is not None:
+                scores[i] = float(ret_preds[local_idx].item())
+                found += 1
+
+        if found == 0:
+            return np.ones(N) / N
+
+        return _softmax(scores, self._temperature)
+
+    def compute_fold_ics(self, dates: list[str], returns: np.ndarray) -> np.ndarray:
+        """Spearman IC per fold using cached return-head scores."""
+        from scipy.stats import spearmanr
+
+        fold_ics: list[float] = []
+        split = MIN_TRAIN
+        while split + TEST_SIZE <= len(dates):
+            fold_date = dates[split]
+            if fold_date not in self._cache:
+                split += STEP_SIZE
+                continue
+            w = self._cache[fold_date]
+            fwd_ret = returns[split : split + TEST_SIZE].mean(axis=0)
+            valid = np.isfinite(w) & np.isfinite(fwd_ret)
+            if valid.sum() >= 5:
+                ic, _ = spearmanr(w[valid], fwd_ret[valid])
+                if np.isfinite(ic):
+                    fold_ics.append(float(ic))
+            split += STEP_SIZE
+        return np.array(fold_ics, dtype=np.float64)
+
+
 class GNNValueHeadStrategy:
     """Cross-sectional signal: value_pred_head output for instrument nodes.
 
@@ -558,6 +675,7 @@ def main() -> None:
             trainer, dates, prefetched_obs, full_id_map, full_links
         ),
         GNNValueHeadStrategy(trainer, dates, prefetched_obs, full_id_map, full_links),
+        GNNReturnHeadStrategy(trainer, dates, prefetched_obs, full_id_map, full_links),
     ]
 
     # ── 7. Walk-forward runner ────────────────────────────────────────────────
