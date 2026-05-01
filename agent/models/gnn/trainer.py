@@ -1075,7 +1075,14 @@ class Trainer:
                 # Backfill any keys added after the checkpoint was saved
                 # (e.g. "return" added in Phase 41).  Without this,
                 # history[k].append() raises KeyError on the first epoch.
-                for _hk in ("total", "obs_type", "time_delta", "contrastive", "value", "return"):
+                for _hk in (
+                    "total",
+                    "obs_type",
+                    "time_delta",
+                    "contrastive",
+                    "value",
+                    "return",
+                ):
                     if _hk not in history:
                         history[_hk] = []
                 start_epoch = cfg.resume_from_epoch
@@ -1320,11 +1327,16 @@ class Trainer:
                             obs_loss = F.cross_entropy(logits, valid_targets)
 
                 # ── time_delta loss ──────────────────────
+                # Targets are log1p(seconds) ≈ 0–14 for weekly windows.
+                # Clamp predictions to [-20, 20] before loss to prevent gradient
+                # explosions when the head outputs large values mid-training.
+                # Huber loss (delta=1.0) further limits gradient magnitude on
+                # outlier predictions, replacing the raw MSE that caused spikes.
                 dt_loss = torch.tensor(0.0, device=self._device)
                 if target_embs:
-                    dt_pred = model.time_delta_head(target_emb_tensor).squeeze(-1)
+                    dt_pred = model.time_delta_head(target_emb_tensor).squeeze(-1).clamp(-20.0, 20.0)
                     valid_dt = dt_targets[valid_indices]
-                    dt_loss = F.mse_loss(dt_pred, valid_dt)
+                    dt_loss = F.huber_loss(dt_pred, valid_dt, delta=1.0)
 
                 # ── value prediction loss ────────────────
                 val_loss = torch.tensor(0.0, device=self._device)
