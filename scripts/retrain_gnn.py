@@ -406,6 +406,11 @@ def main() -> None:
 
         console.print(f"\n[bold green]Training complete![/] ({elapsed:.1f}s)")
 
+        # ── Save immediately after training (before any display that could crash) ──
+        model_out.parent.mkdir(parents=True, exist_ok=True)
+        trainer.save_model(str(model_out))
+        console.print(f"\n[green]Model saved → {model_out}[/]")
+
         # Print loss curve
         tbl = Table(title="Loss Curve")
         tbl.add_column("Epoch", justify="right")
@@ -445,11 +450,6 @@ def main() -> None:
             console.print("\n[dim]Evaluating on test split...[/]")
             test_metrics = evaluate(trainer.model, store, config, split="test")
             _print_eval_results(test_metrics, "test")
-
-        # ── Save ──
-        model_out.parent.mkdir(parents=True, exist_ok=True)
-        trainer.save_model(str(model_out))
-        console.print(f"\n[green]Model saved → {model_out}[/]")
 
         # Final summary
         console.print(f"\n[bold cyan]═══ Summary ═══[/]")
