@@ -13,14 +13,11 @@ Covers:
 from __future__ import annotations
 
 import math
-import tempfile
 from pathlib import Path
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
-
 
 # ═══════════════════════════════════════════════════════════════
 # WorldModelGraph.remove_edge / has_edge
@@ -338,9 +335,9 @@ class TestRefineStructure:
             removed = {tuple(e) for e in result["edges_removed"]}
             # At minimum, no regime constraint should be violated
             for parent, child in added:
-                assert not child.startswith(
-                    "regime."
-                ), f"Constraint violation: added edge to regime node: {parent}→{child}"
+                assert not child.startswith("regime."), (
+                    f"Constraint violation: added edge to regime node: {parent}→{child}"
+                )
 
     def test_no_change_returns_unrefined(self):
         """If data matches current graph perfectly, no changes expected."""
@@ -372,9 +369,7 @@ class TestRefineStructure:
         # Check all nodes respect max_indegree
         for spec in wm._graph.node_specs.values():
             parents = wm._graph.get_parents(spec.name)
-            assert (
-                len(parents) <= 4
-            ), (  # 4 is the hard limit from hc, 2 was the test param
+            assert len(parents) <= 4, (  # 4 is the hard limit from hc, 2 was the test param
                 f"Node {spec.name} has {len(parents)} parents: {parents}"
             )
 
@@ -476,9 +471,9 @@ class TestRefineStructureConstraints:
             parents = wm._graph.get_parents(r)
             for p in parents:
                 p_spec = wm._graph.get_node(p)
-                assert (
-                    p_spec.node_type == "regime"
-                ), f"Regime node {r} has non-regime parent {p} (type={p_spec.node_type})"
+                assert p_spec.node_type == "regime", (
+                    f"Regime node {r} has non-regime parent {p} (type={p_spec.node_type})"
+                )
 
     def test_observed_cannot_parent_latent(self):
         """No observed→latent edge should be added."""
@@ -491,9 +486,7 @@ class TestRefineStructureConstraints:
             for parent, child in result["edges_added"]:
                 if child in latent_names:
                     parent_spec = wm._graph.get_node(parent)
-                    assert (
-                        parent_spec.node_type != "observed"
-                    ), f"Observed→latent edge added: {parent}→{child}"
+                    assert parent_spec.node_type != "observed", f"Observed→latent edge added: {parent}→{child}"
 
     def test_no_self_loops(self):
         """No self-loops after refinement."""
@@ -669,11 +662,7 @@ class TestSyntheticStructureRecovery:
 
         # After refinement, check if we see evidence of the A→B or B→C dependencies.
         current_edges = set(wm._graph.edges)
-        obs_edges = {
-            (p, c)
-            for p, c in current_edges
-            if p.startswith("obs.") and c.startswith("obs.")
-        }
+        obs_edges = {(p, c) for p, c in current_edges if p.startswith("obs.") and c.startswith("obs.")}
 
         # We should see at least one obs→obs edge discovered
         # (structure learning should add B→C or A→B or A→C at minimum)
@@ -693,8 +682,7 @@ class TestSyntheticStructureRecovery:
         # Loose check: D shouldn't have > 2 connections
         total_connections = len(d_parents) + len(d_children)
         assert total_connections <= 3, (
-            f"Independent node obs.D got {total_connections} connections: "
-            f"parents={d_parents}, children={d_children}"
+            f"Independent node obs.D got {total_connections} connections: parents={d_parents}, children={d_children}"
         )
 
 
@@ -807,9 +795,7 @@ class TestLearnedEdgePersistence:
         )
 
         store = self._make_store(tmp_path)
-        store.store_data(
-            _LEARNED_EDGES_SOURCE, {"as_of": 1.0}, {"edges": [["A"], ["B", "C", "D"]]}
-        )
+        store.store_data(_LEARNED_EDGES_SOURCE, {"as_of": 1.0}, {"edges": [["A"], ["B", "C", "D"]]})
         result = _load_learned_edges(store)
         # Should return None because unpacking fails
         assert result is None
@@ -826,9 +812,7 @@ class TestLearnedEdgePersistence:
         store = self._make_store(tmp_path)
         edges = [("A", "B"), ("C", "D")]
         refine_result = {"edges_added": [["C", "D"]], "edges_removed": []}
-        _persist_learned_edges(
-            store, edges, as_of=1_700_000_000.0, refine_result=refine_result
-        )
+        _persist_learned_edges(store, edges, as_of=1_700_000_000.0, refine_result=refine_result)
 
         rows = store.query_data(_LEARNED_EDGES_SOURCE, limit=1)
         assert len(rows) == 1
@@ -896,8 +880,8 @@ class TestLearnedEdgePersistence:
 
     def test_build_with_learned_edges_removes(self):
         """Pass a subset of expert edges → edges are removed."""
-        from agent.pipeline.dags.world_model_update import _build_world_model
         from agent.models.initial_graph import ALL_EDGES
+        from agent.pipeline.dags.world_model_update import _build_world_model
 
         # Remove the last 3 expert edges
         subset = [(p, c) for p, c in ALL_EDGES[:-3]]
@@ -906,8 +890,8 @@ class TestLearnedEdgePersistence:
 
     def test_build_with_learned_edges_adds(self):
         """Pass expert edges + a new valid edge → edge is added."""
-        from agent.pipeline.dags.world_model_update import _build_world_model
         from agent.models.initial_graph import ALL_EDGES, ALL_NODES
+        from agent.pipeline.dags.world_model_update import _build_world_model
 
         # Find two nodes not currently connected
         existing = set(ALL_EDGES)
@@ -928,8 +912,8 @@ class TestLearnedEdgePersistence:
 
     def test_build_with_invalid_node_ignores(self):
         """Learned edges referencing nonexistent nodes are silently ignored."""
-        from agent.pipeline.dags.world_model_update import _build_world_model
         from agent.models.initial_graph import ALL_EDGES
+        from agent.pipeline.dags.world_model_update import _build_world_model
 
         learned = list(ALL_EDGES) + [("FAKE_NODE", "obs.dummy")]
         wm = _build_world_model(learned_edges=learned)
@@ -938,8 +922,8 @@ class TestLearnedEdgePersistence:
 
     def test_build_with_cycle_edge_warns_and_skips(self):
         """If the learned set introduces a cycle, the edge is skipped."""
-        from agent.pipeline.dags.world_model_update import _build_world_model
         from agent.models.initial_graph import ALL_EDGES
+        from agent.pipeline.dags.world_model_update import _build_world_model
 
         # Try adding an edge that would create a cycle:
         # If A→B exists, try B→A
@@ -947,19 +931,17 @@ class TestLearnedEdgePersistence:
         cyclic = list(ALL_EDGES) + [(child, parent)]
         wm = _build_world_model(learned_edges=cyclic)
         # Cycle edge should have been skipped
-        assert not wm._graph.has_edge(child, parent) or wm._graph.has_edge(
-            parent, child
-        )
+        assert not wm._graph.has_edge(child, parent) or wm._graph.has_edge(parent, child)
 
     # ── Full DAG integration: run_world_model_update picks up persisted edges
 
     def test_run_uses_persisted_edges(self, tmp_path):
         """run_world_model_update loads persisted edges and applies them."""
+        from agent.models.initial_graph import ALL_EDGES
         from agent.pipeline.dags.world_model_update import (
             _LEARNED_EDGES_SOURCE,
             run_world_model_update,
         )
-        from agent.models.initial_graph import ALL_EDGES
         from agent.pipeline.store import PipelineStore
 
         db_path = str(tmp_path / "integration.db")
@@ -1017,21 +999,23 @@ class TestLearnedEdgePersistence:
             original_edges = list(wm._graph.edges)
             new_edge = ("obs.rate_momentum", "obs.liquidity_pressure")
             patched_edges = original_edges + [new_edge]
-            with patch.object(
-                type(wm._graph),
-                "edges",
-                new_callable=lambda: property(lambda self: patched_edges),
-            ):
-                with patch(
+            with (
+                patch.object(
+                    type(wm._graph),
+                    "edges",
+                    new_callable=lambda: property(lambda self: patched_edges),
+                ),
+                patch(
                     "agent.pipeline.dags.world_model_update._load_feature_history",
                     return_value=[[] for _ in range(300)],
-                ):
-                    _maybe_refine_structure(
-                        store,
-                        wm,
-                        1_700_000_000.0,
-                        structure_fit_interval_days=0,
-                    )
+                ),
+            ):
+                _maybe_refine_structure(
+                    store,
+                    wm,
+                    1_700_000_000.0,
+                    structure_fit_interval_days=0,
+                )
 
         # Now load learned edges — should reflect the persisted state
         loaded = _load_learned_edges(store)

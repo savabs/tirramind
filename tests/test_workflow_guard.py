@@ -84,18 +84,12 @@ class TestValidatePreflight:
         """A valid task with existing research and spec should satisfy preflight."""
         (tmp_path / "docs" / "research").mkdir(parents=True)
         (tmp_path / "docs" / "specs").mkdir(parents=True)
-        (tmp_path / "docs" / "research" / "feature.md").write_text(
-            "# Feature\n", encoding="utf-8"
-        )
-        (tmp_path / "docs" / "specs" / "feature_spec.md").write_text(
-            "# Spec\n", encoding="utf-8"
-        )
+        (tmp_path / "docs" / "research" / "feature.md").write_text("# Feature\n", encoding="utf-8")
+        (tmp_path / "docs" / "specs" / "feature_spec.md").write_text("# Spec\n", encoding="utf-8")
         task_file = _write_task(
             tmp_path,
             "feature.md",
-            "# Task: feature\n\nStatus: active\n"
-            "Research: docs/research/feature.md\n"
-            "Spec: docs/specs/feature_spec.md\n",
+            "# Task: feature\n\nStatus: active\nResearch: docs/research/feature.md\nSpec: docs/specs/feature_spec.md\n",
         )
 
         errors = validate_preflight(

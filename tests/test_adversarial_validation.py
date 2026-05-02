@@ -7,8 +7,6 @@ on synthetic data, and does NOT flag clean data (false positive control).
 from __future__ import annotations
 
 import numpy as np
-import pytest
-from scipy.stats import norm
 
 from agent.adversarial.config import (
     AdversarialConfig,
@@ -253,9 +251,7 @@ class TestCleanDataNoFlags:
 
         # Clean signals: stable Sharpe
         n = 200
-        signal_returns = {
-            f"sig_{i}": 0.01 + 0.005 * rng.standard_normal(n) for i in range(3)
-        }
+        signal_returns = {f"sig_{i}": 0.01 + 0.005 * rng.standard_normal(n) for i in range(3)}
 
         # Clean market: symmetric random walk
         market_returns = 0.001 * rng.standard_normal(n)
@@ -345,9 +341,7 @@ class TestFullScannerIntegration:
         rng = np.random.default_rng(42)
 
         # 10 signals
-        sig_returns = {
-            f"sig_{i}": 0.01 + 0.01 * rng.standard_normal(200) for i in range(10)
-        }
+        sig_returns = {f"sig_{i}": 0.01 + 0.01 * rng.standard_normal(200) for i in range(10)}
 
         flags = scanner.scan(
             signal_returns=sig_returns,

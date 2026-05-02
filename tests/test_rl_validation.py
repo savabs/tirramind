@@ -40,12 +40,9 @@ Trusted sources:
 from __future__ import annotations
 
 import time
-from dataclasses import replace
-from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
-import torch
 
 from agent.fusion.alert import EntityAlert
 from agent.learning.policy.config import (
@@ -62,7 +59,6 @@ from agent.learning.policy.state_assembler import StateAssembler
 from agent.learning.policy.weight_learner import SurpriseWeightLearner
 from agent.models.belief import BeliefState
 from agent.quant.backtest import WalkForward
-
 
 # ── Synthetic data generation ────────────────────────────────
 
@@ -154,9 +150,7 @@ def generate_signal_data(
     # r_{t+1} depends on s_t, so shift by 1
     noise = rng.normal(0, noise_std, T)
     returns = np.zeros(T)
-    returns[1:] = (
-        signal_strength * signal[:-1] / signal[:-1].std() * noise_std + noise[1:]
-    )
+    returns[1:] = signal_strength * signal[:-1] / signal[:-1].std() * noise_std + noise[1:]
 
     entity_ids = [f"ent_{i}" for i in range(n_entities)]
     asset_map = {eid: f"TICK{i}" for i, eid in enumerate(entity_ids)}
@@ -173,9 +167,7 @@ def generate_signal_data(
         for i, eid in enumerate(entity_ids):
             # Each entity gets the same surprise (simplified for test)
             step_alerts.append(_make_entity_alert(eid, surprise_matrix[t], t=float(t)))
-            step_beliefs.append(
-                _make_belief(eid, mean=rolling_ret, variance=noise_std**2)
-            )
+            step_beliefs.append(_make_belief(eid, mean=rolling_ret, variance=noise_std**2))
         alerts_per_step.append(step_alerts)
         beliefs_per_step.append(step_beliefs)
 
@@ -231,9 +223,7 @@ def generate_noise_data(
             step_beliefs.append(_make_belief(eid))
         alerts_per_step.append(step_alerts)
         beliefs_per_step.append(step_beliefs)
-        market_features.append(
-            {"rolling_return": 0.0, "volatility": noise_std, "regime": 0.0}
-        )
+        market_features.append({"rolling_return": 0.0, "volatility": noise_std, "regime": 0.0})
 
     return {
         "surprise_matrix": surprise_matrix,
@@ -346,8 +336,7 @@ class TestWeightLearnerConvergence:
 
         dist = np.linalg.norm(learned - default)
         assert dist > 0.01, (
-            f"Learned weights {learned} too close to default {default}, "
-            f"L2 distance = {dist:.6f} (expected > 0.01)"
+            f"Learned weights {learned} too close to default {default}, L2 distance = {dist:.6f} (expected > 0.01)"
         )
 
     def test_learned_weights_correlate_with_true_signal(self, signal_data):
@@ -374,19 +363,14 @@ class TestWeightLearnerConvergence:
         w_true_norm = w_true / w_true.sum()  # normalise to simplex for comparison
 
         # Cosine similarity of learned weights with true signal direction
-        cos_learned = np.dot(learned, w_true_norm) / (
-            np.linalg.norm(learned) * np.linalg.norm(w_true_norm)
-        )
+        cos_learned = np.dot(learned, w_true_norm) / (np.linalg.norm(learned) * np.linalg.norm(w_true_norm))
 
         # Uniform baseline
         w_uniform = np.ones(5) / 5
-        cos_uniform = np.dot(w_uniform, w_true_norm) / (
-            np.linalg.norm(w_uniform) * np.linalg.norm(w_true_norm)
-        )
+        cos_uniform = np.dot(w_uniform, w_true_norm) / (np.linalg.norm(w_uniform) * np.linalg.norm(w_true_norm))
 
         assert cos_learned >= cos_uniform - 0.05, (
-            f"Learned cosine sim {cos_learned:.4f} should be >= uniform "
-            f"{cos_uniform:.4f} - 0.05 tolerance"
+            f"Learned cosine sim {cos_learned:.4f} should be >= uniform {cos_uniform:.4f} - 0.05 tolerance"
         )
 
 
@@ -452,8 +436,7 @@ class TestWeightedSurpriseWalkForward:
         )
 
         assert len(result.folds) >= 2, (
-            f"Expected >= 2 folds with T={len(signal_data['returns'])}, "
-            f"got {len(result.folds)}"
+            f"Expected >= 2 folds with T={len(signal_data['returns'])}, got {len(result.folds)}"
         )
 
 
@@ -484,9 +467,7 @@ class TestSACTraining:
         asset_map = data["asset_map"]
         state_dim = assembler.state_dim
         action_dim = len(asset_map)
-        buffer = ReplayBuffer(
-            capacity=n_steps, state_dim=state_dim, action_dim=action_dim
-        )
+        buffer = ReplayBuffer(capacity=n_steps, state_dim=state_dim, action_dim=action_dim)
 
         rng = np.random.default_rng(42)
 
@@ -557,10 +538,7 @@ class TestSACTraining:
 
         # Critic loss should decrease (or at minimum not explode)
         assert np.isfinite(mean_late), f"Late critic loss is not finite: {mean_late}"
-        assert mean_late < mean_early * 5, (
-            f"Critic loss did not decrease: early={mean_early:.4f}, "
-            f"late={mean_late:.4f}"
-        )
+        assert mean_late < mean_early * 5, f"Critic loss did not decrease: early={mean_early:.4f}, late={mean_late:.4f}"
 
     def test_sac_produces_different_actions_per_state(self, signal_data):
         """Policy should produce state-dependent actions, not constant output.
@@ -596,10 +574,7 @@ class TestSACTraining:
         # Actions should not all be identical
         actions_array = np.stack(actions)
         variance = actions_array.var(axis=0).mean()
-        assert variance > 1e-8, (
-            f"All actions are identical (variance={variance:.2e}). "
-            f"Policy appears degenerate."
-        )
+        assert variance > 1e-8, f"All actions are identical (variance={variance:.2e}). Policy appears degenerate."
 
 
 # ── Test 4: SACPortfolioStrategy Walk-Forward ────────────────
@@ -635,9 +610,7 @@ class TestSACWalkForward:
                 asset_map,
             )
             a = rng.uniform(-1, 1, size=action_dim).astype(np.float32)
-            buffer.push(
-                s.numpy(), a, float(signal_data["returns"][t + 1]), s2.numpy(), False
-            )
+            buffer.push(s.numpy(), a, float(signal_data["returns"][t + 1]), s2.numpy(), False)
 
         for _ in range(100):
             trainer.update(buffer)
@@ -718,8 +691,7 @@ class TestNoiseRejection:
         sharpe = result.aggregate_metrics["sharpe"]
         assert np.isfinite(sharpe), f"Sharpe on noise is {sharpe}"
         assert abs(sharpe) < 3.0, (
-            f"WeightedSurprise Sharpe on noise = {sharpe:.2f}, "
-            f"suspiciously high (|Sharpe| < 3.0 expected under null)"
+            f"WeightedSurprise Sharpe on noise = {sharpe:.2f}, suspiciously high (|Sharpe| < 3.0 expected under null)"
         )
 
     def test_sac_on_noise(self, noise_data):
@@ -753,9 +725,7 @@ class TestNoiseRejection:
                 asset_map,
             )
             a = rng.uniform(-1, 1, size=action_dim).astype(np.float32)
-            buffer.push(
-                s.numpy(), a, float(noise_data["returns"][t + 1]), s2.numpy(), False
-            )
+            buffer.push(s.numpy(), a, float(noise_data["returns"][t + 1]), s2.numpy(), False)
 
         for _ in range(50):
             trainer.update(buffer)
@@ -777,8 +747,7 @@ class TestNoiseRejection:
         sharpe = result.aggregate_metrics["sharpe"]
         assert np.isfinite(sharpe), f"SAC Sharpe on noise is {sharpe}"
         assert abs(sharpe) < 3.0, (
-            f"SAC Sharpe on noise = {sharpe:.2f}, "
-            f"suspiciously high (|Sharpe| < 3.0 expected under null)"
+            f"SAC Sharpe on noise = {sharpe:.2f}, suspiciously high (|Sharpe| < 3.0 expected under null)"
         )
 
 
@@ -826,9 +795,7 @@ class TestSignalDiscrimination:
                 asset_map,
             )
             a = rng.uniform(-1, 1, size=action_dim).astype(np.float32)
-            buffer.push(
-                s.numpy(), a, float(signal_data["returns"][t + 1]), s2.numpy(), False
-            )
+            buffer.push(s.numpy(), a, float(signal_data["returns"][t + 1]), s2.numpy(), False)
 
         for _ in range(150):
             trainer.update(buffer)
@@ -854,10 +821,7 @@ class TestSignalDiscrimination:
         # SAC should produce positive Sharpe on signal-rich data.
         # With brief training and random exploration data, the policy
         # captures some signal via non-zero mean position weights.
-        assert sac_sharpe > -1.0, (
-            f"SAC Sharpe {sac_sharpe:.2f} is catastrophically negative "
-            f"on signal-rich data"
-        )
+        assert sac_sharpe > -1.0, f"SAC Sharpe {sac_sharpe:.2f} is catastrophically negative on signal-rich data"
 
 
 # ── Test 7: End-to-End Pipeline Smoke Test ────────────────────
@@ -939,9 +903,7 @@ class TestEndToEndPipeline:
                 asset_map,
             )
             a = rng.uniform(-1, 1, size=action_dim).astype(np.float32)
-            buffer.push(
-                s.numpy(), a, float(signal_data["returns"][t + 1]), s2.numpy(), False
-            )
+            buffer.push(s.numpy(), a, float(signal_data["returns"][t + 1]), s2.numpy(), False)
 
         for _ in range(100):
             trainer.update(buffer)
@@ -1082,9 +1044,7 @@ class TestValidationEdgeCases:
         sharpe = result.aggregate_metrics["sharpe"]
         assert np.isfinite(sharpe)
         # High noise should prevent large positive Sharpe
-        assert (
-            abs(sharpe) < 5.0
-        ), f"Sharpe = {sharpe:.2f} is suspiciously large for high-noise data"
+        assert abs(sharpe) < 5.0, f"Sharpe = {sharpe:.2f} is suspiciously large for high-noise data"
 
     def test_short_data_still_works(self):
         """Pipeline handles short but sufficient data (>= min_train + test_size)."""

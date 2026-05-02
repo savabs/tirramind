@@ -18,7 +18,6 @@ import pytest
 from agent.models.gnn.integration import (
     AutoPatternDetector,
     compare_patterns,
-    compute_diagnostics,
     format_diagnostic_report,
     retrain_and_discover,
     run_diagnostics,
@@ -31,7 +30,6 @@ from agent.models.gnn.trainer import (
 )
 from agent.pipeline.entity import entity_id_from_key
 from agent.pipeline.store import PipelineStore
-
 
 # ─── Fixtures ─────────────────────────────────────────────────
 
@@ -292,9 +290,7 @@ class TestRetrainAndDiscover:
 
 class TestIntegrationEdgeCases:
     def test_single_entity_store(self, store):
-        eid = store.register_entity(
-            "company", "solo", entity_id_from_key("company", "solo")
-        )
+        eid = store.register_entity("company", "solo", entity_id_from_key("company", "solo"))
         store.store_entity_observation(eid, "test", 100.0, "insider_trade", {"v": 1})
         store.store_entity_observation(eid, "test", 200.0, "insider_trade", {"v": 2})
         cfg = TrainerConfig(
@@ -306,9 +302,7 @@ class TestIntegrationEdgeCases:
             epochs=1,
             window_size=50.0,
         )
-        rules = retrain_and_discover(
-            store, cfg, score_threshold=0.0, include_diagnostics=False
-        )
+        rules = retrain_and_discover(store, cfg, score_threshold=0.0, include_diagnostics=False)
         # No links → no patterns to crystallize
         assert rules["patterns"] == []
 
@@ -448,14 +442,8 @@ class TestFormatDiagnosticReport:
 
     def test_values_preserved(self, sample_diagnostics):
         report = format_diagnostic_report(sample_diagnostics)
-        assert (
-            report["entity_density"]["values"]
-            == sample_diagnostics["entity_type_density"]
-        )
-        assert (
-            report["observation_density"]["values"]
-            == sample_diagnostics["observation_density"]
-        )
+        assert report["entity_density"]["values"] == sample_diagnostics["entity_type_density"]
+        assert report["observation_density"]["values"] == sample_diagnostics["observation_density"]
 
     def test_no_supervised_confidence(self):
         diag = {
@@ -718,7 +706,5 @@ class TestRunDiagnostics:
             epochs=2,
             window_size=86400.0 * 2,
         )
-        result = run_diagnostics(
-            str(db_file), config=cfg, finetune=True, finetune_epochs=1
-        )
+        result = run_diagnostics(str(db_file), config=cfg, finetune=True, finetune_epochs=1)
         assert result["status"] == "ok"

@@ -10,8 +10,13 @@ Covers:
 from __future__ import annotations
 
 import math
+
+# Import backfill machinery — the script adds project root to sys.path
+# when run standalone; for tests, it's already importable.
+import sys
 from datetime import date, datetime
-from unittest.mock import MagicMock, patch
+from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -21,11 +26,6 @@ import torch
 from agent.pipeline.entity import entity_id_from_key
 from agent.pipeline.store import PipelineStore
 
-# Import backfill machinery — the script adds project root to sys.path
-# when run standalone; for tests, it's already importable.
-import sys
-from pathlib import Path
-
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 from backfill_instruments import (
@@ -34,8 +34,7 @@ from backfill_instruments import (
     backfill,
 )
 
-from agent.tools.instrument_universe import InstrumentDef, tradeable_instruments
-
+from agent.tools.instrument_universe import InstrumentDef
 
 # ── Helpers ───────────────────────────────────────────────────
 
@@ -140,17 +139,15 @@ class TestBackfillBasic:
     ) -> dict:
         """Helper: run backfill with given data."""
         if instruments is None:
-            instruments = [
-                InstrumentDef(t, f"Test {t}", "equity_etf", "US") for t in ticker_data
-            ]
+            instruments = [InstrumentDef(t, f"Test {t}", "equity_etf", "US") for t in ticker_data]
 
         batch_df = _make_batch_df(ticker_data, force_multi=force_multi)
 
-        with patch(
-            "backfill_instruments.tradeable_instruments", return_value=instruments
+        with (
+            patch("backfill_instruments.tradeable_instruments", return_value=instruments),
+            patch("yfinance.download", return_value=batch_df),
         ):
-            with patch("yfinance.download", return_value=batch_df):
-                result = backfill(db_path=db_path, years=2, dry_run=dry_run)
+            result = backfill(db_path=db_path, years=2, dry_run=dry_run)
 
         return result
 
@@ -167,9 +164,7 @@ class TestBackfillBasic:
         # Check entity was registered
         store = PipelineStore(db)
         eid = entity_id_from_key("instrument", "SPY")
-        obs = store.query_entity_observations(
-            eid, source_tool="instrument_universe", limit=1000
-        )
+        obs = store.query_entity_observations(eid, source_tool="instrument_universe", limit=1000)
         assert len(obs) > 0
         store.close()
 
@@ -191,9 +186,7 @@ class TestBackfillBasic:
 
         store = PipelineStore(db)
         eid = entity_id_from_key("instrument", "SPY")
-        obs = store.query_entity_observations(
-            eid, source_tool="instrument_universe", limit=1000
-        )
+        obs = store.query_entity_observations(eid, source_tool="instrument_universe", limit=1000)
         store.close()
 
         obs_types = {o["observation_type"] for o in obs}
@@ -209,9 +202,7 @@ class TestBackfillBasic:
 
         store = PipelineStore(db)
         eid = entity_id_from_key("instrument", "SPY")
-        obs = store.query_entity_observations(
-            eid, source_tool="instrument_universe", limit=1000
-        )
+        obs = store.query_entity_observations(eid, source_tool="instrument_universe", limit=1000)
         store.close()
 
         # Count return observations
@@ -241,9 +232,7 @@ class TestBackfillBasic:
 
         store = PipelineStore(db)
         eid = entity_id_from_key("instrument", "SPY")
-        obs = store.query_entity_observations(
-            eid, source_tool="instrument_universe", limit=1000
-        )
+        obs = store.query_entity_observations(eid, source_tool="instrument_universe", limit=1000)
         store.close()
 
         return_obs = sorted(
@@ -268,9 +257,7 @@ class TestBackfillBasic:
 
         store = PipelineStore(db)
         eid = entity_id_from_key("instrument", "SPY")
-        obs = store.query_entity_observations(
-            eid, source_tool="instrument_universe", limit=1000
-        )
+        obs = store.query_entity_observations(eid, source_tool="instrument_universe", limit=1000)
         store.close()
 
         vol_obs = [o for o in obs if o["observation_type"] == "instrument_volatility"]
@@ -292,12 +279,12 @@ class TestBackfillIdempotency:
         instruments = [InstrumentDef("SPY", "S&P 500", "equity_etf", "US")]
         batch_df = _make_batch_df({"SPY": df})
 
-        with patch(
-            "backfill_instruments.tradeable_instruments", return_value=instruments
+        with (
+            patch("backfill_instruments.tradeable_instruments", return_value=instruments),
+            patch("yfinance.download", return_value=batch_df),
         ):
-            with patch("yfinance.download", return_value=batch_df):
-                r1 = backfill(db_path=db, years=2)
-                r2 = backfill(db_path=db, years=2)
+            r1 = backfill(db_path=db, years=2)
+            r2 = backfill(db_path=db, years=2)
 
         assert r1["observations_stored"] > 0
         assert r2["days_skipped"] == 10
@@ -314,9 +301,7 @@ class TestBackfillIdempotency:
         df_partial = _make_ohlcv_series(n_days=5, seed=42)
         batch_partial = _make_batch_df({"SPY": df_partial})
 
-        with patch(
-            "backfill_instruments.tradeable_instruments", return_value=instruments
-        ):
+        with patch("backfill_instruments.tradeable_instruments", return_value=instruments):
             with patch("yfinance.download", return_value=batch_partial):
                 r1 = backfill(db_path=db, years=2)
 
@@ -335,11 +320,11 @@ class TestBackfillEdgeCases:
         instruments = [InstrumentDef("SPY", "S&P 500", "equity_etf", "US")]
         batch_df = _make_batch_df({"SPY": df})
 
-        with patch(
-            "backfill_instruments.tradeable_instruments", return_value=instruments
+        with (
+            patch("backfill_instruments.tradeable_instruments", return_value=instruments),
+            patch("yfinance.download", return_value=batch_df),
         ):
-            with patch("yfinance.download", return_value=batch_df):
-                result = backfill(db_path="fake.db", years=2, dry_run=True)
+            result = backfill(db_path="fake.db", years=2, dry_run=True)
 
         # Dry run still counts obs but doesn't write
         assert result["observations_stored"] > 0
@@ -348,11 +333,11 @@ class TestBackfillEdgeCases:
         instruments = [InstrumentDef("SPY", "S&P 500", "equity_etf", "US")]
         empty_df = pd.DataFrame()
 
-        with patch(
-            "backfill_instruments.tradeable_instruments", return_value=instruments
+        with (
+            patch("backfill_instruments.tradeable_instruments", return_value=instruments),
+            patch("yfinance.download", return_value=empty_df),
         ):
-            with patch("yfinance.download", return_value=empty_df):
-                result = backfill(db_path="fake.db", years=2, dry_run=True)
+            result = backfill(db_path="fake.db", years=2, dry_run=True)
 
         assert result["instruments"] == 0
         assert result["observations_stored"] == 0
@@ -369,11 +354,11 @@ class TestBackfillEdgeCases:
         # even though only SPY has data
         batch_df = _make_batch_df({"SPY": df}, force_multi=True)
 
-        with patch(
-            "backfill_instruments.tradeable_instruments", return_value=instruments
+        with (
+            patch("backfill_instruments.tradeable_instruments", return_value=instruments),
+            patch("yfinance.download", return_value=batch_df),
         ):
-            with patch("yfinance.download", return_value=batch_df):
-                result = backfill(db_path=db, years=2)
+            result = backfill(db_path=db, years=2)
 
         assert result["instruments"] == 1
         assert result["instruments_failed"] == 1
@@ -523,9 +508,7 @@ class TestGNNTrainingWithInstruments:
         # Average of first 5 > average of last 5 = loss decreased
         first_5 = np.mean(total[:5])
         last_5 = np.mean(total[-5:])
-        assert (
-            last_5 < first_5
-        ), f"Loss did not decrease: first_5={first_5:.4f}, last_5={last_5:.4f}"
+        assert last_5 < first_5, f"Loss did not decrease: first_5={first_5:.4f}, last_5={last_5:.4f}"
 
     def test_instrument_embeddings_nonzero(self, instrument_store):
         """After training, instrument node embeddings should be non-zero."""
@@ -584,21 +567,14 @@ class TestGNNTrainingWithInstruments:
         data, id_map, events = builder.build()
 
         # Extract only instrument-related observations
-        instrument_obs = [
-            e for e in events if e.get("observation_type", "").startswith("instrument_")
-        ]
+        instrument_obs = [e for e in events if e.get("observation_type", "").startswith("instrument_")]
 
         se = SurpriseExtractor()
         surprises = se.extract(model, data, id_map, instrument_obs[-20:])
 
         # Should have at least some instrument surprises
-        instrument_eids = {
-            entity_id_from_key("instrument", t)
-            for t in ["SPY", "QQQ", "GLD", "CL=F", "EURUSD=X"]
-        }
-        instrument_surprises = {
-            eid: s for eid, s in surprises.items() if eid in instrument_eids
-        }
+        instrument_eids = {entity_id_from_key("instrument", t) for t in ["SPY", "QQQ", "GLD", "CL=F", "EURUSD=X"]}
+        instrument_surprises = {eid: s for eid, s in surprises.items() if eid in instrument_eids}
 
         assert len(instrument_surprises) > 0, "No instrument surprises extracted"
 

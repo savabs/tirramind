@@ -23,18 +23,16 @@ import httpx
 import pytest
 
 from agent.tools.patent_filings import (
+    _MAX_RESULTS,
     CPC_CLASSES,
     SIGNAL_CPC,
     VALID_MODES,
     PatentFilingsTool,
-    _CACHE_TTL,
-    _MAX_RESULTS,
     _fetch_assignees,
     _fetch_patents,
     _parse_date,
     _year_range,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -96,7 +94,7 @@ def _mock_http_response(data: dict, status: int = 200) -> httpx.Response:
 
 class TestModeValidation:
     def test_valid_modes(self, tool):
-        assert VALID_MODES == {"search", "trends", "assignee"}
+        assert {"search", "trends", "assignee"} == VALID_MODES
 
     def test_empty_mode(self, tool):
         r = tool.execute(mode="")
@@ -156,9 +154,7 @@ class TestSearchMode:
     @patch("agent.tools.patent_filings._fetch_patents")
     def test_search_with_dates(self, mock_fetch, tool):
         mock_fetch.return_value = _api_response([_patent()])
-        r = tool.execute(
-            mode="search", query="AI", date_from="2024-01-01", date_to="2025-01-01"
-        )
+        r = tool.execute(mode="search", query="AI", date_from="2024-01-01", date_to="2025-01-01")
         assert r.success
 
     @patch("agent.tools.patent_filings._fetch_patents")
@@ -233,8 +229,7 @@ class TestTrendsMode:
     @patch("agent.tools.patent_filings._fetch_patents")
     def test_trends_with_cpc(self, mock_fetch, tool):
         patents = [
-            _patent(number=f"US{i}", date=f"202{y}-01-01")
-            for i, y in enumerate([1, 1, 2, 2, 3, 3, 3, 4, 4, 4, 4])
+            _patent(number=f"US{i}", date=f"202{y}-01-01") for i, y in enumerate([1, 1, 2, 2, 3, 3, 3, 4, 4, 4, 4])
         ]
         mock_fetch.return_value = _api_response(patents, total=100)
         r = tool.execute(mode="trends", cpc_class="G06N")
@@ -244,8 +239,8 @@ class TestTrendsMode:
 
     @patch("agent.tools.patent_filings._fetch_patents")
     def test_trends_accelerating(self, mock_fetch, tool):
-        patents = [_patent(number=f"US{i}", date=f"2020-01-01") for i in range(2)] + [
-            _patent(number=f"US{i+100}", date=f"2024-01-01") for i in range(10)
+        patents = [_patent(number=f"US{i}", date="2020-01-01") for i in range(2)] + [
+            _patent(number=f"US{i + 100}", date="2024-01-01") for i in range(10)
         ]
         mock_fetch.return_value = _api_response(patents, total=12)
         r = tool.execute(mode="trends", cpc_class="H01L")
@@ -254,8 +249,8 @@ class TestTrendsMode:
 
     @patch("agent.tools.patent_filings._fetch_patents")
     def test_trends_decelerating(self, mock_fetch, tool):
-        patents = [_patent(number=f"US{i}", date=f"2020-01-01") for i in range(10)] + [
-            _patent(number=f"US{i+100}", date=f"2024-01-01") for i in range(2)
+        patents = [_patent(number=f"US{i}", date="2020-01-01") for i in range(10)] + [
+            _patent(number=f"US{i + 100}", date="2024-01-01") for i in range(2)
         ]
         mock_fetch.return_value = _api_response(patents, total=12)
         r = tool.execute(mode="trends", cpc_class="H01L")
@@ -302,10 +297,7 @@ class TestAssigneeMode:
 
     @patch("agent.tools.patent_filings._fetch_patents")
     def test_assignee_basic(self, mock_fetch, tool):
-        patents = [
-            _patent(number=f"US{i}", date=f"2024-0{i+1}-01", cpc=f"G06N{i}/00")
-            for i in range(5)
-        ]
+        patents = [_patent(number=f"US{i}", date=f"2024-0{i + 1}-01", cpc=f"G06N{i}/00") for i in range(5)]
         mock_fetch.return_value = _api_response(patents, total=100)
         r = tool.execute(mode="assignee", assignee="Google")
         assert r.success
@@ -393,9 +385,7 @@ class TestFetchPatents:
         mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
         mock_client.post.return_value = _mock_http_response(_api_response([_patent()]))
-        result = _fetch_patents(
-            {"_text_any": {"patent_abstract": "test"}}, ["patent_number"]
-        )
+        result = _fetch_patents({"_text_any": {"patent_abstract": "test"}}, ["patent_number"])
         assert result is not None
 
     @patch("agent.tools.patent_filings.httpx.Client")

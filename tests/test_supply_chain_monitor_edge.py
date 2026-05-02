@@ -15,27 +15,24 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import httpx
-import pytest
 
-from agent.tools.supply_chain_monitor import (
-    SupplyChainMonitorTool,
-    VALID_MODES,
-    _BLS_BASE,
-    _PPI_SERIES,
-    _IMPORT_SERIES,
-    _CACHE_TTL,
-    _safe_float,
-    _filter_ppi_series,
-    _fetch_bls_multi,
-    _compute_ppi_signals,
-    _compute_import_signals,
-    _compute_pressure_score,
-    _format_ppi_summary,
-    _format_import_summary,
-    _format_pressure_summary,
-)
 from agent.tools.base import ToolResult
-
+from agent.tools.supply_chain_monitor import (
+    _BLS_BASE,
+    _IMPORT_SERIES,
+    _PPI_SERIES,
+    VALID_MODES,
+    SupplyChainMonitorTool,
+    _compute_import_signals,
+    _compute_ppi_signals,
+    _compute_pressure_score,
+    _fetch_bls_multi,
+    _filter_ppi_series,
+    _format_import_summary,
+    _format_ppi_summary,
+    _format_pressure_summary,
+    _safe_float,
+)
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -82,6 +79,7 @@ def _make_ppi_data(sid: str, values: list[float], start_year: str = "2025") -> l
 
 # ── 1. _safe_float ────────────────────────────────────────────
 
+
 class TestSafeFloat:
     def test_normal(self):
         assert _safe_float("100.225") == 100.225
@@ -109,6 +107,7 @@ class TestSafeFloat:
 
 
 # ── 2. _filter_ppi_series ────────────────────────────────────
+
 
 class TestFilterPpiSeries:
     def test_all(self):
@@ -144,6 +143,7 @@ class TestFilterPpiSeries:
 
 # ── 3. Mode validation ───────────────────────────────────────
 
+
 class TestModeValidation:
     def test_invalid_mode(self):
         r = _tool().execute(mode="bogus")
@@ -155,10 +155,11 @@ class TestModeValidation:
         assert not r.success
 
     def test_valid_modes_match(self):
-        assert VALID_MODES == {"producer_prices", "import_prices", "pressure_index"}
+        assert {"producer_prices", "import_prices", "pressure_index"} == VALID_MODES
 
 
 # ── 4. Parameter validation ──────────────────────────────────
+
 
 class TestParameterValidation:
     def test_invalid_months(self):
@@ -180,15 +181,20 @@ class TestParameterValidation:
 
 # ── 5. BLS multi-series fetch ────────────────────────────────
 
+
 class TestBlsMultiFetch:
     @patch("agent.tools.supply_chain_monitor.httpx.Client")
     def test_success(self, mock_client_cls):
-        body = _bls_multi_response({
-            "PCU334413334413": _make_ppi_data("PCU334413334413", [30.0, 30.2, 30.5]),
-            "PCU331110331110": _make_ppi_data("PCU331110331110", [280.0, 283.0, 285.0]),
-        })
+        body = _bls_multi_response(
+            {
+                "PCU334413334413": _make_ppi_data("PCU334413334413", [30.0, 30.2, 30.5]),
+                "PCU331110331110": _make_ppi_data("PCU331110331110", [280.0, 283.0, 285.0]),
+            }
+        )
         mock_resp = _mock_resp(body)
-        mock_client_cls.return_value.__enter__ = MagicMock(return_value=MagicMock(post=MagicMock(return_value=mock_resp)))
+        mock_client_cls.return_value.__enter__ = MagicMock(
+            return_value=MagicMock(post=MagicMock(return_value=mock_resp))
+        )
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
 
         data, err = _fetch_bls_multi(["PCU334413334413", "PCU331110331110"], 6)
@@ -210,7 +216,9 @@ class TestBlsMultiFetch:
     @patch("agent.tools.supply_chain_monitor.httpx.Client")
     def test_rate_limit(self, mock_client_cls):
         mock_resp = _mock_resp({}, status=429)
-        mock_client_cls.return_value.__enter__ = MagicMock(return_value=MagicMock(post=MagicMock(return_value=mock_resp)))
+        mock_client_cls.return_value.__enter__ = MagicMock(
+            return_value=MagicMock(post=MagicMock(return_value=mock_resp))
+        )
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
 
         data, err = _fetch_bls_multi(["PCU334413334413"], 6)
@@ -225,7 +233,9 @@ class TestBlsMultiFetch:
             "Results": {},
         }
         mock_resp = _mock_resp(body)
-        mock_client_cls.return_value.__enter__ = MagicMock(return_value=MagicMock(post=MagicMock(return_value=mock_resp)))
+        mock_client_cls.return_value.__enter__ = MagicMock(
+            return_value=MagicMock(post=MagicMock(return_value=mock_resp))
+        )
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
 
         data, err = _fetch_bls_multi(["PCU334413334413"], 6)
@@ -240,7 +250,9 @@ class TestBlsMultiFetch:
         ]
         body = _bls_multi_response({"PCU334413334413": raw_data})
         mock_resp = _mock_resp(body)
-        mock_client_cls.return_value.__enter__ = MagicMock(return_value=MagicMock(post=MagicMock(return_value=mock_resp)))
+        mock_client_cls.return_value.__enter__ = MagicMock(
+            return_value=MagicMock(post=MagicMock(return_value=mock_resp))
+        )
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
 
         data, err = _fetch_bls_multi(["PCU334413334413"], 6)
@@ -263,6 +275,7 @@ class TestBlsMultiFetch:
 
 
 # ── 6. PPI signal computation ───────────────────────────────
+
 
 class TestPpiSignals:
     def test_basic_signals(self):
@@ -345,6 +358,7 @@ class TestPpiSignals:
 
 # ── 7. Import signal computation ────────────────────────────
 
+
 class TestImportSignals:
     def test_basic(self):
         data = {
@@ -370,6 +384,7 @@ class TestImportSignals:
 
 
 # ── 8. Pressure score ───────────────────────────────────────
+
 
 class TestPressureScore:
     def test_high_pressure(self):
@@ -434,6 +449,7 @@ class TestPressureScore:
 
 # ── 9. Cache interaction ────────────────────────────────────
 
+
 class TestCache:
     def test_cache_hit(self):
         cache = MagicMock()
@@ -481,6 +497,7 @@ class TestCache:
 
 # ── 10. Formatting ───────────────────────────────────────────
 
+
 class TestFormatting:
     def test_ppi_summary(self):
         data = {
@@ -523,6 +540,7 @@ class TestFormatting:
 
 # ── 11. Tool metadata ───────────────────────────────────────
 
+
 class TestToolMetadata:
     def test_name(self):
         assert _tool().name == "supply_chain_prices"
@@ -547,6 +565,7 @@ class TestToolMetadata:
 
 # ── 12. PPI series constants ────────────────────────────────
 
+
 class TestConstants:
     def test_ppi_series_has_six(self):
         assert len(_PPI_SERIES) == 6
@@ -565,6 +584,7 @@ class TestConstants:
 
 
 # ── 13. End-to-end mode execution ───────────────────────────
+
 
 class TestEndToEnd:
     @patch("agent.tools.supply_chain_monitor._fetch_bls_multi")

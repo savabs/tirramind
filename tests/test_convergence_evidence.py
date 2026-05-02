@@ -8,7 +8,6 @@ import pytest
 
 from agent.convergence.evidence import VALID_CATEGORIES, Evidence, EvidenceBus
 
-
 # ── Helpers ────────────────────────────────────────────────────
 
 
@@ -178,7 +177,7 @@ class TestCategories:
             "geopolitical",
             "supply_chain",
         }
-        assert VALID_CATEGORIES == expected
+        assert expected == VALID_CATEGORIES
 
     def test_frozenset(self):
         assert isinstance(VALID_CATEGORIES, frozenset)

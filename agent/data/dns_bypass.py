@@ -68,12 +68,7 @@ def _resolve_via_doh(domain: str) -> str | None:
 def _is_dns_poisoned(domain: str) -> bool:
     """Return True if OS-level DNS for *domain* disagrees with DoH."""
     try:
-        local_ips = {
-            addr[4][0]
-            for addr in socket.getaddrinfo(
-                domain, 443, socket.AF_INET, socket.SOCK_STREAM
-            )
-        }
+        local_ips = {addr[4][0] for addr in socket.getaddrinfo(domain, 443, socket.AF_INET, socket.SOCK_STREAM)}
     except socket.gaierror:
         return True  # can't resolve at all → need bypass
 

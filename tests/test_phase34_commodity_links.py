@@ -8,7 +8,6 @@ Covers:
 
 from __future__ import annotations
 
-from collections import Counter
 from unittest.mock import MagicMock
 
 import pytest
@@ -21,7 +20,6 @@ from agent.tools.instrument_universe import (
     _persist_instrument_links,
     instruments_by_class,
 )
-
 
 # ── Helpers ───────────────────────────────────────────────────
 
@@ -71,19 +69,14 @@ class TestInstrumentDefExchangeCountry:
         commodities = instruments_by_class("commodity_future")
         assert len(commodities) == 20
         for inst in commodities:
-            assert (
-                inst.primary_exchange_country == "US"
-            ), f"{inst.ticker} missing primary_exchange_country"
+            assert inst.primary_exchange_country == "US", f"{inst.ticker} missing primary_exchange_country"
 
     def test_non_commodity_instruments_default_none(self):
         """Non-commodity instruments should NOT have primary_exchange_country set."""
-        non_commodities = [
-            i for i in INSTRUMENTS if i.asset_class != "commodity_future"
-        ]
+        non_commodities = [i for i in INSTRUMENTS if i.asset_class != "commodity_future"]
         for inst in non_commodities:
             assert inst.primary_exchange_country is None, (
-                f"{inst.ticker} has unexpected primary_exchange_country="
-                f"{inst.primary_exchange_country}"
+                f"{inst.ticker} has unexpected primary_exchange_country={inst.primary_exchange_country}"
             )
 
     def test_frozen_dataclass(self):
@@ -101,9 +94,7 @@ class TestInstrumentDefExchangeCountry:
         """Commodity futures should still have country=None."""
         commodities = instruments_by_class("commodity_future")
         for inst in commodities:
-            assert (
-                inst.country is None
-            ), f"{inst.ticker} has country={inst.country}, expected None"
+            assert inst.country is None, f"{inst.ticker} has country={inst.country}, expected None"
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -128,43 +119,27 @@ class TestPersistExchangeCountryLinks:
     def test_exchange_country_link_type_correct(self):
         store = _make_store()
         _persist_instrument_links(store)
-        exc_links = [
-            c
-            for c in store.link_entities.call_args_list
-            if c.kwargs.get("link_type") == "exchange_country"
-        ]
+        exc_links = [c for c in store.link_entities.call_args_list if c.kwargs.get("link_type") == "exchange_country"]
         assert len(exc_links) == 20
 
     def test_exchange_country_link_confidence(self):
         store = _make_store()
         _persist_instrument_links(store)
-        exc_links = [
-            c
-            for c in store.link_entities.call_args_list
-            if c.kwargs.get("link_type") == "exchange_country"
-        ]
+        exc_links = [c for c in store.link_entities.call_args_list if c.kwargs.get("link_type") == "exchange_country"]
         for call in exc_links:
             assert call.kwargs["confidence"] == 1.0
 
     def test_exchange_country_link_source(self):
         store = _make_store()
         _persist_instrument_links(store)
-        exc_links = [
-            c
-            for c in store.link_entities.call_args_list
-            if c.kwargs.get("link_type") == "exchange_country"
-        ]
+        exc_links = [c for c in store.link_entities.call_args_list if c.kwargs.get("link_type") == "exchange_country"]
         for call in exc_links:
             assert call.kwargs["source"] == "instrument_universe"
 
     def test_exchange_country_link_metadata_has_ticker(self):
         store = _make_store()
         _persist_instrument_links(store)
-        exc_links = [
-            c
-            for c in store.link_entities.call_args_list
-            if c.kwargs.get("link_type") == "exchange_country"
-        ]
+        exc_links = [c for c in store.link_entities.call_args_list if c.kwargs.get("link_type") == "exchange_country"]
         commodity_tickers = {i.ticker for i in instruments_by_class("commodity_future")}
         link_tickers = {c.kwargs["metadata"]["ticker"] for c in exc_links}
         assert link_tickers == commodity_tickers
@@ -173,11 +148,7 @@ class TestPersistExchangeCountryLinks:
         """Instruments without primary_exchange_country should not get exchange_country links."""
         store = _make_store()
         _persist_instrument_links(store)
-        exc_links = [
-            c
-            for c in store.link_entities.call_args_list
-            if c.kwargs.get("link_type") == "exchange_country"
-        ]
+        exc_links = [c for c in store.link_entities.call_args_list if c.kwargs.get("link_type") == "exchange_country"]
         # Should only be 20 (commodity futures)
         assert len(exc_links) == 20
 
@@ -188,8 +159,7 @@ class TestPersistExchangeCountryLinks:
         country_regs = [
             c
             for c in store.register_entity.call_args_list
-            if c.kwargs.get("entity_type") == "country"
-            and c.kwargs.get("canonical_name") == "US"
+            if c.kwargs.get("entity_type") == "country" and c.kwargs.get("canonical_name") == "US"
         ]
         assert len(country_regs) > 0
 
@@ -241,7 +211,7 @@ class TestGraphBuilderStability:
         assert ENRICHMENT_DIM == 55
 
     def test_observation_types_sorted(self):
-        assert OBSERVATION_TYPES == sorted(OBSERVATION_TYPES)
+        assert sorted(OBSERVATION_TYPES) == OBSERVATION_TYPES
 
 
 # ═══════════════════════════════════════════════════════════════

@@ -10,15 +10,14 @@ from __future__ import annotations
 import pytest
 
 from agent.pipeline.storage_backend import (
-    _translate_ddl,
-    _translate_dml,
     _AUTO_INCREMENT_TABLES,
+    _IGNORE_CONFLICT_TARGETS,
     _PK_COLUMNS,
     _UPSERT_CONFLICT_TARGETS,
-    _IGNORE_CONFLICT_TARGETS,
     PostgresBackend,
+    _translate_ddl,
+    _translate_dml,
 )
-
 
 # ── DDL translation ───────────────────────────────────────────
 
@@ -58,10 +57,7 @@ class TestTranslateDDL:
         assert result == ddl
 
     def test_unique_index_preserved(self) -> None:
-        ddl = (
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_features_unique "
-            "ON features(feature_name, version, effective_at);"
-        )
+        ddl = "CREATE UNIQUE INDEX IF NOT EXISTS idx_features_unique ON features(feature_name, version, effective_at);"
         result = _translate_ddl(ddl)
         assert result == ddl
 
@@ -136,11 +132,7 @@ class TestTranslateDML:
         assert pk == "id"
 
     def test_insert_or_replace_beliefs(self) -> None:
-        sql = (
-            "INSERT OR REPLACE INTO beliefs "
-            "(variable_name, version, effective_at, computed_at) "
-            "VALUES (?, ?, ?, ?)"
-        )
+        sql = "INSERT OR REPLACE INTO beliefs (variable_name, version, effective_at, computed_at) VALUES (?, ?, ?, ?)"
         translated, pk = _translate_dml(sql)
         assert "ON CONFLICT (variable_name, version, effective_at)" in translated
         assert "DO UPDATE SET computed_at = EXCLUDED.computed_at" in translated
@@ -182,11 +174,7 @@ class TestTranslateDML:
     # ── INSERT OR IGNORE ───────────────────────────────────────
 
     def test_insert_or_ignore_entities(self) -> None:
-        sql = (
-            "INSERT OR IGNORE INTO entities "
-            "(entity_id, entity_type, canonical_name, created_at) "
-            "VALUES (?, ?, ?, ?)"
-        )
+        sql = "INSERT OR IGNORE INTO entities (entity_id, entity_type, canonical_name, created_at) VALUES (?, ?, ?, ?)"
         translated, pk = _translate_dml(sql)
         assert "OR IGNORE" not in translated
         assert "ON CONFLICT (entity_id) DO NOTHING" in translated
@@ -211,17 +199,11 @@ class TestTranslateDML:
             "VALUES (?, ?, ?, ?, ?, ?, ?)"
         )
         translated, pk = _translate_dml(sql)
-        assert (
-            "ON CONFLICT (entity_id_a, entity_id_b, link_type) DO NOTHING"
-            in translated
-        )
+        assert "ON CONFLICT (entity_id_a, entity_id_b, link_type) DO NOTHING" in translated
         assert pk == "link_id"
 
     def test_insert_or_ignore_discovered_sources(self) -> None:
-        sql = (
-            "INSERT OR IGNORE INTO discovered_sources "
-            "(source_id, name, url) VALUES (?, ?, ?)"
-        )
+        sql = "INSERT OR IGNORE INTO discovered_sources (source_id, name, url) VALUES (?, ?, ?)"
         translated, pk = _translate_dml(sql)
         assert "ON CONFLICT (source_id) DO NOTHING" in translated
         # TEXT PK, not auto-increment.
@@ -240,30 +222,18 @@ class TestTranslateDML:
     # ── Plain INSERT ───────────────────────────────────────────
 
     def test_plain_insert_auto_increment(self) -> None:
-        sql = (
-            "INSERT INTO pipeline_data "
-            "(source, fetched_at, params_json, data_json) "
-            "VALUES (?, ?, ?, ?)"
-        )
+        sql = "INSERT INTO pipeline_data (source, fetched_at, params_json, data_json) VALUES (?, ?, ?, ?)"
         translated, pk = _translate_dml(sql)
         assert "?" not in translated
         assert pk == "id"
 
     def test_plain_insert_non_auto_increment(self) -> None:
-        sql = (
-            "INSERT INTO dag_runs "
-            "(run_id, dag_name, started_at, status, trigger) "
-            "VALUES (?, ?, ?, ?, ?)"
-        )
+        sql = "INSERT INTO dag_runs (run_id, dag_name, started_at, status, trigger) VALUES (?, ?, ?, ?, ?)"
         translated, pk = _translate_dml(sql)
         assert pk is None
 
     def test_plain_insert_schema_migrations(self) -> None:
-        sql = (
-            "INSERT INTO schema_migrations "
-            "(schema_name, version, applied_at, description) "
-            "VALUES (?, ?, ?, ?)"
-        )
+        sql = "INSERT INTO schema_migrations (schema_name, version, applied_at, description) VALUES (?, ?, ?, ?)"
         translated, pk = _translate_dml(sql)
         assert pk is None  # composite PK, not auto-increment
 
@@ -272,17 +242,13 @@ class TestTranslateDML:
     def test_select_passthrough(self) -> None:
         sql = "SELECT * FROM features WHERE feature_name=? ORDER BY effective_at"
         translated, pk = _translate_dml(sql)
-        assert translated == (
-            "SELECT * FROM features WHERE feature_name=%s ORDER BY effective_at"
-        )
+        assert translated == ("SELECT * FROM features WHERE feature_name=%s ORDER BY effective_at")
         assert pk is None
 
     def test_update_passthrough(self) -> None:
         sql = "UPDATE dag_runs SET status=?, finished_at=? WHERE run_id=?"
         translated, pk = _translate_dml(sql)
-        assert translated == (
-            "UPDATE dag_runs SET status=%s, finished_at=%s WHERE run_id=%s"
-        )
+        assert translated == ("UPDATE dag_runs SET status=%s, finished_at=%s WHERE run_id=%s")
         assert pk is None
 
     def test_delete_passthrough(self) -> None:
@@ -332,9 +298,7 @@ class TestPostgresBackendConstruction:
             backend.get_connection()
 
     def test_invalid_schema_name_rejected(self) -> None:
-        backend = PostgresBackend(
-            "postgresql://localhost/test", schema="DROP TABLE--"
-        )
+        backend = PostgresBackend("postgresql://localhost/test", schema="DROP TABLE--")
         # Schema validation happens in get_connection(), which also
         # needs psycopg2.  So we test the regex directly.
         import re

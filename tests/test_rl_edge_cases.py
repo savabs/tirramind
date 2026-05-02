@@ -6,7 +6,6 @@ degenerate data, serialisation corruption, and adversarial scenarios.
 
 from __future__ import annotations
 
-import io
 import time
 from unittest.mock import MagicMock
 
@@ -17,7 +16,6 @@ import torch
 from agent.fusion.alert import EntityAlert
 from agent.learning.policy.asset_mapper import AssetMapper
 from agent.learning.policy.config import (
-    PolicyConfig,
     RewardConfig,
     SACConfig,
     WeightLearnerConfig,
@@ -28,13 +26,11 @@ from agent.learning.policy.sac import (
     AlphaScheduler,
     GaussianActor,
     SACTrainer,
-    TwinCritic,
 )
 from agent.learning.policy.state_assembler import StateAssembler
-from agent.learning.policy.symlog import symexp, symlog, symexp_np, symlog_np
+from agent.learning.policy.symlog import symexp, symlog, symlog_np
 from agent.learning.policy.weight_learner import SurpriseWeightLearner
 from agent.models.belief import BeliefState
-
 
 # ── Helpers ───────────────────────────────────────────────────
 
@@ -193,9 +189,7 @@ class TestWeightLearnerEdge:
         """Zero returns everywhere → Sharpe undefined, should not crash."""
         surprises = np.random.randn(200, 5)
         returns = np.zeros(200)
-        cfg = WeightLearnerConfig(
-            min_train_periods=50, test_periods=25, walk_forward_step=25, max_epochs=50
-        )
+        cfg = WeightLearnerConfig(min_train_periods=50, test_periods=25, walk_forward_step=25, max_epochs=50)
         learner = SurpriseWeightLearner(cfg)
         learner.fit(surprises, returns)
         w = learner.get_learned_weights()
@@ -349,9 +343,7 @@ class TestReplayBufferEdge:
 
     def test_capacity_one_overwrite(self):
         buf = ReplayBuffer(1, 2, 1)
-        buf.push(
-            np.array([1.0, 1.0]), np.array([1.0]), 1.0, np.array([1.0, 1.0]), False
-        )
+        buf.push(np.array([1.0, 1.0]), np.array([1.0]), 1.0, np.array([1.0, 1.0]), False)
         buf.push(np.array([2.0, 2.0]), np.array([2.0]), 2.0, np.array([2.0, 2.0]), True)
         assert len(buf) == 1
         s, _, r, _, d = buf.sample(1)
@@ -421,9 +413,7 @@ class TestRewardCombinedEdge:
 
     def test_intrinsic_decay_at_final_step(self):
         """At step=total_steps, λ(t) should be 0 (no intrinsic reward)."""
-        rf = RewardFunction(
-            RewardConfig(intrinsic_weight_initial=0.5, intrinsic_decay=True)
-        )
+        rf = RewardFunction(RewardConfig(intrinsic_weight_initial=0.5, intrinsic_decay=True))
         total, bd = rf.combined(
             portfolio_return=0.01,
             rolling_returns=np.full(20, 0.01),
@@ -436,12 +426,8 @@ class TestRewardCombinedEdge:
 
     def test_intrinsic_no_decay(self):
         """With decay=False, λ stays constant."""
-        rf = RewardFunction(
-            RewardConfig(intrinsic_weight_initial=0.5, intrinsic_decay=False)
-        )
-        _, bd1 = rf.combined(
-            0.01, np.full(20, 0.01), surprise_scores=np.ones(5), step=0, total_steps=100
-        )
+        rf = RewardFunction(RewardConfig(intrinsic_weight_initial=0.5, intrinsic_decay=False))
+        _, bd1 = rf.combined(0.01, np.full(20, 0.01), surprise_scores=np.ones(5), step=0, total_steps=100)
         _, bd2 = rf.combined(
             0.01,
             np.full(20, 0.01),

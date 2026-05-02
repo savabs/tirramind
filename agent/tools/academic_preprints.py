@@ -31,9 +31,9 @@ from __future__ import annotations
 
 import logging
 import time
-import xml.etree.ElementTree as ET
 from typing import TYPE_CHECKING, Any
 
+import defusedxml.ElementTree as ET
 import httpx
 
 from agent.data.cache import DataCache
@@ -82,7 +82,7 @@ class AcademicPreprintsTool(Tool):
     def __init__(
         self,
         cache: DataCache | None = None,
-        pipeline_store: "PipelineStore | None" = None,
+        pipeline_store: PipelineStore | None = None,
     ) -> None:
         self._cache = cache
         self._store = pipeline_store
@@ -235,10 +235,7 @@ class AcademicPreprintsTool(Tool):
         total = self._parse_arxiv_total(xml_text)
 
         cats = category or ", ".join(_MARKET_CATEGORIES[:4]) + "..."
-        summary = (
-            f"Trending arXiv preprints in [{cats}]. "
-            f"{total} total, showing {len(papers)}."
-        )
+        summary = f"Trending arXiv preprints in [{cats}]. {total} total, showing {len(papers)}."
         return ToolResult(
             success=True,
             output=summary,
@@ -271,9 +268,7 @@ class AcademicPreprintsTool(Tool):
 
         data = self._fetch_json(_CT_URL, params)
         if data is None:
-            return ToolResult(
-                success=False, output="Failed to fetch clinical trials data."
-            )
+            return ToolResult(success=False, output="Failed to fetch clinical trials data.")
 
         studies = data.get("studies", [])
         results = []
@@ -294,9 +289,7 @@ class AcademicPreprintsTool(Tool):
                     "title": ident.get("briefTitle"),
                     "status": status_mod.get("overallStatus"),
                     "start_date": (status_mod.get("startDateStruct") or {}).get("date"),
-                    "completion_date": (
-                        status_mod.get("completionDateStruct") or {}
-                    ).get("date"),
+                    "completion_date": (status_mod.get("completionDateStruct") or {}).get("date"),
                     "conditions": cond_mod.get("conditions", []),
                     "interventions": [i.get("name") for i in interventions[:5]],
                     "sponsor": lead_sponsor.get("name"),
@@ -360,31 +353,15 @@ class AcademicPreprintsTool(Tool):
 
             papers.append(
                 {
-                    "id": (
-                        id_el.text.strip() if id_el is not None and id_el.text else None
-                    ),
-                    "title": (
-                        " ".join((title_el.text or "").split())
-                        if title_el is not None
-                        else None
-                    ),
-                    "summary": (
-                        " ".join((summary_el.text or "").split())[:300]
-                        if summary_el is not None
-                        else None
-                    ),
+                    "id": (id_el.text.strip() if id_el is not None and id_el.text else None),
+                    "title": (" ".join((title_el.text or "").split()) if title_el is not None else None),
+                    "summary": (" ".join((summary_el.text or "").split())[:300] if summary_el is not None else None),
                     "authors": authors[:5],  # Cap at 5
                     "categories": categories,
                     "published": (
-                        published_el.text.strip()
-                        if published_el is not None and published_el.text
-                        else None
+                        published_el.text.strip() if published_el is not None and published_el.text else None
                     ),
-                    "updated": (
-                        updated_el.text.strip()
-                        if updated_el is not None and updated_el.text
-                        else None
-                    ),
+                    "updated": (updated_el.text.strip() if updated_el is not None and updated_el.text else None),
                     "pdf_url": pdf_link,
                 }
             )

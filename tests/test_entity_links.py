@@ -12,15 +12,14 @@ Covers:
 
 from __future__ import annotations
 
-import json
 import time
 
 import pytest
 
 from agent.pipeline.store import PipelineStore
 
-
 # ── fixtures ──────────────────────────────────────────────────
+
 
 @pytest.fixture()
 def store() -> PipelineStore:
@@ -153,8 +152,16 @@ class TestQueryEntityLinks:
         cid, kid, _ = _seed_entities(store)
         store.link_entities(cid, kid, "headquartered_in", "sec_tickers")
         link = store.query_entity_links(cid)[0]
-        for key in ("link_id", "entity_id_a", "entity_id_b", "link_type",
-                     "confidence", "source", "created_at", "metadata"):
+        for key in (
+            "link_id",
+            "entity_id_a",
+            "entity_id_b",
+            "link_type",
+            "confidence",
+            "source",
+            "created_at",
+            "metadata",
+        ):
             assert key in link, f"Missing key: {key}"
         assert "metadata_json" not in link  # should be decoded
 
@@ -162,8 +169,9 @@ class TestQueryEntityLinks:
 # ── query_co_occurrences tests ──────────────────────────────
 
 
-def _seed_obs(store: PipelineStore, entity_id: str, tool: str,
-              ts: float, obs_type: str, value: dict | None = None) -> int:
+def _seed_obs(
+    store: PipelineStore, entity_id: str, tool: str, ts: float, obs_type: str, value: dict | None = None
+) -> int:
     """Helper to store an observation and return row id."""
     return store.store_entity_observation(
         entity_id=entity_id,
@@ -222,9 +230,7 @@ class TestQueryCoOccurrences:
         _seed_obs(store, kid, "gdelt", t0 + 60, "geopolitical_event")
 
         # Only insider_filings side for entity A
-        cooccs = store.query_co_occurrences(
-            cid, kid, source_tool_a="insider_filings", window_seconds=7200
-        )
+        cooccs = store.query_co_occurrences(cid, kid, source_tool_a="insider_filings", window_seconds=7200)
         assert len(cooccs) == 1
         assert cooccs[0]["obs_a"]["source_tool"] == "insider_filings"
 
@@ -235,9 +241,7 @@ class TestQueryCoOccurrences:
         _seed_obs(store, kid, "gdelt", t0 + 60, "geopolitical_event")
         _seed_obs(store, kid, "ais_vessel", t0 + 60, "vessel_position")
 
-        cooccs = store.query_co_occurrences(
-            cid, kid, source_tool_b="gdelt", window_seconds=7200
-        )
+        cooccs = store.query_co_occurrences(cid, kid, source_tool_b="gdelt", window_seconds=7200)
         assert len(cooccs) == 1
         assert cooccs[0]["obs_b"]["source_tool"] == "gdelt"
 
@@ -250,9 +254,7 @@ class TestQueryCoOccurrences:
         _seed_obs(store, cid, "insider_filings", recent, "insider_trade")
         _seed_obs(store, kid, "gdelt", recent + 60, "geopolitical_event")
 
-        cooccs = store.query_co_occurrences(
-            cid, kid, since=1_650_000_000.0, window_seconds=7200
-        )
+        cooccs = store.query_co_occurrences(cid, kid, since=1_650_000_000.0, window_seconds=7200)
         assert len(cooccs) == 1
         assert cooccs[0]["obs_a"]["observed_at"] == pytest.approx(recent)
 
@@ -311,8 +313,8 @@ class TestQueryCoOccurrences:
         """Results ordered by closest temporal match first."""
         cid, kid, _ = _seed_entities(store)
         t0 = 1_700_000_000.0
-        _seed_obs(store, cid, "insider_filings", t0, "insider_trade")         # delta=100
-        _seed_obs(store, cid, "insider_filings", t0 + 90, "insider_trade")    # delta=10
+        _seed_obs(store, cid, "insider_filings", t0, "insider_trade")  # delta=100
+        _seed_obs(store, cid, "insider_filings", t0 + 90, "insider_trade")  # delta=10
         _seed_obs(store, kid, "gdelt", t0 + 100, "geopolitical_event")
 
         cooccs = store.query_co_occurrences(cid, kid, window_seconds=200)
@@ -329,8 +331,9 @@ class TestIntegration:
         """Full round-trip: register entities, link, query back."""
         cid = store.register_entity("company", "Test Co", "a" * 16)
         kid = store.register_entity("country", "DE", "b" * 16)
-        link_id = store.link_entities(cid, kid, "headquartered_in", "sec_tickers",
-                                      confidence=0.95, metadata={"region": "EU"})
+        link_id = store.link_entities(
+            cid, kid, "headquartered_in", "sec_tickers", confidence=0.95, metadata={"region": "EU"}
+        )
         assert link_id is not None
         links = store.query_entity_links(cid, link_type="headquartered_in")
         assert len(links) == 1
@@ -347,9 +350,12 @@ class TestIntegration:
         assert resolved == eid
 
         row_id = store.store_entity_observation(
-            entity_id=eid, source_tool="insider_filings",
-            observed_at=time.time(), observation_type="insider_trade",
-            value={"action": "buy"}, depth_level=2,
+            entity_id=eid,
+            source_tool="insider_filings",
+            observed_at=time.time(),
+            observation_type="insider_trade",
+            value={"action": "buy"},
+            depth_level=2,
         )
         assert row_id > 0
         obs = store.query_entity_observations(eid)
@@ -363,10 +369,12 @@ class TestIntegration:
         store.link_entities(cid, kid, "headquartered_in", "sec_tickers")
 
         t0 = 1_700_000_000.0
-        store.store_entity_observation(cid, "insider_filings", t0, "insider_trade",
-                                       {"action": "sell", "shares": 10000}, 2)
-        store.store_entity_observation(kid, "gdelt", t0 + 7200, "geopolitical_event",
-                                       {"goldstein": -8.0, "event_code": "190"}, 2)
+        store.store_entity_observation(
+            cid, "insider_filings", t0, "insider_trade", {"action": "sell", "shares": 10000}, 2
+        )
+        store.store_entity_observation(
+            kid, "gdelt", t0 + 7200, "geopolitical_event", {"goldstein": -8.0, "event_code": "190"}, 2
+        )
 
         # Query links to find paired entity
         links = store.query_entity_links(cid, link_type="headquartered_in")

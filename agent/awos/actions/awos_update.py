@@ -30,18 +30,12 @@ from agent.awos.policies.engine import PlannedAction
 class AwosUpdateAction(Action):
     def run(self, planned: PlannedAction) -> ActionResult:
         e = planned.event
-        section = (
-            planned.params.get("section_hint")
-            or e.payload.get("suggested_section")
-            or "11. Changelog"
-        )
+        section = planned.params.get("section_hint") or e.payload.get("suggested_section") or "11. Changelog"
         changelog_only = bool(planned.params.get("changelog_only", False))
         principle = _principle_from_event(planned)
 
         if not principle:
-            return ActionResult.failure(
-                "awos_update: could not derive principle text from event"
-            )
+            return ActionResult.failure("awos_update: could not derive principle text from event")
 
         threshold = self.cfg.awos_auto_update_confidence
         direct = e.confidence >= threshold and not changelog_only
@@ -74,7 +68,7 @@ class AwosUpdateAction(Action):
                 new_body,
                 f"updated section '{section}' from event {e.id[:8]} "
                 f"(confidence={e.confidence:.2f}, classifier="
-                f"{e.payload.get('classifier','?')})",
+                f"{e.payload.get('classifier', '?')})",
             )
             new_body = bump_last_updated(new_body)
             atomic_write(awos_path, new_body)
@@ -86,8 +80,7 @@ class AwosUpdateAction(Action):
         # propose
         prop_path = _write_proposal(self.cfg.proposals_dir, section, bullet, e)
         return ActionResult.success(
-            f"wrote proposal (confidence {e.confidence:.2f} < "
-            f"threshold {threshold:.2f})",
+            f"wrote proposal (confidence {e.confidence:.2f} < threshold {threshold:.2f})",
             artifacts=[str(prop_path)],
         )
 
@@ -127,7 +120,7 @@ def _format_bullet(principle: str, event, sig: str) -> str:
 
 def _write_proposal(proposals_dir: Path, section: str, bullet: str, event) -> Path:
     proposals_dir.mkdir(parents=True, exist_ok=True)
-    fname = f"{now_iso().replace(':','')}__awos__{event.id[:8]}.md"
+    fname = f"{now_iso().replace(':', '')}__awos__{event.id[:8]}.md"
     path = proposals_dir / fname
     content = (
         f"# AWOS update proposal\n\n"

@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from agent.pipeline.store import PipelineStore
@@ -47,7 +47,7 @@ def _format_ts(epoch: float | None) -> str:
     """Format epoch seconds to human-readable UTC string."""
     if epoch is None:
         return "—"
-    return datetime.fromtimestamp(epoch, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    return datetime.fromtimestamp(epoch, tz=UTC).strftime("%Y-%m-%d %H:%M UTC")
 
 
 class PipelineQueryTool(Tool):
@@ -125,9 +125,7 @@ class PipelineQueryTool(Tool):
         else:
             return self._query_runs(kwargs, limit)
 
-    def _query_data(
-        self, kwargs: dict, since: float | None, until: float | None, limit: int
-    ) -> ToolResult:
+    def _query_data(self, kwargs: dict, since: float | None, until: float | None, limit: int) -> ToolResult:
         source = (kwargs.get("source") or "").strip()
         if not source:
             return ToolResult(False, "mode='data' requires 'source' parameter (e.g. 'cftc', 'fetch_gdelt').")
@@ -157,9 +155,7 @@ class PipelineQueryTool(Tool):
             data={"source": source, "count": len(rows), "rows": rows},
         )
 
-    def _query_signals(
-        self, kwargs: dict, since: float | None, until: float | None, limit: int
-    ) -> ToolResult:
+    def _query_signals(self, kwargs: dict, since: float | None, until: float | None, limit: int) -> ToolResult:
         signal_name = (kwargs.get("signal_name") or "").strip()
         if not signal_name:
             return ToolResult(False, "mode='signals' requires 'signal_name' parameter.")

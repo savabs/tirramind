@@ -70,10 +70,7 @@ class VPINEstimator:
         volumes = np.asarray(volumes, dtype=np.float64).ravel()
 
         if len(returns) != len(volumes):
-            raise ValueError(
-                f"returns and volumes must have equal length, "
-                f"got {len(returns)} and {len(volumes)}"
-            )
+            raise ValueError(f"returns and volumes must have equal length, got {len(returns)} and {len(volumes)}")
         if np.any(np.isnan(returns)) or np.any(np.isnan(volumes)):
             raise ValueError("NaN values in returns or volumes")
         if np.all(volumes == 0):

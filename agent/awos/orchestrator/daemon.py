@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import signal
+from datetime import UTC
 from pathlib import Path
 
 from apscheduler.schedulers.blocking import BlockingScheduler
@@ -42,13 +43,9 @@ class Daemon:
 
         self.watchers = []
         if cfg.drift_watcher_enabled:
-            self.watchers.append(
-                DriftWatcher(self.bus, cfg.repo_root, timeout=cfg.watcher_timeout_s)
-            )
+            self.watchers.append(DriftWatcher(self.bus, cfg.repo_root, timeout=cfg.watcher_timeout_s))
         if cfg.obsidian_watcher_enabled:
-            self.watchers.append(
-                ObsidianWatcher(self.bus, cfg.repo_root, timeout=cfg.watcher_timeout_s)
-            )
+            self.watchers.append(ObsidianWatcher(self.bus, cfg.repo_root, timeout=cfg.watcher_timeout_s))
         if cfg.staleness_watcher_enabled:
             self.watchers.append(
                 StalenessWatcher(
@@ -117,9 +114,9 @@ class Daemon:
 
 
 def _now_utc():
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 # convenience for tests

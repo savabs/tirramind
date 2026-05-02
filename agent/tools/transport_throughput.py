@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -171,10 +171,7 @@ class TransportThroughputTool(Tool):
             "border": {
                 "type": "string",
                 "default": "",
-                "description": (
-                    "Border filter: 'canada' or 'mexico' (or 'ca'/'mx'). "
-                    "Empty = both borders."
-                ),
+                "description": ("Border filter: 'canada' or 'mexico' (or 'ca'/'mx'). Empty = both borders."),
             },
             "state": {
                 "type": "string",
@@ -198,7 +195,7 @@ class TransportThroughputTool(Tool):
     def __init__(
         self,
         cache: DataCache | None = None,
-        pipeline_store: "PipelineStore | None" = None,
+        pipeline_store: PipelineStore | None = None,
     ) -> None:
         self._cache = cache
         self._store = pipeline_store
@@ -380,10 +377,8 @@ class TransportThroughputTool(Tool):
         border: str | None,
         months_back: int,
     ) -> ToolResult:
-        now = datetime.now(timezone.utc)
-        start_date = (now - timedelta(days=months_back * 31)).strftime(
-            "%Y-%m-%dT00:00:00"
-        )
+        now = datetime.now(UTC)
+        start_date = (now - timedelta(days=months_back * 31)).strftime("%Y-%m-%dT00:00:00")
 
         where_parts = [f"measure='{measure}'", f"date>='{start_date}'"]
         if border:
@@ -468,9 +463,7 @@ class TransportThroughputTool(Tool):
         if error:
             return ToolResult(success=False, output=error)
         if not date_data:
-            return ToolResult(
-                success=True, output="BTS: No data.", data={"ports": [], "count": 0}
-            )
+            return ToolResult(success=True, output="BTS: No data.", data={"ports": [], "count": 0})
 
         max_date = date_data[0]["max_date"]
 
@@ -500,9 +493,7 @@ class TransportThroughputTool(Tool):
 
         formatted = []
         lines = [
-            f"BTS Port Detail: {measure} — {max_date[:10]}"
-            + (f" ({state})" if state else "")
-            + ":",
+            f"BTS Port Detail: {measure} — {max_date[:10]}" + (f" ({state})" if state else "") + ":",
             "",
         ]
         for row in data:
@@ -538,10 +529,8 @@ class TransportThroughputTool(Tool):
         measure: str,
         months_back: int,
     ) -> ToolResult:
-        now = datetime.now(timezone.utc)
-        start_date = (now - timedelta(days=months_back * 31)).strftime(
-            "%Y-%m-%dT00:00:00"
-        )
+        now = datetime.now(UTC)
+        start_date = (now - timedelta(days=months_back * 31)).strftime("%Y-%m-%dT00:00:00")
 
         params: dict[str, str] = {
             "$select": "date, border, sum(value) as total",
@@ -575,7 +564,7 @@ class TransportThroughputTool(Tool):
             "",
         ]
         lines.append(f"  {'Date':12s} {'Canada':>12s} {'Mexico':>12s} {'Ratio':>8s}")
-        lines.append(f"  {'-'*12} {'-'*12} {'-'*12} {'-'*8}")
+        lines.append(f"  {'-' * 12} {'-' * 12} {'-' * 12} {'-' * 8}")
 
         comparison = []
         for date_str in sorted(by_date.keys()):
@@ -675,13 +664,7 @@ class TransportThroughputTool(Tool):
 
         # Collect all countries mentioned in the data
         countries: set[str] = set()
-        records = (
-            data.get("records")
-            or data.get("series")
-            or data.get("ports")
-            or data.get("comparison")
-            or []
-        )
+        records = data.get("records") or data.get("series") or data.get("ports") or data.get("comparison") or []
         for rec in records:
             border = rec.get("border", "")
             for cc in self._BORDER_TO_COUNTRIES.get(border, []):

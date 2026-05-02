@@ -8,14 +8,11 @@ Covers:
 
 from __future__ import annotations
 
-import math
-
 import pytest
 import torch
 
 from agent.models.gnn.graph_builder import OBSERVATION_TYPES
 from agent.models.gnn.temporal import TemporalEncoder, Time2Vec
-
 
 # ═══════════════════════════════════════════════════════════════
 # Time2Vec tests
@@ -185,10 +182,7 @@ class TestTemporalEncoder:
     def test_max_history_truncation(self):
         enc = TemporalEncoder(time_dim=8, max_history=3)
         # Create 10 observations — should keep last 3
-        obs = [
-            {"observed_at": float(i), "observation_type": "port_call"}
-            for i in range(10)
-        ]
+        obs = [{"observed_at": float(i), "observation_type": "port_call"} for i in range(10)]
         out = enc.forward(obs, current_time=10.0)
         # Count should be 3 (truncated)
         idx = OBSERVATION_TYPES.index("port_call")
@@ -296,10 +290,7 @@ class TestTemporalEncoderBatch:
     def test_all_same_type(self):
         """All observations of same type — no inter-type diversity."""
         enc = TemporalEncoder(time_dim=4)
-        obs = [
-            {"observed_at": float(i * 100), "observation_type": "port_call"}
-            for i in range(5)
-        ]
+        obs = [{"observed_at": float(i * 100), "observation_type": "port_call"} for i in range(5)]
         result = enc.encode_batch({"e1": obs}, ["e1"], current_time=500.0)
         assert result.shape == (1, enc.output_dim)
         idx = OBSERVATION_TYPES.index("port_call")

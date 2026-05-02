@@ -81,7 +81,7 @@ Build a machine intelligence system that observes the full state of the global s
 - [x] **Phase 20: Signal Fusion** ✅ COMPLETE (entity micro-alpha via GNN prediction surprise — 249 tests)
 - [x] **Phase 21: RL Policy** ✅ COMPLETE (surprise-driven portfolio allocation, SAC actor-critic — 276 tests)
 - [x] **Phase 22: Adversarial** ✅ COMPLETE — 148 tests (manipulation detection, edge decay)
-- [x] **Phase 23: GNN-Guided Expansion R2** ✅ COMPLETE — 3 L2 upgrades (finra_short_volume, creditor_filings, drug_regulatory), 21 obs types, ENRICHMENT_DIM=30, new link types (debtor_of, market_authorized_in) — 174 tests
+- [x] **Phase 23: GNN-Guided Expansion R2** ✅ COMPLETE — 3 L2 upgrades (finra_short_volume, creditor_filings, drug_regulatory), 21 obs types, dim was 30 pre-Phase-28 (now 41), new link types (debtor_of, market_authorized_in) — 174 tests
 - [x] **Phase 24: End-to-End Global Multi-Asset Integration** ✅ COMPLETE — instruments as GNN entities (90), multi-asset strategy (SAC + equal-weight + buy-hold), inference DAG (4 nodes), walk-forward backtest + attribution, paper trade with alerts (drawdown/concentration/Sharpe/edge-decay) — 223 tests. Task: [[e2e_global_integration]]
 - [x] **Phase 25: Cross-Domain Entity Linking** ✅ COMPLETE — instrument nodes connected to company/country/CFTC/topic/wallet structure; instruments no longer graph-isolated. Task: [[phase25_cross_domain_entity_linking]]
 - [x] **Phase 27: FX Country Wiring + Central Bank L2** ✅ COMPLETE — FX two-country metadata/links + `central_bank_balance` L2 (monetary_balance, policy_rate on country nodes). Task: [[phase27_fx_country_monetary_linking]]
@@ -1474,8 +1474,8 @@ Phases 0–44 ── ALL COMPLETE
 
 **Key metrics (2026-04-22):**
 - Data tools built: 51 | Wired in DAG: 27 nodes (25 unique tools) | Unwired: 26 tools
-- Tests: 9,663 passing | Pre-existing failures: 27 (9 trivially fixable, 5 need Phase 40, 13 other)
-- Full regression baseline confirmed: 27 failed, 9663 passed, 11 skipped
+- Tests: 9,685 passing (see [[project_metrics]]) | Pre-existing failures: 27 (9 trivially fixable, 5 need Phase 40, 13 other)
+- Full regression baseline confirmed: 27 failed, 9685 passed, 11 skipped
 
 **GNN training status (2026-04-28):**
 - Epochs 1–5 trained (1–3 local, 4–5 Kaggle T4). Checkpoint: `.tirra_pipeline/checkpoints/epoch_005.pt`. Active model: `.tirra_pipeline/gnn_model.pt`.

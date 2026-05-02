@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -59,7 +59,7 @@ def _parse_timestamp(ts: str | None) -> datetime | None:
     # crt.sh uses formats like "2026-03-27T07:49:06.083" or "2026-03-27T00:00:00"
     for fmt in ("%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S"):
         try:
-            return datetime.strptime(ts, fmt).replace(tzinfo=timezone.utc)
+            return datetime.strptime(ts, fmt).replace(tzinfo=UTC)
         except ValueError:
             continue
     return None
@@ -149,10 +149,7 @@ class CertTransparencyTool(Tool):
             },
             "domain": {
                 "type": "string",
-                "description": (
-                    "Domain to search for (e.g., 'stripe.com', 'api.openai.com'). "
-                    "Required for all modes."
-                ),
+                "description": ("Domain to search for (e.g., 'stripe.com', 'api.openai.com'). Required for all modes."),
             },
             "exclude_expired": {
                 "type": "boolean",
@@ -241,13 +238,11 @@ class CertTransparencyTool(Tool):
         exclude_expired: bool,
         limit: int,
     ) -> ToolResult:
-        records, error = self._fetch_crtsh(
-            query=domain, exclude_expired=exclude_expired
-        )
+        records, error = self._fetch_crtsh(query=domain, exclude_expired=exclude_expired)
         if error:
             return ToolResult(success=False, output=error)
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         certs = [_normalize_record(r, now) for r in records]
         certs.sort(key=lambda c: c["entry_timestamp"], reverse=True)
         certs = certs[:limit]
@@ -264,8 +259,7 @@ class CertTransparencyTool(Tool):
         expired = sum(1 for c in certs if c["is_expired"] is True)
 
         lines = [
-            f"CT Certificates for '{domain}': {len(certs)} results "
-            f"({active} active, {expired} expired):",
+            f"CT Certificates for '{domain}': {len(certs)} results ({active} active, {expired} expired):",
             "",
         ]
         for cert in certs:
@@ -304,9 +298,7 @@ class CertTransparencyTool(Tool):
             return ToolResult(success=False, output=error)
 
         # Also fetch the base domain itself
-        base_records, _ = self._fetch_crtsh(
-            query=domain, exclude_expired=exclude_expired
-        )
+        base_records, _ = self._fetch_crtsh(query=domain, exclude_expired=exclude_expired)
         if base_records:
             records.extend(base_records)
 
@@ -354,10 +346,7 @@ class CertTransparencyTool(Tool):
         if concrete:
             for sub in concrete[:limit]:
                 latest = sub["latest_entry"][:10] if sub["latest_entry"] else "?"
-                lines.append(
-                    f"  {sub['subdomain']:50s}  {sub['cert_count']:>4d} certs  "
-                    f"latest: {latest}"
-                )
+                lines.append(f"  {sub['subdomain']:50s}  {sub['cert_count']:>4d} certs  latest: {latest}")
         if wildcards:
             lines.append("")
             lines.append("  Wildcard entries:")
@@ -397,7 +386,7 @@ class CertTransparencyTool(Tool):
         if base_records:
             records.extend(base_records)
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         cutoff = now - timedelta(days=days_back)
 
         # Filter to recent entries
@@ -422,8 +411,7 @@ class CertTransparencyTool(Tool):
         if not deduped:
             return ToolResult(
                 success=True,
-                output=f"CT recent: no certificates issued for '{domain}' "
-                f"in last {days_back}d.",
+                output=f"CT recent: no certificates issued for '{domain}' in last {days_back}d.",
                 data={
                     "domain": domain,
                     "certs": [],
@@ -509,9 +497,7 @@ class CertTransparencyTool(Tool):
             )
 
     @staticmethod
-    def _link_domain_to_company(
-        store: Any, domain: str, domain_eid: str
-    ) -> None:
+    def _link_domain_to_company(store: Any, domain: str, domain_eid: str) -> None:
         """Attempt to link a domain entity to a company entity (Phase 36).
 
         Extracts the base name from the domain (e.g. ``stripe`` from
@@ -581,8 +567,7 @@ class CertTransparencyTool(Tool):
             code = exc.response.status_code
             if code == 503:
                 return [], (
-                    f"crt.sh returned 503 (overloaded) for '{query}'. "
-                    "Try again shortly or use a more specific domain."
+                    f"crt.sh returned 503 (overloaded) for '{query}'. Try again shortly or use a more specific domain."
                 )
             return [], f"crt.sh HTTP {code} for query '{query}'."
         except httpx.ConnectError:

@@ -10,10 +10,7 @@ Covers:
 
 from __future__ import annotations
 
-import json
 import time
-from typing import Any
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -85,9 +82,7 @@ def _insert_macro_data(
     conn.commit()
 
 
-def _make_fred_series(
-    series_id: str, n_obs: int = 60, start: float = 5.0, trend: float = 0.01
-):
+def _make_fred_series(series_id: str, n_obs: int = 60, start: float = 5.0, trend: float = 0.01):
     from datetime import datetime, timedelta
 
     base = datetime(2026, 3, 1)
@@ -290,9 +285,7 @@ class TestBuilderFailureResilience:
         # ConvergenceFeatureBuilder still produced 3 (all missing but still emitted)
         assert result["produced"] == 3
         # Check the failing builder summary
-        failing_summary = next(
-            s for s in result["builders"] if s["builder"] == "FailingBuilder"
-        )
+        failing_summary = next(s for s in result["builders"] if s["builder"] == "FailingBuilder")
         assert failing_summary.get("error") is True
 
 
@@ -381,9 +374,7 @@ class TestEndToEndPersistence:
             features = builder.build(store, _NOW)
             all_names.extend(f.feature_name for f in features)
 
-        assert len(all_names) == len(
-            set(all_names)
-        ), "Duplicate feature names across builders"
+        assert len(all_names) == len(set(all_names)), "Duplicate feature names across builders"
         store.close()
 
     def test_features_ordered_by_effective_at(self):

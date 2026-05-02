@@ -7,7 +7,6 @@ mock components.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -21,7 +20,6 @@ from agent.pipeline.dags.entity_scoring import (
     run_entity_scoring,
 )
 from agent.pipeline.store import PipelineStore
-
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -280,8 +278,9 @@ class TestSuccessfulScoring:
 
     def _make_mock_cluster(self, alerts):
         """Create a minimal ConvergenceCluster-like object."""
-        from agent.fusion.convergence import ConvergenceCluster
         import hashlib
+
+        from agent.fusion.convergence import ConvergenceCluster
 
         member_ids = sorted(a.entity_id for a in alerts)
         cluster_id = hashlib.sha256("|".join(member_ids).encode()).hexdigest()[:16]

@@ -8,13 +8,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from agent.convergence.detector import (
-    ConvergenceDetector,
-    ConvergenceDetectorConfig,
     DetectionResult,
 )
 from agent.convergence.evidence import Evidence
 from agent.convergence.graph import ConvergenceClique
-from agent.convergence.taxonomy import SignalMeta, SignalRegistry
 from agent.pipeline.dag import DAG
 from agent.pipeline.dags.convergence_detection import (
     _load_evidence_from_store,
@@ -23,7 +20,6 @@ from agent.pipeline.dags.convergence_detection import (
     run_convergence_detection,
 )
 from agent.pipeline.store import PipelineStore
-
 
 # ── Helpers ────────────────────────────────────────────────────
 
@@ -223,9 +219,7 @@ class TestBuildRegistryFromEvidence:
 
     def test_multiple_distinct_signals(self):
         ev1 = _make_evidence(signal_id="sig_a", source="tool_a")
-        ev2 = _make_evidence(
-            signal_id="sig_b", source="tool_b", category="macro_momentum"
-        )
+        ev2 = _make_evidence(signal_id="sig_b", source="tool_b", category="macro_momentum")
         reg = build_registry_from_evidence([ev1, ev2])
         assert len(reg) == 2
         assert reg.get("sig_a") is not None
@@ -432,9 +426,9 @@ class TestRunConvergenceDetection:
                 "agent.pipeline.dags.convergence_detection._load_evidence_from_store",
                 side_effect=RuntimeError("boom"),
             ),
+            pytest.raises(RuntimeError, match="boom"),
         ):
-            with pytest.raises(RuntimeError, match="boom"):
-                run_convergence_detection({"db_path": ":memory:"}, {})
+            run_convergence_detection({"db_path": ":memory:"}, {})
 
         mock_store.close.assert_called_once()
 
@@ -476,12 +470,7 @@ class TestRunConvergenceDetection:
             run_convergence_detection({"db_path": ":memory:", "as_of": fixed_time}, {})
 
         call_args = mock_load.call_args
-        assert (
-            call_args[1].get(
-                "as_of", call_args[0][2] if len(call_args[0]) > 2 else None
-            )
-            == fixed_time
-        )
+        assert call_args[1].get("as_of", call_args[0][2] if len(call_args[0]) > 2 else None) == fixed_time
 
     def test_default_params(self):
         """Default db_path is used when not specified."""
@@ -559,9 +548,7 @@ class TestRunConvergenceDetection:
                 "agent.pipeline.dags.convergence_detection.PipelineStore",
                 return_value=store,
             ),
-            patch(
-                "agent.pipeline.dags.convergence_detection.ConvergenceDetector"
-            ) as mock_detector_cls,
+            patch("agent.pipeline.dags.convergence_detection.ConvergenceDetector") as mock_detector_cls,
         ):
             detector = mock_detector_cls.return_value
             detector.detect.return_value = [detection]

@@ -22,11 +22,10 @@ import logging
 import time
 from dataclasses import dataclass, field
 from itertools import combinations
-from typing import Any
 
 import numpy as np
 
-from agent.convergence.alignment import FREQUENCY_TO_GRID, TimeGrid, align_pair
+from agent.convergence.alignment import align_pair
 from agent.convergence.atomic_signals import AtomicSignalResult, SignalStream
 from agent.convergence.coincidence import (
     CoincidenceResult,
@@ -36,11 +35,10 @@ from agent.convergence.evidence import Evidence
 from agent.convergence.extractors import extract_evidence, registered_tools
 from agent.convergence.fdr import apply_all_controls
 from agent.convergence.graph import ConvergenceClique
-from agent.convergence.taxonomy import CATEGORIES, SignalMeta, SignalRegistry
+from agent.convergence.taxonomy import SignalRegistry
 from agent.convergence.templates import (
     TemplateMatchResult,
     best_match,
-    match_all_templates,
 )
 from agent.pipeline.store import PipelineStore
 
@@ -219,11 +217,7 @@ class ConvergenceDetector:
 
         # ── Step 6: FDR controls → cliques ─────────────────────
         categories = {
-            sig_id: (
-                self._registry.get(sig_id).category
-                if self._registry.get(sig_id)
-                else "unknown"
-            )
+            sig_id: (self._registry.get(sig_id).category if self._registry.get(sig_id) else "unknown")
             for sig_id in atomic_results
         }
 
@@ -320,9 +314,7 @@ class ConvergenceDetector:
         tools = registered_tools()
 
         for tool_name in tools:
-            rows = self._store.query_data(
-                tool_name, since=since, until=until, limit=1000
-            )
+            rows = self._store.query_data(tool_name, since=since, until=until, limit=1000)
             for row in rows:
                 data = row.get("data")
                 if data is None:

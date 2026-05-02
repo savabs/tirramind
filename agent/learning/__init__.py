@@ -3,7 +3,7 @@
 Reflection, goal generation, evaluation, and RL-driven goal selection.
 """
 
-from agent.learning.bandit import GoalArm, StrategyBandit, DEFAULT_ARMS, ArmStats
+from agent.learning.bandit import DEFAULT_ARMS, ArmStats, GoalArm, StrategyBandit
 from agent.learning.evaluator import Evaluation, Evaluator
 from agent.learning.goal_generator import Goal, GoalGenerator
 from agent.learning.reflection import ReflectionResult, Reflector

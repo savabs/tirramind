@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-import time
-
 import pytest
 
 from agent.pipeline.entity import entity_id_from_key
 from agent.pipeline.store import PipelineStore
-
 
 # ── Fixtures ───────────────────────────────────────────────────
 
@@ -165,9 +162,7 @@ class TestEntityObservations:
         )
 
         # Filter by source_tool
-        insider_only = store.query_entity_observations(
-            eid, source_tool="insider_filings"
-        )
+        insider_only = store.query_entity_observations(eid, source_tool="insider_filings")
         assert len(insider_only) == 2
 
         # Filter by depth_level
@@ -302,12 +297,7 @@ class TestSchemaMigration:
     def test_entity_tables_exist(self, store: PipelineStore):
         """Verify entity tables were created by _init_schema."""
         conn = store._get_conn()
-        tables = {
-            row["name"]
-            for row in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
-        }
+        tables = {row["name"] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
         assert "entities" in tables
         assert "entity_aliases" in tables
         assert "entity_observations" in tables

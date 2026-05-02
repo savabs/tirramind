@@ -11,22 +11,16 @@ DAG wiring, and EM transfer.
 from __future__ import annotations
 
 import io
-import copy
-import math
 
 import numpy as np
 import pytest
 import torch
-import torch.nn as nn
 
 from agent.models.diff_kalman import (
     DifferentiableKalmanFilter,
     _cholesky_to_psd,
-    _inverse_softplus,
-    _psd_to_cholesky_param,
 )
 from agent.models.state_filter import ContinuousStateFilter, RegimeConfig
-
 
 # ── Test fixtures ───────────────────────────────────────────────
 
@@ -101,7 +95,6 @@ def _make_observations(obs_dim: int = 17, n_nan: int = 0) -> np.ndarray:
 
 
 class TestConstruction:
-
     def test_default_dims(self):
         f = DifferentiableKalmanFilter()
         assert f.state_dim == 3
@@ -153,7 +146,6 @@ class TestConstruction:
 
 
 class TestPSD:
-
     def test_cholesky_to_psd_positive_definite(self):
         L_raw = torch.randn(5, 5)
         Q = _cholesky_to_psd(L_raw)
@@ -209,7 +201,6 @@ class TestPSD:
 
 
 class TestForwardShapes:
-
     def test_predict_output_shapes(self):
         f = _make_diff_filter()
         x_pred, P_pred = f.predict("expansion")
@@ -267,7 +258,6 @@ class TestForwardShapes:
 
 
 class TestGradientFlow:
-
     def test_predict_grads_exist(self):
         f = _make_diff_filter()
         f.reset(np.array([1.0, -0.5, 0.3]))  # Non-zero state for grad flow
@@ -334,7 +324,6 @@ class TestGradientFlow:
 
 
 class TestNaNMasking:
-
     def test_all_nan_returns_prior(self):
         f = _make_diff_filter()
         f.reset(np.array([0.5, -0.3, 0.1]))
@@ -384,7 +373,6 @@ class TestNaNMasking:
 
 
 class TestNumpyEquivalence:
-
     def test_predict_equivalence(self):
         np_f = _make_numpy_filter()
         diff_f = DifferentiableKalmanFilter.from_numpy_filter(np_f)
@@ -428,9 +416,7 @@ class TestNumpyEquivalence:
                 torch.ones(17),
             )
 
-        np.testing.assert_allclose(
-            diff_f.state.numpy(), np_f._x.astype(np.float32), atol=1e-3
-        )
+        np.testing.assert_allclose(diff_f.state.numpy(), np_f._x.astype(np.float32), atol=1e-3)
 
     def test_predict_update_sequence_equivalence(self):
         """Multi-step predict/update sequence should track numpy filter."""
@@ -458,9 +444,7 @@ class TestNumpyEquivalence:
             with torch.no_grad():
                 diff_f.update(obs.astype(np.float32), quality.astype(np.float32))
 
-        np.testing.assert_allclose(
-            diff_f.state.numpy(), np_f._x.astype(np.float32), atol=1e-3
-        )
+        np.testing.assert_allclose(diff_f.state.numpy(), np_f._x.astype(np.float32), atol=1e-3)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -469,7 +453,6 @@ class TestNumpyEquivalence:
 
 
 class TestRegimeSwitching:
-
     def test_different_regimes_produce_different_states(self):
         # Create two identical filters, predict with different regimes
         f1 = _make_diff_filter()
@@ -509,7 +492,6 @@ class TestRegimeSwitching:
 
 
 class TestSaveLoad:
-
     def test_state_dict_round_trip(self):
         f = _make_diff_filter()
         f.reset(np.array([1.0, 2.0, 3.0]))
@@ -548,7 +530,6 @@ class TestSaveLoad:
 
 
 class TestFromNumpyFilter:
-
     def test_dims_match(self):
         np_f = _make_numpy_filter()
         diff_f = DifferentiableKalmanFilter.from_numpy_filter(np_f)
@@ -602,7 +583,6 @@ class TestFromNumpyFilter:
 
 
 class TestToNumpyParams:
-
     def test_round_trip(self):
         np_f = _make_numpy_filter()
         diff_f = DifferentiableKalmanFilter.from_numpy_filter(np_f)
@@ -625,7 +605,6 @@ class TestToNumpyParams:
 
 
 class TestReset:
-
     def test_reset_zeros(self):
         f = _make_diff_filter()
         f.reset(np.array([1.0, 2.0, 3.0]))
@@ -652,7 +631,6 @@ class TestReset:
 
 
 class TestGetBeliefs:
-
     def test_belief_count_matches_state_dim(self):
         f = _make_diff_filter()
         names = ["stress", "momentum", "liquidity"]
@@ -690,7 +668,6 @@ class TestGetBeliefs:
 
 
 class TestParameterOptimization:
-
     def test_sgd_reduces_loss(self):
         """Prove that optimizing filter params via SGD can reduce a loss."""
         f = DifferentiableKalmanFilter(state_dim=2, obs_dim=4, regime_names=["default"])
@@ -716,9 +693,7 @@ class TestParameterOptimization:
             losses.append(loss.item())
 
         # Loss should decrease
-        assert (
-            losses[-1] < losses[0]
-        ), f"SGD did not reduce loss: {losses[0]:.4f} → {losses[-1]:.4f}"
+        assert losses[-1] < losses[0], f"SGD did not reduce loss: {losses[0]:.4f} → {losses[-1]:.4f}"
 
     def test_psd_maintained_after_many_steps(self):
         """PSD enforcement holds after many optimization steps."""
@@ -749,7 +724,6 @@ class TestParameterOptimization:
 
 
 class TestWorldModelIntegration:
-
     def _make_world_model_with_diff_filter(self):
         """Build a WorldModel using DifferentiableKalmanFilter."""
         from agent.models.initial_graph import build_initial_graph
@@ -828,7 +802,6 @@ class TestWorldModelIntegration:
 
 
 class TestBuildWorldModel:
-
     def test_build_with_numpy_filter(self):
         """Default: numpy filter (backward compat)."""
         from agent.pipeline.dags.world_model_update import _build_world_model
@@ -851,8 +824,8 @@ class TestBuildWorldModel:
 
     def test_build_diff_filter_with_learned_edges(self):
         """Learned edges + differentiable filter should both work."""
-        from agent.pipeline.dags.world_model_update import _build_world_model
         from agent.models.initial_graph import build_initial_graph
+        from agent.pipeline.dags.world_model_update import _build_world_model
 
         # Use a subset of expert edges as "learned"
         g = build_initial_graph()
@@ -882,7 +855,6 @@ class TestBuildWorldModel:
 
 
 class TestEdgeCases:
-
     def test_observations_wrong_shape_raises(self):
         f = _make_diff_filter()
         with pytest.raises(ValueError, match="observations shape"):

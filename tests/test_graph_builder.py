@@ -12,20 +12,17 @@ from __future__ import annotations
 import time
 
 import pytest
-import torch
 
-from agent.pipeline.entity import entity_id_from_key
-from agent.pipeline.store import PipelineStore
 from agent.models.gnn.graph_builder import (
     ENTITY_TYPES,
-    OBSERVATION_TYPES,
     GraphBuilder,
     IDMap,
     _build_edge_data,
     _build_node_features,
     _compute_obs_stats,
 )
-
+from agent.pipeline.entity import entity_id_from_key
+from agent.pipeline.store import PipelineStore
 
 # ── Fixtures ───────────────────────────────────────────────────
 
@@ -119,9 +116,7 @@ def _seed_graph(store: PipelineStore) -> dict:
         1500.0,
         {"goldstein_scale": -5.0, "num_articles": 42},
     )
-    _obs(
-        store, tanker, "ais_vessel", "port_call", 1800.0, {"port_name": "Novorossiysk"}
-    )
+    _obs(store, tanker, "ais_vessel", "port_call", 1800.0, {"port_name": "Novorossiysk"})
     _obs(
         store,
         w1,

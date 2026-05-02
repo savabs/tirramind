@@ -12,9 +12,8 @@ from unittest.mock import MagicMock
 import pytest
 
 from agent.pipeline.dag import DAG
-from agent.pipeline.registry import DAGRegistry
 from agent.pipeline.dags.daily_collection import build_daily_collection_dag
-
+from agent.pipeline.registry import DAGRegistry
 
 # ── Helpers ───────────────────────────────────────────────────
 
@@ -496,8 +495,8 @@ class TestRegistrySchedulerIntegration:
         assert callable(r.list_all)
 
     def test_registry_works_with_scheduler(self):
-        from agent.pipeline.scheduler import PipelineScheduler
         from agent.pipeline.executor import DAGExecutor
+        from agent.pipeline.scheduler import PipelineScheduler
 
         r = DAGRegistry()
         r.load_defaults(MagicMock())
@@ -508,8 +507,8 @@ class TestRegistrySchedulerIntegration:
         assert len(scheduler.list_dags()) >= 1
 
     def test_scheduler_registers_daily_collection_cron(self):
-        from agent.pipeline.scheduler import PipelineScheduler
         from agent.pipeline.executor import DAGExecutor
+        from agent.pipeline.scheduler import PipelineScheduler
 
         r = DAGRegistry()
         r.load_defaults(MagicMock())

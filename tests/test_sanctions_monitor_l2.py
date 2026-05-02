@@ -3,14 +3,10 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
 from typing import Any
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock
 
-import pytest
-
-from agent.tools.sanctions_monitor import SanctionsMonitorTool, _PROGRAM_COUNTRY
-
+from agent.tools.sanctions_monitor import _PROGRAM_COUNTRY, SanctionsMonitorTool
 
 # ── Helpers ──────────────────────────────────────────────────────
 
@@ -200,11 +196,7 @@ class TestProgramCountryLinks:
         rec = _make_record(programs=["CUBA"])
         tool._persist_entities([rec])
         # Find the country registration call
-        country_calls = [
-            c
-            for c in store.register_entity.call_args_list
-            if c.kwargs.get("entity_type") == "country"
-        ]
+        country_calls = [c for c in store.register_entity.call_args_list if c.kwargs.get("entity_type") == "country"]
         assert len(country_calls) == 1
         assert country_calls[0].kwargs["canonical_name"] == "CU"
 

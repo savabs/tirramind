@@ -11,15 +11,14 @@ Covers:
 
 from __future__ import annotations
 
-import os
 import argparse
+import os
 import sys
 from unittest import mock
 
 import pytest
 
-from agent.config.settings import PipelineConfig, AgentConfig
-
+from agent.config.settings import AgentConfig, PipelineConfig
 
 # ── PipelineConfig ───────────────────────────────────────────────────────────
 
@@ -84,9 +83,8 @@ class TestPipelineConfigFromEnv:
         assert cfg.log_level == "WARNING"
 
     def test_invalid_max_workers_raises(self):
-        with mock.patch.dict(os.environ, {"TIRRA_PIPELINE_WORKERS": "not_a_number"}):
-            with pytest.raises(ValueError):
-                PipelineConfig.from_env()
+        with mock.patch.dict(os.environ, {"TIRRA_PIPELINE_WORKERS": "not_a_number"}), pytest.raises(ValueError):
+            PipelineConfig.from_env()
 
 
 class TestAgentConfigIncludesPipeline:
@@ -195,10 +193,12 @@ class TestCLIPipelineArgParsing:
 # _pipeline_start are tested via mock patches on sys.modules to avoid the
 # import chain.
 
+
 def _import_cli():
     """Try to import agent.cli, skip tests if transitive deps missing."""
     pytest.importorskip("hmmlearn", reason="hmmlearn not installed — skipping CLI dispatch tests")
     import agent.cli
+
     return agent.cli
 
 
@@ -293,6 +293,7 @@ class TestPipelineStatusSubcommand:
     def test_status_shows_existing_run(self, tmp_path):
         cli = _import_cli()
         from agent.pipeline.store import PipelineStore
+
         db_path = str(tmp_path / "test.db")
         store = PipelineStore(db_path=db_path)
         store.record_run_start(dag_name="test_dag", trigger="manual", run_id="run-abc")
@@ -306,6 +307,7 @@ class TestPipelineStatusSubcommand:
     def test_status_lists_runs(self, tmp_path):
         cli = _import_cli()
         from agent.pipeline.store import PipelineStore
+
         db_path = str(tmp_path / "test.db")
         store = PipelineStore(db_path=db_path)
         store.record_run_start(dag_name="dag_a", trigger="cron", run_id="run-1")

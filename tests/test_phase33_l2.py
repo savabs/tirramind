@@ -8,12 +8,9 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from agent.models.gnn.graph_builder import ENRICHMENT_DIM, OBSERVATION_TYPES
 from agent.tools.electricity_monitor import KNOWN_REGIONS, ElectricityMonitorTool
-from agent.tools.regulatory_gazette import MARKET_AGENCIES, RegulatoryGazetteTool
-
+from agent.tools.regulatory_gazette import RegulatoryGazetteTool
 
 # ── Helpers ──────────────────────────────────────────────────
 
@@ -32,7 +29,7 @@ def _store() -> MagicMock:
 
 class TestGraphBuilderPhase33:
     def test_obs_types_sorted(self):
-        assert OBSERVATION_TYPES == sorted(OBSERVATION_TYPES)
+        assert sorted(OBSERVATION_TYPES) == OBSERVATION_TYPES
 
     def test_new_obs_types_present(self):
         for ot in ("grid_demand", "regulatory_velocity"):
@@ -42,7 +39,7 @@ class TestGraphBuilderPhase33:
         assert len(OBSERVATION_TYPES) == 46
 
     def test_enrichment_dim(self):
-        assert ENRICHMENT_DIM == 9 + len(OBSERVATION_TYPES)
+        assert 9 + len(OBSERVATION_TYPES) == ENRICHMENT_DIM
         assert ENRICHMENT_DIM == 55
 
 
@@ -54,27 +51,19 @@ class TestGraphBuilderPhase33:
 class TestRegulatoryGazetteL2:
     def test_no_store_returns_zero(self):
         tool = RegulatoryGazetteTool()
-        assert tool._persist_entities({"documents": []}, "recent") == {
-            "regulatory_velocity_obs": 0
-        }
+        assert tool._persist_entities({"documents": []}, "recent") == {"regulatory_velocity_obs": 0}
 
     @patch("agent.tools.regulatory_gazette._entity_id_from_key", None)
     def test_no_entity_id_returns_zero(self):
         tool = RegulatoryGazetteTool(pipeline_store=_store())
-        assert tool._persist_entities({"documents": []}, "recent") == {
-            "regulatory_velocity_obs": 0
-        }
+        assert tool._persist_entities({"documents": []}, "recent") == {"regulatory_velocity_obs": 0}
 
     def test_exception_caught(self):
         store = _store()
         store.register_entity.side_effect = RuntimeError("boom")
         tool = RegulatoryGazetteTool(pipeline_store=store)
         result = tool._persist_entities(
-            {
-                "documents": [
-                    {"agencies": ["Securities and Exchange Commission"], "type": "RULE"}
-                ]
-            },
+            {"documents": [{"agencies": ["Securities and Exchange Commission"], "type": "RULE"}]},
             "recent",
         )
         assert result == {"regulatory_velocity_obs": 0}

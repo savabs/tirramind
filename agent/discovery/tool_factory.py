@@ -13,7 +13,6 @@ Reference: Spec step 15.4 in [[tier8_autonomous_discovery_spec]].
 from __future__ import annotations
 
 import csv
-import hashlib
 import io
 import json
 import logging
@@ -289,9 +288,7 @@ class ToolFactory:
         """
         if candidate.format == "json_api":
             response_path = self._detect_response_path(candidate.probe_sample)
-            field_mapping = self._detect_field_mapping(
-                candidate.probe_sample, response_path
-            )
+            field_mapping = self._detect_field_mapping(candidate.probe_sample, response_path)
             return DiscoveredJsonApiTool(
                 source_id=candidate.source_id,
                 source_name=candidate.name,

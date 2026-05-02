@@ -8,25 +8,19 @@ empty responses, zero-variance data, evergreen filtering.
 
 from __future__ import annotations
 
-import json
-import math
-from datetime import datetime, timedelta, timezone
-from typing import Any
+from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
 
 from agent.tools.wikipedia_pageviews import (
+    _DEFAULT_WATCHLIST,
+    _EVERGREEN,
     WikipediaPageviewsTool,
     _detect_spike,
     _std,
-    _EVERGREEN,
-    _DEFAULT_WATCHLIST,
-    _BASE,
-    _UA,
 )
-
 
 # ------------------------------------------------------------------
 # Fixtures
@@ -48,22 +42,14 @@ def tool_cached():
 def _make_items(views: list[int], start_date: str = "20260301") -> list[dict]:
     """Build a list of Wikimedia pageview items."""
     dt = datetime.strptime(start_date, "%Y%m%d")
-    return [
-        {"timestamp": (dt + timedelta(days=i)).strftime("%Y%m%d00"), "views": v}
-        for i, v in enumerate(views)
-    ]
+    return [{"timestamp": (dt + timedelta(days=i)).strftime("%Y%m%d00"), "views": v} for i, v in enumerate(views)]
 
 
 def _make_top_response(articles: list[tuple[str, int]]) -> dict:
     """Build a Wikimedia top-pageviews response."""
     return {
         "items": [
-            {
-                "articles": [
-                    {"article": name, "views": views, "rank": i + 1}
-                    for i, (name, views) in enumerate(articles)
-                ]
-            }
+            {"articles": [{"article": name, "views": views, "rank": i + 1} for i, (name, views) in enumerate(articles)]}
         ]
     }
 
@@ -620,9 +606,7 @@ class TestCacheIntegration:
         cache.get.return_value = cached_items
 
         client = MagicMock()
-        result = tool._fetch_article_views(
-            client, "en.wikipedia", "Test", "20260301", "20260310"
-        )
+        result = tool._fetch_article_views(client, "en.wikipedia", "Test", "20260301", "20260310")
         assert result == cached_items
         # Client should NOT have been called
         client.get.assert_not_called()
@@ -640,9 +624,7 @@ class TestCacheIntegration:
         client = MagicMock()
         client.get.return_value = mock_resp
 
-        result = tool._fetch_article_views(
-            client, "en.wikipedia", "Test", "20260301", "20260305"
-        )
+        result = tool._fetch_article_views(client, "en.wikipedia", "Test", "20260301", "20260305")
         assert result == items
         cache.put.assert_called_once()
 
@@ -657,9 +639,7 @@ class TestCacheIntegration:
         client = MagicMock()
         client.get.return_value = mock_resp
 
-        result = tool._fetch_article_views(
-            client, "en.wikipedia", "Nonexistent", "20260301", "20260310"
-        )
+        result = tool._fetch_article_views(client, "en.wikipedia", "Nonexistent", "20260301", "20260310")
         assert result == []
         cache.put.assert_not_called()
 
@@ -725,9 +705,7 @@ class TestURLEncoding:
         client = MagicMock()
         client.get.return_value = mock_resp
 
-        tool._fetch_article_views(
-            client, "en.wikipedia", "Tesla,_Inc.", "20260301", "20260310"
-        )
+        tool._fetch_article_views(client, "en.wikipedia", "Tesla,_Inc.", "20260301", "20260310")
         url = client.get.call_args[0][0]
         # The comma and parentheses should be encoded
         assert "Tesla" in url

@@ -6,7 +6,6 @@ import pytest
 
 from agent.pipeline.dag import DAG, Node
 
-
 # ── Node construction ──────────────────────────────────────────
 
 
@@ -184,7 +183,7 @@ class TestValidation:
         dag = DAG(name="deep")
         dag.add("n0", operator="x")
         for i in range(1, 50):
-            dag.add(f"n{i}", operator="x", depends_on=[f"n{i-1}"])
+            dag.add(f"n{i}", operator="x", depends_on=[f"n{i - 1}"])
         assert dag.validate() == []
 
     def test_no_name_error(self):
@@ -288,7 +287,7 @@ class TestTopoSort:
         dag = DAG(name="deep")
         dag.add("n0", operator="x")
         for i in range(1, 20):
-            dag.add(f"n{i}", operator="x", depends_on=[f"n{i-1}"])
+            dag.add(f"n{i}", operator="x", depends_on=[f"n{i - 1}"])
         layers = dag.topo_sort()
         assert len(layers) == 20
         for i, layer in enumerate(layers):

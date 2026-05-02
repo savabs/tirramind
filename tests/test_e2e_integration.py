@@ -12,33 +12,23 @@ from __future__ import annotations
 
 import math
 import time
-from datetime import date, timedelta
+from datetime import UTC, date, timedelta
 from pathlib import Path
-from typing import Any
-from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
 
-from agent.pipeline.dag import DAG
 from agent.pipeline.dags.inference import (
-    DAG_NAME,
+    _DRAWDOWN_THRESHOLD,
+    _SHARPE_THRESHOLD,
     _check_concentration,
     _check_drawdown,
     _check_edge_decay,
     _check_sharpe,
     _emit_portfolio,
-    _gnn_inference,
-    _load_models,
-    _sac_inference,
     build_inference_dag,
-    _CONCENTRATION_THRESHOLD,
-    _DRAWDOWN_THRESHOLD,
-    _SHARPE_THRESHOLD,
-    _SHARPE_MIN_DAYS,
 )
 from agent.pipeline.store import PipelineStore
-
 
 # ──────────────────────────────────────────────────────────────
 # Fixtures
@@ -64,20 +54,14 @@ def _store_daily_returns(
     returns: dict[str, float] | None = None,
 ) -> None:
     """Store daily_return observations for given tickers on a date."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    ts = datetime.fromisoformat(as_of).replace(hour=16, tzinfo=timezone.utc).timestamp()
+    ts = datetime.fromisoformat(as_of).replace(hour=16, tzinfo=UTC).timestamp()
 
     rng = np.random.default_rng(42)
     for t in tickers:
-        lr = (
-            returns.get(t, float(rng.standard_normal() * 0.01))
-            if returns
-            else float(rng.standard_normal() * 0.01)
-        )
-        store.store_entity_observation(
-            t, "instrument_universe", ts, "daily_return", {"log_return": lr}
-        )
+        lr = returns.get(t, float(rng.standard_normal() * 0.01)) if returns else float(rng.standard_normal() * 0.01)
+        store.store_entity_observation(t, "instrument_universe", ts, "daily_return", {"log_return": lr})
 
 
 def _seed_pnl_history(
@@ -118,10 +102,10 @@ class TestScheduleVerification:
 
     def test_fires_after_all_upstream_dags(self) -> None:
         """19:45 > max(all other DAG schedules)."""
+        from agent.pipeline.dags.adversarial_scan import build_adversarial_scan_dag
         from agent.pipeline.dags.daily_collection import build_daily_collection_dag
         from agent.pipeline.dags.rl_training import build_rl_training_dag
         from agent.pipeline.dags.world_model_update import build_world_model_dag
-        from agent.pipeline.dags.adversarial_scan import build_adversarial_scan_dag
 
         # These are the latest upstream DAGs
         assert build_rl_training_dag().schedule == "30 19 * * 1-5"
@@ -146,8 +130,7 @@ class TestScheduleVerification:
                 dm, dh = int(dparts[0]), int(dparts[1])
                 dag_time = dh * 60 + dm
                 assert inference_time > dag_time, (
-                    f"Inference at {hour}:{minute:02d} not after "
-                    f"{dag.name} at {dh}:{dm:02d}"
+                    f"Inference at {hour}:{minute:02d} not after {dag.name} at {dh}:{dm:02d}"
                 )
 
 
@@ -254,16 +237,12 @@ class TestSharpeAlert:
             d = (date(2026, 2, 1) + timedelta(days=i)).isoformat()
             cumulative += 0.001
             store.store_paper_pnl(d, 0.001, 0.0, cumulative)
-        alerts = _check_sharpe(
-            store, (date(2026, 2, 1) + timedelta(days=59)).isoformat()
-        )
+        alerts = _check_sharpe(store, (date(2026, 2, 1) + timedelta(days=59)).isoformat())
         assert len(alerts) == 0
 
     def test_alert_bad_sharpe_after_30_days(self, store: PipelineStore) -> None:
         """Consistently negative returns for 40+ days → terrible Sharpe → CRITICAL."""
-        _seed_pnl_history(
-            store, n_days=45, daily_return=-0.005, start_date="2026-02-01"
-        )
+        _seed_pnl_history(store, n_days=45, daily_return=-0.005, start_date="2026-02-01")
         today = (date(2026, 2, 1) + timedelta(days=44)).isoformat()
         alerts = _check_sharpe(store, today)
         assert len(alerts) == 1
@@ -278,9 +257,7 @@ class TestSharpeAlert:
             d = (date(2026, 2, 1) + timedelta(days=i)).isoformat()
             cumulative += 0.001
             store.store_paper_pnl(d, 0.001, 0.0, cumulative)
-        alerts = _check_sharpe(
-            store, (date(2026, 2, 1) + timedelta(days=39)).isoformat()
-        )
+        alerts = _check_sharpe(store, (date(2026, 2, 1) + timedelta(days=39)).isoformat())
         # std ≈ 0 → skip
         assert len(alerts) == 0
 
@@ -507,9 +484,7 @@ class TestE2EIntegration:
 
         yesterday_weights = {"A": 0.5, "B": 0.3, "C": 0.2}
         today_returns = {"A": 0.01, "B": -0.02, "C": 0.03}
-        expected_pnl = (
-            0.5 * 0.01 + 0.3 * (-0.02) + 0.2 * 0.03
-        )  # = 0.005 - 0.006 + 0.006 = 0.005
+        expected_pnl = 0.5 * 0.01 + 0.3 * (-0.02) + 0.2 * 0.03  # = 0.005 - 0.006 + 0.006 = 0.005
 
         today, yesterday = self._setup_chain(
             store,
@@ -666,9 +641,7 @@ class TestAlertIntegration:
         tickers = ["SPY"]
         _register_instruments(store, tickers)
 
-        _seed_pnl_history(
-            store, n_days=45, daily_return=-0.005, start_date="2026-02-01"
-        )
+        _seed_pnl_history(store, n_days=45, daily_return=-0.005, start_date="2026-02-01")
 
         today = (date(2026, 2, 1) + timedelta(days=45)).isoformat()
         yesterday = (date(2026, 2, 1) + timedelta(days=44)).isoformat()
@@ -747,9 +720,7 @@ class TestAlertIntegration:
 
         today = "2026-04-13"
         yesterday = "2026-04-12"
-        store.store_portfolio_weights(
-            yesterday, {"SPY": 0.25, "AGG": 0.25, "GLD": 0.25, "TLT": 0.25}
-        )
+        store.store_portfolio_weights(yesterday, {"SPY": 0.25, "AGG": 0.25, "GLD": 0.25, "TLT": 0.25})
         _store_daily_returns(
             store,
             tickers,

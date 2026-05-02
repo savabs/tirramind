@@ -39,9 +39,7 @@ class WebBrowseTool(Tool):
     def execute(self, *, url: str, **_: Any) -> ToolResult:
         # Basic URL validation
         if not url.startswith(("http://", "https://")):
-            return ToolResult(
-                success=False, output="URL must start with http:// or https://"
-            )
+            return ToolResult(success=False, output="URL must start with http:// or https://")
 
         # SSRF protection
         try:
@@ -57,9 +55,7 @@ class WebBrowseTool(Tool):
             with httpx.Client(timeout=20, follow_redirects=True) as client:
                 resp = client.get(
                     url,
-                    headers={
-                        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) TirraMind/0.1"
-                    },
+                    headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) TirraMind/0.1"},
                 )
                 resp.raise_for_status()
 
@@ -75,9 +71,7 @@ class WebBrowseTool(Tool):
     def _extract_text(html: str) -> str:
         """Rough HTML → text extraction. Good enough for prototyping."""
         # Remove script and style blocks
-        text = re.sub(
-            r"<(script|style)[^>]*>.*?</\1>", "", html, flags=re.DOTALL | re.IGNORECASE
-        )
+        text = re.sub(r"<(script|style)[^>]*>.*?</\1>", "", html, flags=re.DOTALL | re.IGNORECASE)
         # Remove tags
         text = re.sub(r"<[^>]+>", " ", text)
         # Collapse whitespace

@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -299,7 +299,7 @@ class CapitalFlowsTool(Tool):
         *,
         fred_api_key: str = "",
         cache: DataCache | None = None,
-        pipeline_store: "PipelineStore | None" = None,
+        pipeline_store: PipelineStore | None = None,
     ) -> None:
         self._api_key = fred_api_key
         self._cache = cache
@@ -322,7 +322,7 @@ class CapitalFlowsTool(Tool):
         if period_key not in _PERIOD_DAYS:
             period_key = "2y"
         days = _PERIOD_DAYS[period_key]
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         start = (now - timedelta(days=days)).strftime("%Y-%m-%d")
         end = now.strftime("%Y-%m-%d")
 
@@ -350,10 +350,7 @@ class CapitalFlowsTool(Tool):
         elif country_filter and country_filter not in HOLDINGS_SERIES:
             return ToolResult(
                 success=False,
-                output=(
-                    f"Unknown country '{country_filter}'. "
-                    f"Available: {', '.join(sorted(HOLDINGS_SERIES.keys()))}"
-                ),
+                output=(f"Unknown country '{country_filter}'. Available: {', '.join(sorted(HOLDINGS_SERIES.keys()))}"),
             )
 
         results: list[dict[str, Any]] = []
@@ -362,9 +359,7 @@ class CapitalFlowsTool(Tool):
 
         for key, info in series_to_fetch.items():
             cache_key = {"series": info["series_id"], "start": start, "end": end}
-            cached = (
-                self._cache.get("capital_flows", cache_key) if self._cache else None
-            )
+            cached = self._cache.get("capital_flows", cache_key) if self._cache else None
             if cached is not None:
                 obs = cached
             else:
@@ -393,9 +388,7 @@ class CapitalFlowsTool(Tool):
                     "key": key,
                     "latest_value_billions": latest_val,
                     "latest_date": latest["date"] if latest else None,
-                    "mom_change_pct": (
-                        round(mom_chg, 2) if mom_chg is not None else None
-                    ),
+                    "mom_change_pct": (round(mom_chg, 2) if mom_chg is not None else None),
                     "observations": len(obs),
                 }
             )
@@ -412,11 +405,7 @@ class CapitalFlowsTool(Tool):
             elif r["mom_change_pct"] is not None and r["mom_change_pct"] > 3:
                 flag = " **[BUYING]**"
             val_str = f"${r['latest_value_billions']:,.1f}B"
-            mom = (
-                f"{r['mom_change_pct']:+.1f}%"
-                if r["mom_change_pct"] is not None
-                else "N/A"
-            )
+            mom = f"{r['mom_change_pct']:+.1f}%" if r["mom_change_pct"] is not None else "N/A"
             lines.append(f"**{r['country']}**: {val_str} (MoM: {mom}){flag}")
             lines.append(f"  Date: {r['latest_date']}")
 
@@ -451,9 +440,7 @@ class CapitalFlowsTool(Tool):
 
         for key, info in FLOW_SERIES.items():
             cache_key = {"series": info["series_id"], "start": start, "end": end}
-            cached = (
-                self._cache.get("capital_flows", cache_key) if self._cache else None
-            )
+            cached = self._cache.get("capital_flows", cache_key) if self._cache else None
             if cached is not None:
                 obs = cached
             else:
@@ -499,12 +486,8 @@ class CapitalFlowsTool(Tool):
         for r in results:
             direction = "inflow" if r["latest_value"] > 0 else "outflow"
             reversal_flag = " **[REVERSAL]**" if r["flow_reversal"] else ""
-            lines.append(
-                f"**{r['series']}**: ${r['latest_value']:,.1f}M ({direction}){reversal_flag}"
-            )
-            lines.append(
-                f"  Period avg: ${r['period_average']:,.1f}M | Date: {r['latest_date']}"
-            )
+            lines.append(f"**{r['series']}**: ${r['latest_value']:,.1f}M ({direction}){reversal_flag}")
+            lines.append(f"  Period avg: ${r['period_average']:,.1f}M | Date: {r['latest_date']}")
 
         if errors:
             lines.append("\n**Notes:**")
@@ -539,9 +522,7 @@ class CapitalFlowsTool(Tool):
 
         for key, info in series_to_fetch.items():
             cache_key = {"series": info["series_id"], "start": start, "end": end}
-            cached = (
-                self._cache.get("capital_flows", cache_key) if self._cache else None
-            )
+            cached = self._cache.get("capital_flows", cache_key) if self._cache else None
             if cached is not None:
                 obs = cached
             else:
@@ -715,11 +696,7 @@ class CapitalFlowsTool(Tool):
                         "series": row.get("series"),
                         "latest_value": row.get("latest_value"),
                         "mom_change_pct": None,
-                        "stress": (
-                            stress_info.get("stress")
-                            if isinstance(stress_info, dict)
-                            else None
-                        ),
+                        "stress": (stress_info.get("stress") if isinstance(stress_info, dict) else None),
                     },
                     depth_level=2,
                 )

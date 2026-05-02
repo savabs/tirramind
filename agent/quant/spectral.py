@@ -6,9 +6,7 @@ import numpy as np
 from scipy.fft import rfft, rfftfreq
 
 
-def power_spectrum(
-    data: np.ndarray, sampling_freq: float = 52.0
-) -> tuple[np.ndarray, np.ndarray]:
+def power_spectrum(data: np.ndarray, sampling_freq: float = 52.0) -> tuple[np.ndarray, np.ndarray]:
     """Compute one-sided power spectrum via FFT.
 
     Parameters
@@ -83,11 +81,7 @@ def _cwt_morlet(data: np.ndarray, widths: np.ndarray, w: float = 6.0) -> np.ndar
         # Generate Morlet wavelet at this scale
         half = int(4 * width + 0.5)
         t = np.arange(-half, half + 1)
-        wavelet = (
-            np.exp(1j * w * t / width)
-            * np.exp(-0.5 * (t / width) ** 2)
-            / np.sqrt(width)
-        )
+        wavelet = np.exp(1j * w * t / width) * np.exp(-0.5 * (t / width) ** 2) / np.sqrt(width)
         # Full convolution, then center-crop to match data length
         conv = np.convolve(data, wavelet, mode="full")
         start = (len(conv) - T) // 2

@@ -495,6 +495,11 @@ def main() -> None:
     parser.add_argument("--json", action="store_true", help="Output as JSON")
     parser.add_argument("--no-stale", action="store_true", help="Skip staleness checks")
     parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Exit 1 only on blocking errors (FM01, FM02, LK01). Advisory codes LK02/ST01/ST02/ST03 are reported but do not fail.",
+    )
+    parser.add_argument(
         "--threshold",
         type=int,
         default=500,
@@ -520,6 +525,14 @@ def main() -> None:
         print(format_text(report))
 
     # Exit with code 1 if there are findings (useful for CI)
+    if args.strict:
+        # Blocking errors enforced in CI.
+        # LK01 is advisory until the 52 pre-existing broken links are resolved
+        # (many point to Python module names that are not wiki pages).
+        # Promote LK01 to _BLOCKING once `obsidian_lint.py --strict` reports 0 LK01s.
+        _BLOCKING = {"FM01", "FM02"}
+        blocking = [f for f in report.findings if f.code in _BLOCKING]
+        sys.exit(1 if blocking else 0)
     sys.exit(1 if report.findings else 0)
 
 

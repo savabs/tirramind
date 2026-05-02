@@ -16,10 +16,10 @@ import pytest
 
 from agent.convergence.extractors import extract_evidence, registered_tools
 
-
 # ════════════════════════════════════════════════════════════════
 #  Helpers
 # ════════════════════════════════════════════════════════════════
+
 
 def _sigs(tool: str, data: dict) -> dict:
     """Return {signal_id: Evidence} for a tool extraction."""
@@ -29,6 +29,7 @@ def _sigs(tool: str, data: dict) -> dict:
 # ════════════════════════════════════════════════════════════════
 #  Registration
 # ════════════════════════════════════════════════════════════════
+
 
 class TestRegistration:
     def test_51_total_extractors(self):
@@ -42,6 +43,7 @@ class TestRegistration:
 # ════════════════════════════════════════════════════════════════
 #  labor_disruptions
 # ════════════════════════════════════════════════════════════════
+
 
 class TestLaborDisruptionsOverview:
     """Overview mode: signals dict has nested workers/idle_days sub-dicts."""
@@ -345,6 +347,7 @@ class TestLaborDisruptionsDefensive:
 #  gov_contracts
 # ════════════════════════════════════════════════════════════════
 
+
 class TestGovContractsUS:
     """US awards from USASpending API."""
 
@@ -478,12 +481,9 @@ class TestGovContractsDefenseEdgeCases:
         """Exactly 0.3 → direction 0 (boundary is strict >)."""
         data = {
             "awards": [
-                {"award_id": f"{i}", "agency": "Civilian", "amount_usd": 100, "description": ""}
-                for i in range(7)
-            ] + [
-                {"award_id": f"d{i}", "agency": "DoD", "amount_usd": 100, "description": ""}
-                for i in range(3)
-            ],
+                {"award_id": f"{i}", "agency": "Civilian", "amount_usd": 100, "description": ""} for i in range(7)
+            ]
+            + [{"award_id": f"d{i}", "agency": "DoD", "amount_usd": 100, "description": ""} for i in range(3)],
             "count": 10,
         }
         e = _sigs("gov_contracts", data)["gov_contract.us.defense_share"]
@@ -494,7 +494,12 @@ class TestGovContractsDefenseEdgeCases:
         """Defense keyword in description (not agency) should count."""
         data = {
             "awards": [
-                {"award_id": "1", "agency": "General Services", "amount_usd": 100, "description": "Military logistics support"},
+                {
+                    "award_id": "1",
+                    "agency": "General Services",
+                    "amount_usd": 100,
+                    "description": "Military logistics support",
+                },
             ],
             "count": 1,
         }
@@ -605,6 +610,7 @@ class TestGovContractsDefensive:
 #  academic_preprints
 # ════════════════════════════════════════════════════════════════
 
+
 class TestAcademicPreprintsTrials:
     """Clinical trials mode (data['trials'] present)."""
 
@@ -616,7 +622,12 @@ class TestAcademicPreprintsTrials:
                 {"nct_id": "NCT002", "status": "Active, not recruiting", "sponsor": "NIH", "sponsor_class": "NIH"},
                 {"nct_id": "NCT003", "status": "Completed", "sponsor": "Moderna", "sponsor_class": "INDUSTRY"},
                 {"nct_id": "NCT004", "status": "Completed", "sponsor": "Harvard", "sponsor_class": "OTHER"},
-                {"nct_id": "NCT005", "status": "Not yet recruiting", "sponsor": "AstraZeneca", "sponsor_class": "INDUSTRY"},
+                {
+                    "nct_id": "NCT005",
+                    "status": "Not yet recruiting",
+                    "sponsor": "AstraZeneca",
+                    "sponsor_class": "INDUSTRY",
+                },
                 {"nct_id": "NCT006", "status": "Withdrawn", "sponsor": "Unknown", "sponsor_class": "OTHER"},
             ],
             "total": 6,
@@ -857,6 +868,7 @@ class TestAcademicPreprintsDefensive:
 # ════════════════════════════════════════════════════════════════
 #  Cross-cutting
 # ════════════════════════════════════════════════════════════════
+
 
 class TestCrossCutting:
     """Properties that should hold for all 3 new extractors."""

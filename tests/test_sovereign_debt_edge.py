@@ -14,7 +14,6 @@ from unittest.mock import MagicMock, patch
 
 import httpx
 
-
 # ──────────────────────────────────────────────────────────────────
 # Synthetic data factories
 # ──────────────────────────────────────────────────────────────────
@@ -130,9 +129,7 @@ def _mock_response(text="", status_code=200, is_error=False):
     resp.status_code = status_code
     resp.text = text
     if is_error:
-        resp.raise_for_status.side_effect = httpx.HTTPStatusError(
-            "Error", request=MagicMock(), response=resp
-        )
+        resp.raise_for_status.side_effect = httpx.HTTPStatusError("Error", request=MagicMock(), response=resp)
     else:
         resp.raise_for_status.return_value = None
     return resp
@@ -168,9 +165,7 @@ class TestToolMetadata(unittest.TestCase):
     def test_valid_modes_constant(self):
         from agent.tools.sovereign_debt import VALID_MODES
 
-        self.assertEqual(
-            VALID_MODES, {"us_yields", "eu_yields", "jp_yields", "uk_gilts", "spreads"}
-        )
+        self.assertEqual(VALID_MODES, {"us_yields", "eu_yields", "jp_yields", "uk_gilts", "spreads"})
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -395,9 +390,7 @@ class TestEUYieldsValid(unittest.TestCase):
         from agent.tools.sovereign_debt import SovereignDebtTool
 
         mock_get.return_value = _mock_response(_make_ecb_csv("DE"))
-        r = SovereignDebtTool().execute(
-            mode="eu_yields", countries=["DE"], month="2026-03"
-        )
+        r = SovereignDebtTool().execute(mode="eu_yields", countries=["DE"], month="2026-03")
         self.assertTrue(r.success)
         self.assertIn("DE", r.data["countries"])
         self.assertEqual(len(r.data["countries"]["DE"]), 2)
@@ -414,9 +407,7 @@ class TestEUYieldsValid(unittest.TestCase):
             return _mock_response("", status_code=404, is_error=True)
 
         mock_get.side_effect = side_effect
-        r = SovereignDebtTool().execute(
-            mode="eu_yields", countries=["DE", "IT"], month="2026-03"
-        )
+        r = SovereignDebtTool().execute(mode="eu_yields", countries=["DE", "IT"], month="2026-03")
         self.assertTrue(r.success)
         self.assertIn("DE", r.data["countries"])
         self.assertIn("IT", r.data["countries"])
@@ -425,12 +416,8 @@ class TestEUYieldsValid(unittest.TestCase):
     def test_output_contains_yields(self, mock_get):
         from agent.tools.sovereign_debt import SovereignDebtTool
 
-        mock_get.return_value = _mock_response(
-            _make_ecb_csv("DE", [("2026-02", 2.744)])
-        )
-        r = SovereignDebtTool().execute(
-            mode="eu_yields", countries=["DE"], month="2026-03"
-        )
+        mock_get.return_value = _mock_response(_make_ecb_csv("DE", [("2026-02", 2.744)]))
+        r = SovereignDebtTool().execute(mode="eu_yields", countries=["DE"], month="2026-03")
         self.assertIn("2.74", r.output)
 
 
@@ -443,9 +430,7 @@ class TestEUYieldsEdge(unittest.TestCase):
     def test_invalid_country_codes(self):
         from agent.tools.sovereign_debt import SovereignDebtTool
 
-        r = SovereignDebtTool().execute(
-            mode="eu_yields", countries=["XX", "ZZ"], month="2026-03"
-        )
+        r = SovereignDebtTool().execute(mode="eu_yields", countries=["XX", "ZZ"], month="2026-03")
         self.assertFalse(r.success)
         self.assertIn("No valid EU country", r.output)
 
@@ -473,9 +458,7 @@ class TestEUYieldsEdge(unittest.TestCase):
             return resp
 
         mock_get.side_effect = side_effect
-        r = SovereignDebtTool().execute(
-            mode="eu_yields", countries=["DE", "EE"], month="2026-03"
-        )
+        r = SovereignDebtTool().execute(mode="eu_yields", countries=["DE", "EE"], month="2026-03")
         self.assertTrue(r.success)  # succeeds with partial data
         self.assertIn("DE", r.data["countries"])
         self.assertIsNotNone(r.data.get("errors"))
@@ -485,9 +468,7 @@ class TestEUYieldsEdge(unittest.TestCase):
         from agent.tools.sovereign_debt import SovereignDebtTool
 
         mock_get.side_effect = httpx.ConnectTimeout("timeout")
-        r = SovereignDebtTool().execute(
-            mode="eu_yields", countries=["DE", "FR"], month="2026-03"
-        )
+        r = SovereignDebtTool().execute(mode="eu_yields", countries=["DE", "FR"], month="2026-03")
         self.assertFalse(r.success)
 
     @patch("agent.tools.sovereign_debt.httpx.get")
@@ -496,9 +477,7 @@ class TestEUYieldsEdge(unittest.TestCase):
 
         header = "KEY,FREQ,REF_AREA,INSTRUMENT,MATURITY,DATA_TYPE,COUNT_AREA,CURRENCY,CALC_METHOD,DECIMALS,TIME_PERIOD,OBS_VALUE\n"
         mock_get.return_value = _mock_response(header)
-        r = SovereignDebtTool().execute(
-            mode="eu_yields", countries=["DE"], month="2026-03"
-        )
+        r = SovereignDebtTool().execute(mode="eu_yields", countries=["DE"], month="2026-03")
         # Header only, no data rows → no records → failure
         self.assertFalse(r.success)
 
@@ -507,9 +486,7 @@ class TestEUYieldsEdge(unittest.TestCase):
         from agent.tools.sovereign_debt import SovereignDebtTool
 
         mock_get.return_value = _mock_response(_make_ecb_csv("DE"))
-        r = SovereignDebtTool().execute(
-            mode="eu_yields", countries=["de"], month="2026-03"
-        )
+        r = SovereignDebtTool().execute(mode="eu_yields", countries=["de"], month="2026-03")
         self.assertTrue(r.success)
 
 
@@ -635,11 +612,11 @@ class TestUKGiltsValid(unittest.TestCase):
             {
                 "name": f"Gilt {i}",
                 "isin": f"GB{i:010d}",
-                "date": f"2025-{i+1:02d}-15T00:00:00",
+                "date": f"2025-{i + 1:02d}-15T00:00:00",
                 "type": "Auction",
                 "nominal": "3000.00",
                 "price": "99.50",
-                "yield": f"{2.0 + i*0.1:.2f}",
+                "yield": f"{2.0 + i * 0.1:.2f}",
             }
             for i in range(10)
         ]
@@ -688,9 +665,7 @@ class TestUKGiltsEdge(unittest.TestCase):
     def test_empty_xml(self, mock_get):
         from agent.tools.sovereign_debt import SovereignDebtTool
 
-        mock_get.return_value = _mock_response(
-            '<?xml version="1.0"?><DataReport></DataReport>'
-        )
+        mock_get.return_value = _mock_response('<?xml version="1.0"?><DataReport></DataReport>')
         r = SovereignDebtTool().execute(mode="uk_gilts")
         self.assertFalse(r.success)
 
@@ -763,9 +738,7 @@ class TestSpreadsValid(unittest.TestCase):
             return _mock_response("", status_code=404, is_error=True)
 
         mock_get.side_effect = side_effect
-        r = SovereignDebtTool().execute(
-            mode="spreads", countries=["IT"], month="2026-03"
-        )
+        r = SovereignDebtTool().execute(mode="spreads", countries=["IT"], month="2026-03")
         self.assertTrue(r.success)
         self.assertAlmostEqual(r.data["de_benchmark_yield"], 2.744)
         self.assertEqual(len(r.data["spreads"]), 1)
@@ -790,9 +763,7 @@ class TestSpreadsValid(unittest.TestCase):
             return _mock_response("", status_code=404, is_error=True)
 
         mock_get.side_effect = side_effect
-        r = SovereignDebtTool().execute(
-            mode="spreads", countries=["IT"], month="2026-03"
-        )
+        r = SovereignDebtTool().execute(mode="spreads", countries=["IT"], month="2026-03")
         self.assertTrue(r.success)
         # DE should have been fetched
         de_urls = [u for u in calls if "M.DE." in u]
@@ -812,9 +783,7 @@ class TestSpreadsValid(unittest.TestCase):
             return _mock_response("", status_code=404, is_error=True)
 
         mock_get.side_effect = side_effect
-        r = SovereignDebtTool().execute(
-            mode="spreads", countries=["GR"], month="2026-03"
-        )
+        r = SovereignDebtTool().execute(mode="spreads", countries=["GR"], month="2026-03")
         self.assertIn("GR=", r.output)
         self.assertIn("2.74", r.output)  # DE benchmark
 
@@ -832,9 +801,7 @@ class TestSpreadsValid(unittest.TestCase):
             return _mock_response("", status_code=404, is_error=True)
 
         mock_get.side_effect = side_effect
-        r = SovereignDebtTool().execute(
-            mode="spreads", countries=["IT"], month="2026-03"
-        )
+        r = SovereignDebtTool().execute(mode="spreads", countries=["IT"], month="2026-03")
         self.assertIsNotNone(r.data.get("us_curve"))
         self.assertIn("curve_2s10s", r.data["us_curve"])
 
@@ -851,9 +818,7 @@ class TestSpreadsEdge(unittest.TestCase):
         from agent.tools.sovereign_debt import SovereignDebtTool
 
         mock_get.side_effect = httpx.ConnectTimeout("timeout")
-        r = SovereignDebtTool().execute(
-            mode="spreads", countries=["IT", "GR"], month="2026-03"
-        )
+        r = SovereignDebtTool().execute(mode="spreads", countries=["IT", "GR"], month="2026-03")
         self.assertFalse(r.success)
 
     @patch("agent.tools.sovereign_debt.httpx.get")
@@ -874,9 +839,7 @@ class TestSpreadsEdge(unittest.TestCase):
             return _mock_response("", status_code=404, is_error=True)
 
         mock_get.side_effect = side_effect
-        r = SovereignDebtTool().execute(
-            mode="spreads", countries=["IT"], month="2026-03"
-        )
+        r = SovereignDebtTool().execute(mode="spreads", countries=["IT"], month="2026-03")
         self.assertTrue(r.success)  # EU spreads still work
         self.assertIsNone(r.data.get("us_curve"))
 
@@ -898,9 +861,7 @@ class TestSpreadsEdge(unittest.TestCase):
             return _mock_response("", status_code=404, is_error=True)
 
         mock_get.side_effect = side_effect
-        r = SovereignDebtTool().execute(
-            mode="spreads", countries=["IT", "GR", "FR"], month="2026-03"
-        )
+        r = SovereignDebtTool().execute(mode="spreads", countries=["IT", "GR", "FR"], month="2026-03")
         self.assertTrue(r.success)
         spreads = r.data["spreads"]
         # GR (3.0) > IT (2.0) > FR (0.5), sorted desc
@@ -1008,9 +969,7 @@ class TestParseECBCSV(unittest.TestCase):
             "IRS.M.DE.L.L40.CI.0000.EUR.N.Z,M,DE,L,L40,CI,0000,EUR,N,Z,2026-01,\n"
         )
         records = _parse_ecb_csv(csv)
-        self.assertEqual(
-            records, []
-        )  # empty OBS_VALUE → _safe_float returns None → skipped
+        self.assertEqual(records, [])  # empty OBS_VALUE → _safe_float returns None → skipped
 
 
 class TestParseJPCSV(unittest.TestCase):
@@ -1119,7 +1078,7 @@ class TestCacheIntegration(unittest.TestCase):
         cache = MagicMock()
         cache.get.return_value = {
             "total_auctions": 10,
-            "records": [{"date": f"2025-{i+1:02d}-01"} for i in range(10)],
+            "records": [{"date": f"2025-{i + 1:02d}-01"} for i in range(10)],
         }
         t = SovereignDebtTool(cache=cache)
         r = t.execute(mode="uk_gilts", limit=3)
@@ -1151,7 +1110,7 @@ class TestLimitEdge(unittest.TestCase):
             {
                 "name": f"Gilt {i}",
                 "isin": f"GB{i:010d}",
-                "date": f"2025-01-{i+1:02d}T00:00:00",
+                "date": f"2025-01-{i + 1:02d}T00:00:00",
                 "type": "Auction",
                 "nominal": "3000",
                 "price": "99",
@@ -1222,9 +1181,7 @@ class TestRegistry(unittest.TestCase):
             pytest.skip("optional dependency")
             return
         names = registry.list_names()
-        self.assertEqual(
-            len(names), 60, f"Expected 60 tools, got {len(names)}: {sorted(names)}"
-        )
+        self.assertEqual(len(names), 60, f"Expected 60 tools, got {len(names)}: {sorted(names)}")
 
     def test_sovereign_debt_in_registry(self):
         try:
@@ -1292,23 +1249,19 @@ class TestL2PersistenceNoStore(unittest.TestCase):
 
         tool = SovereignDebtTool()
         tool._store = None
-        counts = tool._persist_entities(
-            {"records": [{"date": "2026-03-27"}]}, "us_yields"
-        )
+        counts = tool._persist_entities({"records": [{"date": "2026-03-27"}]}, "us_yields")
         self.assertEqual(counts, {"sovereign_yield_obs": 0})
 
     def test_no_entity_id_fn_returns_zeros(self):
-        from agent.tools.sovereign_debt import SovereignDebtTool
         import agent.tools.sovereign_debt as sd_mod
+        from agent.tools.sovereign_debt import SovereignDebtTool
 
         tool = SovereignDebtTool()
         tool._store = _make_store_mock()
         original = sd_mod._entity_id_from_key
         try:
             sd_mod._entity_id_from_key = None
-            counts = tool._persist_entities(
-                {"records": [{"date": "2026-03-27"}]}, "us_yields"
-            )
+            counts = tool._persist_entities({"records": [{"date": "2026-03-27"}]}, "us_yields")
             self.assertEqual(counts, {"sovereign_yield_obs": 0})
         finally:
             sd_mod._entity_id_from_key = original
@@ -1371,17 +1324,13 @@ class TestL2PersistenceUSYields(unittest.TestCase):
         self.assertEqual(obs_call.kwargs["source_tool"], "sovereign_debt")
 
     def test_us_yields_targets_US_country(self):
-        from agent.tools.sovereign_debt import SovereignDebtTool
         from agent.pipeline.entity import entity_id_from_key
+        from agent.tools.sovereign_debt import SovereignDebtTool
 
         tool = SovereignDebtTool()
         store = _make_store_mock()
         tool._store = store
-        data = {
-            "records": [
-                {"date": "2026-03-27", "yields": {"10y": 4.44}, "curve_2s10s": 0.56}
-            ]
-        }
+        data = {"records": [{"date": "2026-03-27", "yields": {"10y": 4.44}, "curve_2s10s": 0.56}]}
         tool._persist_entities(data, "us_yields")
 
         us_eid = entity_id_from_key("country", "US")
@@ -1394,11 +1343,7 @@ class TestL2PersistenceUSYields(unittest.TestCase):
         tool = SovereignDebtTool()
         store = _make_store_mock()
         tool._store = store
-        data = {
-            "records": [
-                {"date": "2026-03-27", "yields": {"10y": 4.44}, "curve_2s10s": 0.56}
-            ]
-        }
+        data = {"records": [{"date": "2026-03-27", "yields": {"10y": 4.44}, "curve_2s10s": 0.56}]}
         tool._persist_entities(data, "us_yields")
 
         val = store.store_entity_observation.call_args_list[0].kwargs["value"]
@@ -1436,8 +1381,8 @@ class TestL2PersistenceEUYields(unittest.TestCase):
         self.assertEqual(counts["sovereign_yield_obs"], 3)
 
     def test_eu_yields_targets_correct_country_entities(self):
-        from agent.tools.sovereign_debt import SovereignDebtTool
         from agent.pipeline.entity import entity_id_from_key
+        from agent.tools.sovereign_debt import SovereignDebtTool
 
         tool = SovereignDebtTool()
         store = _make_store_mock()
@@ -1469,9 +1414,7 @@ class TestL2PersistenceEUYields(unittest.TestCase):
         tool = SovereignDebtTool()
         store = _make_store_mock()
         tool._store = store
-        data = {
-            "countries": {"DE": [], "FR": [{"period": "2026-02", "yield_pct": 2.9}]}
-        }
+        data = {"countries": {"DE": [], "FR": [{"period": "2026-02", "yield_pct": 2.9}]}}
         counts = tool._persist_entities(data, "eu_yields")
         self.assertEqual(counts["sovereign_yield_obs"], 1)
 
@@ -1492,8 +1435,8 @@ class TestL2PersistenceJPYields(unittest.TestCase):
         self.assertEqual(counts["sovereign_yield_obs"], 1)
 
     def test_jp_yields_targets_JP_country(self):
-        from agent.tools.sovereign_debt import SovereignDebtTool
         from agent.pipeline.entity import entity_id_from_key
+        from agent.tools.sovereign_debt import SovereignDebtTool
 
         tool = SovereignDebtTool()
         store = _make_store_mock()
@@ -1538,8 +1481,8 @@ class TestL2PersistenceUKGilts(unittest.TestCase):
         self.assertEqual(counts["sovereign_yield_obs"], 1)
 
     def test_uk_gilts_targets_GB_country(self):
-        from agent.tools.sovereign_debt import SovereignDebtTool
         from agent.pipeline.entity import entity_id_from_key
+        from agent.tools.sovereign_debt import SovereignDebtTool
 
         tool = SovereignDebtTool()
         store = _make_store_mock()
@@ -1561,11 +1504,7 @@ class TestL2PersistenceExceptionHandler(unittest.TestCase):
         store = _make_store_mock()
         store.register_entity.side_effect = RuntimeError("DB down")
         tool._store = store
-        data = {
-            "records": [
-                {"date": "2026-03-27", "yields": {"10y": 4.44}, "curve_2s10s": 0.56}
-            ]
-        }
+        data = {"records": [{"date": "2026-03-27", "yields": {"10y": 4.44}, "curve_2s10s": 0.56}]}
         counts = tool._persist_entities(data, "us_yields")
         self.assertEqual(counts, {"sovereign_yield_obs": 0})
 

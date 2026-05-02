@@ -13,7 +13,6 @@ import pytest
 from agent.convergence.evidence import Evidence
 from agent.convergence.extractors import extract_evidence
 
-
 # ══════════════════════════════════════════════════════════════
 #  Helpers
 # ══════════════════════════════════════════════════════════════
@@ -63,7 +62,6 @@ class TestInternetInfrastructureEdgeCases:
 
 
 class TestInternetOutages:
-
     def test_empty_alerts_and_events(self):
         data = {"mode": "outages", "alerts": [], "events": [], "country": ""}
         results = extract_evidence("internet_infrastructure", data)
@@ -147,7 +145,6 @@ class TestInternetOutages:
 
 
 class TestInternetCensorship:
-
     def test_basic_censorship(self):
         data = {
             "mode": "censorship",
@@ -229,7 +226,6 @@ class TestInternetCensorship:
 
 
 class TestInternetSignals:
-
     def test_critical_severity(self):
         data = {
             "mode": "signals",
@@ -291,7 +287,6 @@ class TestInternetSignals:
 
 
 class TestInternetIncidents:
-
     def test_basic_incidents(self):
         data = {
             "mode": "incidents",
@@ -351,7 +346,6 @@ class TestInternetIncidents:
 
 
 class TestPowerGridEdgeCases:
-
     def test_none_data(self):
         assert extract_evidence("power_grid", None) == []
 
@@ -371,7 +365,6 @@ class TestPowerGridEdgeCases:
 
 
 class TestPowerGridDemand:
-
     def test_basic_demand(self):
         data = {
             "total_peak_mw": 25000.0,
@@ -407,7 +400,6 @@ class TestPowerGridDemand:
 
 
 class TestPowerGridFuelMix:
-
     def test_basic_fuel_mix(self):
         data = {
             "fuels": [
@@ -456,7 +448,6 @@ class TestPowerGridFuelMix:
 
 
 class TestPowerGridPricing:
-
     def test_basic_pricing(self):
         data = {
             "stressed_zones": ["N.Y.C.", "LONGIL"],
@@ -513,7 +504,6 @@ class TestPowerGridPricing:
 
 
 class TestPowerGridForecast:
-
     def test_basic_forecast(self):
         data = {
             "persistent_deviation_zones": ["CAPITL", "WEST"],
@@ -569,7 +559,6 @@ class TestPowerGridForecast:
 
 
 class TestDefiFlowsEdgeCases:
-
     def test_none_data(self):
         assert extract_evidence("defi_flows", None) == []
 
@@ -589,7 +578,6 @@ class TestDefiFlowsEdgeCases:
 
 
 class TestDefiTVL:
-
     def test_basic_tvl(self):
         data = {
             "total_tvl": 50_000_000_000.0,
@@ -658,7 +646,6 @@ class TestDefiTVL:
 
 
 class TestDefiStablecoins:
-
     def test_basic_stablecoins(self):
         data = {
             "total_supply": 150_000_000_000.0,
@@ -703,7 +690,6 @@ class TestDefiStablecoins:
 
 
 class TestDefiDexVolume:
-
     def test_basic_dex_volume(self):
         data = {
             "total_volume_24h": 5_000_000_000.0,
@@ -753,7 +739,6 @@ class TestDefiDexVolume:
 
 
 class TestDefiChain:
-
     def test_basic_chain(self):
         data = {
             "grand_total_tvl": 80_000_000_000.0,
@@ -819,10 +804,7 @@ class TestModeInference:
     def test_power_grid_infers_forecast(self):
         data = {"persistent_deviation_zones": [], "zones": []}
         results = extract_evidence("power_grid", data)
-        assert (
-            _by_id(results, "power_grid.forecast.persistent_deviation_count")
-            is not None
-        )
+        assert _by_id(results, "power_grid.forecast.persistent_deviation_count") is not None
 
     def test_defi_infers_tvl(self):
         data = {"protocols": [], "total_tvl": 0, "count": 0}
@@ -915,9 +897,7 @@ class TestEvidenceSanity:
 
     def test_confidence_in_range(self, all_results):
         for e in all_results:
-            assert (
-                0.0 <= e.confidence <= 1.0
-            ), f"{e.signal_id}: confidence={e.confidence}"
+            assert 0.0 <= e.confidence <= 1.0, f"{e.signal_id}: confidence={e.confidence}"
 
     def test_value_is_finite(self, all_results):
         for e in all_results:

@@ -16,7 +16,6 @@ Coverage targets:
 
 from __future__ import annotations
 
-import json
 import os
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -25,26 +24,25 @@ import httpx
 import pytest
 
 from agent.tools.creditor_filings import (
-    VALID_MODES,
-    CreditorFilingsTool,
     _CACHE_TTL,
     _CHARGE_RED_FLAGS,
     _CREDIT_ITEMS,
     _CREDIT_TERMS,
     _DEFAULT_LIMIT,
     _MAX_LIMIT,
+    VALID_MODES,
+    CreditorFilingsTool,
     _classify_charge,
     _count_red_flag_charges,
     _detect_filing_clusters,
     _extract_particulars,
     _fetch_json,
-    _get_ch_key,
     _get_ch_charges,
+    _get_ch_key,
     _parse_efts_hits,
     _search_ch_company,
     _search_efts,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -82,9 +80,7 @@ def _efts_record(
     }
 
 
-def _efts_response(
-    hits: list[dict] | None = None, total: int | None = None
-) -> dict[str, Any]:
+def _efts_response(hits: list[dict] | None = None, total: int | None = None) -> dict[str, Any]:
     """Build a synthetic EFTS response envelope."""
     hit_list = hits or []
     return {
@@ -112,9 +108,7 @@ def _ch_charge(
         "delivered_on": created_on,
         "satisfied_on": satisfied_on if status == "satisfied" else "",
         "particulars": {"description": description},
-        "persons_entitled": [
-            {"name": n} for n in (persons_entitled or ["BigBank PLC"])
-        ],
+        "persons_entitled": [{"name": n} for n in (persons_entitled or ["BigBank PLC"])],
     }
 
 
@@ -153,7 +147,7 @@ def _mock_response(data: dict, status: int = 200) -> httpx.Response:
 
 class TestModeValidation:
     def test_valid_modes(self, tool):
-        assert VALID_MODES == {"search", "uk_charges", "stress_scan"}
+        assert {"search", "uk_charges", "stress_scan"} == VALID_MODES
 
     def test_empty_mode(self, tool):
         r = tool.execute(mode="")
@@ -204,9 +198,7 @@ class TestSearchMode:
         mock_client = MagicMock()
         mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
-        mock_client.get.return_value = _mock_response(
-            _efts_response([_efts_record()], total=1)
-        )
+        mock_client.get.return_value = _mock_response(_efts_response([_efts_record()], total=1))
 
         r = tool.execute(mode="search", query="Acme")
         assert r.success
@@ -279,9 +271,7 @@ class TestSearchMode:
         mock_sec = MagicMock()
         mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_sec)
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
-        mock_sec.get.return_value = _mock_response(
-            _efts_response([_efts_record()], total=1)
-        )
+        mock_sec.get.return_value = _mock_response(_efts_response([_efts_record()], total=1))
 
         # CH client
         mock_ch = MagicMock()
@@ -334,9 +324,7 @@ class TestUkChargesMode:
         mock_ch = MagicMock()
         mock_ch_client.return_value.__enter__ = MagicMock(return_value=mock_ch)
         mock_ch_client.return_value.__exit__ = MagicMock(return_value=False)
-        mock_ch.get.return_value = _mock_response(
-            _ch_charges_response([_ch_charge(status="outstanding")])
-        )
+        mock_ch.get.return_value = _mock_response(_ch_charges_response([_ch_charge(status="outstanding")]))
 
         r = tool.execute(mode="uk_charges", company_number="12345678")
         assert r.success
@@ -432,9 +420,7 @@ class TestUkChargesMode:
     @patch("agent.tools.creditor_filings._get_ch_key", return_value="key")
     @patch("agent.tools.creditor_filings._ch_client")
     def test_ch_api_exception(self, mock_ch_client, mock_key, tool):
-        mock_ch_client.return_value.__enter__ = MagicMock(
-            side_effect=httpx.ConnectError("timeout")
-        )
+        mock_ch_client.return_value.__enter__ = MagicMock(side_effect=httpx.ConnectError("timeout"))
         mock_ch_client.return_value.__exit__ = MagicMock(return_value=False)
 
         r = tool.execute(mode="uk_charges", company_number="12345678")
@@ -643,9 +629,7 @@ class TestParseEftsHits:
 class TestSearchEfts:
     def test_success(self):
         client = MagicMock()
-        client.get.return_value = _mock_response(
-            _efts_response([_efts_record()], total=1)
-        )
+        client.get.return_value = _mock_response(_efts_response([_efts_record()], total=1))
         entries, total = _search_efts(client, query="test", days_back=30, limit=20)
         assert len(entries) == 1
         assert total == 1
@@ -669,9 +653,7 @@ class TestSearchEfts:
 class TestSearchChCompany:
     def test_success(self):
         client = MagicMock()
-        client.get.return_value = _mock_response(
-            _ch_search_response([("TestCo", "12345678")])
-        )
+        client.get.return_value = _mock_response(_ch_search_response([("TestCo", "12345678")]))
         results = _search_ch_company("TestCo", client)
         assert len(results) == 1
         assert results[0]["company_name"] == "TestCo"
@@ -720,36 +702,21 @@ class TestGetChCharges:
 
 class TestClassifyCharge:
     def test_debenture(self):
-        assert (
-            _classify_charge({"particulars": {"description": "A debenture"}})
-            == "debenture"
-        )
+        assert _classify_charge({"particulars": {"description": "A debenture"}}) == "debenture"
 
     def test_floating(self):
         assert (
-            _classify_charge(
-                {"particulars": {"description": "floating charge over all assets"}}
-            )
-            == "floating_charge"
+            _classify_charge({"particulars": {"description": "floating charge over all assets"}}) == "floating_charge"
         )
 
     def test_mortgage(self):
-        assert (
-            _classify_charge({"particulars": {"description": "Legal mortgage"}})
-            == "mortgage"
-        )
+        assert _classify_charge({"particulars": {"description": "Legal mortgage"}}) == "mortgage"
 
     def test_fixed(self):
-        assert (
-            _classify_charge({"particulars": {"description": "Fixed charge"}})
-            == "fixed_charge"
-        )
+        assert _classify_charge({"particulars": {"description": "Fixed charge"}}) == "fixed_charge"
 
     def test_other(self):
-        assert (
-            _classify_charge({"particulars": {"description": "something else"}})
-            == "other"
-        )
+        assert _classify_charge({"particulars": {"description": "something else"}}) == "other"
 
     def test_empty(self):
         assert _classify_charge({}) == "other"

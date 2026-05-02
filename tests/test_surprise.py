@@ -10,15 +10,14 @@ Covers:
 from __future__ import annotations
 
 import math
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 import torch
 from torch_geometric.data import HeteroData
 
-from agent.models.gnn.graph_builder import IDMap, OBSERVATION_TYPES
 from agent.fusion.surprise import EntitySurprise, SurpriseExtractor, _RollingStats
-
+from agent.models.gnn.graph_builder import OBSERVATION_TYPES, IDMap
 
 # ─── Helpers ──────────────────────────────────────────────────
 
@@ -538,9 +537,7 @@ class TestNeighborhoodSurprise:
         # With identical setups and single neighbor, neighborhood = neighbor's composite
         # (composite is computed WITHOUT neighborhood in first pass)
         assert (
-            result["c0"].neighborhood_surprise
-            == pytest.approx(result["c1"].composite_surprise, abs=0.5)
-            or True
+            result["c0"].neighborhood_surprise == pytest.approx(result["c1"].composite_surprise, abs=0.5) or True
         )  # May differ due to weight recomputation
 
 

@@ -14,7 +14,6 @@ from __future__ import annotations
 import json
 import logging
 import time
-from typing import Any
 
 import numpy as np
 
@@ -85,10 +84,7 @@ def build_adversarial_scan_dag(
     dag = DAG(
         name=DAG_NAME,
         schedule="15 19 * * 1-5",
-        description=(
-            "Adversarial intelligence scan: edge decay monitoring, "
-            "VPIN estimation, crowding risk assessment"
-        ),
+        description=("Adversarial intelligence scan: edge decay monitoring, VPIN estimation, crowding risk assessment"),
     )
 
     dag.add(

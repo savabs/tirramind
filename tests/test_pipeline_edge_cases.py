@@ -13,27 +13,22 @@ covered by the per-step tests (7.1-7.8). Organized by category:
 
 from __future__ import annotations
 
-import json
-import os
-import sqlite3
 import tempfile
 import threading
 import time
 from pathlib import Path
-from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
 
-from agent.pipeline.dag import DAG, Node
-from agent.pipeline.executor import DAGExecutor, DagRun, NodeResult
+from agent.pipeline.dag import DAG
+from agent.pipeline.executor import DAGExecutor, DagRun
 from agent.pipeline.operators import FunctionOperator, ToolOperator, resolve_operator
 from agent.pipeline.registry import DAGRegistry
 from agent.pipeline.scheduler import PipelineScheduler
 from agent.pipeline.store import PipelineStore
-from agent.tools.base import Tool, ToolRegistry, ToolResult
+from agent.tools.base import ToolRegistry
 from agent.tools.pipeline_query import PipelineQueryTool
-
 
 # ═══════════════════════════════════════════════════════════════
 # 1. DAG Stress & Structure Tests
@@ -58,7 +53,7 @@ class TestDAGStress:
         dag = DAG(name="deep100")
         dag.add("n0", operator="fake")
         for i in range(1, 100):
-            dag.add(f"n{i}", operator="fake", depends_on=[f"n{i-1}"])
+            dag.add(f"n{i}", operator="fake", depends_on=[f"n{i - 1}"])
         assert dag.validate() == []
         layers = dag.topo_sort()
         assert len(layers) == 100
@@ -621,10 +616,14 @@ class TestFullIntegration:
         dag = DAG(name="multi")
         dag.add("A", operator=lambda p, u: {"source": "A"})
         dag.add("B", operator=lambda p, u: {"source": "B"})
-        dag.add("C", operator=lambda p, u: {
-            "merged": True,
-            "inputs": list(u.keys()),
-        }, depends_on=["A", "B"])
+        dag.add(
+            "C",
+            operator=lambda p, u: {
+                "merged": True,
+                "inputs": list(u.keys()),
+            },
+            depends_on=["A", "B"],
+        )
 
         executor = DAGExecutor(store=store)
         run = executor.execute(dag)

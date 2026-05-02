@@ -12,29 +12,29 @@ from __future__ import annotations
 import pathlib
 import tempfile
 import time
-from collections import defaultdict
 
-import numpy as np
 import pytest
 
-from agent.pipeline.store import PipelineStore
 from agent.discovery.ontology_registry import (
+    _TYPE_NAME_PATTERN,
+    SEED_ENTITY_TYPES,
     OntologyRegistry,
     TypeInfo,
-    SEED_ENTITY_TYPES,
-    _TYPE_NAME_PATTERN,
 )
 from agent.discovery.type_inducer import TypeInducer
+from agent.features.gnn_builder import (
+    _SEED_CONNECTED_TYPES,
+    get_connected_types,
+)
 from agent.pipeline.entity import (
     SEED_ENTITY_TYPES as ENTITY_SEED_TYPES,
-    validate_entity_type,
-    set_ontology_registry,
+)
+from agent.pipeline.entity import (
     get_ontology_registry,
+    set_ontology_registry,
+    validate_entity_type,
 )
-from agent.features.gnn_builder import (
-    get_connected_types,
-    _SEED_CONNECTED_TYPES,
-)
+from agent.pipeline.store import PipelineStore
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -210,17 +210,13 @@ class TestTypeInducerClustering:
 
 class TestTypeInducerProposal:
     def test_induction_creates_type(self, store, registry):
-        inducer = TypeInducer(
-            store, registry, min_cluster_size=3, cohesion_threshold=0.3
-        )
+        inducer = TypeInducer(store, registry, min_cluster_size=3, cohesion_threshold=0.3)
         # Insert entities from same source with similar context fields
         for i in range(6):
             inducer.ingest_unresolved(
                 f"Facility_{i}",
                 "power_grid",
-                json.dumps(
-                    {"capacity_mw": 100 + i, "fuel": "gas", "owner": f"Corp{i}"}
-                ),
+                json.dumps({"capacity_mw": 100 + i, "fuel": "gas", "owner": f"Corp{i}"}),
                 observed_at=time.time() + i,
             )
         new_types = inducer.run_induction()
@@ -240,9 +236,7 @@ class TestTypeInducerOverlap:
         for i in range(5):
             store.register_entity("company", f"Corp{i}", f"comp_{i}")
 
-        inducer = TypeInducer(
-            store, registry, min_cluster_size=3, cohesion_threshold=0.3
-        )
+        inducer = TypeInducer(store, registry, min_cluster_size=3, cohesion_threshold=0.3)
         # Ingest entities that are also named "Corp" — should overlap
         for i in range(5):
             inducer.ingest_unresolved(
@@ -373,25 +367,17 @@ class TestGlobalRegistryAccessor:
 
 class TestTypeInfoDataclass:
     def test_frozen(self):
-        ti = TypeInfo(
-            name="test", parent_type=None, source="seed", confidence=1.0, active=True
-        )
+        ti = TypeInfo(name="test", parent_type=None, source="seed", confidence=1.0, active=True)
         with pytest.raises(AttributeError):
             ti.name = "other"  # type: ignore[misc]
 
     def test_equality(self):
-        a = TypeInfo(
-            name="x", parent_type=None, source="seed", confidence=1.0, active=True
-        )
-        b = TypeInfo(
-            name="x", parent_type=None, source="seed", confidence=1.0, active=True
-        )
+        a = TypeInfo(name="x", parent_type=None, source="seed", confidence=1.0, active=True)
+        b = TypeInfo(name="x", parent_type=None, source="seed", confidence=1.0, active=True)
         assert a == b
 
     def test_hashable(self):
-        ti = TypeInfo(
-            name="x", parent_type=None, source="seed", confidence=1.0, active=True
-        )
+        ti = TypeInfo(name="x", parent_type=None, source="seed", confidence=1.0, active=True)
         {ti}  # should not raise
 
 

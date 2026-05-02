@@ -29,7 +29,7 @@ Signal theory:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -161,7 +161,7 @@ def _parse_date(date_str: str) -> str:
 
 def _year_range(years_back: int = 5) -> tuple[str, str]:
     """Return (start_date, end_date) for a lookback window."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     start = now - timedelta(days=years_back * 365)
     return start.strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d")
 
@@ -258,11 +258,7 @@ class PatentFilingsTool(Tool):
             seen_assignees.add(assignee)
 
             try:
-                canon = (
-                    normalize_company_name(assignee)
-                    if normalize_company_name
-                    else assignee
-                )
+                canon = normalize_company_name(assignee) if normalize_company_name else assignee
             except ValueError:
                 canon = assignee
 
@@ -276,13 +272,9 @@ class PatentFilingsTool(Tool):
             # Parse patent date
             pdate = patent.get("patent_date", "")
             try:
-                ts = (
-                    datetime.strptime(pdate, "%Y-%m-%d")
-                    .replace(tzinfo=timezone.utc)
-                    .timestamp()
-                )
+                ts = datetime.strptime(pdate, "%Y-%m-%d").replace(tzinfo=UTC).timestamp()
             except (ValueError, AttributeError):
-                ts = datetime.now(tz=timezone.utc).timestamp()
+                ts = datetime.now(tz=UTC).timestamp()
 
             cpc = patent.get("cpc_subgroup_id", "")
             if isinstance(cpc, list):
@@ -395,9 +387,7 @@ class PatentFilingsTool(Tool):
 
         return self._format_search(result_data)
 
-    def _format_search(
-        self, data: dict[str, Any], *, from_cache: bool = False
-    ) -> ToolResult:
+    def _format_search(self, data: dict[str, Any], *, from_cache: bool = False) -> ToolResult:
         tag = " (cached)" if from_cache else ""
         patents = data.get("patents", [])
         total = data.get("total_count", 0)
@@ -487,9 +477,7 @@ class PatentFilingsTool(Tool):
 
         return self._format_trends(result_data, cpc)
 
-    def _format_trends(
-        self, data: dict[str, Any], cpc: str, *, from_cache: bool = False
-    ) -> ToolResult:
+    def _format_trends(self, data: dict[str, Any], cpc: str, *, from_cache: bool = False) -> ToolResult:
         tag = " (cached)" if from_cache else ""
         cpc_desc = SIGNAL_CPC.get(cpc, CPC_CLASSES.get(cpc[:1], "Unknown"))
         yearly = data.get("yearly_counts", {})
@@ -512,14 +500,8 @@ class PatentFilingsTool(Tool):
                 last_count = sorted_years[-1][1]
                 if first_count > 0:
                     trend_pct = ((last_count - first_count) / first_count) * 100
-                    direction = (
-                        "accelerating"
-                        if trend_pct > 10
-                        else "decelerating" if trend_pct < -10 else "stable"
-                    )
-                    lines.append(
-                        f"\nTrend: {direction} ({trend_pct:+.1f}% over period)"
-                    )
+                    direction = "accelerating" if trend_pct > 10 else "decelerating" if trend_pct < -10 else "stable"
+                    lines.append(f"\nTrend: {direction} ({trend_pct:+.1f}% over period)")
         else:
             lines.append("  No filings found for this CPC class.")
 
@@ -596,9 +578,7 @@ class PatentFilingsTool(Tool):
 
         return self._format_assignee(result_data, assignee_name)
 
-    def _format_assignee(
-        self, data: dict[str, Any], assignee: str, *, from_cache: bool = False
-    ) -> ToolResult:
+    def _format_assignee(self, data: dict[str, Any], assignee: str, *, from_cache: bool = False) -> ToolResult:
         tag = " (cached)" if from_cache else ""
         patents = data.get("patents", [])
         total = data.get("total_patents", 0)

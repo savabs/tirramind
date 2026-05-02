@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
 
 from agent.tools.macro_data import MacroDataTool
@@ -22,10 +21,10 @@ class LiquidityComposite:
 
     # FRED series → column name mapping
     _US_SERIES = {
-        "WALCL": "walcl",       # Fed balance sheet (millions USD, weekly Wed)
-        "WTREGEN": "wtregen",   # Treasury General Account (millions USD, weekly Wed)
-        "RRPONTSYD": "rrp",     # Overnight reverse repo (BILLIONS USD, daily)
-        "M2SL": "m2",           # M2 money supply (billions USD, monthly)
+        "WALCL": "walcl",  # Fed balance sheet (millions USD, weekly Wed)
+        "WTREGEN": "wtregen",  # Treasury General Account (millions USD, weekly Wed)
+        "RRPONTSYD": "rrp",  # Overnight reverse repo (BILLIONS USD, daily)
+        "M2SL": "m2",  # M2 money supply (billions USD, monthly)
     }
 
     def fetch_us(self, start: str, end: str) -> pd.DataFrame:
@@ -67,14 +66,14 @@ class LiquidityComposite:
     # (BOEBSTAUKA is annual % of GDP, UKASSETS discontinued 2014). BOE is ~5% of
     # major CB mass, so 3-CB composite (Fed+ECB+BOJ) covers ~95%.
     _GLOBAL_SERIES = {
-        "ECBASSETSW": "ecb",    # ECB total assets (millions EUR, weekly)
-        "JPNASSETS": "boj",     # BOJ total assets (100 millions JPY, monthly)
+        "ECBASSETSW": "ecb",  # ECB total assets (millions EUR, weekly)
+        "JPNASSETS": "boj",  # BOJ total assets (100 millions JPY, monthly)
     }
 
     # FX tickers for USD conversion
     _FX_TICKERS = {
         "EURUSD=X": "eurusd",
-        "JPY=X": "usdjpy",     # USD/JPY
+        "JPY=X": "usdjpy",  # USD/JPY
     }
 
     def fetch_global(self, start: str, end: str) -> pd.DataFrame:
@@ -110,9 +109,7 @@ class LiquidityComposite:
             bars = fx_result.data.get(ticker, [])
             if not bars:
                 raise ValueError(f"No FX data for {ticker}")
-            dates = pd.to_datetime(
-                [b["Date"] for b in bars], utc=True
-            ).tz_localize(None)
+            dates = pd.to_datetime([b["Date"] for b in bars], utc=True).tz_localize(None)
             values = [b["Close"] for b in bars]
             fx_frames[col_name] = pd.Series(values, index=dates, name=col_name)
 
@@ -148,10 +145,7 @@ class LiquidityComposite:
 
         global_cols = ["ecb_usd", "boj_usd"]
         if global_ and all(c in weekly.columns for c in global_cols):
-            net = (
-                weekly["walcl"] - weekly["wtregen"] - weekly["rrp"]
-                + weekly["ecb_usd"] + weekly["boj_usd"]
-            )
+            net = weekly["walcl"] - weekly["wtregen"] - weekly["rrp"] + weekly["ecb_usd"] + weekly["boj_usd"]
         else:
             net = weekly["walcl"] - weekly["wtregen"] - weekly["rrp"]
 

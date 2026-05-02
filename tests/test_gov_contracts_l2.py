@@ -6,10 +6,7 @@ import time
 from typing import Any
 from unittest.mock import MagicMock
 
-import pytest
-
 from agent.tools.gov_contracts import GovContractsTool
-
 
 # ── Helpers ──────────────────────────────────────────────────────
 
@@ -91,33 +88,21 @@ class TestEntityRegistration:
         store = _make_mock_store()
         tool = GovContractsTool(cache=None, pipeline_store=store)
         tool._persist_entities([_make_award()], "US")
-        company_calls = [
-            c
-            for c in store.register_entity.call_args_list
-            if c.kwargs.get("entity_type") == "company"
-        ]
+        company_calls = [c for c in store.register_entity.call_args_list if c.kwargs.get("entity_type") == "company"]
         assert len(company_calls) == 1
 
     def test_agency_entity_registered_as_organization(self):
         store = _make_mock_store()
         tool = GovContractsTool(cache=None, pipeline_store=store)
         tool._persist_entities([_make_award()], "US")
-        org_calls = [
-            c
-            for c in store.register_entity.call_args_list
-            if c.kwargs.get("entity_type") == "organization"
-        ]
+        org_calls = [c for c in store.register_entity.call_args_list if c.kwargs.get("entity_type") == "organization"]
         assert len(org_calls) == 1
 
     def test_country_entity_registered(self):
         store = _make_mock_store()
         tool = GovContractsTool(cache=None, pipeline_store=store)
         tool._persist_entities([_make_award()], "US")
-        country_calls = [
-            c
-            for c in store.register_entity.call_args_list
-            if c.kwargs.get("entity_type") == "country"
-        ]
+        country_calls = [c for c in store.register_entity.call_args_list if c.kwargs.get("entity_type") == "country"]
         assert len(country_calls) == 1
         assert country_calls[0].kwargs["canonical_name"] == "US"
 
@@ -172,11 +157,7 @@ class TestLinks:
         store = _make_mock_store()
         tool = GovContractsTool(cache=None, pipeline_store=store)
         tool._persist_entities([_make_award()], "US")
-        awarded_by_calls = [
-            c
-            for c in store.link_entities.call_args_list
-            if c.kwargs.get("link_type") == "awarded_by"
-        ]
+        awarded_by_calls = [c for c in store.link_entities.call_args_list if c.kwargs.get("link_type") == "awarded_by"]
         assert len(awarded_by_calls) == 1
         assert awarded_by_calls[0].kwargs["confidence"] == 1.0
 
@@ -185,9 +166,7 @@ class TestLinks:
         tool = GovContractsTool(cache=None, pipeline_store=store)
         tool._persist_entities([_make_award()], "US")
         operates_in_calls = [
-            c
-            for c in store.link_entities.call_args_list
-            if c.kwargs.get("link_type") == "operates_in"
+            c for c in store.link_entities.call_args_list if c.kwargs.get("link_type") == "operates_in"
         ]
         assert len(operates_in_calls) == 1
         assert operates_in_calls[0].kwargs["confidence"] == 0.9
@@ -196,22 +175,14 @@ class TestLinks:
         store = _make_mock_store()
         tool = GovContractsTool(cache=None, pipeline_store=store)
         tool._persist_entities([_make_award()], "US")
-        country_calls = [
-            c
-            for c in store.register_entity.call_args_list
-            if c.kwargs.get("entity_type") == "country"
-        ]
+        country_calls = [c for c in store.register_entity.call_args_list if c.kwargs.get("entity_type") == "country"]
         assert country_calls[0].kwargs["canonical_name"] == "US"
 
     def test_gb_country_code_for_uk(self):
         store = _make_mock_store()
         tool = GovContractsTool(cache=None, pipeline_store=store)
         tool._persist_entities([_make_uk_award()], "GB")
-        country_calls = [
-            c
-            for c in store.register_entity.call_args_list
-            if c.kwargs.get("entity_type") == "country"
-        ]
+        country_calls = [c for c in store.register_entity.call_args_list if c.kwargs.get("entity_type") == "country"]
         assert country_calls[0].kwargs["canonical_name"] == "GB"
 
     def test_no_agency_skips_org_registration_and_awarded_by(self):
@@ -219,17 +190,9 @@ class TestLinks:
         tool = GovContractsTool(cache=None, pipeline_store=store)
         award = _make_award(agency="")
         tool._persist_entities([award], "US")
-        org_calls = [
-            c
-            for c in store.register_entity.call_args_list
-            if c.kwargs.get("entity_type") == "organization"
-        ]
+        org_calls = [c for c in store.register_entity.call_args_list if c.kwargs.get("entity_type") == "organization"]
         assert len(org_calls) == 0
-        awarded_by = [
-            c
-            for c in store.link_entities.call_args_list
-            if c.kwargs.get("link_type") == "awarded_by"
-        ]
+        awarded_by = [c for c in store.link_entities.call_args_list if c.kwargs.get("link_type") == "awarded_by"]
         assert len(awarded_by) == 0
 
 
@@ -243,11 +206,7 @@ class TestDeduplication:
         a1 = _make_award(recipient="Raytheon", award_id="A001")
         a2 = _make_award(recipient="Raytheon", award_id="A002")
         tool._persist_entities([a1, a2], "US")
-        company_calls = [
-            c
-            for c in store.register_entity.call_args_list
-            if c.kwargs.get("entity_type") == "company"
-        ]
+        company_calls = [c for c in store.register_entity.call_args_list if c.kwargs.get("entity_type") == "company"]
         assert len(company_calls) == 1
         # But 2 observations
         assert store.store_entity_observation.call_count == 2
@@ -258,11 +217,7 @@ class TestDeduplication:
         a1 = _make_award(recipient="Corp A", agency="DOD")
         a2 = _make_award(recipient="Corp B", agency="DOD")
         tool._persist_entities([a1, a2], "US")
-        org_calls = [
-            c
-            for c in store.register_entity.call_args_list
-            if c.kwargs.get("entity_type") == "organization"
-        ]
+        org_calls = [c for c in store.register_entity.call_args_list if c.kwargs.get("entity_type") == "organization"]
         assert len(org_calls) == 1
 
 
@@ -276,11 +231,7 @@ class TestEdgeCases:
         award = _make_award(recipient="")
         tool._persist_entities([award], "US")
         # Country registered, but no company
-        company_calls = [
-            c
-            for c in store.register_entity.call_args_list
-            if c.kwargs.get("entity_type") == "company"
-        ]
+        company_calls = [c for c in store.register_entity.call_args_list if c.kwargs.get("entity_type") == "company"]
         assert len(company_calls) == 0
 
     def test_none_recipient_skipped(self):
@@ -289,11 +240,7 @@ class TestEdgeCases:
         award = _make_award()
         award["recipient"] = None
         tool._persist_entities([award], "US")
-        company_calls = [
-            c
-            for c in store.register_entity.call_args_list
-            if c.kwargs.get("entity_type") == "company"
-        ]
+        company_calls = [c for c in store.register_entity.call_args_list if c.kwargs.get("entity_type") == "company"]
         assert len(company_calls) == 0
 
     def test_persistence_exception_non_fatal(self):
@@ -310,11 +257,7 @@ class TestEdgeCases:
         a1 = _make_award(recipient="Acme Corp")
         a2 = _make_award(recipient="ACME CORP")
         tool._persist_entities([a1, a2], "US")
-        company_calls = [
-            c
-            for c in store.register_entity.call_args_list
-            if c.kwargs.get("entity_type") == "company"
-        ]
+        company_calls = [c for c in store.register_entity.call_args_list if c.kwargs.get("entity_type") == "company"]
         # Both should normalize to the same name → registered once
         assert len(company_calls) == 1
 

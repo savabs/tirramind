@@ -16,13 +16,11 @@ Validates:
 from __future__ import annotations
 
 import math
-import time
 
 import numpy as np
 import pytest
 from pgmpy.factors.discrete import TabularCPD
 
-from agent.models.belief import BeliefState
 from agent.models.graph import NodeSpec, WorldModelGraph
 from agent.models.initial_graph import build_initial_graph
 from agent.models.propagator import BeliefPropagator, value_to_state_index

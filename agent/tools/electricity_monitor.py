@@ -32,7 +32,6 @@ from __future__ import annotations
 import logging
 import os
 import time
-from datetime import datetime, timezone, timedelta
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -225,8 +224,7 @@ class ElectricityMonitorTool(Tool):
             "region": {
                 "type": "string",
                 "description": (
-                    "Balancing authority code: PJM, CISO, ERCO, MISO, NYIS, "
-                    "ISNE, SWPP, SOCO, TVA, BPAT, etc."
+                    "Balancing authority code: PJM, CISO, ERCO, MISO, NYIS, ISNE, SWPP, SOCO, TVA, BPAT, etc."
                 ),
             },
             "days": {
@@ -241,7 +239,7 @@ class ElectricityMonitorTool(Tool):
         self,
         *,
         cache: DataCache | None = None,
-        pipeline_store: "PipelineStore | None" = None,
+        pipeline_store: PipelineStore | None = None,
     ) -> None:
         self._cache = cache
         self._store = pipeline_store
@@ -320,8 +318,7 @@ class ElectricityMonitorTool(Tool):
         demand_records = [
             r
             for r in records
-            if r.get("type-name", "").lower()
-            in ("demand", "demand forecast", "net generation")
+            if r.get("type-name", "").lower() in ("demand", "demand forecast", "net generation")
             or r.get("type", "").upper() == "D"
         ]
         if not demand_records:

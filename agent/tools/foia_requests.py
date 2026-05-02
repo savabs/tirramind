@@ -36,9 +36,8 @@ from __future__ import annotations
 import hashlib
 import logging
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
-from urllib.parse import quote
 
 import httpx
 
@@ -105,12 +104,12 @@ def _parse_date(date_str: str | None) -> datetime | None:
         "%Y-%m-%dT%H:%M:%S.%f%z",
     ):
         try:
-            return datetime.strptime(date_str[:32], fmt).replace(tzinfo=timezone.utc)
+            return datetime.strptime(date_str[:32], fmt).replace(tzinfo=UTC)
         except ValueError:
             continue
     # Fallback: try just the date portion
     try:
-        return datetime.strptime(date_str[:10], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        return datetime.strptime(date_str[:10], "%Y-%m-%d").replace(tzinfo=UTC)
     except ValueError:
         return None
 
@@ -127,19 +126,12 @@ def _normalize_muckrock(rec: dict[str, Any]) -> dict[str, Any]:
     return {
         "title": (rec.get("title") or "Untitled").strip(),
         "agency": (
-            (
-                rec.get("agency_name")
-                or rec.get("agency", {}).get("name", "Unknown agency")
-            ).strip()
+            (rec.get("agency_name") or rec.get("agency", {}).get("name", "Unknown agency")).strip()
             if isinstance(rec.get("agency"), dict)
-            else (
-                rec.get("agency_name") or str(rec.get("agency", "Unknown agency"))
-            ).strip()
+            else (rec.get("agency_name") or str(rec.get("agency", "Unknown agency"))).strip()
         ),
         "status": _normalize_status(rec.get("status")),
-        "date_filed": (
-            rec.get("datetime_submitted") or rec.get("date_submitted") or ""
-        )[:10],
+        "date_filed": (rec.get("datetime_submitted") or rec.get("date_submitted") or "")[:10],
         "date_done": (rec.get("datetime_done") or rec.get("date_done") or "")[:10],
         "jurisdiction": (rec.get("jurisdiction_name") or "US").strip(),
         "source": "muckrock",
@@ -168,9 +160,7 @@ def _normalize_wdtk(rec: dict[str, Any]) -> dict[str, Any]:
         "source": "wdtk",
         "url": rec.get("url") or "",
         "requester": (
-            (rec.get("user", {}).get("name", "anonymous"))
-            if isinstance(rec.get("user"), dict)
-            else "anonymous"
+            (rec.get("user", {}).get("name", "anonymous")) if isinstance(rec.get("user"), dict) else "anonymous"
         ),
     }
 
@@ -351,10 +341,7 @@ class FoiaRequestsTool(Tool):
             "jurisdiction": {
                 "type": "string",
                 "default": "all",
-                "description": (
-                    "'us' for MuckRock only, 'uk' for WDTK only, "
-                    "'all' (default) for both."
-                ),
+                "description": ("'us' for MuckRock only, 'uk' for WDTK only, 'all' (default) for both."),
             },
             "limit": {
                 "type": "integer",
@@ -368,7 +355,7 @@ class FoiaRequestsTool(Tool):
     def __init__(
         self,
         cache: DataCache | None = None,
-        pipeline_store: "PipelineStore | None" = None,
+        pipeline_store: PipelineStore | None = None,
     ) -> None:
         self._cache = cache
         self._store = pipeline_store
@@ -459,7 +446,7 @@ class FoiaRequestsTool(Tool):
         if cached is not None:
             return ToolResult(success=True, output=cached)
 
-        cutoff = datetime.now(timezone.utc) - timedelta(days=days_back)
+        cutoff = datetime.now(UTC) - timedelta(days=days_back)
         records: list[dict[str, Any]] = []
 
         # MuckRock (US)
@@ -560,7 +547,7 @@ class FoiaRequestsTool(Tool):
             max_pages=3,
         )
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         cutoff = now - timedelta(days=days_back)
         baseline_start = cutoff - timedelta(days=days_back)  # 2× window for baseline
 
@@ -671,7 +658,7 @@ class FoiaRequestsTool(Tool):
         if cached is not None:
             return ToolResult(success=True, output=cached)
 
-        cutoff = datetime.now(timezone.utc) - timedelta(days=days_back)
+        cutoff = datetime.now(UTC) - timedelta(days=days_back)
         records: list[dict[str, Any]] = []
 
         # MuckRock
@@ -762,9 +749,7 @@ class FoiaRequestsTool(Tool):
 
         # Agency breakdown (sorted by count descending)
         lines.append("Agency breakdown:")
-        sorted_agencies = sorted(
-            agency_groups.items(), key=lambda x: len(x[1]), reverse=True
-        )
+        sorted_agencies = sorted(agency_groups.items(), key=lambda x: len(x[1]), reverse=True)
         for ag, reqs in sorted_agencies:
             jurs = {r["jurisdiction"] for r in reqs}
             lines.append(f"  {ag} ({', '.join(sorted(jurs))}): {len(reqs)} request(s)")
@@ -772,9 +757,7 @@ class FoiaRequestsTool(Tool):
 
         # Timeline — most recent first
         lines.append("Recent requests:")
-        sorted_recs = sorted(
-            records, key=lambda r: r.get("date_filed", ""), reverse=True
-        )
+        sorted_recs = sorted(records, key=lambda r: r.get("date_filed", ""), reverse=True)
         for i, rec in enumerate(sorted_recs[:30], 1):
             lines.append(_format_request(rec, index=i))
             lines.append("")

@@ -71,15 +71,7 @@ def render_user_message(text: str, extra: dict | None = None) -> str:
             if k in extra:
                 ctx[k] = extra[k]
     ctx_json = json.dumps(ctx) if ctx else "{}"
-    return (
-        "Context (JSON): "
-        f"{ctx_json}\n\n"
-        "Conversation snippet:\n"
-        "---\n"
-        f"{text.strip()}\n"
-        "---\n"
-        "Return JSON only."
-    )
+    return f"Context (JSON): {ctx_json}\n\nConversation snippet:\n---\n{text.strip()}\n---\nReturn JSON only."
 
 
 def allowed_categories() -> list[str]:

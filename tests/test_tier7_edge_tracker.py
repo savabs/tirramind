@@ -8,11 +8,8 @@ and integration with world model structure.
 
 from __future__ import annotations
 
-import math
-
 import numpy as np
 import pandas as pd
-import pytest
 
 from agent.models.edge_tracker import (
     EdgeConfidence,
@@ -20,7 +17,6 @@ from agent.models.edge_tracker import (
     EdgeSuggestion,
     _sigmoid,
 )
-
 
 # ── Helpers ───────────────────────────────────────────────────
 
@@ -136,9 +132,7 @@ class TestConfidenceStability:
         # Use same data for all 3 windows (simulating stable signal)
         confidences = tracker.evaluate([("A", "B")], [df, df, df])
         conf = confidences[("A", "B")]
-        assert (
-            conf.stability > 0.9
-        ), f"Stability should be high for consistent data, got {conf.stability}"
+        assert conf.stability > 0.9, f"Stability should be high for consistent data, got {conf.stability}"
         assert conf.n_windows == 3
 
     def test_contradictory_windows_low_stability(self):
@@ -191,43 +185,25 @@ class TestHysteresis:
     def test_no_change_on_first_eval(self):
         """Hysteresis requires consecutive_required=2, so first eval never changes."""
         tracker = _make_tracker()
-        conf = {
-            ("A", "B"): EdgeConfidence(
-                "A", "B", confidence=0.1, stability=0.9, deltas=(0.1,), n_windows=1
-            )
-        }
-        suggestion = tracker.suggest_changes(
-            conf, current_edges={("A", "B")}, consecutive_required=2
-        )
+        conf = {("A", "B"): EdgeConfidence("A", "B", confidence=0.1, stability=0.9, deltas=(0.1,), n_windows=1)}
+        suggestion = tracker.suggest_changes(conf, current_edges={("A", "B")}, consecutive_required=2)
         assert suggestion.edges_to_remove == []
         assert suggestion.edges_to_add == []
 
     def test_removal_after_consecutive_threshold(self):
         """Edge should be removed after 2 consecutive low-confidence evaluations."""
         tracker = _make_tracker()
-        low_conf = {
-            ("A", "B"): EdgeConfidence(
-                "A", "B", confidence=0.1, stability=0.9, deltas=(-5.0,), n_windows=1
-            )
-        }
+        low_conf = {("A", "B"): EdgeConfidence("A", "B", confidence=0.1, stability=0.9, deltas=(-5.0,), n_windows=1)}
         # First eval
-        tracker.suggest_changes(
-            low_conf, current_edges={("A", "B")}, consecutive_required=2
-        )
+        tracker.suggest_changes(low_conf, current_edges={("A", "B")}, consecutive_required=2)
         # Second eval — should now suggest removal
-        suggestion = tracker.suggest_changes(
-            low_conf, current_edges={("A", "B")}, consecutive_required=2
-        )
+        suggestion = tracker.suggest_changes(low_conf, current_edges={("A", "B")}, consecutive_required=2)
         assert ("A", "B") in suggestion.edges_to_remove
 
     def test_addition_after_consecutive_threshold(self):
         """Edge should be added after 2 consecutive high-confidence evaluations."""
         tracker = _make_tracker()
-        high_conf = {
-            ("A", "D"): EdgeConfidence(
-                "A", "D", confidence=0.9, stability=0.8, deltas=(5.0,), n_windows=1
-            )
-        }
+        high_conf = {("A", "D"): EdgeConfidence("A", "D", confidence=0.9, stability=0.8, deltas=(5.0,), n_windows=1)}
         candidates = [("A", "D")]
         # First eval
         tracker.suggest_changes(
@@ -248,37 +224,19 @@ class TestHysteresis:
     def test_oscillating_edge_not_modified(self):
         """Edge that oscillates between high/low confidence should not be modified."""
         tracker = _make_tracker()
-        low_conf = {
-            ("A", "B"): EdgeConfidence(
-                "A", "B", confidence=0.1, stability=0.9, deltas=(-5.0,), n_windows=1
-            )
-        }
-        ok_conf = {
-            ("A", "B"): EdgeConfidence(
-                "A", "B", confidence=0.5, stability=0.9, deltas=(0.0,), n_windows=1
-            )
-        }
+        low_conf = {("A", "B"): EdgeConfidence("A", "B", confidence=0.1, stability=0.9, deltas=(-5.0,), n_windows=1)}
+        ok_conf = {("A", "B"): EdgeConfidence("A", "B", confidence=0.5, stability=0.9, deltas=(0.0,), n_windows=1)}
         # Low → resets when OK
-        tracker.suggest_changes(
-            low_conf, current_edges={("A", "B")}, consecutive_required=2
-        )
-        tracker.suggest_changes(
-            ok_conf, current_edges={("A", "B")}, consecutive_required=2
-        )
-        suggestion = tracker.suggest_changes(
-            low_conf, current_edges={("A", "B")}, consecutive_required=2
-        )
+        tracker.suggest_changes(low_conf, current_edges={("A", "B")}, consecutive_required=2)
+        tracker.suggest_changes(ok_conf, current_edges={("A", "B")}, consecutive_required=2)
+        suggestion = tracker.suggest_changes(low_conf, current_edges={("A", "B")}, consecutive_required=2)
         # Still only 1 consecutive low, should NOT remove
         assert suggestion.edges_to_remove == []
 
     def test_protected_edges_not_removed(self):
         """Protected edges cannot be removed regardless of confidence."""
         tracker = _make_tracker()
-        low_conf = {
-            ("A", "B"): EdgeConfidence(
-                "A", "B", confidence=0.1, stability=0.9, deltas=(-5.0,), n_windows=1
-            )
-        }
+        low_conf = {("A", "B"): EdgeConfidence("A", "B", confidence=0.1, stability=0.9, deltas=(-5.0,), n_windows=1)}
         protected = {("A", "B")}
         # Two evals
         tracker.suggest_changes(
@@ -325,55 +283,31 @@ class TestHysteresis:
     def test_reset_consecutive(self):
         """After applying a change, reset_consecutive clears the counter."""
         tracker = _make_tracker()
-        low_conf = {
-            ("A", "B"): EdgeConfidence(
-                "A", "B", confidence=0.1, stability=0.9, deltas=(-5.0,), n_windows=1
-            )
-        }
-        tracker.suggest_changes(
-            low_conf, current_edges={("A", "B")}, consecutive_required=2
-        )
+        low_conf = {("A", "B"): EdgeConfidence("A", "B", confidence=0.1, stability=0.9, deltas=(-5.0,), n_windows=1)}
+        tracker.suggest_changes(low_conf, current_edges={("A", "B")}, consecutive_required=2)
         tracker.reset_consecutive(("A", "B"))
         # After reset, first eval again — should not suggest removal
-        suggestion = tracker.suggest_changes(
-            low_conf, current_edges={("A", "B")}, consecutive_required=2
-        )
+        suggestion = tracker.suggest_changes(low_conf, current_edges={("A", "B")}, consecutive_required=2)
         assert suggestion.edges_to_remove == []
 
     def test_consecutive_required_1(self):
         """With consecutive_required=1, changes happen immediately."""
         tracker = _make_tracker()
-        low_conf = {
-            ("A", "B"): EdgeConfidence(
-                "A", "B", confidence=0.1, stability=0.9, deltas=(-5.0,), n_windows=1
-            )
-        }
-        suggestion = tracker.suggest_changes(
-            low_conf, current_edges={("A", "B")}, consecutive_required=1
-        )
+        low_conf = {("A", "B"): EdgeConfidence("A", "B", confidence=0.1, stability=0.9, deltas=(-5.0,), n_windows=1)}
+        suggestion = tracker.suggest_changes(low_conf, current_edges={("A", "B")}, consecutive_required=1)
         assert ("A", "B") in suggestion.edges_to_remove
 
     def test_no_candidates_no_additions(self):
         """Without candidate_additions, no edges can be added."""
         tracker = _make_tracker()
-        high_conf = {
-            ("A", "D"): EdgeConfidence(
-                "A", "D", confidence=0.9, stability=0.8, deltas=(5.0,), n_windows=1
-            )
-        }
-        suggestion = tracker.suggest_changes(
-            high_conf, current_edges=set(), consecutive_required=1
-        )
+        high_conf = {("A", "D"): EdgeConfidence("A", "D", confidence=0.9, stability=0.8, deltas=(5.0,), n_windows=1)}
+        suggestion = tracker.suggest_changes(high_conf, current_edges=set(), consecutive_required=1)
         assert suggestion.edges_to_add == []
 
     def test_already_present_not_re_added(self):
         """Edge already in current_edges should not appear in edges_to_add."""
         tracker = _make_tracker()
-        high_conf = {
-            ("A", "B"): EdgeConfidence(
-                "A", "B", confidence=0.9, stability=0.8, deltas=(5.0,), n_windows=1
-            )
-        }
+        high_conf = {("A", "B"): EdgeConfidence("A", "B", confidence=0.9, stability=0.8, deltas=(5.0,), n_windows=1)}
         suggestion = tracker.suggest_changes(
             high_conf,
             current_edges={("A", "B")},
@@ -394,14 +328,8 @@ class TestSerialization:
     def test_round_trip(self):
         tracker = _make_tracker()
         # Build up some consecutive state
-        low_conf = {
-            ("A", "B"): EdgeConfidence(
-                "A", "B", confidence=0.1, stability=0.9, deltas=(-5.0,), n_windows=1
-            )
-        }
-        tracker.suggest_changes(
-            low_conf, current_edges={("A", "B")}, consecutive_required=3
-        )
+        low_conf = {("A", "B"): EdgeConfidence("A", "B", confidence=0.1, stability=0.9, deltas=(-5.0,), n_windows=1)}
+        tracker.suggest_changes(low_conf, current_edges={("A", "B")}, consecutive_required=3)
 
         data = tracker.to_dict()
         restored = EdgeConfidenceTracker.from_dict(data)
@@ -487,7 +415,8 @@ class TestIntegrationScenario:
         # Run 3 evaluation cycles
         for _ in range(3):
             confs = tracker.evaluate(
-                list(current_edges), [df]  # using same data for simplicity
+                list(current_edges),
+                [df],  # using same data for simplicity
             )
             suggestion = tracker.suggest_changes(
                 confs,

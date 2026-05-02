@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
 
@@ -13,7 +12,6 @@ from agent.pipeline.entity import (
     normalize_company_name,
 )
 from agent.pipeline.store import PipelineStore
-
 
 # ── Fixtures ───────────────────────────────────────────────────
 
@@ -114,9 +112,7 @@ class TestNormalizeCompanyName:
         assert result == "foobar"
 
     def test_case_insensitive(self):
-        assert normalize_company_name("aPpLe INC") == normalize_company_name(
-            "APPLE inc."
-        )
+        assert normalize_company_name("aPpLe INC") == normalize_company_name("APPLE inc.")
 
     def test_deterministic(self):
         """Same input always produces same output."""

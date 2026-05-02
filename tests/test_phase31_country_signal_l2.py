@@ -40,10 +40,7 @@ class TestConsumerSentimentL2:
             "eu_confidence",
         )
         assert store.register_entity.call_count == 1
-        assert (
-            store.store_entity_observation.call_args.kwargs["observation_type"]
-            == "consumer_confidence"
-        )
+        assert store.store_entity_observation.call_args.kwargs["observation_type"] == "consumer_confidence"
 
     def test_us_sentiment_persists_to_us(self):
         store = _store()
@@ -65,9 +62,7 @@ class TestConsumerSentimentL2:
 
     def test_no_store_guard(self):
         tool = ConsumerSentimentTool()
-        assert tool._persist_entities({}, "eu_confidence") == {
-            "consumer_confidence_obs": 0
-        }
+        assert tool._persist_entities({}, "eu_confidence") == {"consumer_confidence_obs": 0}
 
 
 class TestFoodSecurityL2:
@@ -94,10 +89,7 @@ class TestFoodSecurityL2:
             "production",
         )
         assert counts["food_security_obs"] == 1
-        assert (
-            store.store_entity_observation.call_args.kwargs["observation_type"]
-            == "food_security"
-        )
+        assert store.store_entity_observation.call_args.kwargs["observation_type"] == "food_security"
 
 
 class TestInternetOutagesL2:

@@ -29,13 +29,10 @@ from agent.tools.lobbying import (
     ISSUE_AREAS,
     VALID_MODES,
     LobbyingTool,
-    _CACHE_TTL,
-    _LDA_BASE,
     _detect_spend_anomaly,
     _fetch_lda,
     _parse_filing,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -86,8 +83,7 @@ def _filing(
         "registrant": {"id": 1, "name": registrant},
         "client": {"id": 2, "name": client},
         "lobbying_activities": [
-            {"general_issue_code": code, "description": f"Activity for {code}"}
-            for code in (issue_codes or ["HCR"])
+            {"general_issue_code": code, "description": f"Activity for {code}"} for code in (issue_codes or ["HCR"])
         ],
     }
 
@@ -119,7 +115,7 @@ def _mock_response(data: dict, status: int = 200) -> httpx.Response:
 
 class TestModeValidation:
     def test_valid_modes(self, tool):
-        assert VALID_MODES == {"search", "spending", "issues"}
+        assert {"search", "spending", "issues"} == VALID_MODES
 
     def test_empty_mode(self, tool):
         r = tool.execute(mode="")
@@ -323,9 +319,7 @@ class TestIssuesMode:
 
     @patch("agent.tools.lobbying._fetch_lda")
     def test_issues_by_year(self, mock_fetch, tool):
-        mock_fetch.return_value = _lda_response(
-            [_filing(year=2023, issue_codes=["TAX"])]
-        )
+        mock_fetch.return_value = _lda_response([_filing(year=2023, issue_codes=["TAX"])])
         r = tool.execute(mode="issues", issue_code="TAX", year=2023)
         assert r.success
         assert r.data["year"] == 2023

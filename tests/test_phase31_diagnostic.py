@@ -113,9 +113,7 @@ class TestPhase31CountryFlow:
             {"usd_trillions": 7.0},
             ts=now - 5,
         )
-        _obs(
-            store, eid, "global_pmi", "economic_activity", {"value": 101.0}, ts=now - 4
-        )
+        _obs(store, eid, "global_pmi", "economic_activity", {"value": 101.0}, ts=now - 4)
         _obs(
             store,
             eid,

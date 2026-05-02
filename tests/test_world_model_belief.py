@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import math
 import time
 
 import pytest
 
 from agent.models.belief import (
     VALID_DIST_TYPES,
-    VARIABLE_NAME_PATTERN,
     BeliefState,
     BeliefValidationError,
     validate_belief,
@@ -179,15 +177,11 @@ class TestVersionValidation:
 
 class TestTemporalValidation:
     def test_effective_after_computed(self):
-        errs = validate_belief(
-            _valid_gaussian(effective_at=_NOW + 10, computed_at=_NOW)
-        )
+        errs = validate_belief(_valid_gaussian(effective_at=_NOW + 10, computed_at=_NOW))
         assert any("leakage" in e for e in errs)
 
     def test_effective_before_epoch_floor(self):
-        errs = validate_belief(
-            _valid_gaussian(effective_at=1_500_000_000.0, computed_at=_NOW)
-        )
+        errs = validate_belief(_valid_gaussian(effective_at=1_500_000_000.0, computed_at=_NOW))
         assert any("2020" in e for e in errs)
 
     def test_computed_far_future(self):
@@ -293,9 +287,7 @@ class TestCategoricalValidation:
         assert any("must be in [0, 1]" in e for e in errs)
 
     def test_nan_probability(self):
-        errs = validate_belief(
-            _valid_categorical(probabilities={"a": float("nan"), "b": 0.5, "c": 0.5})
-        )
+        errs = validate_belief(_valid_categorical(probabilities={"a": float("nan"), "b": 0.5, "c": 0.5}))
         assert any("finite" in e for e in errs)
 
     def test_two_state_categorical(self):
@@ -388,6 +380,4 @@ class TestMultipleErrors:
             confidence=2.0,
         )
         errs = validate_belief(b)
-        assert (
-            len(errs) >= 5
-        )  # at least: name, version, temporal, dist_type, confidence
+        assert len(errs) >= 5  # at least: name, version, temporal, dist_type, confidence

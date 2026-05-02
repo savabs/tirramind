@@ -6,7 +6,6 @@ Comprehensive edge-case coverage for EngineeredFeature and validate_feature.
 
 from __future__ import annotations
 
-import math
 import time
 
 import pytest
@@ -20,7 +19,6 @@ from agent.features.protocol import (
     validate_feature,
     validate_features,
 )
-
 
 # ── Helpers ────────────────────────────────────────────────────
 
@@ -58,9 +56,7 @@ class TestValidFeature:
         assert validate_feature(feat) == []
 
     def test_valid_with_metadata(self) -> None:
-        feat = _valid_feature(
-            metadata={"debug": True, "source_url": "https://example.com"}
-        )
+        feat = _valid_feature(metadata={"debug": True, "source_url": "https://example.com"})
         assert validate_feature(feat) == []
 
     def test_valid_missing_value(self) -> None:
@@ -533,8 +529,7 @@ class TestMultipleErrors:
             feature_name="",
             version=0,
             effective_at=1_000_000_000.0,  # before floor
-            computed_at=_NOW
-            - 100,  # before effective_at? no, let's make effective > computed
+            computed_at=_NOW - 100,  # before effective_at? no, let's make effective > computed
             horizon="invalid",
             value=float("nan"),
             quality=-0.5,

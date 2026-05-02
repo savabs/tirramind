@@ -284,9 +284,7 @@ def is_safe_path(path: str, allowed_roots: list[str] | None = None) -> tuple[boo
 
     # If no roots configured, allow everything (backward compat, log warning).
     if not roots:
-        log.warning(
-            "No allowed_roots configured for path sandboxing — allowing all paths"
-        )
+        log.warning("No allowed_roots configured for path sandboxing — allowing all paths")
         return True, ""
 
     try:

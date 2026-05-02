@@ -10,7 +10,7 @@ import time
 
 import pytest
 
-from agent.memory.candidates import CandidateStore, LessonCandidate, ProcessResult
+from agent.memory.candidates import CandidateStore, LessonCandidate
 from agent.memory.store import Episode, EpisodicMemory, LearningEntry, SemanticMemory
 
 # ── Helpers ───────────────────────────────────────────────────
@@ -184,8 +184,12 @@ class TestSignDisagreement:
 
         # Manually inject mixed evidence to test sign_agreement logic
         cand = list(store.get_all().values())[0]
-        cand.evidence.append({"run_id": "r4", "timestamp": time.time(), "reward": -0.5, "lesson_text": "bad", "goal": "g"})
-        cand.evidence.append({"run_id": "r5", "timestamp": time.time(), "reward": -0.3, "lesson_text": "bad", "goal": "g"})
+        cand.evidence.append(
+            {"run_id": "r4", "timestamp": time.time(), "reward": -0.5, "lesson_text": "bad", "goal": "g"}
+        )
+        cand.evidence.append(
+            {"run_id": "r5", "timestamp": time.time(), "reward": -0.3, "lesson_text": "bad", "goal": "g"}
+        )
         cand.support_count = len(cand.evidence)
         cand.reward_sign_agreement = CandidateStore._sign_agreement(cand)
         # 3 pos, 2 neg → 3/5 = 0.6 < 0.8 threshold

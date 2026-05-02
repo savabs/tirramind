@@ -10,27 +10,22 @@ tool metadata, empty data, malformed data, registry + bandit integration.
 
 from __future__ import annotations
 
-import csv
-import io
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import httpx
-import pytest
 
 from agent.tools.weather_alerts import (
-    WeatherAlertsTool,
-    INFRA_ZONES,
     _MARKET_EVENTS,
     _SEVERITIES,
     _US_STATES,
+    INFRA_ZONES,
+    WeatherAlertsTool,
     _format_alert,
     _parse_fires_csv,
     _point_in_zone,
     _severity_rank,
 )
-from agent.tools.base import ToolResult
-
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -131,9 +126,9 @@ def _make_fires_csv(rows: list[dict] | None = None) -> str:
     lines = header
     for r in rows:
         lines += (
-            f"{r['latitude']},{r['longitude']},{r['brightness']},{r.get('scan','1.0')},"
-            f"{r.get('track','1.0')},{r['acq_date']},{r['acq_time']},{r['satellite']},"
-            f"{r['confidence']},{r.get('version','6.1NRT')},{r.get('bright_t31','300.0')},"
+            f"{r['latitude']},{r['longitude']},{r['brightness']},{r.get('scan', '1.0')},"
+            f"{r.get('track', '1.0')},{r['acq_date']},{r['acq_time']},{r['satellite']},"
+            f"{r['confidence']},{r.get('version', '6.1NRT')},{r.get('bright_t31', '300.0')},"
             f"{r['frp']},{r['daynight']}\n"
         )
     return lines
@@ -150,9 +145,7 @@ def _mock_resp(body: Any, status: int = 200, is_json: bool = True) -> httpx.Resp
         text = json.dumps(body)
     else:
         text = body
-    return httpx.Response(
-        status_code=status, text=text, request=httpx.Request("GET", "http://test")
-    )
+    return httpx.Response(status_code=status, text=text, request=httpx.Request("GET", "http://test"))
 
 
 # ── 1. Tool Metadata ─────────────────────────────────────────
@@ -368,7 +361,7 @@ class TestParseFiresCsv:
         assert len(fires) == 1
 
     def test_missing_fields_defaults(self):
-        csv_text = "latitude,longitude\n" "31.9,-102.1\n"
+        csv_text = "latitude,longitude\n31.9,-102.1\n"
         fires = _parse_fires_csv(csv_text)
         # Missing brightness/confidence/frp fields default to 0 via float("")/int("") → caught
         # Actually _parse_fires_csv tries float(row.get("brightness", "0")) which defaults "0"
@@ -400,9 +393,7 @@ class TestAlertsMode:
     def test_market_only_filter(self):
         features = [
             _make_nws_feature(event="Tornado Warning"),
-            _make_nws_feature(
-                event="Wind Advisory", severity="Minor"
-            ),  # not market relevant
+            _make_nws_feature(event="Wind Advisory", severity="Minor"),  # not market relevant
         ]
         with patch("agent.tools.weather_alerts.WeatherAlertsTool._fetch_nws") as m:
             m.return_value = (features, None)
@@ -602,50 +593,42 @@ class TestSummaryMode:
                 "satellite": "Terra",
             },
         ]
-        with patch.object(
-            WeatherAlertsTool, "_fetch_nws", return_value=(features, None)
+        with (
+            patch.object(WeatherAlertsTool, "_fetch_nws", return_value=(features, None)),
+            patch.object(WeatherAlertsTool, "_fetch_firms", return_value=(fires, None)),
         ):
-            with patch.object(
-                WeatherAlertsTool, "_fetch_firms", return_value=(fires, None)
-            ):
-                r = _tool().execute(mode="summary")
+            r = _tool().execute(mode="summary")
         assert r.success
         assert r.data["alert_count"] == 1
         assert r.data["fire_count_global"] == 1
 
     def test_summary_nws_error(self):
         fires = []
-        with patch.object(
-            WeatherAlertsTool, "_fetch_nws", return_value=([], "NWS API error")
+        with (
+            patch.object(WeatherAlertsTool, "_fetch_nws", return_value=([], "NWS API error")),
+            patch.object(WeatherAlertsTool, "_fetch_firms", return_value=(fires, None)),
         ):
-            with patch.object(
-                WeatherAlertsTool, "_fetch_firms", return_value=(fires, None)
-            ):
-                r = _tool().execute(mode="summary")
+            r = _tool().execute(mode="summary")
         assert r.success
         assert "ERROR" in r.output
         assert r.data["alert_count"] == 0
 
     def test_summary_firms_error(self):
         features = [_make_nws_feature()]
-        with patch.object(
-            WeatherAlertsTool, "_fetch_nws", return_value=(features, None)
+        with (
+            patch.object(WeatherAlertsTool, "_fetch_nws", return_value=(features, None)),
+            patch.object(WeatherAlertsTool, "_fetch_firms", return_value=([], "FIRMS error")),
         ):
-            with patch.object(
-                WeatherAlertsTool, "_fetch_firms", return_value=([], "FIRMS error")
-            ):
-                r = _tool().execute(mode="summary")
+            r = _tool().execute(mode="summary")
         assert r.success
         assert "ERROR" in r.output
 
     def test_summary_both_error(self):
-        with patch.object(
-            WeatherAlertsTool, "_fetch_nws", return_value=([], "NWS fail")
+        with (
+            patch.object(WeatherAlertsTool, "_fetch_nws", return_value=([], "NWS fail")),
+            patch.object(WeatherAlertsTool, "_fetch_firms", return_value=([], "FIRMS fail")),
         ):
-            with patch.object(
-                WeatherAlertsTool, "_fetch_firms", return_value=([], "FIRMS fail")
-            ):
-                r = _tool().execute(mode="summary")
+            r = _tool().execute(mode="summary")
         assert r.success
 
     def test_summary_market_only(self):
@@ -653,13 +636,11 @@ class TestSummaryMode:
             _make_nws_feature(event="Tornado Warning"),
             _make_nws_feature(event="Wind Advisory"),
         ]
-        with patch.object(
-            WeatherAlertsTool, "_fetch_nws", return_value=(features, None)
+        with (
+            patch.object(WeatherAlertsTool, "_fetch_nws", return_value=(features, None)),
+            patch.object(WeatherAlertsTool, "_fetch_firms", return_value=([], None)),
         ):
-            with patch.object(
-                WeatherAlertsTool, "_fetch_firms", return_value=([], None)
-            ):
-                r = _tool().execute(mode="summary", market_only=True)
+            r = _tool().execute(mode="summary", market_only=True)
         assert r.success
 
 
@@ -730,9 +711,7 @@ class TestNWSFetch:
     def test_cache_hit(self):
         cache = MagicMock()
         cache.get.return_value = {"features": [_make_nws_feature()]}
-        features, err = WeatherAlertsTool(cache=cache)._fetch_nws(
-            severity="Severe", state=""
-        )
+        features, err = WeatherAlertsTool(cache=cache)._fetch_nws(severity="Severe", state="")
         assert err is None
         assert len(features) == 1
         cache.get.assert_called_once()
@@ -748,9 +727,7 @@ class TestNWSFetch:
             mc.get.return_value = _mock_resp(resp_data)
             mock_client.return_value = mc
 
-            features, err = WeatherAlertsTool(cache=cache)._fetch_nws(
-                severity="Severe", state=""
-            )
+            features, err = WeatherAlertsTool(cache=cache)._fetch_nws(severity="Severe", state="")
         assert err is None
         cache.put.assert_called_once()
 

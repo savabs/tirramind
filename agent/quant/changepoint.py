@@ -18,7 +18,7 @@ class BOCPDResult:
     """Result of BOCPD inference."""
 
     run_length_posterior: np.ndarray  # (T, max_rl) — P(r_t | x_{1:t})
-    changepoint_probs: np.ndarray    # (T,) — P(changepoint at t)
+    changepoint_probs: np.ndarray  # (T,) — P(changepoint at t)
 
     @property
     def map_run_lengths(self) -> np.ndarray:
@@ -49,11 +49,7 @@ class BOCPDResult:
         for t in range(1, len(erl)):
             prev = erl[t - 1]
             curr = erl[t]
-            if (
-                prev >= min_prev_rl
-                and curr < prev * (1 - min_drop_frac)
-                and curr < min_prev_rl
-            ):
+            if prev >= min_prev_rl and curr < prev * (1 - min_drop_frac) and curr < min_prev_rl:
                 cps.append(t)
         return cps
 
@@ -167,10 +163,7 @@ class BOCPD:
             new_kappa[1:] = old_kappa + 1
             new_mu[1:] = (old_kappa * old_mu + x) / new_kappa[1:]
             new_alpha[1:] = old_alpha + 0.5
-            new_beta[1:] = (
-                old_beta
-                + 0.5 * old_kappa * (x - old_mu) ** 2 / new_kappa[1:]
-            )
+            new_beta[1:] = old_beta + 0.5 * old_kappa * (x - old_mu) ** 2 / new_kappa[1:]
 
             mu, kappa, alpha, beta = new_mu, new_kappa, new_alpha, new_beta
             R = new_R
@@ -204,10 +197,6 @@ class BOCPD:
 
         # Student-t PDF (vectorized, avoids deprecated np.lgamma)
         z = (x - mu) ** 2 / scale
-        log_coeff = (
-            gammaln((df + 1) / 2)
-            - gammaln(df / 2)
-            - 0.5 * np.log(np.pi * df * scale)
-        )
+        log_coeff = gammaln((df + 1) / 2) - gammaln(df / 2) - 0.5 * np.log(np.pi * df * scale)
         log_pdf = log_coeff - ((df + 1) / 2) * np.log(1 + z / df)
         return np.exp(log_pdf)

@@ -29,7 +29,7 @@ from dataclasses import dataclass
 import torch
 import torch.nn.functional as F
 
-from agent.models.gnn.graph_builder import IDMap, OBSERVATION_TYPES
+from agent.models.gnn.graph_builder import OBSERVATION_TYPES, IDMap
 
 log = logging.getLogger(__name__)
 
@@ -85,9 +85,7 @@ class SurpriseExtractor:
             self._adaptive = None
             if weights is not None:
                 if len(weights) != 5:
-                    raise ValueError(
-                        f"weights must have 5 elements, got {len(weights)}"
-                    )
+                    raise ValueError(f"weights must have 5 elements, got {len(weights)}")
                 (
                     obs_type_weight,
                     temporal_weight,
@@ -95,13 +93,7 @@ class SurpriseExtractor:
                     neighborhood_weight,
                     memory_weight,
                 ) = weights
-            total = (
-                obs_type_weight
-                + temporal_weight
-                + value_weight
-                + neighborhood_weight
-                + memory_weight
-            )
+            total = obs_type_weight + temporal_weight + value_weight + neighborhood_weight + memory_weight
             self._weights = {
                 "obs_type": obs_type_weight / total,
                 "temporal": temporal_weight / total,
@@ -224,11 +216,7 @@ class SurpriseExtractor:
 
             # 5. memory_drift: L2 norm of memory change
             memory_d = 0.0
-            if (
-                memory_before is not None
-                and gid < memory_before.size(0)
-                and gid < memory_after.size(0)
-            ):
+            if memory_before is not None and gid < memory_before.size(0) and gid < memory_after.size(0):
                 diff = memory_after[gid] - memory_before[gid]
                 memory_d = torch.norm(diff, p=2).item()
 
@@ -285,11 +273,7 @@ class SurpriseExtractor:
             neighbor_ids = neighbors.get(eid, [])
             if not neighbor_ids:
                 continue
-            neighbor_composites = [
-                results[nid].composite_surprise
-                for nid in neighbor_ids
-                if nid in results
-            ]
+            neighbor_composites = [results[nid].composite_surprise for nid in neighbor_ids if nid in results]
             if neighbor_composites:
                 neigh_s = sum(neighbor_composites) / len(neighbor_composites)
                 # Recompute composite with neighborhood
@@ -399,9 +383,7 @@ class AdaptiveSurpriseWeights:
     ) -> None:
         if initial_weights is not None:
             if len(initial_weights) != 5:
-                raise ValueError(
-                    f"initial_weights must have 5 elements, got {len(initial_weights)}"
-                )
+                raise ValueError(f"initial_weights must have 5 elements, got {len(initial_weights)}")
             total = sum(initial_weights)
             self._weights = [w / total for w in initial_weights]
         else:
@@ -492,7 +474,7 @@ class AdaptiveSurpriseWeights:
         return d
 
     @classmethod
-    def from_dict(cls, d: dict[str, float | int]) -> "AdaptiveSurpriseWeights":
+    def from_dict(cls, d: dict[str, float | int]) -> AdaptiveSurpriseWeights:
         """Reconstruct from serialised dict."""
         weights = tuple(float(d[name]) for name in _WEIGHT_NAMES)
         obj = cls(initial_weights=weights)

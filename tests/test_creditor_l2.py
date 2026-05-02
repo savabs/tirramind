@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import UTC
 from unittest.mock import MagicMock
 
-import pytest
-
 from agent.tools.creditor_filings import CreditorFilingsTool
-
 
 # ── Helpers ───────────────────────────────────────────────────
 
@@ -113,9 +111,7 @@ class TestSECEntityRegistration:
     def test_missing_company_name_skipped(self):
         store = _make_store()
         tool = _make_tool(store=store)
-        tool._persist_entities(
-            [{"company_name": "", "cik": "111", "file_date": "2025-01-01"}]
-        )
+        tool._persist_entities([{"company_name": "", "cik": "111", "file_date": "2025-01-01"}])
 
         store.register_entity.assert_not_called()
 
@@ -154,10 +150,10 @@ class TestSECObservations:
         tool = _make_tool(store=store)
         tool._persist_entities([_sec_entry(date="2025-03-15")])
 
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         ts = store.store_entity_observation.call_args.kwargs["observed_at"]
-        expected = datetime(2025, 3, 15, tzinfo=timezone.utc).timestamp()
+        expected = datetime(2025, 3, 15, tzinfo=UTC).timestamp()
         assert ts == expected
 
 
@@ -188,9 +184,7 @@ class TestUKChargesEntityLinking:
         store = _make_store()
         tool = _make_tool(store=store)
         company_info = {"company_name": "UK Debtor Ltd", "company_number": "12345678"}
-        tool._persist_entities(
-            [], [_uk_charge(creditors=["Big Bank PLC"])], company_info
-        )
+        tool._persist_entities([], [_uk_charge(creditors=["Big Bank PLC"])], company_info)
 
         store.link_entities.assert_called_once()
         link_call = store.link_entities.call_args

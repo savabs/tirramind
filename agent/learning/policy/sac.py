@@ -106,9 +106,7 @@ class GaussianActor(nn.Module):
         self._max_pos = config.max_position
         self._leverage = config.leverage_limit
 
-        self._trunk = _build_mlp(
-            state_dim, config.hidden_dim, config.hidden_dim, config.num_hidden - 1
-        )
+        self._trunk = _build_mlp(state_dim, config.hidden_dim, config.hidden_dim, config.num_hidden - 1)
         self._mu_head = nn.Linear(config.hidden_dim, action_dim)
         self._log_std_head = nn.Linear(config.hidden_dim, action_dim)
 
@@ -180,12 +178,8 @@ class TwinCritic(nn.Module):
         config: SACConfig,
     ) -> None:
         super().__init__()
-        self._q1 = _build_mlp(
-            state_dim + action_dim, 1, config.hidden_dim, config.num_hidden
-        )
-        self._q2 = _build_mlp(
-            state_dim + action_dim, 1, config.hidden_dim, config.num_hidden
-        )
+        self._q1 = _build_mlp(state_dim + action_dim, 1, config.hidden_dim, config.num_hidden)
+        self._q2 = _build_mlp(state_dim + action_dim, 1, config.hidden_dim, config.num_hidden)
 
     def forward(self, state: Tensor, action: Tensor) -> tuple[Tensor, Tensor]:
         """Return (Q1, Q2) values."""
@@ -221,9 +215,7 @@ class AlphaScheduler:
 
     def update(self, log_probs: Tensor) -> float:
         """Update temperature. Returns current alpha."""
-        alpha_loss = -(
-            self._log_alpha.exp() * (log_probs.detach() + self._target)
-        ).mean()
+        alpha_loss = -(self._log_alpha.exp() * (log_probs.detach() + self._target)).mean()
         self._optimizer.zero_grad()
         alpha_loss.backward()
         self._optimizer.step()
@@ -299,9 +291,7 @@ class SACTrainer:
         if encoder is not None:
             actor_params += list(encoder.parameters())
         self._actor_optim = torch.optim.Adam(actor_params, lr=cfg.actor_lr)
-        self._critic_optim = torch.optim.Adam(
-            self._critic.parameters(), lr=cfg.critic_lr
-        )
+        self._critic_optim = torch.optim.Adam(self._critic.parameters(), lr=cfg.critic_lr)
 
         # Temperature
         self._alpha_sched = AlphaScheduler(action_dim, cfg)
@@ -400,9 +390,7 @@ class SACTrainer:
 
         # ── Step 6: Soft update targets ───────────────────────
         with torch.no_grad():
-            for p, tp in zip(
-                self._critic.parameters(), self._target_critic.parameters()
-            ):
+            for p, tp in zip(self._critic.parameters(), self._target_critic.parameters()):
                 tp.data.mul_(1.0 - cfg.tau).add_(p.data, alpha=cfg.tau)
 
         self._update_count += 1
@@ -415,15 +403,11 @@ class SACTrainer:
             "q2_mean": float(q2.mean().item()),
             "log_prob_mean": float(log_probs.mean().item()),
             "gate_entropy": (
-                float(gate_entropy)
-                if isinstance(gate_entropy, (int, float))
-                else float(gate_entropy.item())
+                float(gate_entropy) if isinstance(gate_entropy, (int, float)) else float(gate_entropy.item())
             ),
         }
 
-    def select_action(
-        self, state: torch.Tensor, deterministic: bool = False
-    ) -> np.ndarray:
+    def select_action(self, state: torch.Tensor, deterministic: bool = False) -> np.ndarray:
         """Return action as numpy array.
 
         deterministic=True uses tanh(μ) (no sampling noise);
@@ -496,11 +480,7 @@ class SACTrainer:
         encoder = None
         if checkpoint.get("has_encoder", False) and "encoder" in checkpoint:
             enc_cfg_dict = checkpoint.get("encoder_config", {})
-            enc_cfg = (
-                StateEncoderConfig(**enc_cfg_dict)
-                if enc_cfg_dict
-                else StateEncoderConfig()
-            )
+            enc_cfg = StateEncoderConfig(**enc_cfg_dict) if enc_cfg_dict else StateEncoderConfig()
             encoder = LearnedStateEncoder(enc_cfg)
             encoder.load_state_dict(checkpoint["encoder"])
 

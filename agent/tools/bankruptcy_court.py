@@ -28,11 +28,11 @@ from __future__ import annotations
 import logging
 import re
 import time
-import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
+import defusedxml.ElementTree as ET
 import httpx
 
 from agent.data.cache import DataCache
@@ -147,9 +147,7 @@ def _fetch_json(url: str, client: httpx.Client, **params: Any) -> dict | None:
 # ── PACER parsing ─────────────────────────────────────────────────────────────
 
 
-def _parse_pacer_feed(
-    root: ET.Element, court_code: str, court_name: str
-) -> list[dict[str, Any]]:
+def _parse_pacer_feed(root: ET.Element, court_code: str, court_name: str) -> list[dict[str, Any]]:
     """Parse a PACER RSS feed into structured entries."""
     entries: list[dict[str, Any]] = []
     channel = root.find("channel")
@@ -354,10 +352,7 @@ class BankruptcyCourtTool(Tool):
             },
             "days_back": {
                 "type": "integer",
-                "description": (
-                    "Lookback window in days for sec_bankruptcy mode. "
-                    "Default 7, max 90."
-                ),
+                "description": ("Lookback window in days for sec_bankruptcy mode. Default 7, max 90."),
                 "default": 7,
             },
             "limit": {
@@ -372,7 +367,7 @@ class BankruptcyCourtTool(Tool):
     def __init__(
         self,
         cache: DataCache | None = None,
-        pipeline_store: "PipelineStore | None" = None,
+        pipeline_store: PipelineStore | None = None,
     ) -> None:
         self._cache = cache
         self._store = pipeline_store
@@ -406,8 +401,7 @@ class BankruptcyCourtTool(Tool):
             min(
                 (
                     int(days_back)
-                    if isinstance(days_back, (int, float, str))
-                    and str(days_back).lstrip("-").isdigit()
+                    if isinstance(days_back, (int, float, str)) and str(days_back).lstrip("-").isdigit()
                     else 7
                 ),
                 90,
@@ -416,12 +410,7 @@ class BankruptcyCourtTool(Tool):
         limit = max(
             1,
             min(
-                (
-                    int(limit)
-                    if isinstance(limit, (int, float, str))
-                    and str(limit).lstrip("-").isdigit()
-                    else 25
-                ),
+                (int(limit) if isinstance(limit, (int, float, str)) and str(limit).lstrip("-").isdigit() else 25),
                 100,
             ),
         )
@@ -476,10 +465,7 @@ class BankruptcyCourtTool(Tool):
             else:
                 # Parallel fetch
                 with ThreadPoolExecutor(max_workers=6) as pool:
-                    futures = {
-                        pool.submit(_fetch_pacer_court, cc, client): cc
-                        for cc in courts_to_fetch
-                    }
+                    futures = {pool.submit(_fetch_pacer_court, cc, client): cc for cc in courts_to_fetch}
                     for fut in as_completed(futures):
                         try:
                             all_entries.extend(fut.result())
@@ -493,9 +479,7 @@ class BankruptcyCourtTool(Tool):
         entries = all_entries[:limit]
         return self._format_pacer_result(entries, limit)
 
-    def _format_pacer_result(
-        self, entries: list[dict], limit: int, *, from_cache: bool = False
-    ) -> ToolResult:
+    def _format_pacer_result(self, entries: list[dict], limit: int, *, from_cache: bool = False) -> ToolResult:
         # Chapter breakdown
         ch_counts: dict[str, int] = {}
         court_counts: dict[str, int] = {}
@@ -566,11 +550,7 @@ class BankruptcyCourtTool(Tool):
         # Keyword filter
         if keyword:
             all_entries = [
-                e
-                for e in all_entries
-                if _keyword_match(
-                    e.get("title", "") + " " + e.get("description", ""), keyword
-                )
+                e for e in all_entries if _keyword_match(e.get("title", "") + " " + e.get("description", ""), keyword)
             ]
 
         # Sort by date descending (best effort — pubDate may vary in format)
@@ -582,9 +562,7 @@ class BankruptcyCourtTool(Tool):
         entries = all_entries[:limit]
         return self._format_sec_enforce_result(entries, limit)
 
-    def _format_sec_enforce_result(
-        self, entries: list[dict], limit: int, *, from_cache: bool = False
-    ) -> ToolResult:
+    def _format_sec_enforce_result(self, entries: list[dict], limit: int, *, from_cache: bool = False) -> ToolResult:
         type_counts: dict[str, int] = {}
         for e in entries:
             t = e.get("type", "unknown")
@@ -599,9 +577,7 @@ class BankruptcyCourtTool(Tool):
             "",
         ]
         for e in entries[:15]:
-            lines.append(
-                f"  [{e.get('type', '?')}] {e.get('title', '?')} — {e.get('pub_date', '')}"
-            )
+            lines.append(f"  [{e.get('type', '?')}] {e.get('title', '?')} — {e.get('pub_date', '')}")
         if len(entries) > 15:
             lines.append(f"  ... and {len(entries) - 15} more")
 
@@ -624,11 +600,9 @@ class BankruptcyCourtTool(Tool):
             cached = self._cache.get("bankruptcy_court", cache_key)
             if cached is not None:
                 entries = cached[:limit]
-                return self._format_sec_bk_result(
-                    entries, limit, days_back, from_cache=True
-                )
+                return self._format_sec_bk_result(entries, limit, days_back, from_cache=True)
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         start = (now - timedelta(days=days_back)).strftime("%Y-%m-%d")
         end = now.strftime("%Y-%m-%d")
 
@@ -736,11 +710,7 @@ class BankruptcyCourtTool(Tool):
         # Keyword filter
         if keyword:
             all_entries = [
-                e
-                for e in all_entries
-                if _keyword_match(
-                    e.get("title", "") + " " + e.get("description", ""), keyword
-                )
+                e for e in all_entries if _keyword_match(e.get("title", "") + " " + e.get("description", ""), keyword)
             ]
 
         # Sort by date descending
@@ -752,9 +722,7 @@ class BankruptcyCourtTool(Tool):
         entries = all_entries[:limit]
         return self._format_uk_result(entries, limit)
 
-    def _format_uk_result(
-        self, entries: list[dict], limit: int, *, from_cache: bool = False
-    ) -> ToolResult:
+    def _format_uk_result(self, entries: list[dict], limit: int, *, from_cache: bool = False) -> ToolResult:
         source_counts: dict[str, int] = {}
         for e in entries:
             s = e.get("source", "unknown")
@@ -769,9 +737,7 @@ class BankruptcyCourtTool(Tool):
             "",
         ]
         for e in entries[:15]:
-            lines.append(
-                f"  [{e.get('source', '?')}] {e.get('title', '?')} — {e.get('pub_date', '')}"
-            )
+            lines.append(f"  [{e.get('source', '?')}] {e.get('title', '?')} — {e.get('pub_date', '')}")
         if len(entries) > 15:
             lines.append(f"  ... and {len(entries) - 15} more")
 
@@ -825,9 +791,7 @@ class BankruptcyCourtTool(Tool):
                 if not name:
                     continue
                 # Normalize: strip common legal prefixes
-                clean = re.sub(
-                    r"^(In\s+re[:\s]*)", "", name, flags=re.IGNORECASE
-                ).strip()
+                clean = re.sub(r"^(In\s+re[:\s]*)", "", name, flags=re.IGNORECASE).strip()
                 if not clean:
                     continue
                 eid = _entity_id_from_key("company", clean)

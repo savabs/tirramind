@@ -11,7 +11,6 @@ live network tests.
 
 from __future__ import annotations
 
-import json
 from datetime import date, timedelta
 from unittest.mock import MagicMock, patch
 
@@ -259,9 +258,7 @@ class TestEFTSFetch:
 
     def test_http_error_propagates(self):
         tool = Form144Tool()
-        with patch.object(
-            tool, "_fetch_recent_144s", side_effect=Exception("network down")
-        ):
+        with patch.object(tool, "_fetch_recent_144s", side_effect=Exception("network down")):
             result = tool.execute(days_back=5)
         assert not result.success
         assert "SEC EDGAR error" in result.output
@@ -306,9 +303,7 @@ class TestEFTSFetch:
         mock_resp_ok.raise_for_status = MagicMock()
         mock_resp_ok.json.return_value = {"hits": {"hits": [], "total": {"value": 0}}}
 
-        exc_429 = httpx_mod.HTTPStatusError(
-            "429", request=MagicMock(), response=mock_resp_429
-        )
+        exc_429 = httpx_mod.HTTPStatusError("429", request=MagicMock(), response=mock_resp_429)
 
         call_count = [0]
 
@@ -337,15 +332,11 @@ class TestEFTSFetch:
         mock_resp_ok = MagicMock()
         mock_resp_ok.status_code = 200
         mock_resp_ok.raise_for_status = MagicMock()
-        mock_resp_ok.json.return_value = {
-            "hits": {"hits": [hit1], "total": {"value": 200}}
-        }
+        mock_resp_ok.json.return_value = {"hits": {"hits": [hit1], "total": {"value": 200}}}
 
         mock_resp_500 = MagicMock()
         mock_resp_500.status_code = 500
-        exc_500 = httpx_mod.HTTPStatusError(
-            "500", request=MagicMock(), response=mock_resp_500
-        )
+        exc_500 = httpx_mod.HTTPStatusError("500", request=MagicMock(), response=mock_resp_500)
 
         call_count = [0]
 
@@ -371,9 +362,7 @@ class TestEFTSFetch:
 
 class TestXMLParser:
     def test_ross_stores_xml(self):
-        result = _parse_form144_xml(
-            SAMPLE_XML_ROSS, "ROST", "ROSS STORES", "2026-03-24"
-        )
+        result = _parse_form144_xml(SAMPLE_XML_ROSS, "ROST", "ROSS STORES", "2026-03-24")
         assert result is not None
         assert result["insider_name"] == "STEPHEN BRINKLEY"
         assert result["relationship"] == "Officer"
@@ -388,9 +377,7 @@ class TestXMLParser:
 
     def test_nano_dimension_xml(self):
         """Different namespace prefix (com: instead of ns2:)."""
-        result = _parse_form144_xml(
-            SAMPLE_XML_NANO, "NNDM", "Nano Dimension", "2026-03-23"
-        )
+        result = _parse_form144_xml(SAMPLE_XML_NANO, "NNDM", "Nano Dimension", "2026-03-23")
         assert result is not None
         assert result["insider_name"] == "Stehlin David"
         assert result["shares_to_sell"] == 22699
@@ -401,25 +388,19 @@ class TestXMLParser:
         assert result is None
 
     def test_open_market_acquisition(self):
-        result = _parse_form144_xml(
-            SAMPLE_XML_OPEN_MARKET, "ALPH", "Alpha Inc.", "2026-03-25"
-        )
+        result = _parse_form144_xml(SAMPLE_XML_OPEN_MARKET, "ALPH", "Alpha Inc.", "2026-03-25")
         assert result is not None
         assert result["acquisition_type"] == "open_market"
         assert result["relationship"] == "CEO"
 
     def test_10b5_1_plan_detected(self):
-        result = _parse_form144_xml(
-            SAMPLE_XML_10B5_1, "BETA", "Beta Corp", "2026-03-20"
-        )
+        result = _parse_form144_xml(SAMPLE_XML_10B5_1, "BETA", "Beta Corp", "2026-03-20")
         assert result is not None
         assert result["has_10b5_1_plan"] is True
         assert result["urgency"] == "planned"  # approxSaleDate is 04/15/2026
 
     def test_empty_shares_returns_none(self):
-        result = _parse_form144_xml(
-            SAMPLE_XML_EMPTY_SHARES, "EMPTY", "Empty Corp", "2026-03-20"
-        )
+        result = _parse_form144_xml(SAMPLE_XML_EMPTY_SHARES, "EMPTY", "Empty Corp", "2026-03-20")
         assert result is None
 
     def test_malformed_xml(self):
@@ -558,27 +539,16 @@ class TestUrgency:
 class TestHelpers:
     def test_extract_ticker(self):
         assert _extract_ticker("ROSS STORES, INC.  (ROST)  (CIK 0000745732)") == "ROST"
-        assert (
-            _extract_ticker("Nano Dimension Ltd.  (NNDM)  (CIK 0001643303)") == "NNDM"
-        )
-        assert (
-            _extract_ticker("Ramaco Resources, Inc.  (METC, METCB)  (CIK 000)")
-            == "METC"
-        )
+        assert _extract_ticker("Nano Dimension Ltd.  (NNDM)  (CIK 0001643303)") == "NNDM"
+        assert _extract_ticker("Ramaco Resources, Inc.  (METC, METCB)  (CIK 000)") == "METC"
         assert _extract_ticker("Some Person  (CIK 0001234567)") == ""
 
     def test_extract_company_name(self):
-        assert (
-            _extract_company_name("ROSS STORES, INC.  (ROST)  (CIK 000)")
-            == "ROSS STORES, INC."
-        )
+        assert _extract_company_name("ROSS STORES, INC.  (ROST)  (CIK 000)") == "ROSS STORES, INC."
         assert _extract_company_name("No Parens") == "No Parens"
 
     def test_normalize_name(self):
-        assert (
-            _normalize_name("Yorktown Energy Partners IX, L.P.")
-            == "YORKTOWN ENERGY PARTNERS IX"
-        )
+        assert _normalize_name("Yorktown Energy Partners IX, L.P.") == "YORKTOWN ENERGY PARTNERS IX"
         assert _normalize_name("Silver Lake, LLC") == "SILVER LAKE"
         assert _normalize_name("  John Doe  ") == "JOHN DOE"
 
@@ -888,11 +858,11 @@ class TestFullPipeline:
             _make_efts_hit("AAPL", "Bob", accession="0001-26-002"),
             _make_efts_hit("MSFT", "Carol", accession="0001-26-003"),
         ]
-        with patch.object(tool, "_fetch_recent_144s", return_value=hits):
-            with patch.object(
-                tool, "_fetch_filing_xml", return_value=SAMPLE_XML_OPEN_MARKET
-            ):
-                result = tool.execute(days_back=5, ticker="msft", min_cluster_size=2)
+        with (
+            patch.object(tool, "_fetch_recent_144s", return_value=hits),
+            patch.object(tool, "_fetch_filing_xml", return_value=SAMPLE_XML_OPEN_MARKET),
+        ):
+            result = tool.execute(days_back=5, ticker="msft", min_cluster_size=2)
         assert result.success
 
 

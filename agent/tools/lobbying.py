@@ -32,7 +32,7 @@ Signal theory:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -163,7 +163,7 @@ def _parse_filing(filing: dict[str, Any]) -> dict[str, Any]:
 
 
 def _current_year() -> int:
-    return datetime.now(timezone.utc).year
+    return datetime.now(UTC).year
 
 
 def _detect_spend_anomaly(
@@ -279,11 +279,7 @@ class LobbyingTool(Tool):
                 continue
 
             try:
-                canon = (
-                    normalize_company_name(registrant)
-                    if normalize_company_name
-                    else registrant
-                )
+                canon = normalize_company_name(registrant) if normalize_company_name else registrant
             except ValueError:
                 canon = registrant
 
@@ -297,18 +293,14 @@ class LobbyingTool(Tool):
                     entity_id=company_eid,
                 )
                 if filing.get("registrant_id"):
-                    store.add_entity_alias(
-                        company_eid, "lda_registrant_id", str(filing["registrant_id"])
-                    )
+                    store.add_entity_alias(company_eid, "lda_registrant_id", str(filing["registrant_id"]))
 
             # Parse posted date
             dt_posted = filing.get("dt_posted", "")
             try:
-                ts = datetime.fromisoformat(
-                    dt_posted.replace("Z", "+00:00")
-                ).timestamp()
+                ts = datetime.fromisoformat(dt_posted.replace("Z", "+00:00")).timestamp()
             except (ValueError, AttributeError):
-                ts = datetime.now(tz=timezone.utc).timestamp()
+                ts = datetime.now(tz=UTC).timestamp()
 
             store.store_entity_observation(
                 entity_id=company_eid,
@@ -327,17 +319,9 @@ class LobbyingTool(Tool):
 
             # ── Link registrant → client company ──
             client_name = (filing.get("client_name") or "").strip()
-            if (
-                client_name
-                and client_name != registrant
-                and client_name.lower() != "self"
-            ):
+            if client_name and client_name != registrant and client_name.lower() != "self":
                 try:
-                    client_canon = (
-                        normalize_company_name(client_name)
-                        if normalize_company_name
-                        else client_name
-                    )
+                    client_canon = normalize_company_name(client_name) if normalize_company_name else client_name
                 except (ValueError, TypeError):
                     client_canon = client_name
                 client_eid = entity_id_from_key("company", client_canon)
@@ -429,9 +413,7 @@ class LobbyingTool(Tool):
 
         return self._format_search(result_data)
 
-    def _format_search(
-        self, data: dict[str, Any], *, from_cache: bool = False
-    ) -> ToolResult:
+    def _format_search(self, data: dict[str, Any], *, from_cache: bool = False) -> ToolResult:
         tag = " (cached)" if from_cache else ""
         filings = data.get("filings", [])
         total = data.get("total_count", 0)
@@ -444,15 +426,10 @@ class LobbyingTool(Tool):
         for f in filings[:_PAGE_SIZE]:
             amount_str = f"${f['amount']:,.0f}" if f["amount"] else "N/A"
             period = f.get("filing_period", "").replace("_", " ").title()
-            lines.append(
-                f"**{f['registrant_name']}** → {f['client_name']} "
-                f"({f.get('filing_year', '?')} {period})"
-            )
+            lines.append(f"**{f['registrant_name']}** → {f['client_name']} ({f.get('filing_year', '?')} {period})")
             lines.append(f"  Amount: {amount_str} | Type: {f['filing_type']}")
             if f["issue_codes"]:
-                issue_labels = [
-                    f"{c} ({ISSUE_AREAS.get(c, '?')})" for c in f["issue_codes"][:5]
-                ]
+                issue_labels = [f"{c} ({ISSUE_AREAS.get(c, '?')})" for c in f["issue_codes"][:5]]
                 lines.append(f"  Issues: {', '.join(issue_labels)}")
 
         self._persist_entities(filings)
@@ -514,8 +491,7 @@ class LobbyingTool(Tool):
         if not yearly_totals:
             return ToolResult(
                 success=False,
-                output="No spending data found."
-                + (f" Errors: {', '.join(errors)}" if errors else ""),
+                output="No spending data found." + (f" Errors: {', '.join(errors)}" if errors else ""),
             )
 
         # Anomaly detection
@@ -531,9 +507,7 @@ class LobbyingTool(Tool):
             lines.append(f"  {yr}: ${total:>12,.0f}  {bar}")
 
         if anomaly["anomaly"]:
-            lines.append(
-                f"\n⚠ **ANOMALOUS SPENDING**: {anomaly['ratio']:.1f}x historical average"
-            )
+            lines.append(f"\n⚠ **ANOMALOUS SPENDING**: {anomaly['ratio']:.1f}x historical average")
         elif anomaly["ratio"] is not None:
             lines.append(f"\nSpend ratio vs avg: {anomaly['ratio']:.1f}x")
 
@@ -637,9 +611,7 @@ class LobbyingTool(Tool):
         # Top spenders on this issue
         if registrant_spend:
             lines.append("**Top Spenders:**")
-            top = sorted(registrant_spend.items(), key=lambda x: x[1], reverse=True)[
-                :15
-            ]
+            top = sorted(registrant_spend.items(), key=lambda x: x[1], reverse=True)[:15]
             for name, amount in top:
                 lines.append(f"  {name}: ${amount:,.0f}")
 
@@ -648,9 +620,7 @@ class LobbyingTool(Tool):
             lines.append("\n**Recent Filings:**")
             for f in filings[:10]:
                 amount_str = f"${f['amount']:,.0f}" if f["amount"] else "N/A"
-                lines.append(
-                    f"  {f['registrant_name']} → {f['client_name']} — {amount_str}"
-                )
+                lines.append(f"  {f['registrant_name']} → {f['client_name']} — {amount_str}")
                 if f.get("issue_descriptions"):
                     lines.append(f"    {f['issue_descriptions'][0][:120]}")
 

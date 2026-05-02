@@ -56,8 +56,9 @@ class LLMClient:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = "auto"
 
-        log.debug("LLM request: model=%s messages=%d tools=%s",
-                  self._config.model, len(messages), len(tools) if tools else 0)
+        log.debug(
+            "LLM request: model=%s messages=%d tools=%s", self._config.model, len(messages), len(tools) if tools else 0
+        )
 
         response = self._client.chat.completions.create(**kwargs)
         msg = response.choices[0].message

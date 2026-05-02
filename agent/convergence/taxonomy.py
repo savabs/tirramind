@@ -21,29 +21,33 @@ log = logging.getLogger(__name__)
 # Every piece of evidence belongs to exactly one category.
 # Cross-category coincidence is more informative than within-category.
 
-CATEGORIES: frozenset[str] = frozenset({
-    "physical_flow",        # AIS vessels, transport throughput, energy supply
-    "physical_disruption",  # Weather, earthquake, internet outage
-    "financial_stress",     # Sovereign debt, creditor filings, bankruptcy, DeFi
-    "monetary_policy",      # Central bank balance, rate monitor, capital flows
-    "regulatory_action",    # Sanctions, drug regulatory, gazette, FOIA
-    "behavioral_intent",    # Patents, lobbying, job postings, Wikipedia, certs
-    "positioning",          # CFTC, FINRA short, Polymarket whales, insider
-    "macro_momentum",       # PMI, consumer sentiment, building permits, receipts
-    "biological",           # Disease surveillance, food security
-    "geopolitical",         # Political risk, GDELT, migration flows
-    "supply_chain",         # Supply chain monitor, interconnection queue, gov contracts
-})
+CATEGORIES: frozenset[str] = frozenset(
+    {
+        "physical_flow",  # AIS vessels, transport throughput, energy supply
+        "physical_disruption",  # Weather, earthquake, internet outage
+        "financial_stress",  # Sovereign debt, creditor filings, bankruptcy, DeFi
+        "monetary_policy",  # Central bank balance, rate monitor, capital flows
+        "regulatory_action",  # Sanctions, drug regulatory, gazette, FOIA
+        "behavioral_intent",  # Patents, lobbying, job postings, Wikipedia, certs
+        "positioning",  # CFTC, FINRA short, Polymarket whales, insider
+        "macro_momentum",  # PMI, consumer sentiment, building permits, receipts
+        "biological",  # Disease surveillance, food security
+        "geopolitical",  # Political risk, GDELT, migration flows
+        "supply_chain",  # Supply chain monitor, interconnection queue, gov contracts
+    }
+)
 
 # ── Valid frequencies ──────────────────────────────────────────
 
-VALID_FREQUENCIES: frozenset[str] = frozenset({
-    "intraday",   # Hourly buckets (electricity, weather, internet)
-    "daily",      # Daily close (treasury receipts, most pipeline runs)
-    "weekly",     # Weekly (CFTC, FINRA, energy supply)
-    "monthly",    # Monthly (job postings, PMI, building permits)
-    "event",      # Irregular/event-driven (earthquake, sanctions)
-})
+VALID_FREQUENCIES: frozenset[str] = frozenset(
+    {
+        "intraday",  # Hourly buckets (electricity, weather, internet)
+        "daily",  # Daily close (treasury receipts, most pipeline runs)
+        "weekly",  # Weekly (CFTC, FINRA, energy supply)
+        "monthly",  # Monthly (job postings, PMI, building permits)
+        "event",  # Irregular/event-driven (earthquake, sanctions)
+    }
+)
 
 
 # ── SignalMeta ─────────────────────────────────────────────────
@@ -92,23 +96,13 @@ class SignalMeta:
         if not self.source:
             raise ValueError("source must be non-empty")
         if self.category not in CATEGORIES:
-            raise ValueError(
-                f"category must be one of {sorted(CATEGORIES)}, "
-                f"got {self.category!r}"
-            )
+            raise ValueError(f"category must be one of {sorted(CATEGORIES)}, got {self.category!r}")
         if self.frequency not in VALID_FREQUENCIES:
-            raise ValueError(
-                f"frequency must be one of {sorted(VALID_FREQUENCIES)}, "
-                f"got {self.frequency!r}"
-            )
+            raise ValueError(f"frequency must be one of {sorted(VALID_FREQUENCIES)}, got {self.frequency!r}")
         if self.default_ttl <= 0:
-            raise ValueError(
-                f"default_ttl must be positive, got {self.default_ttl}"
-            )
+            raise ValueError(f"default_ttl must be positive, got {self.default_ttl}")
         if self.min_observations < 1:
-            raise ValueError(
-                f"min_observations must be >= 1, got {self.min_observations}"
-            )
+            raise ValueError(f"min_observations must be >= 1, got {self.min_observations}")
 
 
 # ── SignalRegistry ─────────────────────────────────────────────
@@ -132,13 +126,9 @@ class SignalRegistry:
     def register(self, meta: SignalMeta) -> None:
         """Add a signal to the registry. Raises on duplicate signal_id."""
         if not isinstance(meta, SignalMeta):
-            raise TypeError(
-                f"Expected SignalMeta, got {type(meta).__name__}"
-            )
+            raise TypeError(f"Expected SignalMeta, got {type(meta).__name__}")
         if meta.signal_id in self._by_id:
-            raise ValueError(
-                f"Duplicate signal_id: {meta.signal_id!r} already registered"
-            )
+            raise ValueError(f"Duplicate signal_id: {meta.signal_id!r} already registered")
         self._by_id[meta.signal_id] = meta
         self._by_source.setdefault(meta.source, []).append(meta)
         self._by_category.setdefault(meta.category, []).append(meta)

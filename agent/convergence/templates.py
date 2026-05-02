@@ -149,9 +149,7 @@ TEMPLATE_LIBRARY: list[CausalTemplate] = [
                 0,
                 +1,
             ),
-            TemplateStep(
-                "physical_flow", r"ais\.|transport\.|energy_supply\.", 7, None
-            ),
+            TemplateStep("physical_flow", r"ais\.|transport\.|energy_supply\.", 7, None),
             TemplateStep("positioning", r"cftc\.|finra\.", 14, +1),
             TemplateStep("macro_momentum", r"pmi\.|treasury\.", 30, -1),
         ),
@@ -160,8 +158,7 @@ TEMPLATE_LIBRARY: list[CausalTemplate] = [
     CausalTemplate(
         name="monetary_policy_shift",
         description=(
-            "Central bank balance-sheet change triggers rate expectations, "
-            "capital flows, and positioning adjustments."
+            "Central bank balance-sheet change triggers rate expectations, capital flows, and positioning adjustments."
         ),
         steps=(
             TemplateStep("monetary_policy", r"central_bank\.|rate_monitor\.", 0, None),
@@ -183,9 +180,7 @@ TEMPLATE_LIBRARY: list[CausalTemplate] = [
             "route changes, commodity positioning, and macro impact."
         ),
         steps=(
-            TemplateStep(
-                "geopolitical", r"gdelt\.|political_risk\.|migration\.", 0, +1
-            ),
+            TemplateStep("geopolitical", r"gdelt\.|political_risk\.|migration\.", 0, +1),
             TemplateStep("regulatory_action", r"sanctions\.", 7, +1),
             TemplateStep("physical_flow", r"ais\.|transport\.", 14, None),
             TemplateStep("positioning", r"cftc\.|finra\.", 21, +1),
@@ -194,10 +189,7 @@ TEMPLATE_LIBRARY: list[CausalTemplate] = [
     # 4 — Pandemic / Health Crisis
     CausalTemplate(
         name="health_crisis",
-        description=(
-            "Biological signal escalates to travel disruption, supply "
-            "chain impact, and macro decline."
-        ),
+        description=("Biological signal escalates to travel disruption, supply chain impact, and macro decline."),
         steps=(
             TemplateStep("biological", r"disease\.|food_security\.", 0, +1),
             TemplateStep(
@@ -214,8 +206,7 @@ TEMPLATE_LIBRARY: list[CausalTemplate] = [
     CausalTemplate(
         name="agricultural_shock",
         description=(
-            "Weather disruption in agricultural regions triggers commodity "
-            "positioning and food-security alerts."
+            "Weather disruption in agricultural regions triggers commodity positioning and food-security alerts."
         ),
         steps=(
             TemplateStep("physical_disruption", r"weather\.|earthquake\.", 0, +1),
@@ -228,8 +219,7 @@ TEMPLATE_LIBRARY: list[CausalTemplate] = [
     CausalTemplate(
         name="energy_crisis",
         description=(
-            "Energy supply disruption propagates through grid stress, "
-            "shipping, industrial output, and macro."
+            "Energy supply disruption propagates through grid stress, shipping, industrial output, and macro."
         ),
         steps=(
             TemplateStep(
@@ -261,25 +251,19 @@ TEMPLATE_LIBRARY: list[CausalTemplate] = [
     CausalTemplate(
         name="tech_disruption",
         description=(
-            "Patent or academic surge signals a technology shift that "
-            "propagates to lobbying, hiring, and positioning."
+            "Patent or academic surge signals a technology shift that propagates to lobbying, hiring, and positioning."
         ),
         steps=(
             TemplateStep("behavioral_intent", r"patent\.|academic\.", 0, None),
             TemplateStep("behavioral_intent", r"lobbying\.|jobs\.", 14, +1),
-            TemplateStep(
-                "supply_chain", r"interconnection\.|gov_contracts\.", 30, None
-            ),
+            TemplateStep("supply_chain", r"interconnection\.|gov_contracts\.", 30, None),
             TemplateStep("positioning", r"polymarket\.|insider\.", 30, None),
         ),
     ),
     # 9 — Labor Market Shift
     CausalTemplate(
         name="labor_market_shift",
-        description=(
-            "Job posting changes signal economic momentum shift, "
-            "confirmed by macro and consumer indicators."
-        ),
+        description=("Job posting changes signal economic momentum shift, confirmed by macro and consumer indicators."),
         steps=(
             TemplateStep("behavioral_intent", r"jobs\.", 0, None),
             TemplateStep("macro_momentum", r"pmi\.|consumer_sentiment\.", 14, None),
@@ -290,14 +274,9 @@ TEMPLATE_LIBRARY: list[CausalTemplate] = [
     # 10 — Trade War Escalation
     CausalTemplate(
         name="trade_war_escalation",
-        description=(
-            "Regulatory/tariff actions → shipping re-routing → "
-            "commodity shifts → macro impact."
-        ),
+        description=("Regulatory/tariff actions → shipping re-routing → commodity shifts → macro impact."),
         steps=(
-            TemplateStep(
-                "regulatory_action", r"regulatory_gazette\.|sanctions\.", 0, +1
-            ),
+            TemplateStep("regulatory_action", r"regulatory_gazette\.|sanctions\.", 0, +1),
             TemplateStep("geopolitical", r"gdelt\.|political_risk\.", 7, +1),
             TemplateStep("physical_flow", r"ais\.|transport\.", 14, None),
             TemplateStep("positioning", r"cftc\.|finra\.", 21, +1),
@@ -311,9 +290,7 @@ TEMPLATE_LIBRARY: list[CausalTemplate] = [
             "confirmed by financial stress and macro indicators."
         ),
         steps=(
-            TemplateStep(
-                "macro_momentum|regulatory_action", r"building_permits\.", 0, None
-            ),
+            TemplateStep("macro_momentum|regulatory_action", r"building_permits\.", 0, None),
             TemplateStep("behavioral_intent", r"jobs\.", 14, None),
             TemplateStep("financial_stress", r"bankruptcy\.|creditor\.", 30, None),
             TemplateStep("macro_momentum", r"pmi\.|consumer_sentiment\.", 30, None),
@@ -323,8 +300,7 @@ TEMPLATE_LIBRARY: list[CausalTemplate] = [
     CausalTemplate(
         name="digital_infrastructure_crisis",
         description=(
-            "DNS / cert transparency / internet infrastructure disruption "
-            "propagates to DeFi, tech sector, and macro."
+            "DNS / cert transparency / internet infrastructure disruption propagates to DeFi, tech sector, and macro."
         ),
         steps=(
             TemplateStep(
@@ -356,9 +332,7 @@ TEMPLATE_LIBRARY: list[CausalTemplate] = [
         ),
         steps=(
             TemplateStep("behavioral_intent", r"lobbying\.", 0, +1),
-            TemplateStep(
-                "physical_disruption", r"satellite\.", 14, +1
-            ),
+            TemplateStep("physical_disruption", r"satellite\.", 14, +1),
             TemplateStep("regulatory_action", r"regulatory_gazette\.", 21, None),
             TemplateStep("positioning", r"insider\.|form144\.", 30, -1),
             TemplateStep("physical_flow", r"ais\.|transport\.", 45, None),
@@ -377,12 +351,8 @@ TEMPLATE_LIBRARY: list[CausalTemplate] = [
             TemplateStep("financial_stress", r"defi\.", 0, +1),
             TemplateStep("financial_stress", r"whale_alert\.", 3, None),
             TemplateStep("behavioral_intent", r"wikipedia\.", 7, +1),
-            TemplateStep(
-                "positioning", r"polymarket\.", 14, None
-            ),
-            TemplateStep(
-                "financial_stress", r"bankruptcy\.|creditor\.", 30, +1
-            ),
+            TemplateStep("positioning", r"polymarket\.", 14, None),
+            TemplateStep("financial_stress", r"bankruptcy\.|creditor\.", 30, +1),
         ),
         min_match=3,
     ),
@@ -431,9 +401,7 @@ TEMPLATE_LIBRARY: list[CausalTemplate] = [
         ),
         steps=(
             TemplateStep("physical_flow", r"power_grid\.", 0, +1),
-            TemplateStep(
-                "physical_disruption", r"internet\.|dns\.", 14, +1
-            ),
+            TemplateStep("physical_disruption", r"internet\.|dns\.", 14, +1),
             TemplateStep("macro_momentum", r"building_permits\.", 30, -1),
             TemplateStep("behavioral_intent", r"jobs\.", 45, -1),
             TemplateStep("macro_momentum", r"consumer_sentiment\.", 60, -1),
@@ -470,9 +438,7 @@ TEMPLATE_LIBRARY: list[CausalTemplate] = [
             TemplateStep("positioning", r"polymarket\.", 7, +1),
             TemplateStep("positioning", r"form144\.|insider\.", 14, -1),
             TemplateStep("positioning", r"finra\.", 21, +1),
-            TemplateStep(
-                "financial_stress", r"defi\.|whale_alert\.", 30, +1
-            ),
+            TemplateStep("financial_stress", r"defi\.|whale_alert\.", 30, +1),
         ),
         min_match=3,
     ),
@@ -508,9 +474,7 @@ TEMPLATE_LIBRARY: list[CausalTemplate] = [
             "(Lee et al. 2020, Plantin & Shin 2010)."
         ),
         steps=(
-            TemplateStep(
-                "monetary_policy", r"central_bank\.|rate_monitor\.", 0, None
-            ),
+            TemplateStep("monetary_policy", r"central_bank\.|rate_monitor\.", 0, None),
             TemplateStep("monetary_policy", r"capital_flows\.", 7, -1),
             TemplateStep("financial_stress", r"defi\.", 14, +1),
             TemplateStep("financial_stress", r"sovereign_debt\.", 21, +1),

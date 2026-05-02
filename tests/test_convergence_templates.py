@@ -8,8 +8,6 @@ match_all_templates sorting, best_match threshold, unknown_pattern fallback.
 
 from __future__ import annotations
 
-import time
-
 import pytest
 
 from agent.convergence.evidence import Evidence
@@ -17,7 +15,6 @@ from agent.convergence.graph import ConvergenceClique
 from agent.convergence.templates import (
     TEMPLATE_LIBRARY,
     CausalTemplate,
-    TemplateMatchResult,
     TemplateStep,
     best_match,
     match_all_templates,
@@ -191,9 +188,7 @@ class TestTemplateLibrary:
     def test_all_step_zero_within_days_is_zero(self):
         """Trigger step (step 0) should have within_days=0."""
         for t in TEMPLATE_LIBRARY:
-            assert (
-                t.steps[0].within_days == 0
-            ), f"Template {t.name} step 0 within_days != 0"
+            assert t.steps[0].within_days == 0, f"Template {t.name} step 0 within_days != 0"
 
     def test_known_template_names(self):
         expected = {
@@ -261,10 +256,7 @@ class TestTemplateLibrary:
                 try:
                     re.compile(step.signal_pattern)
                 except re.error as exc:
-                    pytest.fail(
-                        f"Template {t.name} step {i} has invalid regex "
-                        f"{step.signal_pattern!r}: {exc}"
-                    )
+                    pytest.fail(f"Template {t.name} step {i} has invalid regex {step.signal_pattern!r}: {exc}")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -369,12 +361,8 @@ class TestMatchTemplate:
             # Trigger direction is wrong (expecting +1)
             _ev("sanctions.russia.additions", "regulatory_action", t0, -1),
             _ev("ais.baltic.vessel_count", "physical_flow", t0 + 5 * _DAY),
-            _ev(
-                "cftc.crude_oil.mm_net_long", "positioning", t0 + 10 * _DAY, -1
-            ),  # expects +1
-            _ev(
-                "pmi.germany.manufacturing", "macro_momentum", t0 + 25 * _DAY, +1
-            ),  # expects -1
+            _ev("cftc.crude_oil.mm_net_long", "positioning", t0 + 10 * _DAY, -1),  # expects +1
+            _ev("pmi.germany.manufacturing", "macro_momentum", t0 + 25 * _DAY, +1),  # expects -1
         ]
         template = TEMPLATE_LIBRARY[0]
         result = match_template(clique, timeline, template)
@@ -525,9 +513,7 @@ class TestMatchAllTemplates:
         ]
         results = match_all_templates(clique, timeline)
         # credit_stress_cascade should score highest
-        credit_results = [
-            r for r in results if r.template_name == "credit_stress_cascade"
-        ]
+        credit_results = [r for r in results if r.template_name == "credit_stress_cascade"]
         assert len(credit_results) == 1
         assert credit_results[0].match_score >= 0.75
 
@@ -648,9 +634,7 @@ class TestGeopoliticalEscalation:
             _ev("cftc.crude_oil.mm_net_long", "positioning", t0 + 18 * _DAY, +1),
         ]
         results = match_all_templates(clique, timeline)
-        geo_results = [
-            r for r in results if r.template_name == "geopolitical_escalation"
-        ]
+        geo_results = [r for r in results if r.template_name == "geopolitical_escalation"]
         assert len(geo_results) == 1
         assert geo_results[0].match_score == 1.0
         assert geo_results[0].temporal_order_valid is True
@@ -716,9 +700,7 @@ class TestDigitalInfrastructureCrisis:
             _ev("pmi.us.manufacturing", "macro_momentum", t0 + 28 * _DAY, -1),
         ]
         results = match_all_templates(clique, timeline)
-        digi = [
-            r for r in results if r.template_name == "digital_infrastructure_crisis"
-        ]
+        digi = [r for r in results if r.template_name == "digital_infrastructure_crisis"]
         assert len(digi) == 1
         assert digi[0].match_score >= 0.75
 

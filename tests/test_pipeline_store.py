@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-import json
-import sqlite3
 import threading
 import time
-from pathlib import Path
+from datetime import UTC
 
 import pytest
 
 from agent.pipeline.store import PipelineStore
-
 
 # ── Fixtures ───────────────────────────────────────────────────
 
@@ -39,12 +36,7 @@ def file_store(tmp_path):
 class TestSchemaInit:
     def test_tables_created(self, store: PipelineStore):
         conn = store._get_conn()
-        tables = [
-            r[0]
-            for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
-        ]
+        tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
         assert "dag_runs" in tables
         assert "pipeline_data" in tables
         assert "signals" in tables
@@ -53,12 +45,7 @@ class TestSchemaInit:
 
     def test_indexes_created(self, store: PipelineStore):
         conn = store._get_conn()
-        indexes = [
-            r[0]
-            for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='index'"
-            ).fetchall()
-        ]
+        indexes = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='index'").fetchall()]
         assert "idx_pipeline_data_source" in indexes
         assert "idx_signals_name" in indexes
         assert "idx_features_unique" in indexes
@@ -75,16 +62,10 @@ class TestSchemaInit:
         store._init_schema()
         store._init_schema()
         conn = store._get_conn()
-        tables = [
-            r[0]
-            for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
-        ]
+        tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
         assert "dag_runs" in tables
         baseline_count = conn.execute(
-            "SELECT COUNT(*) FROM schema_migrations "
-            "WHERE schema_name='pipeline_store' AND version=1"
+            "SELECT COUNT(*) FROM schema_migrations WHERE schema_name='pipeline_store' AND version=1"
         ).fetchone()[0]
         assert baseline_count == 1
 
@@ -402,9 +383,7 @@ class TestConcurrency:
             except Exception as e:
                 errors.append(e)
 
-        threads = [
-            threading.Thread(target=writer, args=(f"src_{i}", 20)) for i in range(5)
-        ]
+        threads = [threading.Thread(target=writer, args=(f"src_{i}", 20)) for i in range(5)]
         for t in threads:
             t.start()
         for t in threads:
@@ -513,9 +492,9 @@ class TestEdgeCases:
 
     def test_store_data_non_serializable_falls_back(self, store: PipelineStore):
         """datetime objects should serialize via default=str."""
-        from datetime import datetime, timezone
+        from datetime import datetime
 
-        data = {"ts": datetime.now(timezone.utc)}
+        data = {"ts": datetime.now(UTC)}
         store.store_data("dt", {}, data)
         rows = store.query_data("dt")
         assert isinstance(rows[0]["data"]["ts"], str)

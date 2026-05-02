@@ -5,15 +5,13 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import numpy as np
-
 from agent.data.cache import DataCache
+from agent.quant.changepoint import BOCPD
+from agent.quant.liquidity import LiquidityComposite
+from agent.quant.regime import RegimeHMM
 from agent.tools.base import Tool, ToolResult
 from agent.tools.macro_data import MacroDataTool
 from agent.tools.market_data import MarketDataTool
-from agent.quant.liquidity import LiquidityComposite
-from agent.quant.regime import RegimeHMM
-from agent.quant.changepoint import BOCPD
 
 log = logging.getLogger(__name__)
 
@@ -39,9 +37,7 @@ class LiquidityRegimeTool(Tool):
             },
             "global_": {
                 "type": "boolean",
-                "description": (
-                    "If true, include ECB and BOJ in the composite. Default: false."
-                ),
+                "description": ("If true, include ECB and BOJ in the composite. Default: false."),
                 "default": False,
             },
         },
@@ -70,9 +66,7 @@ class LiquidityRegimeTool(Tool):
             lc = LiquidityComposite(self._macro, self._market)
 
             end = pd.Timestamp.now().strftime("%Y-%m-%d")
-            start = (pd.Timestamp.now() - pd.DateOffset(years=lookback_years)).strftime(
-                "%Y-%m-%d"
-            )
+            start = (pd.Timestamp.now() - pd.DateOffset(years=lookback_years)).strftime("%Y-%m-%d")
 
             if global_:
                 raw = lc.fetch_global(start, end)
@@ -98,9 +92,7 @@ class LiquidityRegimeTool(Tool):
             bocpd = BOCPD(hazard_lambda=200)
             bocpd_result = bocpd.fit(values)
             cps = bocpd_result.changepoints()
-            last_cp_date = (
-                composite.index[cps[-1]].strftime("%Y-%m-%d") if cps else None
-            )
+            last_cp_date = composite.index[cps[-1]].strftime("%Y-%m-%d") if cps else None
 
             # Transition probs from current state
             trans = hmm_result.transition_matrix[current_state]

@@ -14,7 +14,6 @@ import logging
 import os
 import subprocess
 import tempfile
-import textwrap
 from pathlib import Path
 from typing import Any
 
@@ -77,9 +76,7 @@ class CodeExecutorTool(Tool):
 
     def execute(self, *, code: str, **_: Any) -> ToolResult:
         # Write code to a temp file and run in subprocess for isolation
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".py", prefix="tirra_exec_", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", prefix="tirra_exec_", delete=False) as f:
             f.write(code)
             script_path = f.name
 

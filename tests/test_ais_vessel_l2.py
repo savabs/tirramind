@@ -111,11 +111,7 @@ def _make_store() -> MagicMock:
 
 def _vessel_register_calls(store: MagicMock) -> list:
     """Filter register_entity calls to only vessel-type registrations."""
-    return [
-        c
-        for c in store.register_entity.call_args_list
-        if c.kwargs.get("entity_type") == "vessel"
-    ]
+    return [c for c in store.register_entity.call_args_list if c.kwargs.get("entity_type") == "vessel"]
 
 
 # ===========================================================================

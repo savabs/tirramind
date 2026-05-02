@@ -154,8 +154,7 @@ class DAGExecutor:
                 log.info("Node %s skipped: disabled by tool router", nid)
                 continue
             deps_ok = all(
-                run.node_results.get(dep, NodeResult(node_id=dep)).status == "completed"
-                for dep in node.depends_on
+                run.node_results.get(dep, NodeResult(node_id=dep)).status == "completed" for dep in node.depends_on
             )
             if not deps_ok:
                 nr = run.node_results[nid]
@@ -174,9 +173,7 @@ class DAGExecutor:
             futures: dict[str, Future[NodeResult]] = {}
             for nid in executable:
                 node = dag.nodes[nid]
-                future = pool.submit(
-                    self._execute_node, node, upstream_outputs
-                )
+                future = pool.submit(self._execute_node, node, upstream_outputs)
                 futures[nid] = future
 
             for nid, future in futures.items():
@@ -246,10 +243,13 @@ class DAGExecutor:
                 last_error = str(exc)
                 nr.retries_used = attempt + 1
                 if attempt < node.retries - 1:
-                    backoff = 0.1 * (2 ** attempt)  # 0.1, 0.2, 0.4, ...
+                    backoff = 0.1 * (2**attempt)  # 0.1, 0.2, 0.4, ...
                     log.warning(
                         "Node %s attempt %d failed: %s. Retrying in %.1fs",
-                        node.id, attempt + 1, exc, backoff,
+                        node.id,
+                        attempt + 1,
+                        exc,
+                        backoff,
                     )
                     time.sleep(backoff)
 

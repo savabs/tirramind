@@ -13,10 +13,11 @@ from dataclasses import dataclass, field
 @dataclass(frozen=True)
 class LLMConfig:
     """LLM backend configuration. Supports OpenAI-compatible APIs (including Ollama)."""
-    provider: str = "openai"                          # "openai" | "ollama"
-    model: str = "gpt-4o"                             # model name
-    base_url: str | None = None                       # override endpoint (e.g. http://localhost:11434/v1 for Ollama)
-    api_key: str = ""                                 # set via TIRRA_LLM_API_KEY
+
+    provider: str = "openai"  # "openai" | "ollama"
+    model: str = "gpt-4o"  # model name
+    base_url: str | None = None  # override endpoint (e.g. http://localhost:11434/v1 for Ollama)
+    api_key: str = ""  # set via TIRRA_LLM_API_KEY
     temperature: float = 0.2
     max_tokens: int = 4096
 
@@ -45,6 +46,7 @@ class LLMConfig:
 @dataclass(frozen=True)
 class PipelineConfig:
     """Pipeline Layer configuration."""
+
     db_path: str = ".tirra_pipeline/pipeline.db"
     max_workers: int = 4
     log_level: str = "INFO"
@@ -61,16 +63,17 @@ class PipelineConfig:
 @dataclass(frozen=True)
 class AgentConfig:
     """Top-level agent configuration."""
+
     llm: LLMConfig = field(default_factory=LLMConfig.from_env)
     pipeline: PipelineConfig = field(default_factory=PipelineConfig.from_env)
-    fred_api_key: str = ""                            # FRED (Federal Reserve Economic Data) API key
-    max_steps: int = 30                               # hard limit on agent loop iterations
-    max_plan_depth: int = 3                           # hierarchical planning depth
-    memory_dir: str = ".tirra_memory"                 # local memory persistence path
-    tool_timeout: int = 30                            # subprocess timeout for code/shell tools (seconds)
-    lesson_min_support: int = 3                       # min episodes before lesson promotion
-    lesson_min_runs: int = 2                          # min distinct runs before lesson promotion
-    episode_ttl_days: int = 30                        # episodic memory decay window
+    fred_api_key: str = ""  # FRED (Federal Reserve Economic Data) API key
+    max_steps: int = 30  # hard limit on agent loop iterations
+    max_plan_depth: int = 3  # hierarchical planning depth
+    memory_dir: str = ".tirra_memory"  # local memory persistence path
+    tool_timeout: int = 30  # subprocess timeout for code/shell tools (seconds)
+    lesson_min_support: int = 3  # min episodes before lesson promotion
+    lesson_min_runs: int = 2  # min distinct runs before lesson promotion
+    episode_ttl_days: int = 30  # episodic memory decay window
     verbose: bool = False
 
     @classmethod
@@ -93,8 +96,5 @@ class AgentConfig:
         """Check config for common problems. Returns list of error messages."""
         errors: list[str] = []
         if self.llm.provider == "openai" and not self.llm.api_key:
-            errors.append(
-                "TIRRA_LLM_API_KEY is not set. "
-                "Set it in .env or as an environment variable."
-            )
+            errors.append("TIRRA_LLM_API_KEY is not set. Set it in .env or as an environment variable.")
         return errors

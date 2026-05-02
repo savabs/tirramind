@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import logging
 import math
-import time
 from pathlib import Path
 from typing import Any
 
@@ -82,16 +81,8 @@ def get_connected_types(
     candidates = set(_SEED_CONNECTED_TYPES)
 
     try:
-        type_rows = (
-            registry.query_entity_types(active_only=True)
-            if hasattr(registry, "query_entity_types")
-            else []
-        )
-        known_active = (
-            registry.known_entity_types()
-            if hasattr(registry, "known_entity_types")
-            else set()
-        )
+        type_rows = registry.query_entity_types(active_only=True) if hasattr(registry, "query_entity_types") else []
+        known_active = registry.known_entity_types() if hasattr(registry, "known_entity_types") else set()
     except Exception:
         return _SEED_CONNECTED_TYPES
 
@@ -209,9 +200,7 @@ class GNNFeatureBuilder(FeatureBuilder):
             emb = embeddings.get(etype)
 
             if emb is None or emb.shape[0] < self._min_entities:
-                features.extend(
-                    self._missing_type_features(as_of, etype, "insufficient_entities")
-                )
+                features.extend(self._missing_type_features(as_of, etype, "insufficient_entities"))
                 continue
 
             centroid = emb.mean(dim=0)
@@ -302,9 +291,7 @@ class GNNFeatureBuilder(FeatureBuilder):
                 log.debug("Loading GNN model from %s", self._model_path)
                 return TrainerCls.load_model(self._model_path, store)
         except Exception:
-            log.warning(
-                "Failed to load model from %s — will rebuild.", self._model_path
-            )
+            log.warning("Failed to load model from %s — will rebuild.", self._model_path)
 
         try:
             trainer = TrainerCls(store, cfg)
@@ -395,17 +382,13 @@ class GNNFeatureBuilder(FeatureBuilder):
             for j in range(i + 1, k):
                 c_i = centroids[types_with_centroids[i]]
                 c_j = centroids[types_with_centroids[j]]
-                cos_sim = torch.nn.functional.cosine_similarity(
-                    c_i.unsqueeze(0), c_j.unsqueeze(0)
-                ).item()
+                cos_sim = torch.nn.functional.cosine_similarity(c_i.unsqueeze(0), c_j.unsqueeze(0)).item()
                 cosines.append(cos_sim)
 
         raw_cross = float(np.mean(cosines))
         base_quality = min(1.0, k / 5.0)  # full quality at 5 types
 
-        z, quality = self._zscore_from_history(
-            store, "gnn.cross_entity.spot", raw_cross, base_quality
-        )
+        z, quality = self._zscore_from_history(store, "gnn.cross_entity.spot", raw_cross, base_quality)
         return z, quality
 
     def _missing_type_features(

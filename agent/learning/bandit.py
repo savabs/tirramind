@@ -768,8 +768,7 @@ class StrategyBandit:
         successes = [
             h
             for h in self._novel_history
-            if frozenset(h["tools"]) == tool_key
-            and h["reward"] >= _NOVEL_PROMOTE_REWARD_THRESHOLD
+            if frozenset(h["tools"]) == tool_key and h["reward"] >= _NOVEL_PROMOTE_REWARD_THRESHOLD
         ]
 
         if len(successes) < _NOVEL_PROMOTE_MIN_SUCCESSES:
@@ -800,8 +799,7 @@ class StrategyBandit:
 
         self.add_arm(arm, prior_reward=mean_r)
         log.info(
-            "Promoted novel exploration → permanent arm '%s' "
-            "(tools=%s, mean_reward=%.3f, n_successes=%d)",
+            "Promoted novel exploration → permanent arm '%s' (tools=%s, mean_reward=%.3f, n_successes=%d)",
             name,
             tools,
             mean_r,

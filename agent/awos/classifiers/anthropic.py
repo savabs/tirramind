@@ -15,7 +15,8 @@ from __future__ import annotations
 import json
 import logging
 import time
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import httpx
 
@@ -60,14 +61,10 @@ class AnthropicClassifier:
         self.max_tokens = max_tokens
         self.timeout_s = timeout_s
         self.max_retries = max_retries
-        self._client_factory = client_factory or (
-            lambda: httpx.Client(timeout=timeout_s)
-        )
+        self._client_factory = client_factory or (lambda: httpx.Client(timeout=timeout_s))
 
     # ------------------------------------------------------------------
-    def classify(
-        self, text: str, context: dict | None = None
-    ) -> Classification:
+    def classify(self, text: str, context: dict | None = None) -> Classification:
         if not self.api_key:
             return _fallback("no anthropic api key configured")
         if not text.strip():
@@ -95,9 +92,7 @@ class AnthropicClassifier:
         return _parse_response(body)
 
     # ------------------------------------------------------------------
-    def _call_with_retry(
-        self, payload: dict, headers: dict
-    ) -> dict[str, Any]:
+    def _call_with_retry(self, payload: dict, headers: dict) -> dict[str, Any]:
         delay = 0.5
         last_exc: Exception | None = None
         for attempt in range(self.max_retries):
@@ -112,13 +107,9 @@ class AnthropicClassifier:
                     # bad request — don't retry
                     raise RuntimeError(f"bad request: {r.text[:200]}")
                 if r.status_code in (429, 500, 502, 503, 504):
-                    last_exc = RuntimeError(
-                        f"transient {r.status_code}: {r.text[:200]}"
-                    )
+                    last_exc = RuntimeError(f"transient {r.status_code}: {r.text[:200]}")
                 else:
-                    raise RuntimeError(
-                        f"unexpected {r.status_code}: {r.text[:200]}"
-                    )
+                    raise RuntimeError(f"unexpected {r.status_code}: {r.text[:200]}")
             except httpx.HTTPError as e:
                 last_exc = e
 

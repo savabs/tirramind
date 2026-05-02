@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import math
-import time
 from datetime import date
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
-import numpy as np
 import pandas as pd
 import pytest
 
@@ -20,10 +18,9 @@ from agent.tools.instrument_universe import (
     ingest_daily_prices,
     instruments_by_class,
     run_instrument_ingest,
-    tradeable_instruments,
     ticker_to_instrument,
+    tradeable_instruments,
 )
-
 
 # ── Helpers ───────────────────────────────────────────────────
 
@@ -132,16 +129,12 @@ class TestInstruments:
             "crypto",
         }
         for inst in INSTRUMENTS:
-            assert (
-                inst.asset_class in valid_classes
-            ), f"{inst.ticker}: invalid asset_class={inst.asset_class}"
+            assert inst.asset_class in valid_classes, f"{inst.ticker}: invalid asset_class={inst.asset_class}"
 
     def test_all_have_region(self):
         valid_regions = {"US", "Europe", "Asia", "LatAm", "Pacific", "Global", "EM"}
         for inst in INSTRUMENTS:
-            assert (
-                inst.region in valid_regions
-            ), f"{inst.ticker}: invalid region={inst.region}"
+            assert inst.region in valid_regions, f"{inst.ticker}: invalid region={inst.region}"
 
 
 # ── Asset class counts ───────────────────────────────────────
@@ -209,20 +202,14 @@ class TestHelpers:
 class TestIngestBasic:
     """Test ingest with mocked yfinance download."""
 
-    def _run_ingest(
-        self, ticker_data: dict[str, pd.DataFrame]
-    ) -> tuple[dict, MagicMock]:
+    def _run_ingest(self, ticker_data: dict[str, pd.DataFrame]) -> tuple[dict, MagicMock]:
         """Helper: run ingest with given per-ticker data."""
         store = _make_store()
         batch_df = _make_batch_download(ticker_data)
 
-        with patch(
-            "agent.tools.instrument_universe.tradeable_instruments"
-        ) as mock_trad:
+        with patch("agent.tools.instrument_universe.tradeable_instruments") as mock_trad:
             # Only return instruments matching our test tickers
-            mock_trad.return_value = [
-                InstrumentDef(t, f"Test {t}", "equity_etf", "US") for t in ticker_data
-            ]
+            mock_trad.return_value = [InstrumentDef(t, f"Test {t}", "equity_etf", "US") for t in ticker_data]
             with patch("yfinance.download", return_value=batch_df):
                 result = ingest_daily_prices(store, as_of=date(2026, 4, 1))
 
@@ -236,11 +223,7 @@ class TestIngestBasic:
         assert result["instruments_failed"] == []
         # Find the instrument entity registration among all register_entity calls
         # (Phase 25 _persist_instrument_links also registers issuer/country entities)
-        inst_calls = [
-            c
-            for c in store.register_entity.call_args_list
-            if c.kwargs.get("entity_type") == "instrument"
-        ]
+        inst_calls = [c for c in store.register_entity.call_args_list if c.kwargs.get("entity_type") == "instrument"]
         assert len(inst_calls) == 1
         assert inst_calls[0].kwargs["canonical_name"] == "Test SPY"
 
@@ -250,11 +233,7 @@ class TestIngestBasic:
         _, store = self._run_ingest({"SPY": df})
 
         obs_calls = store.store_entity_observation.call_args_list
-        return_call = [
-            c
-            for c in obs_calls
-            if c.kwargs.get("observation_type") == "instrument_return"
-        ]
+        return_call = [c for c in obs_calls if c.kwargs.get("observation_type") == "instrument_return"]
         assert len(return_call) == 1
         log_ret = return_call[0].kwargs["value"]["log_return"]
         assert abs(log_ret - math.log(105 / 100)) < 1e-10
@@ -264,11 +243,7 @@ class TestIngestBasic:
         _, store = self._run_ingest({"SPY": df})
 
         obs_calls = store.store_entity_observation.call_args_list
-        vol_calls = [
-            c
-            for c in obs_calls
-            if c.kwargs.get("observation_type") == "instrument_volume"
-        ]
+        vol_calls = [c for c in obs_calls if c.kwargs.get("observation_type") == "instrument_volume"]
         assert len(vol_calls) == 1
         assert vol_calls[0].kwargs["value"]["volume"] == 750_000.0
 
@@ -279,11 +254,7 @@ class TestIngestBasic:
         _, store = self._run_ingest({"SPY": df})
 
         obs_calls = store.store_entity_observation.call_args_list
-        vol_calls = [
-            c
-            for c in obs_calls
-            if c.kwargs.get("observation_type") == "instrument_volatility"
-        ]
+        vol_calls = [c for c in obs_calls if c.kwargs.get("observation_type") == "instrument_volatility"]
         assert len(vol_calls) == 1
         realized_vol = vol_calls[0].kwargs["value"]["realized_vol_20d"]
         assert realized_vol > 0
@@ -296,11 +267,7 @@ class TestIngestBasic:
         }
         result, store = self._run_ingest(data)
         assert result["instruments_fetched"] == 2
-        inst_calls = [
-            c
-            for c in store.register_entity.call_args_list
-            if c.kwargs.get("entity_type") == "instrument"
-        ]
+        inst_calls = [c for c in store.register_entity.call_args_list if c.kwargs.get("entity_type") == "instrument"]
         assert len(inst_calls) == 2
 
     def test_three_obs_per_ticker_with_enough_data(self):
@@ -312,17 +279,11 @@ class TestIngestBasic:
 
 
 class TestIngestEdgeCases:
-    def _run_ingest_single(
-        self, df: pd.DataFrame, ticker: str = "SPY"
-    ) -> tuple[dict, MagicMock]:
+    def _run_ingest_single(self, df: pd.DataFrame, ticker: str = "SPY") -> tuple[dict, MagicMock]:
         store = _make_store()
         batch_df = _make_batch_download({ticker: df})
-        with patch(
-            "agent.tools.instrument_universe.tradeable_instruments"
-        ) as mock_trad:
-            mock_trad.return_value = [
-                InstrumentDef(ticker, f"Test {ticker}", "equity_etf", "US")
-            ]
+        with patch("agent.tools.instrument_universe.tradeable_instruments") as mock_trad:
+            mock_trad.return_value = [InstrumentDef(ticker, f"Test {ticker}", "equity_etf", "US")]
             with patch("yfinance.download", return_value=batch_df):
                 result = ingest_daily_prices(store, as_of=date(2026, 4, 1))
         return result, store
@@ -333,17 +294,9 @@ class TestIngestEdgeCases:
         result, store = self._run_ingest_single(df)
         assert result["instruments_fetched"] == 1
         obs_calls = store.store_entity_observation.call_args_list
-        return_calls = [
-            c
-            for c in obs_calls
-            if c.kwargs.get("observation_type") == "instrument_return"
-        ]
+        return_calls = [c for c in obs_calls if c.kwargs.get("observation_type") == "instrument_return"]
         assert len(return_calls) == 0  # no return obs
-        vol_calls = [
-            c
-            for c in obs_calls
-            if c.kwargs.get("observation_type") == "instrument_volume"
-        ]
+        vol_calls = [c for c in obs_calls if c.kwargs.get("observation_type") == "instrument_volume"]
         assert len(vol_calls) == 1  # volume still stored
 
     def test_nan_close_rows_dropped(self):
@@ -352,11 +305,7 @@ class TestIngestEdgeCases:
         result, store = self._run_ingest_single(df)
         assert result["instruments_fetched"] == 1
         obs_calls = store.store_entity_observation.call_args_list
-        return_calls = [
-            c
-            for c in obs_calls
-            if c.kwargs.get("observation_type") == "instrument_return"
-        ]
+        return_calls = [c for c in obs_calls if c.kwargs.get("observation_type") == "instrument_return"]
         assert len(return_calls) == 1
 
     def test_zero_volume(self):
@@ -364,11 +313,7 @@ class TestIngestEdgeCases:
         df = _make_ohlcv_df([100.0, 101.0], volumes=[0, 0])
         result, store = self._run_ingest_single(df)
         obs_calls = store.store_entity_observation.call_args_list
-        vol_calls = [
-            c
-            for c in obs_calls
-            if c.kwargs.get("observation_type") == "instrument_volume"
-        ]
+        vol_calls = [c for c in obs_calls if c.kwargs.get("observation_type") == "instrument_volume"]
         assert len(vol_calls) == 1
         assert vol_calls[0].kwargs["value"]["volume"] == 0.0
 
@@ -384,11 +329,7 @@ class TestIngestEdgeCases:
         df = _make_ohlcv_df(closes)
         result, store = self._run_ingest_single(df)
         obs_calls = store.store_entity_observation.call_args_list
-        vol_calls = [
-            c
-            for c in obs_calls
-            if c.kwargs.get("observation_type") == "instrument_volatility"
-        ]
+        vol_calls = [c for c in obs_calls if c.kwargs.get("observation_type") == "instrument_volatility"]
         assert len(vol_calls) == 1
         assert vol_calls[0].kwargs["value"]["realized_vol_20d"] > 0
 
@@ -397,11 +338,7 @@ class TestIngestEdgeCases:
         df = _make_ohlcv_df([100.0, 100.0])  # no change
         result, store = self._run_ingest_single(df)
         obs_calls = store.store_entity_observation.call_args_list
-        vol_calls = [
-            c
-            for c in obs_calls
-            if c.kwargs.get("observation_type") == "instrument_volatility"
-        ]
+        vol_calls = [c for c in obs_calls if c.kwargs.get("observation_type") == "instrument_volatility"]
         # 1 return → < 2 returns → realized_vol = NaN → not stored
         assert len(vol_calls) == 0
 
@@ -415,25 +352,20 @@ class TestIngestFailureRate:
         good_df = _make_ohlcv_df([100.0, 101.0])
         batch = _make_batch_download({"GOOD": good_df})
 
-        with patch(
-            "agent.tools.instrument_universe.tradeable_instruments"
-        ) as mock_trad:
+        with patch("agent.tools.instrument_universe.tradeable_instruments") as mock_trad:
             # 3 tickers but only 1 in the download → 2/3 fail = 66% > 50%
             mock_trad.return_value = [
                 InstrumentDef("GOOD", "Good", "equity_etf", "US"),
                 InstrumentDef("BAD1", "Bad1", "equity_etf", "US"),
                 InstrumentDef("BAD2", "Bad2", "equity_etf", "US"),
             ]
-            with patch("yfinance.download", return_value=batch):
-                with pytest.raises(RuntimeError, match=">50%"):
-                    ingest_daily_prices(store, as_of=date(2026, 4, 1))
+            with patch("yfinance.download", return_value=batch), pytest.raises(RuntimeError, match=">50%"):
+                ingest_daily_prices(store, as_of=date(2026, 4, 1))
 
     def test_download_exception_raises(self):
         """Full download failure raises RuntimeError."""
         store = _make_store()
-        with patch(
-            "agent.tools.instrument_universe.tradeable_instruments"
-        ) as mock_trad:
+        with patch("agent.tools.instrument_universe.tradeable_instruments") as mock_trad:
             mock_trad.return_value = [InstrumentDef("SPY", "SPY", "equity_etf", "US")]
             with patch("yfinance.download", side_effect=Exception("API down")):
                 with pytest.raises(RuntimeError, match="failed entirely"):
@@ -446,19 +378,13 @@ class TestIngestEntityRegistration:
         df = _make_ohlcv_df([100.0, 101.0])
         batch = _make_batch_download({"SPY": df})
 
-        with patch(
-            "agent.tools.instrument_universe.tradeable_instruments"
-        ) as mock_trad:
-            mock_trad.return_value = [
-                InstrumentDef("SPY", "S&P 500 ETF", "equity_etf", "US")
-            ]
+        with patch("agent.tools.instrument_universe.tradeable_instruments") as mock_trad:
+            mock_trad.return_value = [InstrumentDef("SPY", "S&P 500 ETF", "equity_etf", "US")]
             with patch("yfinance.download", return_value=batch):
                 ingest_daily_prices(store, as_of=date(2026, 4, 1))
 
         kw_list = [
-            c.kwargs
-            for c in store.register_entity.call_args_list
-            if c.kwargs.get("entity_type") == "instrument"
+            c.kwargs for c in store.register_entity.call_args_list if c.kwargs.get("entity_type") == "instrument"
         ]
         assert len(kw_list) == 1
         kw = kw_list[0]
@@ -473,12 +399,8 @@ class TestIngestEntityRegistration:
         df = _make_ohlcv_df([100.0, 101.0])
         batch = _make_batch_download({"SPY": df})
 
-        with patch(
-            "agent.tools.instrument_universe.tradeable_instruments"
-        ) as mock_trad:
-            mock_trad.return_value = [
-                InstrumentDef("SPY", "S&P 500 ETF", "equity_etf", "US")
-            ]
+        with patch("agent.tools.instrument_universe.tradeable_instruments") as mock_trad:
+            mock_trad.return_value = [InstrumentDef("SPY", "S&P 500 ETF", "equity_etf", "US")]
             with patch("yfinance.download", return_value=batch):
                 ingest_daily_prices(store, as_of=date(2026, 4, 1))
 
@@ -494,9 +416,7 @@ class TestRunInstrumentIngest:
         with patch("agent.pipeline.store.PipelineStore") as MockStore:
             mock_store_inst = MagicMock()
             MockStore.return_value = mock_store_inst
-            with patch(
-                "agent.tools.instrument_universe.ingest_daily_prices"
-            ) as mock_ingest:
+            with patch("agent.tools.instrument_universe.ingest_daily_prices") as mock_ingest:
                 mock_ingest.return_value = {
                     "instruments_fetched": 0,
                     "instruments_failed": [],
@@ -532,14 +452,12 @@ class TestGraphBuilderIntegration:
         #          value_var(1) + value_min(1) + value_max(1) + value_iqr(1) +
         #          num_tools(1) + obs_type_dist(len(OBS_TYPES))
         expected = 9 + len(OBSERVATION_TYPES)
-        assert (
-            ENRICHMENT_DIM == expected
-        ), f"ENRICHMENT_DIM={ENRICHMENT_DIM} != expected {expected}"
+        assert expected == ENRICHMENT_DIM, f"ENRICHMENT_DIM={ENRICHMENT_DIM} != expected {expected}"
 
     def test_base_feat_dim(self):
         from agent.models.gnn.graph_builder import BASE_FEAT_DIM, ENTITY_TYPES
 
-        assert BASE_FEAT_DIM == len(ENTITY_TYPES) + 3
+        assert len(ENTITY_TYPES) + 3 == BASE_FEAT_DIM
 
 
 # ── Daily collection DAG integration ─────────────────────────
@@ -580,9 +498,7 @@ class TestCftcCodeToTicker:
     def test_all_values_are_tickers(self):
         ticker_set = {i.ticker for i in INSTRUMENTS}
         for code, ticker in cftc_code_to_ticker().items():
-            assert (
-                ticker in ticker_set
-            ), f"cftc_code {code} maps to unknown ticker {ticker}"
+            assert ticker in ticker_set, f"cftc_code {code} maps to unknown ticker {ticker}"
 
     def test_all_keys_are_strings(self):
         for code in cftc_code_to_ticker():
@@ -597,9 +513,7 @@ class TestCftcCodeToTicker:
     def test_instruments_without_cftc_excluded(self):
         mapping = cftc_code_to_ticker()
         # SPY is an ETF — no CFTC code
-        assert "SPY" not in mapping.values() or any(
-            i.cftc_code for i in INSTRUMENTS if i.ticker == "SPY"
-        )
+        assert "SPY" not in mapping.values() or any(i.cftc_code for i in INSTRUMENTS if i.ticker == "SPY")
 
     def test_no_duplicate_codes(self):
         codes = [i.cftc_code for i in INSTRUMENTS if i.cftc_code]
@@ -637,55 +551,35 @@ class TestPersistInstrumentLinks:
     def test_register_entity_called_for_issuers(self):
         store = _make_store()
         _persist_instrument_links(store)
-        company_calls = [
-            c
-            for c in store.register_entity.call_args_list
-            if c.kwargs.get("entity_type") == "company"
-        ]
+        company_calls = [c for c in store.register_entity.call_args_list if c.kwargs.get("entity_type") == "company"]
         assert len(company_calls) > 0
 
     def test_register_entity_called_for_countries(self):
         store = _make_store()
         _persist_instrument_links(store)
-        country_calls = [
-            c
-            for c in store.register_entity.call_args_list
-            if c.kwargs.get("entity_type") == "country"
-        ]
+        country_calls = [c for c in store.register_entity.call_args_list if c.kwargs.get("entity_type") == "country"]
         assert len(country_calls) > 0
 
     def test_issuer_dedup(self):
         """Multiple instruments from same issuer should register only once."""
         store = _make_store()
         _persist_instrument_links(store)
-        company_calls = [
-            c
-            for c in store.register_entity.call_args_list
-            if c.kwargs.get("entity_type") == "company"
-        ]
+        company_calls = [c for c in store.register_entity.call_args_list if c.kwargs.get("entity_type") == "company"]
         registered_names = [c.kwargs["canonical_name"] for c in company_calls]
-        assert len(registered_names) == len(
-            set(registered_names)
-        ), f"Duplicate issuer registrations: {registered_names}"
+        assert len(registered_names) == len(set(registered_names)), (
+            f"Duplicate issuer registrations: {registered_names}"
+        )
 
     def test_link_entities_called_for_tracks_issuer(self):
         store = _make_store()
         _persist_instrument_links(store)
-        issuer_links = [
-            c
-            for c in store.link_entities.call_args_list
-            if c.kwargs.get("link_type") == "tracks_issuer"
-        ]
+        issuer_links = [c for c in store.link_entities.call_args_list if c.kwargs.get("link_type") == "tracks_issuer"]
         assert len(issuer_links) > 0
 
     def test_link_entities_called_for_located_in(self):
         store = _make_store()
         _persist_instrument_links(store)
-        located_links = [
-            c
-            for c in store.link_entities.call_args_list
-            if c.kwargs.get("link_type") == "located_in"
-        ]
+        located_links = [c for c in store.link_entities.call_args_list if c.kwargs.get("link_type") == "located_in"]
         assert len(located_links) > 0
 
     def test_link_confidence_is_one(self):
@@ -743,11 +637,7 @@ class TestPersistInstrumentLinks:
 
         store = _make_store()
         _persist_instrument_links(store)
-        country_calls = [
-            c
-            for c in store.register_entity.call_args_list
-            if c.kwargs.get("entity_type") == "country"
-        ]
+        country_calls = [c for c in store.register_entity.call_args_list if c.kwargs.get("entity_type") == "country"]
         for call in country_calls:
             expected = entity_id_from_key("country", call.kwargs["canonical_name"])
             assert call.kwargs["entity_id"] == expected
@@ -787,12 +677,8 @@ class TestInstrumentMetadataEnrichment:
         """Country codes should be 2-letter ISO codes or short identifiers."""
         for inst in INSTRUMENTS:
             if inst.country:
-                assert (
-                    len(inst.country) <= 6
-                ), f"{inst.ticker} country {inst.country!r} too long"
-                assert (
-                    inst.country == inst.country.upper()
-                ), f"{inst.ticker} country {inst.country!r} not uppercase"
+                assert len(inst.country) <= 6, f"{inst.ticker} country {inst.country!r} too long"
+                assert inst.country == inst.country.upper(), f"{inst.ticker} country {inst.country!r} not uppercase"
 
 
 # ── Phase 27: FX two-country metadata tests ──────────────────
@@ -804,24 +690,20 @@ class TestFXTwoCountryMetadata:
     def test_all_fx_have_base_country(self):
         fx = instruments_by_class("fx")
         for inst in fx:
-            assert (
-                inst.base_country is not None
-            ), f"{inst.ticker} is FX but has no base_country"
+            assert inst.base_country is not None, f"{inst.ticker} is FX but has no base_country"
 
     def test_all_fx_have_quote_country(self):
         fx = instruments_by_class("fx")
         for inst in fx:
-            assert (
-                inst.quote_country is not None
-            ), f"{inst.ticker} is FX but has no quote_country"
+            assert inst.quote_country is not None, f"{inst.ticker} is FX but has no quote_country"
 
     def test_base_and_quote_differ(self):
         """Base and quote should be different countries for every FX pair."""
         fx = instruments_by_class("fx")
         for inst in fx:
-            assert (
-                inst.base_country != inst.quote_country
-            ), f"{inst.ticker}: base_country == quote_country ({inst.base_country})"
+            assert inst.base_country != inst.quote_country, (
+                f"{inst.ticker}: base_country == quote_country ({inst.base_country})"
+            )
 
     def test_base_country_codes_are_iso(self):
         fx = instruments_by_class("fx")
@@ -839,12 +721,8 @@ class TestFXTwoCountryMetadata:
         """Non-FX instruments should not have base_country/quote_country."""
         non_fx = [i for i in INSTRUMENTS if i.asset_class != "fx"]
         for inst in non_fx:
-            assert (
-                inst.base_country is None
-            ), f"{inst.ticker} ({inst.asset_class}) should not have base_country"
-            assert (
-                inst.quote_country is None
-            ), f"{inst.ticker} ({inst.asset_class}) should not have quote_country"
+            assert inst.base_country is None, f"{inst.ticker} ({inst.asset_class}) should not have base_country"
+            assert inst.quote_country is None, f"{inst.ticker} ({inst.asset_class}) should not have quote_country"
 
     def test_fx_country_field_still_present(self):
         """Backward compat: all FX pairs still have the legacy country field."""
@@ -857,8 +735,7 @@ class TestFXTwoCountryMetadata:
         fx = instruments_by_class("fx")
         for inst in fx:
             assert inst.country in (inst.base_country, inst.quote_country), (
-                f"{inst.ticker}: country={inst.country} not in "
-                f"({inst.base_country}, {inst.quote_country})"
+                f"{inst.ticker}: country={inst.country} not in ({inst.base_country}, {inst.quote_country})"
             )
 
     def test_known_pair_mappings(self):
@@ -936,7 +813,6 @@ class TestFXLinkPersistence:
 
     def test_fx_links_point_to_country_entities(self):
         """FX base/quote links should target country entity IDs."""
-        from agent.pipeline.entity import entity_id_from_key
 
         store = _make_store()
         _persist_instrument_links(store)
@@ -1067,8 +943,7 @@ class TestFXLinkPersistence:
         located_in_calls = [
             c
             for c in store.link_entities.call_args_list
-            if c.kwargs["link_type"] == "located_in"
-            and c.kwargs.get("metadata", {}).get("ticker") in fx_tickers
+            if c.kwargs["link_type"] == "located_in" and c.kwargs.get("metadata", {}).get("ticker") in fx_tickers
         ]
         # All 15 FX pairs have country → 15 located_in links
         assert len(located_in_calls) == 15

@@ -15,8 +15,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from agent.models.gnn.graph_builder import GraphBuilder, IDMap
-from agent.models.gnn.het_tgn import HetTGN, SupervisedHead
+from agent.models.gnn.het_tgn import SupervisedHead
 from agent.models.gnn.integration import compute_diagnostics, retrain_and_discover
 from agent.models.gnn.pattern_extractor import CrystallizedPattern
 from agent.models.gnn.trainer import (
@@ -24,14 +23,12 @@ from agent.models.gnn.trainer import (
     InjectedPattern,
     OutcomeLabel,
     SyntheticGraphGenerator,
-    TrainerConfig,
     Trainer,
+    TrainerConfig,
     evaluate_supervised,
     generate_outcome_labels,
 )
-from agent.pipeline.entity import entity_id_from_key
 from agent.pipeline.store import PipelineStore
-
 
 # ─── Fixtures ─────────────────────────────────────────────────
 
@@ -330,9 +327,7 @@ class TestFineTuner:
         history = ft.finetune()
         assert history == {"loss": [], "accuracy": []}
 
-    def test_loss_decreases_or_stable(
-        self, pattern_store, sample_pattern, small_config
-    ):
+    def test_loss_decreases_or_stable(self, pattern_store, sample_pattern, small_config):
         """Loss should not explode during fine-tuning."""
         trainer = Trainer(pattern_store, small_config)
         model = trainer.build_model()
@@ -467,9 +462,7 @@ class TestComputeDiagnostics:
         assert isinstance(attn, dict)
         # May be empty if graph has no edges, but should be a dict
 
-    def test_with_crystallized_patterns(
-        self, pattern_store, sample_pattern, small_config
-    ):
+    def test_with_crystallized_patterns(self, pattern_store, sample_pattern, small_config):
         """With patterns, supervised_confidence should be populated."""
         trainer = Trainer(pattern_store, small_config)
         model = trainer.build_model()

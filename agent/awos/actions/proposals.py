@@ -12,11 +12,9 @@ from agent.awos.actions.base import Action, ActionResult, register
 from agent.awos.policies.engine import PlannedAction
 
 
-def _write(
-    proposals_dir: Path, kind: str, event, body: str
-) -> Path:
+def _write(proposals_dir: Path, kind: str, event, body: str) -> Path:
     proposals_dir.mkdir(parents=True, exist_ok=True)
-    fname = f"{now_iso().replace(':','')}__{kind}__{event.id[:8]}.md"
+    fname = f"{now_iso().replace(':', '')}__{kind}__{event.id[:8]}.md"
     path = proposals_dir / fname
     atomic_write(path, body)
     return path
@@ -26,11 +24,7 @@ def _write(
 class AdrProposeAction(Action):
     def run(self, planned: PlannedAction) -> ActionResult:
         e = planned.event
-        principle = (
-            e.payload.get("extracted_principle")
-            or e.rationale
-            or "(fill in)"
-        )
+        principle = e.payload.get("extracted_principle") or e.rationale or "(fill in)"
         body = (
             "# ADR proposal\n\n"
             f"Event: {e.id}\n"
@@ -64,9 +58,7 @@ class RoadmapProposeAction(Action):
             f"```json\n{json.dumps(e.payload, indent=2, default=str)[:3000]}\n```\n"
         )
         path = _write(self.cfg.proposals_dir, "roadmap", e, body)
-        return ActionResult.success(
-            f"roadmap proposal: {path.name}", [str(path)]
-        )
+        return ActionResult.success(f"roadmap proposal: {path.name}", [str(path)])
 
 
 @register("drift_triage")

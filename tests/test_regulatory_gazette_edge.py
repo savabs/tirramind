@@ -7,17 +7,17 @@ date helpers, format_doc normalization, cache interaction, HTTP errors (400/429/
 parameter clamping, URL encoding, output formatting, registry integration, bandit arm.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
 
 from agent.tools.regulatory_gazette import (
-    MARKET_AGENCIES,
-    RegulatoryGazetteTool,
     _FIELDS,
     _VALID_TYPES,
+    MARKET_AGENCIES,
+    RegulatoryGazetteTool,
     _build_params,
     _days_until,
     _encode_fr_params,
@@ -28,8 +28,6 @@ from agent.tools.regulatory_gazette import (
     _safe_int,
     _url_encode_value,
 )
-from agent.tools.base import ToolResult
-
 
 # ── Helpers ─────────────────────────────────────────────────────────
 
@@ -125,10 +123,7 @@ class TestResolveAgency:
             assert slug == MARKET_AGENCIES[alias]["slug"]
 
     def test_full_slug_passthrough(self):
-        assert (
-            _resolve_agency("securities-and-exchange-commission")
-            == "securities-and-exchange-commission"
-        )
+        assert _resolve_agency("securities-and-exchange-commission") == "securities-and-exchange-commission"
 
     def test_unknown_alias_passthrough(self):
         assert _resolve_agency("unknown-agency") == "unknown-agency"
@@ -226,13 +221,13 @@ class TestParseDocTypes:
 
 class TestDaysUntil:
     def test_future_date(self):
-        future = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%d")
+        future = (datetime.now(UTC) + timedelta(days=30)).strftime("%Y-%m-%d")
         result = _days_until(future)
         assert result is not None
         assert 28 <= result <= 30
 
     def test_past_date(self):
-        past = (datetime.now(timezone.utc) - timedelta(days=10)).strftime("%Y-%m-%d")
+        past = (datetime.now(UTC) - timedelta(days=10)).strftime("%Y-%m-%d")
         result = _days_until(past)
         assert result is not None
         assert -11 <= result <= -10
@@ -554,7 +549,7 @@ class TestRecentMode:
 
     def test_comment_period_shown_in_output(self):
         tool = RegulatoryGazetteTool()
-        future = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%d")
+        future = (datetime.now(UTC) + timedelta(days=30)).strftime("%Y-%m-%d")
         docs = [_make_fr_doc(title="Comment Rule", comments_close=future)]
         with self._mock_fetch(tool, docs):
             result = tool.execute(mode="recent")
@@ -563,7 +558,7 @@ class TestRecentMode:
 
     def test_closed_comment_shown(self):
         tool = RegulatoryGazetteTool()
-        past = (datetime.now(timezone.utc) - timedelta(days=5)).strftime("%Y-%m-%d")
+        past = (datetime.now(UTC) - timedelta(days=5)).strftime("%Y-%m-%d")
         docs = [_make_fr_doc(title="Closed Rule", comments_close=past)]
         with self._mock_fetch(tool, docs):
             result = tool.execute(mode="recent")
@@ -676,7 +671,7 @@ class TestAgencyMode:
 class TestUpcomingMode:
     def test_basic_upcoming(self):
         tool = RegulatoryGazetteTool()
-        future = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%d")
+        future = (datetime.now(UTC) + timedelta(days=30)).strftime("%Y-%m-%d")
         docs = [_make_fr_doc(title="Open Rule", comments_close=future)]
         fr_resp = _make_fr_response(docs)
         with patch.object(
@@ -691,8 +686,8 @@ class TestUpcomingMode:
 
     def test_upcoming_filters_closed(self):
         tool = RegulatoryGazetteTool()
-        future = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%d")
-        past = (datetime.now(timezone.utc) - timedelta(days=5)).strftime("%Y-%m-%d")
+        future = (datetime.now(UTC) + timedelta(days=30)).strftime("%Y-%m-%d")
+        past = (datetime.now(UTC) - timedelta(days=5)).strftime("%Y-%m-%d")
         docs = [
             _make_fr_doc(title="Open Rule", comments_close=future),
             _make_fr_doc(title="Closed Rule", comments_close=past),
@@ -723,7 +718,7 @@ class TestUpcomingMode:
 
     def test_upcoming_days_remaining(self):
         tool = RegulatoryGazetteTool()
-        future = (datetime.now(timezone.utc) + timedelta(days=15)).strftime("%Y-%m-%d")
+        future = (datetime.now(UTC) + timedelta(days=15)).strftime("%Y-%m-%d")
         docs = [_make_fr_doc(title="Soon Rule", comments_close=future)]
         fr_resp = _make_fr_response(docs)
         with patch.object(
@@ -738,8 +733,8 @@ class TestUpcomingMode:
 
     def test_upcoming_sorted_by_deadline(self):
         tool = RegulatoryGazetteTool()
-        soon = (datetime.now(timezone.utc) + timedelta(days=5)).strftime("%Y-%m-%d")
-        later = (datetime.now(timezone.utc) + timedelta(days=60)).strftime("%Y-%m-%d")
+        soon = (datetime.now(UTC) + timedelta(days=5)).strftime("%Y-%m-%d")
+        later = (datetime.now(UTC) + timedelta(days=60)).strftime("%Y-%m-%d")
         docs = [
             _make_fr_doc(title="Later Rule", comments_close=later),
             _make_fr_doc(title="Soon Rule", comments_close=soon),
@@ -756,7 +751,7 @@ class TestUpcomingMode:
 
     def test_upcoming_significant_filter(self):
         tool = RegulatoryGazetteTool()
-        future = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%d")
+        future = (datetime.now(UTC) + timedelta(days=30)).strftime("%Y-%m-%d")
         docs = [
             _make_fr_doc(title="Big Rule", comments_close=future, significant=True),
             _make_fr_doc(title="Small Rule", comments_close=future, significant=False),
@@ -808,9 +803,7 @@ class TestHTTPErrors:
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
 
-        with patch(
-            "agent.tools.regulatory_gazette.httpx.Client", return_value=mock_client
-        ):
+        with patch("agent.tools.regulatory_gazette.httpx.Client", return_value=mock_client):
             result = tool.execute(mode="recent")
         assert not result.success
         assert "Bad request" in result.output
@@ -824,9 +817,7 @@ class TestHTTPErrors:
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
 
-        with patch(
-            "agent.tools.regulatory_gazette.httpx.Client", return_value=mock_client
-        ):
+        with patch("agent.tools.regulatory_gazette.httpx.Client", return_value=mock_client):
             result = tool.execute(mode="recent")
         assert not result.success
         assert "Rate limited" in result.output
@@ -845,9 +836,7 @@ class TestHTTPErrors:
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
 
-        with patch(
-            "agent.tools.regulatory_gazette.httpx.Client", return_value=mock_client
-        ):
+        with patch("agent.tools.regulatory_gazette.httpx.Client", return_value=mock_client):
             result = tool.execute(mode="recent")
         assert not result.success
         assert "HTTP 500" in result.output
@@ -859,9 +848,7 @@ class TestHTTPErrors:
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
 
-        with patch(
-            "agent.tools.regulatory_gazette.httpx.Client", return_value=mock_client
-        ):
+        with patch("agent.tools.regulatory_gazette.httpx.Client", return_value=mock_client):
             result = tool.execute(mode="recent")
         assert not result.success
         assert "timed out" in result.output.lower()
@@ -873,9 +860,7 @@ class TestHTTPErrors:
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
 
-        with patch(
-            "agent.tools.regulatory_gazette.httpx.Client", return_value=mock_client
-        ):
+        with patch("agent.tools.regulatory_gazette.httpx.Client", return_value=mock_client):
             result = tool.execute(mode="recent")
         assert not result.success
         assert "DNS fail" in result.output
@@ -911,9 +896,7 @@ class TestCacheInteraction:
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
 
-        with patch(
-            "agent.tools.regulatory_gazette.httpx.Client", return_value=mock_client
-        ):
+        with patch("agent.tools.regulatory_gazette.httpx.Client", return_value=mock_client):
             result = tool.execute(mode="recent")
         assert result.success
         cache.put.assert_called_once()
@@ -936,9 +919,7 @@ class TestCacheInteraction:
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
 
-        with patch(
-            "agent.tools.regulatory_gazette.httpx.Client", return_value=mock_client
-        ):
+        with patch("agent.tools.regulatory_gazette.httpx.Client", return_value=mock_client):
             result = tool.execute(mode="recent")
         assert result.success
         cache.put.assert_not_called()
@@ -956,9 +937,7 @@ class TestCacheInteraction:
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
 
-        with patch(
-            "agent.tools.regulatory_gazette.httpx.Client", return_value=mock_client
-        ):
+        with patch("agent.tools.regulatory_gazette.httpx.Client", return_value=mock_client):
             result = tool.execute(mode="recent")
         assert result.success
 
@@ -1082,7 +1061,7 @@ class TestOutputFormatting:
 
     def test_upcoming_header(self):
         tool = RegulatoryGazetteTool()
-        future = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%d")
+        future = (datetime.now(UTC) + timedelta(days=30)).strftime("%Y-%m-%d")
         docs = [_make_fr_doc(comments_close=future)]
         fr_resp = _make_fr_response(docs)
         with patch.object(
@@ -1233,7 +1212,7 @@ class TestFieldsConstant:
 
 class TestValidTypes:
     def test_expected_types(self):
-        assert _VALID_TYPES == {"RULE", "PRORULE", "NOTICE", "PRESDOCU"}
+        assert {"RULE", "PRORULE", "NOTICE", "PRESDOCU"} == _VALID_TYPES
 
 
 # ── 19. Multiple Agencies in Doc ────────────────────────────────────
@@ -1243,9 +1222,7 @@ class TestMultipleAgencies:
     def test_multiple_agencies_shown(self):
         tool = RegulatoryGazetteTool()
         doc = _make_fr_doc()
-        doc["agencies"].append(
-            {"name": "Second Agency", "id": 999, "slug": "second-agency"}
-        )
+        doc["agencies"].append({"name": "Second Agency", "id": 999, "slug": "second-agency"})
         fr_resp = _make_fr_response([doc])
         with patch.object(
             tool,
@@ -1281,9 +1258,7 @@ class TestLiveNetwork:
     @pytest.mark.skipif(True, reason="Live network test — run manually")
     def test_live_search_semiconductor(self):
         tool = RegulatoryGazetteTool()
-        result = tool.execute(
-            mode="search", keyword="semiconductor", days_back=365, limit=5
-        )
+        result = tool.execute(mode="search", keyword="semiconductor", days_back=365, limit=5)
         assert result.success
         print(result.output)
 

@@ -16,7 +16,6 @@ from agent.convergence.extractors import (
     registered_tools,
 )
 
-
 # ══════════════════════════════════════════════════════════════
 # Framework tests
 # ══════════════════════════════════════════════════════════════
@@ -131,7 +130,6 @@ class TestFramework:
 
 
 class TestHelpers:
-
     def test_safe_float_normal(self):
         assert _safe_float(3.14) == 3.14
         assert _safe_float("2.5") == 2.5
@@ -161,7 +159,6 @@ class TestHelpers:
 
 
 class TestCFTC:
-
     def _data(self, **overrides):
         base = {
             "contracts": [
@@ -239,7 +236,6 @@ class TestCFTC:
 
 
 class TestWeatherAlerts:
-
     def test_summary_mode(self):
         data = {"alert_count": 15, "fire_count_infra": 3}
         evs = extract_evidence("weather_alerts", data)
@@ -308,7 +304,6 @@ class TestWeatherAlerts:
 
 
 class TestSanctionsMonitor:
-
     def test_recent_mode(self):
         data = {"results": [{"name": "Entity1"}], "count": 1, "days_back": 7}
         evs = extract_evidence("sanctions_monitor", data)
@@ -342,7 +337,6 @@ class TestSanctionsMonitor:
 
 
 class TestAISVessel:
-
     def test_area_mode(self):
         data = {
             "area": "Strait of Hormuz",
@@ -376,7 +370,6 @@ class TestAISVessel:
 
 
 class TestFINRAShortVolume:
-
     def test_short_volume_mode(self):
         data = {
             "ticker": "SPY",
@@ -426,7 +419,6 @@ class TestFINRAShortVolume:
 
 
 class TestDiseaseSurveillance:
-
     def test_wastewater_mode(self):
         data = {
             "pathogen": "SARS-CoV-2",
@@ -475,7 +467,6 @@ class TestDiseaseSurveillance:
 
 
 class TestEarthquakeProximity:
-
     def test_recent_mode(self):
         data = {
             "quakes": [
@@ -514,7 +505,6 @@ class TestEarthquakeProximity:
 
 
 class TestGlobalPMI:
-
     def test_basic_signals(self):
         data = {
             "mode": "cli",
@@ -532,10 +522,10 @@ class TestGlobalPMI:
             },
         }
         evs = extract_evidence("global_pmi", data)
-        usa_ev = next(e for e in evs if "pmi.usa.cli" == e.signal_id)
+        usa_ev = next(e for e in evs if e.signal_id == "pmi.usa.cli")
         assert usa_ev.value == 101.5
         assert usa_ev.direction == 1  # > 100
-        deu_ev = next(e for e in evs if "pmi.deu.cli" == e.signal_id)
+        deu_ev = next(e for e in evs if e.signal_id == "pmi.deu.cli")
         assert deu_ev.direction == -1  # < 100
 
     def test_mom_momentum_signals(self):
@@ -565,7 +555,6 @@ class TestGlobalPMI:
 
 
 class TestTreasuryReceipts:
-
     def test_cash_balance_mode(self):
         data = {"signals": {"tga_daily_change_pct": -2.5}}
         evs = extract_evidence("treasury_receipts", data)
@@ -598,7 +587,6 @@ class TestTreasuryReceipts:
 
 
 class TestJobPostings:
-
     def test_jolts_mode(self):
         data = {
             "summary": {
@@ -648,7 +636,6 @@ class TestJobPostings:
 
 
 class TestTransportThroughput:
-
     def test_recent_mode(self):
         data = {
             "records": [
@@ -662,11 +649,7 @@ class TestTransportThroughput:
         assert total_ev.category == "physical_flow"
 
     def test_comparison_mode(self):
-        data = {
-            "comparison": [
-                {"date": "2025-01", "canada": 15000, "mexico": 12000, "ratio": 1.25}
-            ]
-        }
+        data = {"comparison": [{"date": "2025-01", "canada": 15000, "mexico": 12000, "ratio": 1.25}]}
         evs = extract_evidence("transport_throughput", data)
         ratio_ev = next(e for e in evs if "ratio" in e.signal_id)
         assert ratio_ev.value == 1.25
@@ -702,7 +685,6 @@ class TestTransportThroughput:
 
 
 class TestCapitalFlows:
-
     def test_coordinated_selling(self):
         data = {
             "mode": "holdings",
@@ -739,9 +721,7 @@ class TestCapitalFlows:
         assert ev.direction == 1  # >3% drop
 
     def test_flow_reversal(self):
-        data = {
-            "flows": [{"key": "tic_net", "flow_reversal": True, "latest_value": -50000}]
-        }
+        data = {"flows": [{"key": "tic_net", "flow_reversal": True, "latest_value": -50000}]}
         evs = extract_evidence("capital_flows", data)
         assert any("reversal" in e.signal_id for e in evs)
 
@@ -755,7 +735,6 @@ class TestCapitalFlows:
 
 
 class TestSovereignDebt:
-
     def test_us_yields_inversion(self):
         data = {"records": [{"curve_2s10s": -0.15, "curve_3m10y": -0.3}]}
         evs = extract_evidence("sovereign_debt", data)
@@ -784,7 +763,6 @@ class TestSovereignDebt:
 
 
 class TestCreditorFilings:
-
     def test_sec_filing_count(self):
         data = {"sec_count": 12}
         evs = extract_evidence("creditor_filings", data)
@@ -816,7 +794,6 @@ class TestCreditorFilings:
 
 
 class TestBankruptcyCourt:
-
     def test_us_bankruptcy(self):
         data = {"mode": "us_bankruptcy", "count": 25, "chapter_breakdown": {"11": 5}}
         evs = extract_evidence("bankruptcy_court", data)
@@ -835,7 +812,6 @@ class TestBankruptcyCourt:
 
 
 class TestLiquidityRegime:
-
     def test_contraction_regime(self):
         data = {
             "current_regime": "contraction",
@@ -844,9 +820,7 @@ class TestLiquidityRegime:
             "n_changepoints": 3,
         }
         evs = extract_evidence("liquidity_regime", data)
-        regime_ev = next(
-            e for e in evs if "regime" in e.signal_id and "zscore" not in e.signal_id
-        )
+        regime_ev = next(e for e in evs if "regime" in e.signal_id and "zscore" not in e.signal_id)
         assert regime_ev.direction == 1  # Contraction = stress
 
     def test_expansion_regime(self):
@@ -856,9 +830,7 @@ class TestLiquidityRegime:
             "composite_zscore": 2.0,
         }
         evs = extract_evidence("liquidity_regime", data)
-        regime_ev = next(
-            e for e in evs if "regime" in e.signal_id and "zscore" not in e.signal_id
-        )
+        regime_ev = next(e for e in evs if "regime" in e.signal_id and "zscore" not in e.signal_id)
         assert regime_ev.direction == -1  # Expansion = relief
 
     def test_zscore_stress(self):
@@ -872,7 +844,6 @@ class TestLiquidityRegime:
 
 
 class TestCentralBankBalance:
-
     def test_balance_sheet_contraction(self):
         data = {"banks": [{"code": "FED", "wow_pct": -1.2}]}
         evs = extract_evidence("central_bank_balance", data)
@@ -909,7 +880,6 @@ class TestCentralBankBalance:
 
 
 class TestDrugRegulatory:
-
     def test_approvals(self):
         data = {"mode": "approvals", "total": 5, "results": []}
         evs = extract_evidence("drug_regulatory", data)
@@ -946,7 +916,6 @@ class TestDrugRegulatory:
 
 
 class TestRegulatoryGazette:
-
     def test_documents_with_significant(self):
         data = {
             "documents": [
@@ -979,7 +948,6 @@ class TestRegulatoryGazette:
 
 
 class TestBuildingPermits:
-
     def test_mom_decline(self):
         data = {"summary": {"PERMIT1": {"mom_pct": -8.0, "label": "Total Permits"}}}
         evs = extract_evidence("building_permits", data)
@@ -1002,7 +970,6 @@ class TestBuildingPermits:
 
 
 class TestPatentFilings:
-
     def test_trends_with_growth(self):
         data = {
             "cpc_class": "H01L",
@@ -1026,7 +993,6 @@ class TestPatentFilings:
 
 
 class TestLobbying:
-
     def test_spending_anomaly(self):
         data = {
             "mode": "spending",
@@ -1059,13 +1025,8 @@ class TestLobbying:
 
 
 class TestWikipediaPageviews:
-
     def test_spike_mode(self):
-        data = {
-            "spikes": [
-                {"article": "Federal Reserve", "z_score": 5.0, "latest_views": 50000}
-            ]
-        }
+        data = {"spikes": [{"article": "Federal Reserve", "z_score": 5.0, "latest_views": 50000}]}
         evs = extract_evidence("wikipedia_pageviews", data)
         ev = evs[0]
         assert ev.direction == 1
@@ -1088,13 +1049,10 @@ class TestWikipediaPageviews:
 
 
 class TestCertTransparency:
-
     def test_search_mode(self):
         data = {"domain": "example.com", "count": 42, "active": 30, "expired": 12}
         evs = extract_evidence("cert_transparency", data)
-        count_ev = next(
-            e for e in evs if ".count" in e.signal_id and "subdomain" not in e.signal_id
-        )
+        count_ev = next(e for e in evs if ".count" in e.signal_id and "subdomain" not in e.signal_id)
         assert count_ev.value == 42.0
         ratio_ev = next(e for e in evs if "active_ratio" in e.signal_id)
         assert abs(ratio_ev.value - 30 / 42) < 1e-6
@@ -1112,7 +1070,6 @@ class TestCertTransparency:
 
 
 class TestDNSMonitor:
-
     def test_diff_with_changes(self):
         data = {
             "domain": "target.com",
@@ -1138,7 +1095,6 @@ class TestDNSMonitor:
 
 
 class TestPolymarket:
-
     def test_extreme_probability_high_volume(self):
         data = {
             "markets": [
@@ -1203,7 +1159,6 @@ class TestPolymarket:
 
 
 class TestPolymarketWhales:
-
     def test_top_wallets(self):
         data = {
             "wallets": [
@@ -1231,7 +1186,6 @@ class TestPolymarketWhales:
 
 
 class TestInsiderFilings:
-
     def test_cluster_buying(self):
         data = {
             "clusters": [
@@ -1272,7 +1226,6 @@ class TestInsiderFilings:
 
 
 class TestForm144:
-
     def test_sell_cluster(self):
         data = {
             "clusters": [
@@ -1313,7 +1266,6 @@ class TestForm144:
 
 
 class TestGDELT:
-
     def test_events_conflict(self):
         data = {
             "events": [
@@ -1353,7 +1305,6 @@ class TestGDELT:
 
 
 class TestWhaleAlert:
-
     def test_transactions(self):
         data = {
             "transactions": [{"hash": "abc"}, {"hash": "def"}],
@@ -1373,7 +1324,6 @@ class TestWhaleAlert:
 
 
 class TestComtrade:
-
     def test_flows_mode(self):
         data = {
             "reporter": "USA",
@@ -1400,7 +1350,6 @@ class TestComtrade:
 
 
 class TestEnergySupply:
-
     def test_stocks_signals(self):
         data = {
             "label": "petroleum_stocks",
@@ -1427,7 +1376,6 @@ class TestEnergySupply:
 
 
 class TestSupplyChainPrices:
-
     def test_producer_prices(self):
         data = {
             "mode": "producer_prices",
@@ -1448,7 +1396,6 @@ class TestSupplyChainPrices:
 
 
 class TestMacroData:
-
     def test_fred_series(self):
         data = {
             "GDP": [
@@ -1476,7 +1423,6 @@ class TestMacroData:
 
 
 class TestMarketData:
-
     def test_return_calculation(self):
         data = {
             "SPY": [
@@ -1542,7 +1488,6 @@ class TestStubExtractors:
 
 
 class TestEdgeCases:
-
     def test_all_extractors_handle_int_data(self):
         """Passing an int instead of dict should not crash."""
         for name in registered_tools():
@@ -1564,20 +1509,14 @@ class TestEdgeCases:
         from agent.convergence.taxonomy import CATEGORIES
 
         test_cases = {
-            "cftc": {
-                "contracts": [
-                    {"Market_and_Exchange_Names": "GOLD", "_mm_net_pct_oi": 5}
-                ]
-            },
+            "cftc": {"contracts": [{"Market_and_Exchange_Names": "GOLD", "_mm_net_pct_oi": 5}]},
             "weather_alerts": {"alert_count": 10},
             "earthquake_proximity": {
                 "quakes": [{"magnitude": 5.0}],
                 "count": 1,
                 "near_infrastructure": 0,
             },
-            "capital_flows": {
-                "coordination": {"coordinated_selling": True, "sellers": ["CN"]}
-            },
+            "capital_flows": {"coordination": {"coordinated_selling": True, "sellers": ["CN"]}},
             "sovereign_debt": {"records": [{"curve_2s10s": 0.5}]},
             "bankruptcy_court": {"mode": "us_bankruptcy", "count": 10},
             "liquidity_regime": {"current_regime": "expansion", "current_state": 2},
@@ -1596,15 +1535,11 @@ class TestEdgeCases:
         }
         for tool, data in test_cases.items():
             for ev in extract_evidence(tool, data):
-                assert (
-                    ev.category in CATEGORIES
-                ), f"{tool}: {ev.category} not in CATEGORIES"
+                assert ev.category in CATEGORIES, f"{tool}: {ev.category} not in CATEGORIES"
 
     def test_all_evidence_direction_valid(self):
         test_cases = {
-            "cftc": {
-                "contracts": [{"Market_and_Exchange_Names": "X", "_mm_net_pct_oi": 0}]
-            },
+            "cftc": {"contracts": [{"Market_and_Exchange_Names": "X", "_mm_net_pct_oi": 0}]},
             "global_pmi": {"signals": {"USA": {"latest_value": 100, "mom_change": 0}}},
         }
         for tool, data in test_cases.items():
@@ -1613,9 +1548,7 @@ class TestEdgeCases:
 
     def test_all_evidence_confidence_in_range(self):
         test_cases = {
-            "cftc": {
-                "contracts": [{"Market_and_Exchange_Names": "X", "_mm_net_pct_oi": 10}]
-            },
+            "cftc": {"contracts": [{"Market_and_Exchange_Names": "X", "_mm_net_pct_oi": 10}]},
             "finra_short_volume": {
                 "ticker": "A",
                 "signals": {"latest_ratio": 0.5, "is_anomaly": True},
@@ -1629,11 +1562,7 @@ class TestEdgeCases:
         for tool, data in [
             (
                 "cftc",
-                {
-                    "contracts": [
-                        {"Market_and_Exchange_Names": "X", "_mm_net_pct_oi": 1}
-                    ]
-                },
+                {"contracts": [{"Market_and_Exchange_Names": "X", "_mm_net_pct_oi": 1}]},
             ),
             ("weather_alerts", {"alert_count": 1}),
             ("disease_surveillance", {"entries": [{"title": "X"}]}),
@@ -1643,9 +1572,7 @@ class TestEdgeCases:
 
     def test_performance_100_calls(self):
         """100 extract_evidence calls should complete in < 0.5s."""
-        data = {
-            "contracts": [{"Market_and_Exchange_Names": "GOLD", "_mm_net_pct_oi": 5}]
-        }
+        data = {"contracts": [{"Market_and_Exchange_Names": "GOLD", "_mm_net_pct_oi": 5}]}
         start = time.monotonic()
         for _ in range(100):
             extract_evidence("cftc", data)

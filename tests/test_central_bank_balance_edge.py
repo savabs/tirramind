@@ -17,9 +17,8 @@ Tests cover:
 
 from __future__ import annotations
 
-import json
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -34,15 +33,12 @@ from agent.tools.central_bank_balance import (
     _parse_ecb_observations,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-def _make_tool(
-    api_key: str = "test-key", cache: MagicMock | None = None
-) -> CentralBankBalanceTool:
+def _make_tool(api_key: str = "test-key", cache: MagicMock | None = None) -> CentralBankBalanceTool:
     return CentralBankBalanceTool(fred_api_key=api_key, cache=cache)
 
 
@@ -55,9 +51,7 @@ def _fred_obs(date: str, value: str) -> dict:
     return {"date": date, "value": value}
 
 
-def _make_series(
-    start_date: str, n: int, start_val: float, step: float = 0.0
-) -> list[dict]:
+def _make_series(start_date: str, n: int, start_val: float, step: float = 0.0) -> list[dict]:
     """Generate a simple time series of {date, value} dicts."""
     dt = datetime.strptime(start_date, "%Y-%m-%d")
     obs = []
@@ -70,9 +64,7 @@ def _make_series(
 def _ecb_json_response(values: list[tuple[str, float]]) -> dict:
     """Build ECB SDMX-like JSON response."""
     time_values = [{"id": date, "name": date} for date, _ in values]
-    observations = {
-        str(i): [val, 0, 0, None, None] for i, (_, val) in enumerate(values)
-    }
+    observations = {str(i): [val, 0, 0, None, None] for i, (_, val) in enumerate(values)}
     return {
         "header": {
             "id": "test",
@@ -176,9 +168,7 @@ class TestInputValidation(unittest.TestCase):
         tool = _make_tool()
         for mode in VALID_MODES:
             method = f"_mode_{mode}"
-            with patch.object(
-                tool, method, return_value=MagicMock(success=True, output="ok")
-            ) as m:
+            with patch.object(tool, method, return_value=MagicMock(success=True, output="ok")) as m:
                 tool.execute(mode=mode)
                 assert m.called, f"{method} not called for mode={mode}"
 
@@ -199,15 +189,11 @@ class TestFredFetch(unittest.TestCase):
         resp_mock.raise_for_status = MagicMock()
 
         with patch("agent.tools.central_bank_balance.httpx.Client") as mock_client:
-            mock_client.return_value.__enter__ = MagicMock(
-                return_value=mock_client.return_value
-            )
+            mock_client.return_value.__enter__ = MagicMock(return_value=mock_client.return_value)
             mock_client.return_value.__exit__ = MagicMock(return_value=False)
             mock_client.return_value.get.return_value = resp_mock
 
-            result = tool._fetch_fred_observations(
-                "WALCL", "2026-01-01", "2026-01-31", "bs_fed", 3600
-            )
+            result = tool._fetch_fred_observations("WALCL", "2026-01-01", "2026-01-31", "bs_fed", 3600)
             assert len(result) == 2
             assert result[0]["date"] == "2026-01-01"
             assert result[0]["value"] == "100"
@@ -225,43 +211,31 @@ class TestFredFetch(unittest.TestCase):
         resp_mock.raise_for_status = MagicMock()
 
         with patch("agent.tools.central_bank_balance.httpx.Client") as mock_client:
-            mock_client.return_value.__enter__ = MagicMock(
-                return_value=mock_client.return_value
-            )
+            mock_client.return_value.__enter__ = MagicMock(return_value=mock_client.return_value)
             mock_client.return_value.__exit__ = MagicMock(return_value=False)
             mock_client.return_value.get.return_value = resp_mock
 
-            result = tool._fetch_fred_observations(
-                "WALCL", "2026-01-01", "2026-01-31", "test", 3600
-            )
+            result = tool._fetch_fred_observations("WALCL", "2026-01-01", "2026-01-31", "test", 3600)
             assert len(result) == 2  # Only non-missing
 
     def test_fred_http_error_returns_empty(self):
         tool = _make_tool()
         with patch("agent.tools.central_bank_balance.httpx.Client") as mock_client:
-            mock_client.return_value.__enter__ = MagicMock(
-                return_value=mock_client.return_value
-            )
+            mock_client.return_value.__enter__ = MagicMock(return_value=mock_client.return_value)
             mock_client.return_value.__exit__ = MagicMock(return_value=False)
             mock_client.return_value.get.side_effect = httpx.HTTPStatusError(
                 "500", request=MagicMock(), response=MagicMock(status_code=500)
             )
-            result = tool._fetch_fred_observations(
-                "WALCL", "2026-01-01", "2026-01-31", "test", 3600
-            )
+            result = tool._fetch_fred_observations("WALCL", "2026-01-01", "2026-01-31", "test", 3600)
             assert result == []
 
     def test_fred_timeout_returns_empty(self):
         tool = _make_tool()
         with patch("agent.tools.central_bank_balance.httpx.Client") as mock_client:
-            mock_client.return_value.__enter__ = MagicMock(
-                return_value=mock_client.return_value
-            )
+            mock_client.return_value.__enter__ = MagicMock(return_value=mock_client.return_value)
             mock_client.return_value.__exit__ = MagicMock(return_value=False)
             mock_client.return_value.get.side_effect = httpx.ConnectTimeout("timeout")
-            result = tool._fetch_fred_observations(
-                "WALCL", "2026-01-01", "2026-01-31", "test", 3600
-            )
+            result = tool._fetch_fred_observations("WALCL", "2026-01-01", "2026-01-31", "test", 3600)
             assert result == []
 
     def test_fred_cache_hit(self):
@@ -270,9 +244,7 @@ class TestFredFetch(unittest.TestCase):
         cache.get.return_value = cached_data
 
         tool = _make_tool(cache=cache)
-        result = tool._fetch_fred_observations(
-            "WALCL", "2026-01-01", "2026-01-31", "test", 3600
-        )
+        result = tool._fetch_fred_observations("WALCL", "2026-01-01", "2026-01-31", "test", 3600)
         assert result == cached_data
         cache.get.assert_called_once()
 
@@ -287,15 +259,11 @@ class TestFredFetch(unittest.TestCase):
         resp_mock.raise_for_status = MagicMock()
 
         with patch("agent.tools.central_bank_balance.httpx.Client") as mock_client:
-            mock_client.return_value.__enter__ = MagicMock(
-                return_value=mock_client.return_value
-            )
+            mock_client.return_value.__enter__ = MagicMock(return_value=mock_client.return_value)
             mock_client.return_value.__exit__ = MagicMock(return_value=False)
             mock_client.return_value.get.return_value = resp_mock
 
-            result = tool._fetch_fred_observations(
-                "WALCL", "2026-01-01", "2026-01-31", "test", 3600
-            )
+            result = tool._fetch_fred_observations("WALCL", "2026-01-01", "2026-01-31", "test", 3600)
             assert len(result) == 1
             cache.put.assert_called_once()
 
@@ -395,9 +363,7 @@ class TestEcbParsing(unittest.TestCase):
         # Make one obs have None value
         data["dataSets"][0]["series"]["0:0:0:0:0:0"]["observations"]["1"] = [None, 0]
         # Add extra time value
-        data["structure"]["dimensions"]["observation"][0]["values"].append(
-            {"id": "2026-01-14", "name": "2026-01-14"}
-        )
+        data["structure"]["dimensions"]["observation"][0]["values"].append({"id": "2026-01-14", "name": "2026-01-14"})
         result = _parse_ecb_observations(data)
         assert len(result) == 1  # Only the non-None
 
@@ -419,7 +385,6 @@ class TestEcbParsing(unittest.TestCase):
 
 
 class TestRateChangeDetection(unittest.TestCase):
-
     def test_no_changes(self):
         tool = _make_tool()
         series = [
@@ -488,9 +453,8 @@ class TestRateChangeDetection(unittest.TestCase):
 
 
 class TestGrowthHelpers(unittest.TestCase):
-
     def test_compute_changes_basic(self):
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         series = []
         for days_ago in [400, 60, 14, 7, 0]:
             d = (now - timedelta(days=days_ago)).strftime("%Y-%m-%d")
@@ -505,7 +469,7 @@ class TestGrowthHelpers(unittest.TestCase):
         assert CentralBankBalanceTool._compute_changes([], 1.0) == {}
 
     def test_compute_growth_rate_expanding(self):
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         series = [
             {"date": (now - timedelta(days=100)).strftime("%Y-%m-%d"), "value": "100"},
             {"date": now.strftime("%Y-%m-%d"), "value": "110"},
@@ -515,7 +479,7 @@ class TestGrowthHelpers(unittest.TestCase):
         assert result > 0  # Expanding
 
     def test_compute_growth_rate_contracting(self):
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         series = [
             {"date": (now - timedelta(days=100)).strftime("%Y-%m-%d"), "value": "110"},
             {"date": now.strftime("%Y-%m-%d"), "value": "100"},
@@ -577,7 +541,6 @@ class TestGrowthHelpers(unittest.TestCase):
 
 
 class TestFormatHelpers(unittest.TestCase):
-
     def test_fmt_pct_positive(self):
         assert _fmt_pct(5.25) == "+5.25%"
 
@@ -597,7 +560,6 @@ class TestFormatHelpers(unittest.TestCase):
 
 
 class TestModeBalanceSheets(unittest.TestCase):
-
     def _mock_fred_fetch(self, tool, responses: dict[str, list[dict]]):
         """Patch _fetch_fred_observations to return canned data per series."""
         original = tool._fetch_fred_observations
@@ -615,19 +577,21 @@ class TestModeBalanceSheets(unittest.TestCase):
 
         fx_rates = {"DEXUSEU": 1.10, "DEXJPUS": 150.0}
 
-        with self._mock_fred_fetch(
-            tool,
-            {
-                "WALCL": obs_walcl,
-                "ECBASSETSW": obs_ecb,
-                "JPNASSETS": obs_boj,
-                "SNBASSETM": [],
-                "BCBASSETM": [],
-                "RBASSETSM": [],
-            },
+        with (
+            self._mock_fred_fetch(
+                tool,
+                {
+                    "WALCL": obs_walcl,
+                    "ECBASSETSW": obs_ecb,
+                    "JPNASSETS": obs_boj,
+                    "SNBASSETM": [],
+                    "BCBASSETM": [],
+                    "RBASSETSM": [],
+                },
+            ),
+            patch.object(tool, "_fetch_fx_rates", return_value=fx_rates),
         ):
-            with patch.object(tool, "_fetch_fx_rates", return_value=fx_rates):
-                r = tool.execute(mode="balance_sheets", banks="fed,ecb,boj")
+            r = tool.execute(mode="balance_sheets", banks="fed,ecb,boj")
 
         assert r.success
         assert "Federal Reserve" in r.output
@@ -638,11 +602,11 @@ class TestModeBalanceSheets(unittest.TestCase):
     def test_partial_data(self):
         """Some CBs return no data — should still succeed with partial results."""
         tool = _make_tool()
-        with self._mock_fred_fetch(
-            tool, {"WALCL": [{"date": "2026-01-01", "value": "7000000"}]}
+        with (
+            self._mock_fred_fetch(tool, {"WALCL": [{"date": "2026-01-01", "value": "7000000"}]}),
+            patch.object(tool, "_fetch_fx_rates", return_value={}),
         ):
-            with patch.object(tool, "_fetch_fx_rates", return_value={}):
-                r = tool.execute(mode="balance_sheets", banks="fed,ecb,boj")
+            r = tool.execute(mode="balance_sheets", banks="fed,ecb,boj")
         assert r.success
         assert len(r.data["banks"]) == 1  # Only Fed succeeded
         assert len(r.data["errors"]) >= 1
@@ -650,19 +614,18 @@ class TestModeBalanceSheets(unittest.TestCase):
     def test_all_data_missing(self):
         """No CB returns data → failure."""
         tool = _make_tool()
-        with self._mock_fred_fetch(tool, {}):
-            with patch.object(tool, "_fetch_fx_rates", return_value={}):
-                r = tool.execute(mode="balance_sheets", banks="fed,ecb")
+        with self._mock_fred_fetch(tool, {}), patch.object(tool, "_fetch_fx_rates", return_value={}):
+            r = tool.execute(mode="balance_sheets", banks="fed,ecb")
         assert not r.success
 
     def test_boe_skipped(self):
         """BOE has _skip_bs flag → should be skipped with a note."""
         tool = _make_tool()
-        with self._mock_fred_fetch(
-            tool, {"WALCL": [{"date": "2026-01-01", "value": "7000000"}]}
+        with (
+            self._mock_fred_fetch(tool, {"WALCL": [{"date": "2026-01-01", "value": "7000000"}]}),
+            patch.object(tool, "_fetch_fx_rates", return_value={}),
         ):
-            with patch.object(tool, "_fetch_fx_rates", return_value={}):
-                r = tool.execute(mode="balance_sheets", banks="fed,boe")
+            r = tool.execute(mode="balance_sheets", banks="fed,boe")
         assert r.success
         assert any("BOE" in e or "Bank of England" in e for e in r.data["errors"])
 
@@ -683,7 +646,6 @@ class TestModeBalanceSheets(unittest.TestCase):
 
 
 class TestModeLiquidityIndex(unittest.TestCase):
-
     def _mock_fred_fetch(self, tool, responses: dict[str, list[dict]]):
         original = tool._fetch_fred_observations
 
@@ -721,9 +683,8 @@ class TestModeLiquidityIndex(unittest.TestCase):
         tool = _make_tool()
         responses = {"WALCL": [{"date": "2026-01-01", "value": "7000000"}]}
 
-        with self._mock_fred_fetch(tool, responses):
-            with patch.object(tool, "_fetch_fx_rates", return_value={}):
-                r = tool.execute(mode="liquidity_index", banks="fed")
+        with self._mock_fred_fetch(tool, responses), patch.object(tool, "_fetch_fx_rates", return_value={}):
+            r = tool.execute(mode="liquidity_index", banks="fed")
 
         assert r.success
         assert r.data["rrp_usd"] == 0
@@ -732,9 +693,8 @@ class TestModeLiquidityIndex(unittest.TestCase):
 
     def test_all_data_missing(self):
         tool = _make_tool()
-        with self._mock_fred_fetch(tool, {}):
-            with patch.object(tool, "_fetch_fx_rates", return_value={}):
-                r = tool.execute(mode="liquidity_index", banks="fed")
+        with self._mock_fred_fetch(tool, {}), patch.object(tool, "_fetch_fx_rates", return_value={}):
+            r = tool.execute(mode="liquidity_index", banks="fed")
         assert not r.success
 
 
@@ -744,7 +704,6 @@ class TestModeLiquidityIndex(unittest.TestCase):
 
 
 class TestModePolicyDivergence(unittest.TestCase):
-
     def _mock_fred_fetch(self, tool, responses: dict[str, list[dict]]):
         def fake_fetch(series_id, start, end, cache_key, ttl):
             return responses.get(series_id, [])
@@ -753,7 +712,7 @@ class TestModePolicyDivergence(unittest.TestCase):
 
     def _expanding_series(self) -> list[dict]:
         """Series that grows ~10% over 12 months."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         return [
             {"date": (now - timedelta(days=365)).strftime("%Y-%m-%d"), "value": "1000"},
             {"date": (now - timedelta(days=180)).strftime("%Y-%m-%d"), "value": "1050"},
@@ -763,7 +722,7 @@ class TestModePolicyDivergence(unittest.TestCase):
 
     def _contracting_series(self) -> list[dict]:
         """Series that shrinks ~10% over 12 months."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         return [
             {"date": (now - timedelta(days=365)).strftime("%Y-%m-%d"), "value": "1100"},
             {"date": (now - timedelta(days=180)).strftime("%Y-%m-%d"), "value": "1050"},
@@ -778,11 +737,11 @@ class TestModePolicyDivergence(unittest.TestCase):
             "ECBASSETSW": self._contracting_series(),
             "DFF": [{"date": "2026-01-01", "value": "5.33"}],
         }
-        with self._mock_fred_fetch(tool, responses):
-            with patch.object(
-                tool, "_fetch_ecb_rate", return_value={"current_rate": 3.75}
-            ):
-                r = tool.execute(mode="policy_divergence", banks="fed,ecb")
+        with (
+            self._mock_fred_fetch(tool, responses),
+            patch.object(tool, "_fetch_ecb_rate", return_value={"current_rate": 3.75}),
+        ):
+            r = tool.execute(mode="policy_divergence", banks="fed,ecb")
 
         assert r.success
         assert len(r.data["divergences"]) > 0
@@ -793,9 +752,8 @@ class TestModePolicyDivergence(unittest.TestCase):
         tool = _make_tool()
         exp = self._expanding_series()
         responses = {"WALCL": exp, "ECBASSETSW": exp, "DFF": []}
-        with self._mock_fred_fetch(tool, responses):
-            with patch.object(tool, "_fetch_ecb_rate", return_value=None):
-                r = tool.execute(mode="policy_divergence", banks="fed,ecb")
+        with self._mock_fred_fetch(tool, responses), patch.object(tool, "_fetch_ecb_rate", return_value=None):
+            r = tool.execute(mode="policy_divergence", banks="fed,ecb")
 
         assert r.success
         assert "SYNCHRONIZED" in r.data["synchronized"]
@@ -808,11 +766,11 @@ class TestModePolicyDivergence(unittest.TestCase):
             "ECBASSETSW": exp,
             "DFF": [{"date": "2026-01-01", "value": "5.33"}],
         }
-        with self._mock_fred_fetch(tool, responses):
-            with patch.object(
-                tool, "_fetch_ecb_rate", return_value={"current_rate": 3.75}
-            ):
-                r = tool.execute(mode="policy_divergence", banks="fed,ecb")
+        with (
+            self._mock_fred_fetch(tool, responses),
+            patch.object(tool, "_fetch_ecb_rate", return_value={"current_rate": 3.75}),
+        ):
+            r = tool.execute(mode="policy_divergence", banks="fed,ecb")
 
         assert r.success
         assert "ecb" in r.data["rates"]
@@ -834,7 +792,6 @@ class TestModePolicyDivergence(unittest.TestCase):
 
 
 class TestModeRateMonitor(unittest.TestCase):
-
     def _mock_fred_fetch(self, tool, responses: dict[str, list[dict]]):
         def fake_fetch(series_id, start, end, cache_key, ttl):
             return responses.get(series_id, [])
@@ -843,7 +800,7 @@ class TestModeRateMonitor(unittest.TestCase):
 
     def test_basic_rate_monitor(self):
         tool = _make_tool()
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         responses = {
             "DFF": [
                 {
@@ -861,8 +818,9 @@ class TestModeRateMonitor(unittest.TestCase):
                 {"date": now.strftime("%Y-%m-%d"), "value": "5.50"},
             ]
         }
-        with self._mock_fred_fetch(tool, responses):
-            with patch.object(
+        with (
+            self._mock_fred_fetch(tool, responses),
+            patch.object(
                 tool,
                 "_fetch_ecb_rate",
                 return_value={
@@ -873,8 +831,9 @@ class TestModeRateMonitor(unittest.TestCase):
                     "last_change_bps": -25,
                     "days_since_change": 180,
                 },
-            ):
-                r = tool.execute(mode="rate_monitor", banks="fed,ecb")
+            ),
+        ):
+            r = tool.execute(mode="rate_monitor", banks="fed,ecb")
 
         assert r.success
         assert len(r.data["rates"]) == 2
@@ -885,7 +844,7 @@ class TestModeRateMonitor(unittest.TestCase):
 
     def test_recent_change_flag(self):
         tool = _make_tool()
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         responses = {
             "DFF": [
                 {
@@ -911,9 +870,8 @@ class TestModeRateMonitor(unittest.TestCase):
 
     def test_ecb_rate_fetch_failure(self):
         tool = _make_tool()
-        with self._mock_fred_fetch(tool, {}):
-            with patch.object(tool, "_fetch_ecb_rate", return_value=None):
-                r = tool.execute(mode="rate_monitor", banks="ecb")
+        with self._mock_fred_fetch(tool, {}), patch.object(tool, "_fetch_ecb_rate", return_value=None):
+            r = tool.execute(mode="rate_monitor", banks="ecb")
         assert len(r.data["errors"]) > 0
 
 
@@ -923,7 +881,6 @@ class TestModeRateMonitor(unittest.TestCase):
 
 
 class TestEcbRateFetch(unittest.TestCase):
-
     def test_ecb_rate_success(self):
         tool = _make_tool()
         ecb_data = _ecb_json_response(
@@ -938,9 +895,7 @@ class TestEcbRateFetch(unittest.TestCase):
         resp_mock.raise_for_status = MagicMock()
 
         with patch("agent.tools.central_bank_balance.httpx.Client") as mock_client:
-            mock_client.return_value.__enter__ = MagicMock(
-                return_value=mock_client.return_value
-            )
+            mock_client.return_value.__enter__ = MagicMock(return_value=mock_client.return_value)
             mock_client.return_value.__exit__ = MagicMock(return_value=False)
             mock_client.return_value.get.return_value = resp_mock
 
@@ -953,9 +908,7 @@ class TestEcbRateFetch(unittest.TestCase):
     def test_ecb_rate_http_error(self):
         tool = _make_tool()
         with patch("agent.tools.central_bank_balance.httpx.Client") as mock_client:
-            mock_client.return_value.__enter__ = MagicMock(
-                return_value=mock_client.return_value
-            )
+            mock_client.return_value.__enter__ = MagicMock(return_value=mock_client.return_value)
             mock_client.return_value.__exit__ = MagicMock(return_value=False)
             mock_client.return_value.get.side_effect = httpx.HTTPStatusError(
                 "500", request=MagicMock(), response=MagicMock(status_code=500)
@@ -978,7 +931,6 @@ class TestEcbRateFetch(unittest.TestCase):
 
 
 class TestCBRegistry(unittest.TestCase):
-
     def test_all_cbs_have_required_fields(self):
         required = {
             "name",
@@ -1001,9 +953,7 @@ class TestCBRegistry(unittest.TestCase):
     def test_frequency_is_valid(self):
         valid_freqs = {"weekly", "monthly", "daily"}
         for code, cb in CB_REGISTRY.items():
-            assert (
-                cb["frequency"] in valid_freqs
-            ), f"CB '{code}' has invalid frequency '{cb['frequency']}'"
+            assert cb["frequency"] in valid_freqs, f"CB '{code}' has invalid frequency '{cb['frequency']}'"
 
     def test_core_cbs_present(self):
         for code in ("fed", "ecb", "boj"):
@@ -1020,7 +970,6 @@ class TestCBRegistry(unittest.TestCase):
 
 
 class TestRegistration(unittest.TestCase):
-
     def test_tool_in_registry(self):
         try:
             from agent.cli import build_tool_registry
@@ -1054,7 +1003,6 @@ class TestRegistration(unittest.TestCase):
 
 
 class TestToolInterface(unittest.TestCase):
-
     def test_has_required_properties(self):
         tool = _make_tool()
         assert tool.name == "central_bank_balance"
@@ -1088,7 +1036,6 @@ class TestToolInterface(unittest.TestCase):
 
 
 class TestFetchFxRates(unittest.TestCase):
-
     def test_fetches_all_unique_fx_series(self):
         tool = _make_tool()
         fx_series = set()
@@ -1119,15 +1066,11 @@ class TestFetchFxRates(unittest.TestCase):
                 return []
             return [{"date": "2026-01-01", "value": "1.5"}]
 
-        with patch.object(
-            tool, "_fetch_fred_observations", side_effect=intermittent_fetch
-        ):
+        with patch.object(tool, "_fetch_fred_observations", side_effect=intermittent_fetch):
             rates = tool._fetch_fx_rates()
 
         assert len(rates) > 0  # At least some succeeded
-        assert len(rates) < len(
-            [cb for cb in CB_REGISTRY.values() if cb.get("fx_series")]
-        )
+        assert len(rates) < len([cb for cb in CB_REGISTRY.values() if cb.get("fx_series")])
 
 
 # ---------------------------------------------------------------------------
@@ -1136,7 +1079,6 @@ class TestFetchFxRates(unittest.TestCase):
 
 
 class TestFetchPolicyRate(unittest.TestCase):
-
     def test_fed_rate(self):
         tool = _make_tool()
 
@@ -1214,8 +1156,16 @@ class TestL2PersistenceBalanceSheets:
         tool._store = store
 
         data = {
-            "banks": [{"code": "fed", "native_trillions": 7.5, "usd_trillions": 7.5,
-                        "wow_pct": 0.1, "mom_pct": -0.5, "yoy_pct": 2.0}],
+            "banks": [
+                {
+                    "code": "fed",
+                    "native_trillions": 7.5,
+                    "usd_trillions": 7.5,
+                    "wow_pct": 0.1,
+                    "mom_pct": -0.5,
+                    "yoy_pct": 2.0,
+                }
+            ],
             "errors": [],
         }
         tool._persist_entities(data, "balance_sheets", ["fed"])
@@ -1233,8 +1183,16 @@ class TestL2PersistenceBalanceSheets:
         tool._store = store
 
         data = {
-            "banks": [{"code": "boj", "native_trillions": 5.0, "usd_trillions": 4.0,
-                        "wow_pct": None, "mom_pct": 1.0, "yoy_pct": 5.0}],
+            "banks": [
+                {
+                    "code": "boj",
+                    "native_trillions": 5.0,
+                    "usd_trillions": 4.0,
+                    "wow_pct": None,
+                    "mom_pct": 1.0,
+                    "yoy_pct": 5.0,
+                }
+            ],
             "errors": [],
         }
         tool._persist_entities(data, "balance_sheets", ["boj"])
@@ -1249,15 +1207,20 @@ class TestL2PersistenceBalanceSheets:
         tool._store = store
 
         data = {
-            "banks": [{"code": "snb", "native_trillions": 0.8, "usd_trillions": 0.9,
-                        "wow_pct": None, "mom_pct": 0.0, "yoy_pct": -1.0}],
+            "banks": [
+                {
+                    "code": "snb",
+                    "native_trillions": 0.8,
+                    "usd_trillions": 0.9,
+                    "wow_pct": None,
+                    "mom_pct": 0.0,
+                    "yoy_pct": -1.0,
+                }
+            ],
             "errors": [],
         }
         tool._persist_entities(data, "balance_sheets", ["snb"])
-        country_regs = [
-            c for c in store.register_entity.call_args_list
-            if c.kwargs.get("entity_type") == "country"
-        ]
+        country_regs = [c for c in store.register_entity.call_args_list if c.kwargs.get("entity_type") == "country"]
         assert len(country_regs) == 1
         assert country_regs[0].kwargs["canonical_name"] == "CH"
 
@@ -1267,9 +1230,16 @@ class TestL2PersistenceBalanceSheets:
         tool._store = store
 
         data = {
-            "banks": [{"code": "unknown_bank", "native_trillions": 1.0,
-                        "usd_trillions": 1.0, "wow_pct": None, "mom_pct": None,
-                        "yoy_pct": None}],
+            "banks": [
+                {
+                    "code": "unknown_bank",
+                    "native_trillions": 1.0,
+                    "usd_trillions": 1.0,
+                    "wow_pct": None,
+                    "mom_pct": None,
+                    "yoy_pct": None,
+                }
+            ],
             "errors": [],
         }
         counts = tool._persist_entities(data, "balance_sheets", [])
@@ -1291,8 +1261,16 @@ class TestL2PersistenceBalanceSheets:
         tool._store = store
 
         data = {
-            "banks": [{"code": "fed", "native_trillions": 7.5, "usd_trillions": 7.5,
-                        "wow_pct": 0.1, "mom_pct": -0.5, "yoy_pct": 2.0}],
+            "banks": [
+                {
+                    "code": "fed",
+                    "native_trillions": 7.5,
+                    "usd_trillions": 7.5,
+                    "wow_pct": 0.1,
+                    "mom_pct": -0.5,
+                    "yoy_pct": 2.0,
+                }
+            ],
             "errors": [],
         }
         tool._persist_entities(data, "balance_sheets", ["fed"])
@@ -1315,8 +1293,7 @@ class TestL2PersistencePolicyDivergence:
 
         data = {
             "assessments": [
-                {"code": "fed", "growth_3m_ann": 5.0, "growth_12m": 3.0,
-                 "stance": "expanding"},
+                {"code": "fed", "growth_3m_ann": 5.0, "growth_12m": 3.0, "stance": "expanding"},
             ],
             "rates": {"fed": 5.33},
             "divergences": [],
@@ -1341,8 +1318,7 @@ class TestL2PersistencePolicyDivergence:
         }
         tool._persist_entities(data, "policy_divergence", ["ecb"])
         rate_calls = [
-            c for c in store.store_entity_observation.call_args_list
-            if c.kwargs["observation_type"] == "cb_policy_rate"
+            c for c in store.store_entity_observation.call_args_list if c.kwargs["observation_type"] == "cb_policy_rate"
         ]
         assert len(rate_calls) == 1
         assert rate_calls[0].kwargs["value"]["current_rate"] == 3.75
@@ -1358,9 +1334,15 @@ class TestL2PersistenceRateMonitor:
 
         data = {
             "rates": [
-                {"code": "fed", "current_rate": 5.33, "rate_date": "2026-04-10",
-                 "last_change_date": "2025-12-18", "last_change_direction": "cut",
-                 "last_change_bps": -25.0, "days_since_change": 114},
+                {
+                    "code": "fed",
+                    "current_rate": 5.33,
+                    "rate_date": "2026-04-10",
+                    "last_change_date": "2025-12-18",
+                    "last_change_direction": "cut",
+                    "last_change_bps": -25.0,
+                    "days_since_change": 114,
+                },
             ],
             "errors": [],
         }
@@ -1375,9 +1357,15 @@ class TestL2PersistenceRateMonitor:
 
         data = {
             "rates": [
-                {"code": "fed", "current_rate": 5.33, "rate_date": "2026-04-10",
-                 "last_change_date": None, "last_change_direction": None,
-                 "last_change_bps": None, "days_since_change": None},
+                {
+                    "code": "fed",
+                    "current_rate": 5.33,
+                    "rate_date": "2026-04-10",
+                    "last_change_date": None,
+                    "last_change_direction": None,
+                    "last_change_bps": None,
+                    "days_since_change": None,
+                },
             ],
             "errors": [],
         }
@@ -1395,9 +1383,15 @@ class TestL2PersistenceRateMonitor:
 
         data = {
             "rates": [
-                {"code": "ecb", "current_rate": 3.75, "rate_date": "2026-04-10",
-                 "last_change_date": None, "last_change_direction": None,
-                 "last_change_bps": None, "days_since_change": None},
+                {
+                    "code": "ecb",
+                    "current_rate": 3.75,
+                    "rate_date": "2026-04-10",
+                    "last_change_date": None,
+                    "last_change_direction": None,
+                    "last_change_bps": None,
+                    "days_since_change": None,
+                },
             ],
             "errors": [],
         }
@@ -1413,12 +1407,24 @@ class TestL2PersistenceRateMonitor:
 
         data = {
             "rates": [
-                {"code": "fed", "current_rate": 5.33, "rate_date": "2026-04-10",
-                 "last_change_date": None, "last_change_direction": None,
-                 "last_change_bps": None, "days_since_change": None},
-                {"code": "ecb", "current_rate": 3.75, "rate_date": "2026-04-10",
-                 "last_change_date": None, "last_change_direction": None,
-                 "last_change_bps": None, "days_since_change": None},
+                {
+                    "code": "fed",
+                    "current_rate": 5.33,
+                    "rate_date": "2026-04-10",
+                    "last_change_date": None,
+                    "last_change_direction": None,
+                    "last_change_bps": None,
+                    "days_since_change": None,
+                },
+                {
+                    "code": "ecb",
+                    "current_rate": 3.75,
+                    "rate_date": "2026-04-10",
+                    "last_change_date": None,
+                    "last_change_direction": None,
+                    "last_change_bps": None,
+                    "days_since_change": None,
+                },
             ],
             "errors": [],
         }
@@ -1432,9 +1438,15 @@ class TestL2PersistenceRateMonitor:
 
         data = {
             "rates": [
-                {"code": "fed", "current_rate": 5.33, "rate_date": "2026-04-10",
-                 "last_change_date": "2025-12-18", "last_change_direction": "cut",
-                 "last_change_bps": -25.0, "days_since_change": 114},
+                {
+                    "code": "fed",
+                    "current_rate": 5.33,
+                    "rate_date": "2026-04-10",
+                    "last_change_date": "2025-12-18",
+                    "last_change_direction": "cut",
+                    "last_change_bps": -25.0,
+                    "days_since_change": 114,
+                },
             ],
             "errors": [],
         }
@@ -1462,12 +1474,14 @@ class TestL2PersistenceEdgeCases:
         tool = _make_tool(cache=MagicMock())
         tool._store = store
         import agent.tools.central_bank_balance as cb_mod
+
         original = cb_mod._entity_id_from_key
         try:
             cb_mod._entity_id_from_key = None  # type: ignore
             counts = tool._persist_entities(
                 {"banks": [{"code": "fed"}], "errors": []},
-                "balance_sheets", ["fed"],
+                "balance_sheets",
+                ["fed"],
             )
             assert counts == {"balance_sheet_obs": 0, "rate_obs": 0}
         finally:
@@ -1480,8 +1494,16 @@ class TestL2PersistenceEdgeCases:
         tool._store = store
 
         data = {
-            "banks": [{"code": "fed", "native_trillions": 7.5, "usd_trillions": 7.5,
-                        "wow_pct": None, "mom_pct": None, "yoy_pct": None}],
+            "banks": [
+                {
+                    "code": "fed",
+                    "native_trillions": 7.5,
+                    "usd_trillions": 7.5,
+                    "wow_pct": None,
+                    "mom_pct": None,
+                    "yoy_pct": None,
+                }
+            ],
             "errors": [],
         }
         counts = tool._persist_entities(data, "balance_sheets", ["fed"])
@@ -1494,8 +1516,12 @@ class TestL2PersistenceEdgeCases:
         tool._store = store
 
         data = {
-            "gross_usd": 20e12, "rrp_usd": 0.5e12, "tga_usd": 0.8e12,
-            "net_usd": 18.7e12, "components": [], "errors": [],
+            "gross_usd": 20e12,
+            "rrp_usd": 0.5e12,
+            "tga_usd": 0.8e12,
+            "net_usd": 18.7e12,
+            "components": [],
+            "errors": [],
         }
         counts = tool._persist_entities(data, "liquidity_index", ["fed"])
         assert counts["balance_sheet_obs"] == 0
@@ -1503,18 +1529,16 @@ class TestL2PersistenceEdgeCases:
 
     def test_cb_to_country_mapping_complete(self):
         """Every CB in the registry has a country mapping."""
-        from agent.tools.central_bank_balance import CB_TO_COUNTRY, CB_REGISTRY
+        from agent.tools.central_bank_balance import CB_REGISTRY, CB_TO_COUNTRY
+
         for cb_code in CB_REGISTRY:
-            assert cb_code in CB_TO_COUNTRY, (
-                f"CB {cb_code} missing from CB_TO_COUNTRY mapping"
-            )
+            assert cb_code in CB_TO_COUNTRY, f"CB {cb_code} missing from CB_TO_COUNTRY mapping"
 
     def test_cb_to_country_values_are_iso(self):
         from agent.tools.central_bank_balance import CB_TO_COUNTRY
+
         for cb_code, country in CB_TO_COUNTRY.items():
-            assert country == country.upper(), (
-                f"CB_TO_COUNTRY[{cb_code}]={country!r} not uppercase"
-            )
+            assert country == country.upper(), f"CB_TO_COUNTRY[{cb_code}]={country!r} not uppercase"
             assert 2 <= len(country) <= 6
 
     def test_execute_calls_persist_on_success(self):
@@ -1551,24 +1575,24 @@ class TestGraphBuilderPhase27:
 
     def test_cb_balance_sheet_in_obs_types(self):
         from agent.models.gnn.graph_builder import OBSERVATION_TYPES
+
         assert "cb_balance_sheet" in OBSERVATION_TYPES
 
     def test_cb_policy_rate_in_obs_types(self):
         from agent.models.gnn.graph_builder import OBSERVATION_TYPES
+
         assert "cb_policy_rate" in OBSERVATION_TYPES
 
     def test_enrichment_dim_updated(self):
         from agent.models.gnn.graph_builder import ENRICHMENT_DIM, OBSERVATION_TYPES
+
         expected = 9 + len(OBSERVATION_TYPES)
-        assert ENRICHMENT_DIM == expected, (
-            f"ENRICHMENT_DIM={ENRICHMENT_DIM} != expected {expected}"
-        )
+        assert expected == ENRICHMENT_DIM, f"ENRICHMENT_DIM={ENRICHMENT_DIM} != expected {expected}"
 
     def test_obs_types_alphabetically_sorted(self):
         from agent.models.gnn.graph_builder import OBSERVATION_TYPES
-        assert OBSERVATION_TYPES == sorted(OBSERVATION_TYPES), (
-            "OBSERVATION_TYPES must be alphabetically sorted"
-        )
+
+        assert sorted(OBSERVATION_TYPES) == OBSERVATION_TYPES, "OBSERVATION_TYPES must be alphabetically sorted"
 
 
 if __name__ == "__main__":

@@ -18,7 +18,6 @@ Patterns:
 
 from __future__ import annotations
 
-import json
 import logging
 import time
 from typing import Any
@@ -184,11 +183,7 @@ def resolve_port_country(port_name: str | None) -> str | None:
         prefix = name[:2]
         if prefix.isalpha():
             # Strong signal: "XX YYY" format (space-separated LOCODE)
-            if (
-                name[2] == " "
-                and len(name) >= 5
-                and name[3:6].replace(" ", "").isalpha()
-            ):
+            if name[2] == " " and len(name) >= 5 and name[3:6].replace(" ", "").isalpha():
                 fips = ISO_TO_FIPS.get(prefix, prefix)
                 if len(fips) == 2 and fips.isalpha():
                     return fips
@@ -224,9 +219,7 @@ def seed_company_country_links(
 
     # US country entity (FIPS code "US")
     us_entity_id = entity_id_from_key("country", "US")
-    store.register_entity(
-        "country", "United States", us_entity_id, metadata={"fips": "US"}
-    )
+    store.register_entity("country", "United States", us_entity_id, metadata={"fips": "US"})
     store.add_entity_alias(us_entity_id, "fips_country", "US")
 
     created = 0
@@ -281,9 +274,7 @@ def seed_vessel_country_links(store: Any) -> int:
     created = 0
     for row in rows:
         vessel_eid = row["entity_id"]
-        obs_list = store.query_entity_observations(
-            vessel_eid, source_tool="ais_vessel", limit=500
-        )
+        obs_list = store.query_entity_observations(vessel_eid, source_tool="ais_vessel", limit=500)
 
         # Collect unique country FIPS codes from port names
         countries_seen: set[str] = set()
@@ -342,9 +333,7 @@ def resolve_wallet_exchange(
     """
     if not address or not address.strip():
         return None
-    wallets = (
-        exchange_wallets if exchange_wallets is not None else KNOWN_EXCHANGE_WALLETS
-    )
+    wallets = exchange_wallets if exchange_wallets is not None else KNOWN_EXCHANGE_WALLETS
     return wallets.get(address.strip())
 
 
@@ -365,24 +354,19 @@ def seed_whale_country_links(
     Returns:
         Number of new links created.
     """
-    wallets = (
-        exchange_wallets if exchange_wallets is not None else KNOWN_EXCHANGE_WALLETS
-    )
+    wallets = exchange_wallets if exchange_wallets is not None else KNOWN_EXCHANGE_WALLETS
     if not wallets:
         return 0
 
     conn = store._get_conn()
-    rows = conn.execute(
-        "SELECT DISTINCT entity_id FROM entities WHERE entity_type='wallet'"
-    ).fetchall()
+    rows = conn.execute("SELECT DISTINCT entity_id FROM entities WHERE entity_type='wallet'").fetchall()
 
     created = 0
     for row in rows:
         wallet_eid = row["entity_id"]
         # Get the btc_address alias to look up in exchange dict
         aliases = conn.execute(
-            "SELECT external_id FROM entity_aliases "
-            "WHERE entity_id=? AND source='btc_address'",
+            "SELECT external_id FROM entity_aliases WHERE entity_id=? AND source='btc_address'",
             (wallet_eid,),
         ).fetchall()
 
@@ -505,9 +489,7 @@ class CrossEntityDetector:
 
                 # Step 4: Score — simple absolute-Goldstein × time-proximity
                 time_delta_h = coocc["time_delta_seconds"] / 3600.0
-                proximity = max(
-                    0.0, 1.0 - abs(time_delta_h) / (window_seconds / 3600.0)
-                )
+                proximity = max(0.0, 1.0 - abs(time_delta_h) / (window_seconds / 3600.0))
                 score = abs(goldstein) / 10.0 * proximity
 
                 patterns.append(
@@ -693,9 +675,7 @@ class CrossEntityDetector:
                 value_btc = float(whale_value.get("value_btc", 0))
 
                 # Score: value_weight × severity × proximity
-                value_weight = (
-                    min(value_btc / value_scale, 1.0) if value_scale > 0 else 0.0
-                )
+                value_weight = min(value_btc / value_scale, 1.0) if value_scale > 0 else 0.0
                 time_delta_h = coocc["time_delta_seconds"] / 3600.0
                 window_h = window_seconds / 3600.0
                 proximity = max(0.0, 1.0 - abs(time_delta_h) / window_h)

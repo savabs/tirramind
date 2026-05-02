@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from agent.features.gnn_builder import GNNFeatureBuilder, _CONNECTED_TYPES
+from agent.features.gnn_builder import _CONNECTED_TYPES, GNNFeatureBuilder
 from agent.features.protocol import EngineeredFeature, validate_feature
 from agent.pipeline.store import PipelineStore
 
@@ -22,9 +22,7 @@ torch = pytest.importorskip("torch")
 from agent.models.gnn.trainer import (
     InjectedPattern,
     SyntheticGraphGenerator,
-    TrainerConfig,
 )
-
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -105,9 +103,7 @@ def no_train_builder(tmp_path: Path) -> GNNFeatureBuilder:
 
 
 class TestBasicOutput:
-    def test_produces_11_features(
-        self, populated_store: PipelineStore, small_builder: GNNFeatureBuilder
-    ):
+    def test_produces_11_features(self, populated_store: PipelineStore, small_builder: GNNFeatureBuilder):
         features = small_builder.build(populated_store, time.time())
         assert len(features) == 11
 
@@ -118,9 +114,7 @@ class TestBasicOutput:
         for f in features:
             assert isinstance(f, EngineeredFeature)
 
-    def test_feature_names_follow_convention(
-        self, populated_store: PipelineStore, small_builder: GNNFeatureBuilder
-    ):
+    def test_feature_names_follow_convention(self, populated_store: PipelineStore, small_builder: GNNFeatureBuilder):
         features = small_builder.build(populated_store, time.time())
         names = {f.feature_name for f in features}
         expected = set()
@@ -130,9 +124,7 @@ class TestBasicOutput:
         expected.add("gnn.cross_entity.spot")
         assert names == expected
 
-    def test_all_features_pass_validation(
-        self, populated_store: PipelineStore, small_builder: GNNFeatureBuilder
-    ):
+    def test_all_features_pass_validation(self, populated_store: PipelineStore, small_builder: GNNFeatureBuilder):
         features = small_builder.build(populated_store, time.time())
         for f in features:
             errors = validate_feature(f)
@@ -141,16 +133,12 @@ class TestBasicOutput:
     def test_builder_name(self, small_builder: GNNFeatureBuilder):
         assert small_builder.name == "GNNFeatureBuilder"
 
-    def test_all_features_have_builder_set(
-        self, populated_store: PipelineStore, small_builder: GNNFeatureBuilder
-    ):
+    def test_all_features_have_builder_set(self, populated_store: PipelineStore, small_builder: GNNFeatureBuilder):
         features = small_builder.build(populated_store, time.time())
         for f in features:
             assert f.builder == "GNNFeatureBuilder"
 
-    def test_features_have_spot_horizon(
-        self, populated_store: PipelineStore, small_builder: GNNFeatureBuilder
-    ):
+    def test_features_have_spot_horizon(self, populated_store: PipelineStore, small_builder: GNNFeatureBuilder):
         features = small_builder.build(populated_store, time.time())
         for f in features:
             assert f.horizon == "spot"
@@ -162,29 +150,21 @@ class TestBasicOutput:
 
 
 class TestEmptyStore:
-    def test_empty_store_returns_11_features(
-        self, empty_store: PipelineStore, small_builder: GNNFeatureBuilder
-    ):
+    def test_empty_store_returns_11_features(self, empty_store: PipelineStore, small_builder: GNNFeatureBuilder):
         features = small_builder.build(empty_store, time.time())
         assert len(features) == 11
 
-    def test_empty_store_all_none_values(
-        self, empty_store: PipelineStore, small_builder: GNNFeatureBuilder
-    ):
+    def test_empty_store_all_none_values(self, empty_store: PipelineStore, small_builder: GNNFeatureBuilder):
         features = small_builder.build(empty_store, time.time())
         for f in features:
             assert f.value is None
 
-    def test_empty_store_all_zero_quality(
-        self, empty_store: PipelineStore, small_builder: GNNFeatureBuilder
-    ):
+    def test_empty_store_all_zero_quality(self, empty_store: PipelineStore, small_builder: GNNFeatureBuilder):
         features = small_builder.build(empty_store, time.time())
         for f in features:
             assert f.quality == 0.0
 
-    def test_empty_store_all_have_missing_reason(
-        self, empty_store: PipelineStore, small_builder: GNNFeatureBuilder
-    ):
+    def test_empty_store_all_have_missing_reason(self, empty_store: PipelineStore, small_builder: GNNFeatureBuilder):
         features = small_builder.build(empty_store, time.time())
         for f in features:
             assert f.missing_reason is not None
@@ -204,16 +184,12 @@ class TestQuality:
         non_zero = [f for f in features if f.quality > 0]
         assert len(non_zero) > 0
 
-    def test_quality_bounded_0_to_1(
-        self, populated_store: PipelineStore, small_builder: GNNFeatureBuilder
-    ):
+    def test_quality_bounded_0_to_1(self, populated_store: PipelineStore, small_builder: GNNFeatureBuilder):
         features = small_builder.build(populated_store, time.time())
         for f in features:
             assert 0.0 <= f.quality <= 1.0
 
-    def test_no_train_reduces_quality(
-        self, populated_store: PipelineStore, no_train_builder: GNNFeatureBuilder
-    ):
+    def test_no_train_reduces_quality(self, populated_store: PipelineStore, no_train_builder: GNNFeatureBuilder):
         """Random init embeddings should have quality capped by 0.5 factor."""
         features = no_train_builder.build(populated_store, time.time())
         # Without history, quality is halved from base
@@ -227,17 +203,13 @@ class TestQuality:
 
 
 class TestAnomalyActivity:
-    def test_anomaly_value_is_finite(
-        self, populated_store: PipelineStore, small_builder: GNNFeatureBuilder
-    ):
+    def test_anomaly_value_is_finite(self, populated_store: PipelineStore, small_builder: GNNFeatureBuilder):
         features = small_builder.build(populated_store, time.time())
         for f in features:
             if f.value is not None:
                 assert math.isfinite(f.value), f"{f.feature_name} is not finite"
 
-    def test_activity_value_nonnegative_raw(
-        self, populated_store: PipelineStore, small_builder: GNNFeatureBuilder
-    ):
+    def test_activity_value_nonnegative_raw(self, populated_store: PipelineStore, small_builder: GNNFeatureBuilder):
         """Activity (embedding norms) should be non-negative before z-scoring.
         After z-score it can be negative, so just check finiteness."""
         features = small_builder.build(populated_store, time.time())
@@ -253,9 +225,7 @@ class TestAnomalyActivity:
 
 
 class TestCrossEntity:
-    def test_cross_entity_present(
-        self, populated_store: PipelineStore, small_builder: GNNFeatureBuilder
-    ):
+    def test_cross_entity_present(self, populated_store: PipelineStore, small_builder: GNNFeatureBuilder):
         features = small_builder.build(populated_store, time.time())
         cross = [f for f in features if f.feature_name == "gnn.cross_entity.spot"]
         assert len(cross) == 1
@@ -268,9 +238,7 @@ class TestCrossEntity:
         # With 4 entity types populated, should have a value
         assert cross.value is not None
 
-    def test_cross_entity_empty_store_is_none(
-        self, empty_store: PipelineStore, small_builder: GNNFeatureBuilder
-    ):
+    def test_cross_entity_empty_store_is_none(self, empty_store: PipelineStore, small_builder: GNNFeatureBuilder):
         features = small_builder.build(empty_store, time.time())
         cross = [f for f in features if f.feature_name == "gnn.cross_entity.spot"][0]
         assert cross.value is None
@@ -282,15 +250,11 @@ class TestCrossEntity:
 
 
 class TestModelPersistence:
-    def test_model_saved_after_first_build(
-        self, populated_store: PipelineStore, small_builder: GNNFeatureBuilder
-    ):
+    def test_model_saved_after_first_build(self, populated_store: PipelineStore, small_builder: GNNFeatureBuilder):
         small_builder.build(populated_store, time.time())
         assert small_builder._model_path.exists()
 
-    def test_second_build_loads_saved_model(
-        self, populated_store: PipelineStore, small_builder: GNNFeatureBuilder
-    ):
+    def test_second_build_loads_saved_model(self, populated_store: PipelineStore, small_builder: GNNFeatureBuilder):
         """Second call should load, not retrain."""
         features1 = small_builder.build(populated_store, time.time())
         assert small_builder._model_path.exists()
@@ -306,9 +270,7 @@ class TestModelPersistence:
 
 
 class TestZScore:
-    def test_first_run_halved_quality(
-        self, populated_store: PipelineStore, small_builder: GNNFeatureBuilder
-    ):
+    def test_first_run_halved_quality(self, populated_store: PipelineStore, small_builder: GNNFeatureBuilder):
         """First run has no history, so quality should be halved."""
         features = small_builder.build(populated_store, time.time())
         for f in features:
@@ -316,9 +278,7 @@ class TestZScore:
                 # First run: no history → quality *= 0.5
                 assert f.quality <= 0.55  # slightly above 0.5 tolerance
 
-    def test_zscore_with_stored_history(
-        self, populated_store: PipelineStore, small_builder: GNNFeatureBuilder
-    ):
+    def test_zscore_with_stored_history(self, populated_store: PipelineStore, small_builder: GNNFeatureBuilder):
         """After storing features and running again, z-score should work."""
         as_of = time.time()
         features = small_builder.build(populated_store, as_of)
@@ -342,21 +302,13 @@ class TestZScore:
             except Exception:
                 pass  # Store may not have features table — skip
 
-    def test_zscore_handles_nan_raw(
-        self, populated_store: PipelineStore, small_builder: GNNFeatureBuilder
-    ):
+    def test_zscore_handles_nan_raw(self, populated_store: PipelineStore, small_builder: GNNFeatureBuilder):
         """If raw value is NaN, should return 0.0 with quality 0.0."""
-        z, q = small_builder._zscore_from_history(
-            populated_store, "gnn.test.spot", float("nan"), 1.0
-        )
+        z, q = small_builder._zscore_from_history(populated_store, "gnn.test.spot", float("nan"), 1.0)
         assert z == 0.0
         assert q == 0.0
 
-    def test_zscore_handles_inf_raw(
-        self, populated_store: PipelineStore, small_builder: GNNFeatureBuilder
-    ):
-        z, q = small_builder._zscore_from_history(
-            populated_store, "gnn.test.spot", float("inf"), 1.0
-        )
+    def test_zscore_handles_inf_raw(self, populated_store: PipelineStore, small_builder: GNNFeatureBuilder):
+        z, q = small_builder._zscore_from_history(populated_store, "gnn.test.spot", float("inf"), 1.0)
         assert z == 0.0
         assert q == 0.0

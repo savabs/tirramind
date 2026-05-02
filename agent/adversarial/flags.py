@@ -38,10 +38,7 @@ class AdversarialFlag:
 
     def __post_init__(self) -> None:
         if self.flag_type not in self._VALID_TYPES:
-            raise ValueError(
-                f"Invalid flag_type {self.flag_type!r}; "
-                f"must be one of {sorted(self._VALID_TYPES)}"
-            )
+            raise ValueError(f"Invalid flag_type {self.flag_type!r}; must be one of {sorted(self._VALID_TYPES)}")
         if not 0.0 <= self.severity <= 1.0:
             raise ValueError(f"severity must be in [0, 1], got {self.severity}")
         if not 0.0 <= self.confidence <= 1.0:

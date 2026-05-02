@@ -21,36 +21,29 @@ count assertions (37 tools, 25 arms).
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 import httpx
-import pytest
 
+from agent.tools.base import ToolResult
 from agent.tools.foia_requests import (
+    VALID_MODES,
     FoiaRequestsTool,
-    _parse_date,
-    _normalize_status,
-    _normalize_muckrock,
-    _normalize_wdtk,
-    _format_request,
     _cache_key,
     _fetch_muckrock,
     _fetch_wdtk,
-    VALID_MODES,
-    _MUCKROCK_BASE,
-    _WDTK_BASE,
-    _CACHE_TTL,
-    _STATUS_MAP,
-    _MAX_LIMIT,
+    _format_request,
+    _normalize_muckrock,
+    _normalize_status,
+    _normalize_wdtk,
+    _parse_date,
 )
-from agent.tools.base import ToolResult
-
 
 # ── Timestamps ───────────────────────────────────────────────
 
-NOW = datetime(2026, 3, 31, 12, 0, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 3, 31, 12, 0, 0, tzinfo=UTC)
 YESTERDAY_S = (NOW - timedelta(days=1)).strftime("%Y-%m-%d")
 LAST_WEEK_S = (NOW - timedelta(days=7)).strftime("%Y-%m-%d")
 LAST_MONTH_S = (NOW - timedelta(days=31)).strftime("%Y-%m-%d")
@@ -113,9 +106,7 @@ def _wdtk_record(
     }
 
 
-def _paginated_response(
-    results: list[dict], *, count: int = 0, next_url: str | None = None
-) -> dict[str, Any]:
+def _paginated_response(results: list[dict], *, count: int = 0, next_url: str | None = None) -> dict[str, Any]:
     return {
         "count": count or len(results),
         "next": next_url,
@@ -150,7 +141,7 @@ class TestParseDate:
         assert dt.year == 2026
         assert dt.month == 3
         assert dt.day == 15
-        assert dt.tzinfo == timezone.utc
+        assert dt.tzinfo == UTC
 
     def test_iso_datetime(self):
         dt = _parse_date("2026-03-15T14:30:00")
@@ -671,9 +662,7 @@ class TestSearchMode:
     def test_search_both_sources(self, mock_mr, mock_wdtk):
         mock_mr.return_value = [_muckrock_record()]
         mock_wdtk.return_value = [_wdtk_record()]
-        r = self.tool.execute(
-            mode="search", query="boeing", jurisdiction="all", days_back=365
-        )
+        r = self.tool.execute(mode="search", query="boeing", jurisdiction="all", days_back=365)
         assert r.success
         assert "MuckRock" in r.output
         assert "WDTK" in r.output
@@ -682,9 +671,7 @@ class TestSearchMode:
     @patch("agent.tools.foia_requests._fetch_muckrock")
     def test_search_us_only(self, mock_mr, mock_wdtk):
         mock_mr.return_value = [_muckrock_record()]
-        r = self.tool.execute(
-            mode="search", query="test", jurisdiction="us", days_back=365
-        )
+        r = self.tool.execute(mode="search", query="test", jurisdiction="us", days_back=365)
         assert r.success
         mock_wdtk.assert_not_called()
 
@@ -692,9 +679,7 @@ class TestSearchMode:
     @patch("agent.tools.foia_requests._fetch_wdtk")
     def test_search_uk_only(self, mock_wdtk, mock_mr):
         mock_wdtk.return_value = [_wdtk_record()]
-        r = self.tool.execute(
-            mode="search", query="test", jurisdiction="uk", days_back=365
-        )
+        r = self.tool.execute(mode="search", query="test", jurisdiction="uk", days_back=365)
         assert r.success
         mock_mr.assert_not_called()
 
@@ -914,9 +899,7 @@ class TestEntityClusterMode:
         mock_mr.return_value = [
             _muckrock_record(date_submitted=YESTERDAY_S),
         ]
-        r = self.tool.execute(
-            mode="entity_cluster", query="test", jurisdiction="us", days_back=365
-        )
+        r = self.tool.execute(mode="entity_cluster", query="test", jurisdiction="us", days_back=365)
         assert r.success
         mock_wdtk.assert_not_called()
 
@@ -954,7 +937,7 @@ class TestToolMetadata:
 
     def test_valid_modes_frozen(self):
         assert isinstance(VALID_MODES, frozenset)
-        assert VALID_MODES == {"search", "agency_activity", "entity_cluster"}
+        assert {"search", "agency_activity", "entity_cluster"} == VALID_MODES
 
 
 # ═══════════════════════════════════════════════════════════
@@ -982,8 +965,8 @@ class TestIntegration:
 
     def test_arm_tools_reference_valid(self):
         """The arm's tools list should reference tools that exist in registry."""
-        from agent.learning.bandit import DEFAULT_ARMS
         from agent.cli import build_tool_registry
+        from agent.learning.bandit import DEFAULT_ARMS
 
         registry = build_tool_registry()
         tool_names = set(registry.list_names())
@@ -1055,10 +1038,7 @@ class TestGracefulDegradation:
     @patch("agent.tools.foia_requests._fetch_muckrock")
     def test_limit_respected(self, mock_mr, mock_wdtk):
         """Should not return more than `limit` records."""
-        recs = [
-            _muckrock_record(title=f"Rec {i}", date_submitted=YESTERDAY_S)
-            for i in range(20)
-        ]
+        recs = [_muckrock_record(title=f"Rec {i}", date_submitted=YESTERDAY_S) for i in range(20)]
         mock_mr.return_value = recs
         r = self.tool.execute(mode="search", query="test", limit=5, days_back=365)
         assert r.success
@@ -1097,9 +1077,7 @@ class TestL2PersistenceNoStore(unittest.TestCase):
     def test_no_store_returns_zeros(self):
         tool = FoiaRequestsTool()
         tool._store = None
-        counts = tool._persist_entities(
-            {"records": [{"title": "Some request"}]}, "search"
-        )
+        counts = tool._persist_entities({"records": [{"title": "Some request"}]}, "search")
         assert counts == {"investigation_signal_obs": 0}
 
     def test_no_entity_id_fn_returns_zeros(self):
@@ -1110,9 +1088,7 @@ class TestL2PersistenceNoStore(unittest.TestCase):
         original = foia_mod._entity_id_from_key
         try:
             foia_mod._entity_id_from_key = None
-            counts = tool._persist_entities(
-                {"records": [{"title": "Some request"}]}, "search"
-            )
+            counts = tool._persist_entities({"records": [{"title": "Some request"}]}, "search")
             assert counts == {"investigation_signal_obs": 0}
         finally:
             foia_mod._entity_id_from_key = original
@@ -1234,9 +1210,7 @@ class TestL2PersistenceEntityCluster(unittest.TestCase):
         tool = FoiaRequestsTool()
         store = _make_store_mock()
         tool._store = store
-        data = {
-            "records": [{"title": "Test Entity", "agency": "SEC", "source": "muckrock"}]
-        }
+        data = {"records": [{"title": "Test Entity", "agency": "SEC", "source": "muckrock"}]}
         tool._persist_entities(data, "entity_cluster")
         obs_call = store.store_entity_observation.call_args_list[0]
         assert obs_call.kwargs["value"]["mode"] == "entity_cluster"
@@ -1261,9 +1235,7 @@ class TestL2PersistenceExceptionHandling(unittest.TestCase):
         store = _make_store_mock()
         store.store_entity_observation.side_effect = Exception("db error")
         tool._store = store
-        counts = tool._persist_entities(
-            {"records": [{"title": "Crash Request"}]}, "search"
-        )
+        counts = tool._persist_entities({"records": [{"title": "Crash Request"}]}, "search")
         assert counts == {"investigation_signal_obs": 0}
 
 

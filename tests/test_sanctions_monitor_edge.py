@@ -13,27 +13,25 @@ cache interaction, tool metadata, output formatting, limit/bounds.
 
 from __future__ import annotations
 
-from typing import Any
+from datetime import UTC
 from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
 
+from agent.tools.base import ToolResult
 from agent.tools.sanctions_monitor import (
+    VALID_MODES,
+    VALID_SOURCES,
     SanctionsMonitorTool,
     _clean,
+    _format_record,
+    _matches_query,
+    _normalize_type,
     _parse_ofac_csv,
     _parse_ofac_programs,
     _parse_un_xml,
-    _normalize_type,
-    _matches_query,
-    _format_record,
-    VALID_MODES,
-    VALID_SOURCES,
-    VALID_ENTITY_TYPES,
 )
-from agent.tools.base import ToolResult
-
 
 # ── Mock Data ────────────────────────────────────────────────
 
@@ -180,9 +178,7 @@ def tool_cached():
     return SanctionsMonitorTool(cache=cache)
 
 
-def _mock_responses(
-    ofac_text=MOCK_OFAC_CSV, un_text=MOCK_UN_XML, ofac_status=200, un_status=200
-):
+def _mock_responses(ofac_text=MOCK_OFAC_CSV, un_text=MOCK_UN_XML, ofac_status=200, un_status=200):
     """Return a side_effect function for httpx.get that routes by URL."""
 
     def side_effect(url, **kwargs):
@@ -191,25 +187,19 @@ def _mock_responses(
             resp.status_code = ofac_status
             resp.text = ofac_text
             if ofac_status >= 400:
-                resp.raise_for_status.side_effect = httpx.HTTPStatusError(
-                    "error", request=MagicMock(), response=resp
-                )
+                resp.raise_for_status.side_effect = httpx.HTTPStatusError("error", request=MagicMock(), response=resp)
             else:
                 resp.raise_for_status.return_value = None
         elif "scsanctions.un.org" in url:
             resp.status_code = un_status
             resp.text = un_text
             if un_status >= 400:
-                resp.raise_for_status.side_effect = httpx.HTTPStatusError(
-                    "error", request=MagicMock(), response=resp
-                )
+                resp.raise_for_status.side_effect = httpx.HTTPStatusError("error", request=MagicMock(), response=resp)
             else:
                 resp.raise_for_status.return_value = None
         else:
             resp.status_code = 404
-            resp.raise_for_status.side_effect = httpx.HTTPStatusError(
-                "not found", request=MagicMock(), response=resp
-            )
+            resp.raise_for_status.side_effect = httpx.HTTPStatusError("not found", request=MagicMock(), response=resp)
         return resp
 
     return side_effect
@@ -704,11 +694,11 @@ class TestSearchMode:
 
 class TestRecentMode:
     def test_recent_finds_entries(self, tool):
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         # Fix "now" to 2026-03-22 so HASSAN (listed 2026-03-15, updated 2026-03-20)
         # falls within the 30-day window regardless of real wall-clock date.
-        fixed_now = datetime(2026, 3, 22, 12, 0, 0, tzinfo=timezone.utc)
+        fixed_now = datetime(2026, 3, 22, 12, 0, 0, tzinfo=UTC)
         with patch("agent.tools.sanctions_monitor.datetime") as mock_dt:
             mock_dt.now.return_value = fixed_now
             mock_dt.fromisoformat.side_effect = datetime.fromisoformat
@@ -762,9 +752,7 @@ class TestRecentMode:
         with patch("httpx.get", side_effect=_mock_responses()):
             result = tool.execute(mode="recent", days_back=365, source="un")
         assert result.success
-        dates = [
-            r.get("sort_date", "") for r in result.data["results"] if r.get("sort_date")
-        ]
+        dates = [r.get("sort_date", "") for r in result.data["results"] if r.get("sort_date")]
         assert dates == sorted(dates, reverse=True)
 
 
@@ -881,9 +869,7 @@ class TestErrorHandling:
         assert result.success
 
     def test_both_http_error(self, tool):
-        with patch(
-            "httpx.get", side_effect=_mock_responses(ofac_status=500, un_status=500)
-        ):
+        with patch("httpx.get", side_effect=_mock_responses(ofac_status=500, un_status=500)):
             result = tool.execute(mode="programs", source="all")
         assert not result.success
 
@@ -903,9 +889,7 @@ class TestErrorHandling:
         assert "0 records" in result.output
 
     def test_un_malformed_xml(self, tool):
-        with patch(
-            "httpx.get", side_effect=_mock_responses(un_text=MOCK_UN_XML_MALFORMED)
-        ):
+        with patch("httpx.get", side_effect=_mock_responses(un_text=MOCK_UN_XML_MALFORMED)):
             result = tool.execute(mode="programs", source="un")
         assert not result.success
 
@@ -1104,9 +1088,7 @@ class TestEdgeCases:
 
     def test_programs_empty_after_source_filter(self, tool):
         """Programs mode with a source that has no data."""
-        with patch(
-            "httpx.get", side_effect=_mock_responses(ofac_text=MOCK_OFAC_CSV_EMPTY)
-        ):
+        with patch("httpx.get", side_effect=_mock_responses(ofac_text=MOCK_OFAC_CSV_EMPTY)):
             result = tool.execute(mode="programs", source="ofac")
         assert not result.success
 

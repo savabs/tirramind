@@ -18,7 +18,7 @@ import logging
 from pathlib import Path
 
 from agent.awos.classifiers.base import Classifier
-from agent.awos.events.schema import Event, EventStatus, TriggerCategory
+from agent.awos.events.schema import Event, EventStatus
 from agent.awos.watchers.base import Watcher
 
 log = logging.getLogger(__name__)

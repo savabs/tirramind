@@ -16,22 +16,20 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import httpx
-import pytest
 
+from agent.tools.base import ToolResult
 from agent.tools.disease_surveillance import (
-    DiseaseSurveillanceTool,
-    _CDC_DATASETS,
     _CDC_AGGREGATE_ID,
+    _CDC_DATASETS,
     _ECDC_DATASETS,
     _PATHOGEN_ALIASES,
     _US_STATES,
+    DiseaseSurveillanceTool,
     _parse_who_title,
     _resolve_pathogen,
     _safe_float,
     _safe_int,
 )
-from agent.tools.base import ToolResult
-
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -654,9 +652,7 @@ class TestOutbreaksMode:
         entries = [
             _make_who_entry("Mpox - Democratic Republic of the Congo"),
             _make_who_entry("Cholera - Haiti", don_id="DON-124"),
-            _make_who_entry(
-                "Avian Influenza A(H5N1) - United States of America", don_id="DON-125"
-            ),
+            _make_who_entry("Avian Influenza A(H5N1) - United States of America", don_id="DON-125"),
         ]
         mock_resp = _mock_resp({"value": entries})
         mock_client_cls.return_value.__enter__ = lambda s: s

@@ -8,7 +8,6 @@ Reference: Kirkpatrick et al. 2017, arXiv:1612.00796.
 
 from __future__ import annotations
 
-import tempfile
 import time
 from pathlib import Path
 
@@ -18,13 +17,11 @@ import torch.nn as nn
 
 from agent.models.gnn.ewc import EWCState, compute_fisher, ewc_penalty
 from agent.models.gnn.trainer import (
-    InjectedPattern,
     SyntheticGraphGenerator,
     Trainer,
     TrainerConfig,
 )
 from agent.pipeline.store import PipelineStore
-
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -274,9 +271,7 @@ def test_save_load_roundtrip_without_ewc(
 
     loaded = Trainer.load_model(model_path, store_with_data)
 
-    assert (
-        loaded._ewc_state is None
-    ), "Pre-Phase-46 checkpoint must load with _ewc_state = None"
+    assert loaded._ewc_state is None, "Pre-Phase-46 checkpoint must load with _ewc_state = None"
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -312,9 +307,7 @@ def test_online_update_loss_non_negative(
 
     assert result["loss_new"] >= 0.0
     assert result["loss_ewc"] >= 0.0
-    assert result["loss_total"] == pytest.approx(
-        result["loss_new"] + result["loss_ewc"], abs=1e-4
-    )
+    assert result["loss_total"] == pytest.approx(result["loss_new"] + result["loss_ewc"], abs=1e-4)
 
 
 def test_online_update_updates_bookkeeping(

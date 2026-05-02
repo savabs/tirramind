@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 from agent.awos.config import AWOSConfig
 from agent.awos.policies.engine import PlannedAction
@@ -17,11 +18,11 @@ class ActionResult:
     artifacts: list[str] | None = None
 
     @classmethod
-    def success(cls, message: str = "", artifacts: list[str] | None = None) -> "ActionResult":
+    def success(cls, message: str = "", artifacts: list[str] | None = None) -> ActionResult:
         return cls(ok=True, message=message, artifacts=artifacts or [])
 
     @classmethod
-    def failure(cls, message: str) -> "ActionResult":
+    def failure(cls, message: str) -> ActionResult:
         return cls(ok=False, message=message, artifacts=[])
 
 
@@ -32,8 +33,7 @@ class Action(ABC):
         self.cfg = cfg
 
     @abstractmethod
-    def run(self, planned: PlannedAction) -> ActionResult:
-        ...
+    def run(self, planned: PlannedAction) -> ActionResult: ...
 
 
 # --- registry ------------------------------------------------------------

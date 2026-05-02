@@ -6,21 +6,20 @@ Later phases (17b–17e) will extend this file.
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import pytest
 
 from agent.pipeline.entity import entity_id_from_key
 from agent.pipeline.store import PipelineStore
-from agent.tools.insider_filings import InsiderFilingsTool
-from agent.tools.form144 import Form144Tool
-from agent.tools.whale_alert import WhaleAlertTool
-from agent.tools.gdelt import GDELTTool
 from agent.tools.ais_vessel import AISVesselTool
-from agent.tools.lobbying import LobbyingTool
+from agent.tools.form144 import Form144Tool
+from agent.tools.gdelt import GDELTTool
+from agent.tools.insider_filings import InsiderFilingsTool
 from agent.tools.interconnection_queue import InterconnectionQueueTool
+from agent.tools.lobbying import LobbyingTool
 from agent.tools.patent_filings import PatentFilingsTool
+from agent.tools.whale_alert import WhaleAlertTool
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -186,9 +185,7 @@ class TestInsiderFilingsWorksForLink:
         tool._persist_entities(txns)
 
         company_eid = entity_id_from_key("company", "0000320193")
-        links = store.query_entity_links(
-            company_eid, link_type="works_for", direction="incoming"
-        )
+        links = store.query_entity_links(company_eid, link_type="works_for", direction="incoming")
         assert len(links) == 2
         link_sources = {link["entity_id_a"] for link in links}
         assert entity_id_from_key("person", "0001111111") in link_sources
@@ -204,9 +201,7 @@ class TestInsiderFilingsWorksForLink:
         tool._persist_entities(txns)
 
         insider_eid = entity_id_from_key("person", "0001214156")
-        links = store.query_entity_links(
-            insider_eid, link_type="works_for", direction="outgoing"
-        )
+        links = store.query_entity_links(insider_eid, link_type="works_for", direction="outgoing")
         assert len(links) == 2
 
     def test_empty_role_in_metadata(self):
@@ -227,13 +222,9 @@ class TestInsiderFilingsWorksForLink:
         tool._persist_entities(txns)
 
         insider_eid = entity_id_from_key("person", "0001214156")
-        out = store.query_entity_links(
-            insider_eid, link_type="works_for", direction="outgoing"
-        )
+        out = store.query_entity_links(insider_eid, link_type="works_for", direction="outgoing")
         assert len(out) == 1
-        inc = store.query_entity_links(
-            insider_eid, link_type="works_for", direction="incoming"
-        )
+        inc = store.query_entity_links(insider_eid, link_type="works_for", direction="incoming")
         assert len(inc) == 0
 
 
@@ -319,9 +310,7 @@ class TestForm144WorksForLink:
         tool._persist_entities(filings)
 
         company_eid = entity_id_from_key("company", "0000012345")
-        links = store.query_entity_links(
-            company_eid, link_type="works_for", direction="incoming"
-        )
+        links = store.query_entity_links(company_eid, link_type="works_for", direction="incoming")
         assert len(links) == 2
 
     def test_one_insider_multiple_companies(self):
@@ -334,9 +323,7 @@ class TestForm144WorksForLink:
         tool._persist_entities(filings)
 
         insider_eid = entity_id_from_key("person", "0000099999")
-        links = store.query_entity_links(
-            insider_eid, link_type="works_for", direction="outgoing"
-        )
+        links = store.query_entity_links(insider_eid, link_type="works_for", direction="outgoing")
         assert len(links) == 2
 
     def test_empty_relationship_in_metadata(self):
@@ -370,12 +357,8 @@ class TestCrossToolEntityConsistency:
         insider_eid_if = entity_id_from_key("person", "0001214156")
         insider_eid_f144 = entity_id_from_key("person", "0000099999")
 
-        links_if = insider_store.query_entity_links(
-            insider_eid_if, link_type="works_for"
-        )
-        links_f144 = form144_store.query_entity_links(
-            insider_eid_f144, link_type="works_for"
-        )
+        links_if = insider_store.query_entity_links(insider_eid_if, link_type="works_for")
+        links_f144 = form144_store.query_entity_links(insider_eid_f144, link_type="works_for")
         assert links_if[0]["entity_id_b"] == links_f144[0]["entity_id_b"]
 
     def test_same_person_cik_same_entity_id(self):
@@ -402,12 +385,8 @@ class TestCrossToolEntityConsistency:
         shared_issuer = "0000320193"
         shared_reporter = "0001214156"
 
-        insider_tool._persist_entities(
-            [_make_txn(issuer_cik=shared_issuer, reporter_cik=shared_reporter)]
-        )
-        form144_tool._persist_entities(
-            [_make_filing(issuer_cik=shared_issuer, reporter_cik=shared_reporter)]
-        )
+        insider_tool._persist_entities([_make_txn(issuer_cik=shared_issuer, reporter_cik=shared_reporter)])
+        form144_tool._persist_entities([_make_filing(issuer_cik=shared_issuer, reporter_cik=shared_reporter)])
 
         person_eid = entity_id_from_key("person", shared_reporter)
         links = store.query_entity_links(person_eid, link_type="works_for")
@@ -501,9 +480,7 @@ class TestWhaleAlertTransactsWith:
         sender_eid = entity_id_from_key("wallet", "1SenderAddr")
         receiver_eid = entity_id_from_key("wallet", "1ReceiverAddr")
 
-        links = store.query_entity_links(
-            sender_eid, link_type="transacts_with", direction="outgoing"
-        )
+        links = store.query_entity_links(sender_eid, link_type="transacts_with", direction="outgoing")
         assert len(links) == 1
         assert links[0]["entity_id_a"] == sender_eid
         assert links[0]["entity_id_b"] == receiver_eid
@@ -575,9 +552,7 @@ class TestWhaleAlertTransactsWith:
         tool._persist_entities([tx])
 
         sender_eid = entity_id_from_key("wallet", "1SenderAddr")
-        links = store.query_entity_links(
-            sender_eid, link_type="transacts_with", direction="outgoing"
-        )
+        links = store.query_entity_links(sender_eid, link_type="transacts_with", direction="outgoing")
         assert len(links) == 0
 
     def test_dedup_same_sender_receiver_pair(self):
@@ -712,25 +687,17 @@ class TestGDELTEventInvolves:
         tool._persist_entities(
             [
                 _make_gdelt_event(actor1_country="US", actor2_country="CN"),
-                _make_gdelt_event(
-                    actor1_country="US", actor2_country="RU", event_id="E2"
-                ),
-                _make_gdelt_event(
-                    actor1_country="FR", actor2_country="DE", event_id="E3"
-                ),
+                _make_gdelt_event(actor1_country="US", actor2_country="RU", event_id="E2"),
+                _make_gdelt_event(actor1_country="FR", actor2_country="DE", event_id="E3"),
             ]
         )
 
         us_eid = entity_id_from_key("country", "US")
-        links = store.query_entity_links(
-            us_eid, link_type="event_involves", direction="outgoing"
-        )
+        links = store.query_entity_links(us_eid, link_type="event_involves", direction="outgoing")
         assert len(links) == 2
 
         fr_eid = entity_id_from_key("country", "FR")
-        links_fr = store.query_entity_links(
-            fr_eid, link_type="event_involves", direction="outgoing"
-        )
+        links_fr = store.query_entity_links(fr_eid, link_type="event_involves", direction="outgoing")
         assert len(links_fr) == 1
 
     def test_whitespace_country_stripped(self):
@@ -842,9 +809,7 @@ class TestAISVesselPortCallTo:
         vessel_eid = entity_id_from_key("vessel", "9999999")
         nl_eid = entity_id_from_key("country", "NL")
 
-        links = store.query_entity_links(
-            vessel_eid, link_type="port_call_to", direction="outgoing"
-        )
+        links = store.query_entity_links(vessel_eid, link_type="port_call_to", direction="outgoing")
         assert len(links) == 1
         assert links[0]["entity_id_b"] == nl_eid
         assert links[0]["source"] == "ais_vessel"
@@ -924,9 +889,7 @@ class TestAISVesselPortCallTo:
     def test_mmsi_only_vessel_gets_link(self):
         """Vessel with MMSI only (no IMO) still gets linked."""
         tool, store = _make_tool_with_store(AISVesselTool)
-        tool._persist_entities(
-            [_make_vessel(mmsi=123456789, imo=None, destination="HOUSTON")]
-        )
+        tool._persist_entities([_make_vessel(mmsi=123456789, imo=None, destination="HOUSTON")])
 
         vessel_eid = entity_id_from_key("vessel", "mmsi:123456789")
         links = store.query_entity_links(vessel_eid, link_type="port_call_to")
@@ -959,9 +922,7 @@ class TestLobbyingLobbiesFor:
         reg_eid = entity_id_from_key("company", reg_canon)
         client_eid = entity_id_from_key("company", client_canon)
 
-        links = store.query_entity_links(
-            reg_eid, link_type="lobbies_for", direction="outgoing"
-        )
+        links = store.query_entity_links(reg_eid, link_type="lobbies_for", direction="outgoing")
         assert len(links) == 1
         assert links[0]["entity_id_b"] == client_eid
         assert links[0]["source"] == "lobbying"
@@ -983,9 +944,7 @@ class TestLobbyingLobbiesFor:
     def test_same_registrant_and_client_no_link(self):
         """Self-lobbying (registrant == client) produces no lobbies_for link."""
         tool, store = _make_tool_with_store(LobbyingTool)
-        tool._persist_entities(
-            [_make_lobby_filing(registrant_name="Acme Corp", client_name="Acme Corp")]
-        )
+        tool._persist_entities([_make_lobby_filing(registrant_name="Acme Corp", client_name="Acme Corp")])
 
         from agent.pipeline.entity import normalize_company_name
 
@@ -1037,9 +996,7 @@ class TestLobbyingLobbiesFor:
 
         reg_canon = normalize_company_name("Akin Gump")
         reg_eid = entity_id_from_key("company", reg_canon)
-        links = store.query_entity_links(
-            reg_eid, link_type="lobbies_for", direction="outgoing"
-        )
+        links = store.query_entity_links(reg_eid, link_type="lobbies_for", direction="outgoing")
         assert len(links) == 2
 
     def test_whitespace_client_stripped(self):
@@ -1158,9 +1115,7 @@ class TestInterconnectionQueueLocatedIn:
         tool._persist_entities(records)
 
         us_eid = entity_id_from_key("country", "US")
-        links = store.query_entity_links(
-            us_eid, link_type="located_in", direction="incoming"
-        )
+        links = store.query_entity_links(us_eid, link_type="located_in", direction="incoming")
         assert len(links) == 3
         assert all(lnk["entity_id_b"] == us_eid for lnk in links)
 
@@ -1173,9 +1128,7 @@ class TestInterconnectionQueueLocatedIn:
         tool._persist_entities(records)
 
         us_eid = entity_id_from_key("country", "US")
-        links = store.query_entity_links(
-            us_eid, link_type="located_in", direction="incoming"
-        )
+        links = store.query_entity_links(us_eid, link_type="located_in", direction="incoming")
         # Deduped by entity name → one company → one link (INSERT OR IGNORE)
         assert len(links) == 1
 
@@ -1184,9 +1137,7 @@ class TestInterconnectionQueueLocatedIn:
         tool._persist_entities([{"plantName": "Ghost Plant"}])
 
         us_eid = entity_id_from_key("country", "US")
-        links = store.query_entity_links(
-            us_eid, link_type="located_in", direction="incoming"
-        )
+        links = store.query_entity_links(us_eid, link_type="located_in", direction="incoming")
         assert len(links) == 0
 
     def test_empty_entity_name_no_link(self):
@@ -1194,9 +1145,7 @@ class TestInterconnectionQueueLocatedIn:
         tool._persist_entities([_make_iq_record(entity_name="")])
 
         us_eid = entity_id_from_key("country", "US")
-        links = store.query_entity_links(
-            us_eid, link_type="located_in", direction="incoming"
-        )
+        links = store.query_entity_links(us_eid, link_type="located_in", direction="incoming")
         assert len(links) == 0
 
     def test_no_store_no_crash(self):
@@ -1260,9 +1209,7 @@ class TestPatentFilingsPatentsIn:
         tool._persist_entities(patents)
 
         us_eid = entity_id_from_key("country", "US")
-        links = store.query_entity_links(
-            us_eid, link_type="patents_in", direction="incoming"
-        )
+        links = store.query_entity_links(us_eid, link_type="patents_in", direction="incoming")
         assert len(links) == 3
         assert all(lnk["entity_id_b"] == us_eid for lnk in links)
 
@@ -1275,9 +1222,7 @@ class TestPatentFilingsPatentsIn:
         tool._persist_entities(patents)
 
         us_eid = entity_id_from_key("country", "US")
-        links = store.query_entity_links(
-            us_eid, link_type="patents_in", direction="incoming"
-        )
+        links = store.query_entity_links(us_eid, link_type="patents_in", direction="incoming")
         # Same assignee deduped → one company → one link (INSERT OR IGNORE)
         assert len(links) == 1
 
@@ -1286,9 +1231,7 @@ class TestPatentFilingsPatentsIn:
         tool._persist_entities([{"patent_number": "US001"}])
 
         us_eid = entity_id_from_key("country", "US")
-        links = store.query_entity_links(
-            us_eid, link_type="patents_in", direction="incoming"
-        )
+        links = store.query_entity_links(us_eid, link_type="patents_in", direction="incoming")
         assert len(links) == 0
 
     def test_empty_assignee_no_link(self):
@@ -1296,9 +1239,7 @@ class TestPatentFilingsPatentsIn:
         tool._persist_entities([_make_patent(assignee="")])
 
         us_eid = entity_id_from_key("country", "US")
-        links = store.query_entity_links(
-            us_eid, link_type="patents_in", direction="incoming"
-        )
+        links = store.query_entity_links(us_eid, link_type="patents_in", direction="incoming")
         assert len(links) == 0
 
     def test_list_assignee_uses_first(self):
@@ -1334,9 +1275,7 @@ class TestCrossToolEntityConsistencyExtended:
         lobby = LobbyingTool(pipeline_store=store)
         patent = PatentFilingsTool(pipeline_store=store)
 
-        lobby._persist_entities(
-            [_make_lobby_filing(registrant_name="Acme Corp", client_name="Other Inc")]
-        )
+        lobby._persist_entities([_make_lobby_filing(registrant_name="Acme Corp", client_name="Other Inc")])
         patent._persist_entities([_make_patent(assignee="Acme Corp")])
 
         from agent.pipeline.entity import normalize_company_name
@@ -1472,9 +1411,7 @@ class TestGraphBuilderEdgeIntegration:
         """Multiple link types from different tools → multiple edge types in graph."""
         store = PipelineStore(db_path=":memory:")
         InsiderFilingsTool(pipeline_store=store)._persist_entities([_make_txn()])
-        InterconnectionQueueTool(pipeline_store=store)._persist_entities(
-            [_make_iq_record()]
-        )
+        InterconnectionQueueTool(pipeline_store=store)._persist_entities([_make_iq_record()])
         PatentFilingsTool(pipeline_store=store)._persist_entities([_make_patent()])
 
         from agent.models.gnn.graph_builder import GraphBuilder
@@ -1499,10 +1436,7 @@ class TestEntityLinkEdgeCases:
         """link_entities with same entity on both sides → ValueError."""
         store = PipelineStore(db_path=":memory:")
         eid = entity_id_from_key("company", "test")
-        store.register_entity(
-            entity_type="company", canonical_name="test", entity_id=eid
-        )
-        import pytest
+        store.register_entity(entity_type="company", canonical_name="test", entity_id=eid)
 
         with pytest.raises(ValueError, match="Cannot link an entity to itself"):
             store.link_entities(
@@ -1518,9 +1452,7 @@ class TestEntityLinkEdgeCases:
         eid_a = entity_id_from_key("person", "A")
         eid_b = entity_id_from_key("company", "B")
         store.register_entity(entity_type="person", canonical_name="A", entity_id=eid_a)
-        store.register_entity(
-            entity_type="company", canonical_name="B", entity_id=eid_b
-        )
+        store.register_entity(entity_type="company", canonical_name="B", entity_id=eid_b)
 
         result1 = store.link_entities(eid_a, eid_b, "works_for", "test", 1.0)
         result2 = store.link_entities(eid_a, eid_b, "works_for", "test", 1.0)
@@ -1535,12 +1467,8 @@ class TestEntityLinkEdgeCases:
         store = PipelineStore(db_path=":memory:")
         eid_a = entity_id_from_key("company", "A")
         eid_b = entity_id_from_key("country", "US")
-        store.register_entity(
-            entity_type="company", canonical_name="A", entity_id=eid_a
-        )
-        store.register_entity(
-            entity_type="country", canonical_name="US", entity_id=eid_b
-        )
+        store.register_entity(entity_type="company", canonical_name="A", entity_id=eid_a)
+        store.register_entity(entity_type="country", canonical_name="US", entity_id=eid_b)
 
         big_meta = {f"key_{i}": f"value_{i}" for i in range(100)}
         store.link_entities(eid_a, eid_b, "located_in", "test", 1.0, metadata=big_meta)
@@ -1570,12 +1498,8 @@ class TestEntityLinkEdgeCases:
         store = PipelineStore(db_path=":memory:")
         eid_a = entity_id_from_key("company", "A")
         eid_b = entity_id_from_key("country", "US")
-        store.register_entity(
-            entity_type="company", canonical_name="A", entity_id=eid_a
-        )
-        store.register_entity(
-            entity_type="country", canonical_name="US", entity_id=eid_b
-        )
+        store.register_entity(entity_type="company", canonical_name="A", entity_id=eid_a)
+        store.register_entity(entity_type="country", canonical_name="US", entity_id=eid_b)
 
         store.link_entities(eid_a, eid_b, "located_in", "iq", 1.0)
         store.link_entities(eid_a, eid_b, "patents_in", "patent", 1.0)
@@ -1590,22 +1514,14 @@ class TestEntityLinkEdgeCases:
         store = PipelineStore(db_path=":memory:")
         eid_a = entity_id_from_key("vessel", "V1")
         eid_b = entity_id_from_key("country", "EE")
-        store.register_entity(
-            entity_type="vessel", canonical_name="V1", entity_id=eid_a
-        )
-        store.register_entity(
-            entity_type="country", canonical_name="EE", entity_id=eid_b
-        )
+        store.register_entity(entity_type="vessel", canonical_name="V1", entity_id=eid_a)
+        store.register_entity(entity_type="country", canonical_name="EE", entity_id=eid_b)
 
         store.link_entities(eid_a, eid_b, "port_call_to", "ais", 0.5)
 
-        links_all = store.query_entity_links(
-            eid_a, link_type="port_call_to", min_confidence=0.0
-        )
+        links_all = store.query_entity_links(eid_a, link_type="port_call_to", min_confidence=0.0)
         assert len(links_all) == 1
-        links_high = store.query_entity_links(
-            eid_a, link_type="port_call_to", min_confidence=0.9
-        )
+        links_high = store.query_entity_links(eid_a, link_type="port_call_to", min_confidence=0.9)
         assert len(links_high) == 0
 
     def test_query_direction_outgoing_only(self):
@@ -1613,12 +1529,8 @@ class TestEntityLinkEdgeCases:
         store = PipelineStore(db_path=":memory:")
         eid_a = entity_id_from_key("company", "A")
         eid_b = entity_id_from_key("country", "US")
-        store.register_entity(
-            entity_type="company", canonical_name="A", entity_id=eid_a
-        )
-        store.register_entity(
-            entity_type="country", canonical_name="US", entity_id=eid_b
-        )
+        store.register_entity(entity_type="company", canonical_name="A", entity_id=eid_a)
+        store.register_entity(entity_type="country", canonical_name="US", entity_id=eid_b)
         store.link_entities(eid_a, eid_b, "located_in", "test", 1.0)
 
         assert len(store.query_entity_links(eid_a, direction="outgoing")) == 1

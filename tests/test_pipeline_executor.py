@@ -12,7 +12,6 @@ from agent.pipeline.executor import DAGExecutor, DagRun, NodeResult
 from agent.pipeline.store import PipelineStore
 from agent.tools.base import Tool, ToolRegistry, ToolResult
 
-
 # ── Mock tools ─────────────────────────────────────────────────
 
 
@@ -442,6 +441,7 @@ class TestDataclasses:
 class TestUpstreamDataFlow:
     def test_function_receives_upstream(self, registry, store):
         """A function operator can access output from upstream tool nodes."""
+
         def combine(params, upstream):
             return {"sources": list(upstream.keys()), "count": len(upstream)}
 

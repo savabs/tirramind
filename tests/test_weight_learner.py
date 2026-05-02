@@ -112,9 +112,7 @@ class TestNoiseImmunity:
         # No weight should dominate excessively
         assert max(w) < 0.50, f"Weight too concentrated on noise: {w}"
         # Mean test sharpe should be near zero (no signal)
-        assert (
-            abs(result["mean_test_sharpe"]) < 2.0
-        ), f"Sharpe too high on noise: {result['mean_test_sharpe']}"
+        assert abs(result["mean_test_sharpe"]) < 2.0, f"Sharpe too high on noise: {result['mean_test_sharpe']}"
 
 
 # ── Proof 3: simplex constraint ──────────────────────────────
@@ -200,10 +198,7 @@ class TestWalkForwardIntegrity:
             prev_test_end = folds[i - 1][1]
             # Current train_end = previous test_end (non-overlapping expanding)
             curr_train_end = folds[i][0]
-            assert (
-                curr_train_end
-                >= prev_test_end - cfg.walk_forward_step + cfg.test_periods
-            )
+            assert curr_train_end >= prev_test_end - cfg.walk_forward_step + cfg.test_periods
 
     def test_train_never_includes_test(self) -> None:
         """Training window ends strictly before test window starts."""
@@ -250,9 +245,7 @@ class TestConvergence:
         learner = SurpriseWeightLearner(cfg)
         result = learner.fit(S, R)
         # At least one fold should converge early
-        assert any(
-            e < 1000 for e in result["epochs_per_fold"]
-        ), f"No fold converged early: {result['epochs_per_fold']}"
+        assert any(e < 1000 for e in result["epochs_per_fold"]), f"No fold converged early: {result['epochs_per_fold']}"
 
 
 # ── Error handling ───────────────────────────────────────────
@@ -269,18 +262,14 @@ class TestErrors:
     def test_wrong_shape_matrix(self) -> None:
         S = np.random.randn(100, 3).astype(np.float32)
         R = np.random.randn(100).astype(np.float32)
-        learner = SurpriseWeightLearner(
-            WeightLearnerConfig(min_train_periods=50, test_periods=25)
-        )
+        learner = SurpriseWeightLearner(WeightLearnerConfig(min_train_periods=50, test_periods=25))
         with pytest.raises(ValueError, match="must be.*T, 5"):
             learner.fit(S, R)
 
     def test_mismatched_lengths(self) -> None:
         S = np.random.randn(100, 5).astype(np.float32)
         R = np.random.randn(80).astype(np.float32)
-        learner = SurpriseWeightLearner(
-            WeightLearnerConfig(min_train_periods=50, test_periods=25)
-        )
+        learner = SurpriseWeightLearner(WeightLearnerConfig(min_train_periods=50, test_periods=25))
         with pytest.raises(ValueError, match="matching"):
             learner.fit(S, R)
 
@@ -288,9 +277,7 @@ class TestErrors:
         S = np.random.randn(200, 5).astype(np.float32)
         S[50, 2] = np.nan
         R = np.random.randn(200).astype(np.float32)
-        learner = SurpriseWeightLearner(
-            WeightLearnerConfig(min_train_periods=100, test_periods=50)
-        )
+        learner = SurpriseWeightLearner(WeightLearnerConfig(min_train_periods=100, test_periods=50))
         with pytest.raises(ValueError, match="NaN"):
             learner.fit(S, R)
 
@@ -298,9 +285,7 @@ class TestErrors:
         S = np.random.randn(200, 5).astype(np.float32)
         R = np.random.randn(200).astype(np.float32)
         R[100] = np.nan
-        learner = SurpriseWeightLearner(
-            WeightLearnerConfig(min_train_periods=100, test_periods=50)
-        )
+        learner = SurpriseWeightLearner(WeightLearnerConfig(min_train_periods=100, test_periods=50))
         with pytest.raises(ValueError, match="NaN"):
             learner.fit(S, R)
 

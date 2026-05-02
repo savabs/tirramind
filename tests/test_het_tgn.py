@@ -9,15 +9,12 @@ Covers:
 from __future__ import annotations
 
 import io
-import math
 
-import pytest
 import torch
 from torch_geometric.data import HeteroData
 
-from agent.models.gnn.graph_builder import ENTITY_TYPES, IDMap, OBSERVATION_TYPES
+from agent.models.gnn.graph_builder import OBSERVATION_TYPES, IDMap
 from agent.models.gnn.het_tgn import HeteroMemory, HetTGN
-
 
 # ─── Helpers ──────────────────────────────────────────────────
 
@@ -171,9 +168,7 @@ class TestHeteroMemoryGetUpdate:
     def test_empty_update(self):
         mem = HeteroMemory(num_nodes=5, memory_dim=8, message_dim=8, time_dim=4)
         old = mem.memory.clone()
-        mem.update_memory(
-            torch.tensor([], dtype=torch.long), torch.zeros(0, 8), torch.tensor([])
-        )
+        mem.update_memory(torch.tensor([], dtype=torch.long), torch.zeros(0, 8), torch.tensor([]))
         assert torch.allclose(mem.memory, old)
 
 

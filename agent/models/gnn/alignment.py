@@ -69,9 +69,7 @@ _DEFAULT_WEIGHT = 1.0  # returned for entity types with no alignment history
 # attribute them proportionally to each entity type that has a feature in
 # the observation vector.
 # "cross" represents the cross-entity aggregation feature (index 16).
-_GNN_ENTITY_TYPES: frozenset[str] = frozenset(
-    {"person", "company", "wallet", "country", "vessel", "cross"}
-)
+_GNN_ENTITY_TYPES: frozenset[str] = frozenset({"person", "company", "wallet", "country", "vessel", "cross"})
 
 # World-model variable names that are driven by GNN features (continuous states).
 # These are the Kalman-produced belief variables (vs DAG categorical variables).
@@ -196,11 +194,7 @@ def store_entity_alignment(
             log.debug("Failed to store alignment signal for '%s': %s", var_name, exc)
 
     # ── 2. Aggregate Kalman state deltas → per-entity-type signals ──────────
-    kalman_deltas = [
-        v
-        for k, v in variable_deltas.items()
-        if any(k.startswith(pfx) for pfx in _KALMAN_STATE_PREFIXES)
-    ]
+    kalman_deltas = [v for k, v in variable_deltas.items() if any(k.startswith(pfx) for pfx in _KALMAN_STATE_PREFIXES)]
     if kalman_deltas:
         mean_kalman_delta = sum(kalman_deltas) / len(kalman_deltas)
         for entity_type in _GNN_ENTITY_TYPES:
@@ -290,8 +284,7 @@ def load_alignment_weights(
             weights[entity_type] = _DEFAULT_WEIGHT
 
     log.debug(
-        "Loaded alignment weights for %d/%d entity types "
-        "(lookback=%.0fd, min=%.3f, max=%.3f).",
+        "Loaded alignment weights for %d/%d entity types (lookback=%.0fd, min=%.3f, max=%.3f).",
         n_found,
         len(entity_types),
         lookback_days,

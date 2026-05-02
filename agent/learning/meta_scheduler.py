@@ -153,8 +153,7 @@ class MetaScheduler:
             raise ValueError(f"Unknown component: {component}")
         if arm not in self._alpha[component]:
             raise ValueError(
-                f"Unknown arm {arm} for component {component}. "
-                f"Valid arms: {self._components[component].arms}"
+                f"Unknown arm {arm} for component {component}. Valid arms: {self._components[component].arms}"
             )
 
         reward = max(0.0, min(1.0, reward))
@@ -164,8 +163,7 @@ class MetaScheduler:
         self._total_reward[component][arm] += reward
 
         log.debug(
-            "MetaScheduler record(%s, arm=%d, reward=%.3f): "
-            "α=%.1f, β=%.1f, pulls=%d",
+            "MetaScheduler record(%s, arm=%d, reward=%.3f): α=%.1f, β=%.1f, pulls=%d",
             component,
             arm,
             reward,
@@ -228,21 +226,11 @@ class MetaScheduler:
                 }
                 for name, cfg in self._components.items()
             },
-            "alpha": {
-                comp: {str(arm): v for arm, v in arms.items()}
-                for comp, arms in self._alpha.items()
-            },
-            "beta": {
-                comp: {str(arm): v for arm, v in arms.items()}
-                for comp, arms in self._beta.items()
-            },
-            "pulls": {
-                comp: {str(arm): v for arm, v in arms.items()}
-                for comp, arms in self._pulls.items()
-            },
+            "alpha": {comp: {str(arm): v for arm, v in arms.items()} for comp, arms in self._alpha.items()},
+            "beta": {comp: {str(arm): v for arm, v in arms.items()} for comp, arms in self._beta.items()},
+            "pulls": {comp: {str(arm): v for arm, v in arms.items()} for comp, arms in self._pulls.items()},
             "total_reward": {
-                comp: {str(arm): v for arm, v in arms.items()}
-                for comp, arms in self._total_reward.items()
+                comp: {str(arm): v for arm, v in arms.items()} for comp, arms in self._total_reward.items()
             },
         }
 
@@ -254,17 +242,13 @@ class MetaScheduler:
             for arm in self._components[comp_name].arms:
                 arm_key = str(arm)
                 if arm_key in data["alpha"].get(comp_name, {}):
-                    self._alpha[comp_name][arm] = float(
-                        data["alpha"][comp_name][arm_key]
-                    )
+                    self._alpha[comp_name][arm] = float(data["alpha"][comp_name][arm_key])
                 if arm_key in data["beta"].get(comp_name, {}):
                     self._beta[comp_name][arm] = float(data["beta"][comp_name][arm_key])
                 if arm_key in data.get("pulls", {}).get(comp_name, {}):
                     self._pulls[comp_name][arm] = int(data["pulls"][comp_name][arm_key])
                 if arm_key in data.get("total_reward", {}).get(comp_name, {}):
-                    self._total_reward[comp_name][arm] = float(
-                        data["total_reward"][comp_name][arm_key]
-                    )
+                    self._total_reward[comp_name][arm] = float(data["total_reward"][comp_name][arm_key])
 
     @classmethod
     def from_dict(cls, data: dict[str, Any], **kwargs: Any) -> MetaScheduler:
@@ -305,9 +289,7 @@ def compute_refit_reward(
     """
     if component == "cpd_fit":
         # Reward = sigmoid(ΔBIC), positive BIC improvement → reward > 0.5
-        delta = after_metrics.get("total_bic", 0.0) - before_metrics.get(
-            "total_bic", 0.0
-        )
+        delta = after_metrics.get("total_bic", 0.0) - before_metrics.get("total_bic", 0.0)
         return _sigmoid(delta)
 
     elif component == "structure_refine":
@@ -317,16 +299,12 @@ def compute_refit_reward(
 
     elif component == "gnn_epochs":
         # Reward = sigmoid(-Δval_loss), loss decrease → positive reward
-        delta_loss = after_metrics.get("val_loss", 0.0) - before_metrics.get(
-            "val_loss", 0.0
-        )
+        delta_loss = after_metrics.get("val_loss", 0.0) - before_metrics.get("val_loss", 0.0)
         return _sigmoid(-delta_loss)
 
     elif component == "history_window":
         # Same as cpd_fit: reward from held-out BIC improvement
-        delta = after_metrics.get("held_out_bic", 0.0) - before_metrics.get(
-            "held_out_bic", 0.0
-        )
+        delta = after_metrics.get("held_out_bic", 0.0) - before_metrics.get("held_out_bic", 0.0)
         return _sigmoid(delta)
 
     else:

@@ -92,9 +92,7 @@ def build_registry_from_evidence(evidence: list[Evidence]) -> SignalRegistry:
             )
             registry.register(meta)
         except (ValueError, TypeError):
-            log.warning(
-                "Skipping unregisterable signal %s", ev.signal_id, exc_info=True
-            )
+            log.warning("Skipping unregisterable signal %s", ev.signal_id, exc_info=True)
 
     log.debug("Built registry with %d signals from evidence.", len(registry))
     return registry
@@ -119,9 +117,7 @@ def _load_convergence_thresholds(threshold_dir: Path) -> dict[str, float]:
         return {}
 
     # Map BO param names → ConvergenceDetectorConfig field names (they match)
-    return {
-        k: v for k, v in best.items() if k in ("z_threshold", "p_threshold", "fdr_q")
-    }
+    return {k: v for k, v in best.items() if k in ("z_threshold", "p_threshold", "fdr_q")}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -159,11 +155,7 @@ def run_convergence_detection(params: dict, upstream: dict) -> dict:
         config_kwargs: dict[str, Any] = {"lookback_days": lookback_days}
         threshold_dir = params.get("threshold_dir")
         default_dir = Path(db_path).parent / "threshold_bo"
-        _dir = (
-            Path(threshold_dir)
-            if threshold_dir
-            else (default_dir if default_dir.exists() else None)
-        )
+        _dir = Path(threshold_dir) if threshold_dir else (default_dir if default_dir.exists() else None)
         if _dir is not None:
             config_kwargs.update(_load_convergence_thresholds(_dir))
 
@@ -178,9 +170,7 @@ def run_convergence_detection(params: dict, upstream: dict) -> dict:
         for r in results:
             fp = r.clique.fingerprint()
             persist_count = history.get(fp, 0)
-            signals.append(
-                from_detection_result(r, persistence_count=persist_count, as_of=as_of)
-            )
+            signals.append(from_detection_result(r, persistence_count=persist_count, as_of=as_of))
 
         # Emit signals to the pipeline store
         emitted = emit_signals(signals, store)

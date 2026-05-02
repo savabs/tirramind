@@ -215,19 +215,10 @@ def _translate_dml(sql: str) -> tuple[str, str | None]:
             conflict_clause = ", ".join(conflict_cols)
             update_cols = [c for c in columns if c not in conflict_cols]
             if update_cols:
-                set_clause = ", ".join(
-                    f"{c} = EXCLUDED.{c}" for c in update_cols
-                )
-                sql = (
-                    sql.rstrip()
-                    + f" ON CONFLICT ({conflict_clause})"
-                    f" DO UPDATE SET {set_clause}"
-                )
+                set_clause = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)
+                sql = sql.rstrip() + f" ON CONFLICT ({conflict_clause}) DO UPDATE SET {set_clause}"
             else:
-                sql = (
-                    sql.rstrip()
-                    + f" ON CONFLICT ({conflict_clause}) DO NOTHING"
-                )
+                sql = sql.rstrip() + f" ON CONFLICT ({conflict_clause}) DO NOTHING"
 
         if table in _AUTO_INCREMENT_TABLES:
             pk_col = _PK_COLUMNS.get(table, "id")
@@ -247,10 +238,7 @@ def _translate_dml(sql: str) -> tuple[str, str | None]:
             conflict_cols = _IGNORE_CONFLICT_TARGETS.get(table)
             if conflict_cols:
                 conflict_clause = ", ".join(conflict_cols)
-                sql = (
-                    sql.rstrip()
-                    + f" ON CONFLICT ({conflict_clause}) DO NOTHING"
-                )
+                sql = sql.rstrip() + f" ON CONFLICT ({conflict_clause}) DO NOTHING"
             else:
                 sql = sql.rstrip() + " ON CONFLICT DO NOTHING"
 
@@ -319,9 +307,7 @@ class _PostgresConnectionAdapter:
         translated, pk_col = _translate_dml(sql)
 
         if pk_col:
-            translated = (
-                translated.rstrip().rstrip(";") + f" RETURNING {pk_col}"
-            )
+            translated = translated.rstrip().rstrip(";") + f" RETURNING {pk_col}"
 
         cursor = self._conn.cursor(cursor_factory=RealDictCursor)
         cursor.execute(translated, params)
@@ -381,8 +367,7 @@ class PostgresBackend(StorageBackend):
                 import psycopg2
             except ImportError as exc:
                 raise ImportError(
-                    "psycopg2 is required for PostgresBackend. "
-                    "Install it with: pip install psycopg2-binary"
+                    "psycopg2 is required for PostgresBackend. Install it with: pip install psycopg2-binary"
                 ) from exc
 
             self._conn = psycopg2.connect(self._dsn)
@@ -392,12 +377,8 @@ class PostgresBackend(StorageBackend):
                 with self._conn.cursor() as cur:
                     # Identifier is validated to be a simple name below.
                     if not re.fullmatch(r"[a-zA-Z_]\w*", self._schema):
-                        raise ValueError(
-                            f"Invalid schema name: {self._schema!r}"
-                        )
-                    cur.execute(
-                        f"CREATE SCHEMA IF NOT EXISTS {self._schema}"
-                    )
+                        raise ValueError(f"Invalid schema name: {self._schema!r}")
+                    cur.execute(f"CREATE SCHEMA IF NOT EXISTS {self._schema}")
                     cur.execute(f"SET search_path TO {self._schema}")
                 self._conn.commit()
 

@@ -57,8 +57,7 @@ class StalenessWatcher(Watcher):
                         category=TriggerCategory.STALENESS,
                         confidence=0.7,
                         payload={"stale_tasks": stale},
-                        rationale=f"{len(stale)} active tasks older than "
-                        f"{self.stale_task_days} days",
+                        rationale=f"{len(stale)} active tasks older than {self.stale_task_days} days",
                     )
                 )
 
@@ -72,9 +71,7 @@ class StalenessWatcher(Watcher):
                         category=TriggerCategory.STALENESS,
                         confidence=0.5,
                         payload={"checkpoint_count": len(cps)},
-                        rationale=(
-                            f"{len(cps)} checkpoints — consider rotation"
-                        ),
+                        rationale=(f"{len(cps)} checkpoints — consider rotation"),
                     )
                 )
 

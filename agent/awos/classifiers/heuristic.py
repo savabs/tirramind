@@ -12,8 +12,8 @@ It is also the fallback used when the LLM classifier is unavailable
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
 
 from agent.awos.classifiers.base import Classification
 from agent.awos.events.schema import TriggerCategory
@@ -92,9 +92,7 @@ class HeuristicClassifier:
         self.ceiling = float(confidence_ceiling)
 
     # ------------------------------------------------------------------
-    def classify(
-        self, text: str, context: dict | None = None
-    ) -> Classification:
+    def classify(self, text: str, context: dict | None = None) -> Classification:
         if not text or _SELF_MARKER in text:
             return Classification(
                 category=TriggerCategory.ROUTINE,

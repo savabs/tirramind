@@ -11,17 +11,12 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from agent.models.initial_graph import ALL_NODES, build_initial_graph
-from agent.models.propagator import BeliefPropagator
-from agent.models.state_filter import ContinuousStateFilter, RegimeConfig
+from agent.models.initial_graph import ALL_NODES
 from agent.models.world_model import WorldModel
 from agent.pipeline.dags.world_model_update import (
     _apply_prior_decay,
     _build_world_model,
-    _STATE_DIM,
-    _OBS_DIM,
 )
-
 
 # ── Helpers ────────────────────────────────────────────────────
 
@@ -37,7 +32,6 @@ def _make_world_model() -> WorldModel:
 
 
 class TestApplyPriorDecayNoop:
-
     def test_decay_one_does_not_change_P(self):
         """decay=1.0 (stable regime) → Kalman P unchanged."""
         wm = _make_world_model()
@@ -73,7 +67,6 @@ class TestApplyPriorDecayNoop:
 
 
 class TestApplyPriorDecayActive:
-
     def test_decay_0_8_inflates_kalman_P(self):
         """decay=0.8 → P scaled by 1/0.8 = 1.25."""
         wm = _make_world_model()
@@ -119,8 +112,7 @@ class TestApplyPriorDecayActive:
 
         # After blending toward uniform, deviation must be strictly smaller
         assert dev_after < dev_before or np.isclose(dev_before, 0.0), (
-            f"CPD deviation did not decrease for '{spec.name}': "
-            f"before={dev_before:.4f} after={dev_after:.4f}"
+            f"CPD deviation did not decrease for '{spec.name}': before={dev_before:.4f} after={dev_after:.4f}"
         )
 
     def test_decay_cpd_columns_sum_to_one(self):

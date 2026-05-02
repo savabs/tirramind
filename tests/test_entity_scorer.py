@@ -12,15 +12,13 @@ Covers:
 from __future__ import annotations
 
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-import pytest
 import torch
 
 from agent.fusion.entity_scorer import EntityAnomalyScorer, ScorerConfig
 from agent.fusion.surprise import EntitySurprise
-from agent.models.gnn.graph_builder import IDMap, OBSERVATION_TYPES
-
+from agent.models.gnn.graph_builder import OBSERVATION_TYPES, IDMap
 
 # ── Mock Factory ──────────────────────────────────────────────
 
@@ -91,15 +89,10 @@ def _make_mock_model(num_nodes: int = 5, hidden_dim: int = 16, memory_dim: int =
 
 
 def _make_entities(*entity_ids: str, etype: str = "company") -> list[dict]:
-    return [
-        {"entity_id": eid, "entity_type": etype, "canonical_name": f"Name_{eid}"}
-        for eid in entity_ids
-    ]
+    return [{"entity_id": eid, "entity_type": etype, "canonical_name": f"Name_{eid}"} for eid in entity_ids]
 
 
-def _make_observations(
-    *entity_ids: str, obs_type: str = "price_movement"
-) -> list[dict]:
+def _make_observations(*entity_ids: str, obs_type: str = "price_movement") -> list[dict]:
     now = time.time()
     return [
         {
@@ -300,9 +293,7 @@ class TestFullPipeline:
         entities = _make_entities("c0", "c1")
         observations = _make_observations("c0", "c1")
         links = [{"entity_id_a": "c0", "entity_id_b": "c1", "link_type": "related"}]
-        store = _make_mock_store(
-            entities=entities, observations=observations, links=links
-        )
+        store = _make_mock_store(entities=entities, observations=observations, links=links)
         model = _make_mock_model()
 
         id_map = IDMap()
@@ -337,9 +328,7 @@ class TestFullPipeline:
         entities = _make_entities("c0", "c1")
         observations = _make_observations("c0", "c1")
         links = [{"entity_id_a": "c0", "entity_id_b": "c1", "link_type": "related"}]
-        store = _make_mock_store(
-            entities=entities, observations=observations, links=links
-        )
+        store = _make_mock_store(entities=entities, observations=observations, links=links)
         model = _make_mock_model()
 
         id_map = IDMap()

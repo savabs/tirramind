@@ -7,7 +7,13 @@ from agent.pipeline.storage_backend import (
 )
 from agent.pipeline.store import PipelineStore
 
-__all__ = ["PipelineStore", "PipelineScheduler", "StorageBackend", "SQLiteBackend", "PostgresBackend"]
+__all__ = [
+    "PipelineStore",
+    "PipelineScheduler",
+    "StorageBackend",
+    "SQLiteBackend",
+    "PostgresBackend",
+]
 
 
 def __getattr__(name: str):

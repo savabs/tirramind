@@ -87,13 +87,7 @@ def compute_reward(
     dead_end_component = weights.dead_end_penalty if evaluation.dead_end else 0.0
 
     # Combine
-    raw_reward = (
-        eval_component
-        + sharpe_component
-        + facts_component
-        + novelty_component
-        - dead_end_component
-    )
+    raw_reward = eval_component + sharpe_component + facts_component + novelty_component - dead_end_component
 
     # Clamp to [0, 1]
     reward = max(0.0, min(1.0, raw_reward))

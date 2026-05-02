@@ -170,9 +170,7 @@ class Orchestrator:
                 task.result = result.output
                 # Store successful results as facts in semantic memory
                 # Mark facts from untrusted tools as tainted
-                is_tainted = (
-                    getattr(result, "trust_level", "tool_trusted") == "tool_untrusted"
-                )
+                is_tainted = getattr(result, "trust_level", "tool_trusted") == "tool_untrusted"
                 self._semantic.store(
                     Fact(
                         key=f"result:{task.id}:{self._step}",
@@ -211,9 +209,7 @@ class Orchestrator:
                     f"Step {self._step} ({task.tool}): {result.output[:500]}"
                 )
             else:
-                self._working.add_user(
-                    f"Step {self._step} ({task.tool}): {result.output[:500]}"
-                )
+                self._working.add_user(f"Step {self._step} ({task.tool}): {result.output[:500]}")
 
         # Phase 4: Synthesize final output
         all_done = plan.next_pending() is None
@@ -323,9 +319,7 @@ class Orchestrator:
         """Ask the LLM to synthesize a final report from all collected results."""
         results_text = []
         for task in self._collect_completed(plan):
-            results_text.append(
-                f"[{task.id}] {task.description}:\n{task.result[:500]}\n"
-            )
+            results_text.append(f"[{task.id}] {task.description}:\n{task.result[:500]}\n")
 
         prompt = (
             f"Original goal: {goal}\n\n"
@@ -364,5 +358,5 @@ class Orchestrator:
         tasks_dir = Path("tasks/active")
         tasks_dir.mkdir(parents=True, exist_ok=True)
         task_path = tasks_dir / f"{slug}.md"
-        content = f"# Task: {slug}\n\n" f"Status: {status}\n" f"Goal: {goal}\n"
+        content = f"# Task: {slug}\n\nStatus: {status}\nGoal: {goal}\n"
         task_path.write_text(content)

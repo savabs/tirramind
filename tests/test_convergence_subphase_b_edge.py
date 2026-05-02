@@ -11,8 +11,6 @@ Covers the hardest corners from the spec:
 
 from __future__ import annotations
 
-import math
-
 import numpy as np
 import pytest
 
@@ -24,15 +22,12 @@ from agent.convergence.alignment import (
     is_stale,
 )
 from agent.convergence.atomic_signals import (
-    AtomicSignalResult,
     RollingStats,
     SignalStream,
-    compute_anomaly,
     normalize_direction,
 )
 from agent.convergence.evidence import Evidence
 from agent.convergence.taxonomy import SignalMeta
-
 
 # ── Helpers ────────────────────────────────────────────────────
 
@@ -435,9 +430,7 @@ class TestAlignmentIntoAtomicSignal:
 
     def test_aligned_series_fed_to_signal_stream(self):
         """align_to_grid output → Evidence reconstruction → SignalStream."""
-        raw_evs = [
-            _ev(value=float(i), timestamp=T0 + i * DAY, ttl=3 * DAY) for i in range(30)
-        ]
+        raw_evs = [_ev(value=float(i), timestamp=T0 + i * DAY, ttl=3 * DAY) for i in range(30)]
         ts, vals = align_to_grid(raw_evs, TimeGrid.DAILY, T0, T0 + 29 * DAY)
 
         # Create reconstructed evidence from aligned data

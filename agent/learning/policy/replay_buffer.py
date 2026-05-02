@@ -73,9 +73,7 @@ class ReplayBuffer:
             If batch_size > current buffer size.
         """
         if batch_size > self._size:
-            raise ValueError(
-                f"Cannot sample {batch_size} from buffer of size {self._size}"
-            )
+            raise ValueError(f"Cannot sample {batch_size} from buffer of size {self._size}")
 
         idx = np.random.randint(0, self._size, size=batch_size)
 

@@ -54,9 +54,7 @@ class Dispatcher:
             action = build_action(pa.type, self.cfg)
             if action is None:
                 failed += 1
-                results.append(
-                    (pa.type, ActionResult.failure(f"unknown action type: {pa.type}"))
-                )
+                results.append((pa.type, ActionResult.failure(f"unknown action type: {pa.type}")))
                 continue
             try:
                 res = action.run(pa)
@@ -69,9 +67,7 @@ class Dispatcher:
             else:
                 failed += 1
 
-        final_status = (
-            EventStatus.PROCESSED if failed == 0 else EventStatus.ERRORED
-        )
+        final_status = EventStatus.PROCESSED if failed == 0 else EventStatus.ERRORED
         self.bus.mark(event.id, final_status)
         return DispatchReport(event.id, len(planned), executed, failed, results)
 

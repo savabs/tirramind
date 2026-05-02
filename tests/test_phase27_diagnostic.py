@@ -10,9 +10,6 @@ Validates end-to-end that:
 from __future__ import annotations
 
 import time
-from unittest.mock import MagicMock
-
-import pytest
 
 from agent.models.gnn.graph_builder import (
     BASE_FEAT_DIM,
@@ -24,7 +21,6 @@ from agent.pipeline.entity import entity_id_from_key
 from agent.pipeline.store import PipelineStore
 from agent.tools.central_bank_balance import CB_TO_COUNTRY
 from agent.tools.instrument_universe import INSTRUMENTS, _persist_instrument_links
-
 
 # ── Helpers ────────────────────────────────────────────────────
 
@@ -104,8 +100,7 @@ class TestFXCountryConnectivity:
         country_names = {e["canonical_name"] for e in entities}
 
         # FX pairs alone touch: US EU JP GB CH AU CA NZ MX BR IN CN ZA
-        fx_countries = {"US", "EU", "JP", "GB", "CH", "AU", "CA", "NZ",
-                        "MX", "BR", "IN", "CN", "ZA"}
+        fx_countries = {"US", "EU", "JP", "GB", "CH", "AU", "CA", "NZ", "MX", "BR", "IN", "CN", "ZA"}
         assert fx_countries.issubset(country_names)
 
 
@@ -133,8 +128,14 @@ class TestCBCountryObservationFlow:
 
         data = {
             "banks": [
-                {"code": "fed", "native_trillions": 7.5, "usd_trillions": 7.5,
-                 "wow_pct": 0.1, "mom_pct": -0.5, "yoy_pct": 2.0},
+                {
+                    "code": "fed",
+                    "native_trillions": 7.5,
+                    "usd_trillions": 7.5,
+                    "wow_pct": 0.1,
+                    "mom_pct": -0.5,
+                    "yoy_pct": 2.0,
+                },
             ],
             "errors": [],
         }
@@ -166,9 +167,15 @@ class TestCBCountryObservationFlow:
 
         data = {
             "rates": [
-                {"code": "boj", "current_rate": -0.10, "rate_date": "2026-04-10",
-                 "last_change_date": None, "last_change_direction": None,
-                 "last_change_bps": None, "days_since_change": None},
+                {
+                    "code": "boj",
+                    "current_rate": -0.10,
+                    "rate_date": "2026-04-10",
+                    "last_change_date": None,
+                    "last_change_direction": None,
+                    "last_change_bps": None,
+                    "days_since_change": None,
+                },
             ],
             "errors": [],
         }
@@ -225,7 +232,7 @@ class TestGraphBuilderMonetaryObs:
 
     def test_enrichment_dim_formula(self):
         """ENRICHMENT_DIM = 9 (base features) + len(OBSERVATION_TYPES)."""
-        assert ENRICHMENT_DIM == 9 + len(OBSERVATION_TYPES)
+        assert 9 + len(OBSERVATION_TYPES) == ENRICHMENT_DIM
 
     def test_new_obs_types_registered(self):
         assert "cb_balance_sheet" in OBSERVATION_TYPES
@@ -253,8 +260,14 @@ class TestPhase27ConnectivitySummary:
 
         data = {
             "banks": [
-                {"code": "fed", "native_trillions": 7.5, "usd_trillions": 7.5,
-                 "wow_pct": 0.1, "mom_pct": -0.5, "yoy_pct": 2.0},
+                {
+                    "code": "fed",
+                    "native_trillions": 7.5,
+                    "usd_trillions": 7.5,
+                    "wow_pct": 0.1,
+                    "mom_pct": -0.5,
+                    "yoy_pct": 2.0,
+                },
             ],
             "errors": [],
         }

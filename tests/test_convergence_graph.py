@@ -12,12 +12,10 @@ from __future__ import annotations
 import math
 
 import networkx as nx
-import pytest
 
 from agent.convergence.coincidence import CoincidenceResult
 from agent.convergence.graph import (
     ConvergenceClique,
-    _MAX_CLIQUES,
     build_coincidence_graph,
     detect_convergence_cliques,
     score_clique,
@@ -197,7 +195,7 @@ class TestBuildCoincidenceGraph:
         cats = {f"s{i}": "positioning" for i in range(500)}
         scores = {}
         for i in range(499):
-            scores[(f"s{i}", f"s{i+1}")] = _cr(p_value=0.001)
+            scores[(f"s{i}", f"s{i + 1}")] = _cr(p_value=0.001)
         G = build_coincidence_graph(scores, cats)
         assert G.number_of_nodes() == 500
         assert G.number_of_edges() == 499
@@ -209,7 +207,6 @@ class TestBuildCoincidenceGraph:
 
 
 class TestDetectConvergenceCliques:
-
     # ── Positive cases ─────────────────────────────────────────
 
     def test_triangle_across_3_categories(self):
@@ -402,9 +399,7 @@ class TestDetectConvergenceCliques:
                 scores[(a, b)] = _cr(p_value=0.001, score=2.0)
         G = build_coincidence_graph(scores, cats)
         # With max_cliques=1, enumeration stops after first raw clique
-        cliques = detect_convergence_cliques(
-            G, min_size=3, min_categories=2, max_cliques=1
-        )
+        cliques = detect_convergence_cliques(G, min_size=3, min_categories=2, max_cliques=1)
         # Can't guarantee exact count because the first raw clique
         # may or may not pass filters, but should not blow up.
         assert isinstance(cliques, list)
@@ -523,9 +518,7 @@ class TestScoreClique:
         c = ConvergenceClique(
             signals=[f"s{i}" for i in range(10)],
             categories=["a", "b", "c", "d", "e"],
-            edges=[
-                (f"s{i}", f"s{j}", 100.0) for i in range(10) for j in range(i + 1, 10)
-            ],
+            edges=[(f"s{i}", f"s{j}", 100.0) for i in range(10) for j in range(i + 1, 10)],
             score=0.0,
         )
         result = score_clique(c)
@@ -669,10 +662,10 @@ class TestIntegration:
         scores = {}
         # Chain graph + some cross-links → moderate density
         for i in range(99):
-            scores[(f"s{i}", f"s{i+1}")] = _cr(p_value=0.001, score=2.0)
+            scores[(f"s{i}", f"s{i + 1}")] = _cr(p_value=0.001, score=2.0)
         # Add some triangles
         for i in range(0, 98, 3):
-            scores[(f"s{i}", f"s{i+2}")] = _cr(p_value=0.001, score=1.5)
+            scores[(f"s{i}", f"s{i + 2}")] = _cr(p_value=0.001, score=1.5)
 
         G = build_coincidence_graph(scores, cats)
         cliques = detect_convergence_cliques(G, min_size=3, min_categories=2)

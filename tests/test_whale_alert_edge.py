@@ -24,16 +24,15 @@ No paid API paths — everything $0 with no key.
 import sys
 import unittest
 from unittest.mock import MagicMock, patch
-from typing import Any
 
 sys.path.insert(0, "/home/becmachlean/2024/projects/tirramind_v1")
 
 from agent.tools.whale_alert import WhaleAlertTool
 
-
 # ──────────────────────────────────────────────────────────────────
 # Mock helpers
 # ──────────────────────────────────────────────────────────────────
+
 
 def _make_mempool_response(txs=None):
     if txs is None:
@@ -80,6 +79,7 @@ def _make_block_response(txs=None, height=900000, time_=1700000000):
 
 class MockClient:
     """Context-manager mock for httpx.Client."""
+
     def __init__(self, get_fn=None, **kwargs):
         self._get_fn = get_fn
 
@@ -115,8 +115,8 @@ def _make_mock_client(get_fn=None):
 # Tests
 # ──────────────────────────────────────────────────────────────────
 
-class TestWhaleAlertEdgeCases(unittest.TestCase):
 
+class TestWhaleAlertEdgeCases(unittest.TestCase):
     # ── Mode validation ──────────────────────────────────────────
 
     def test_invalid_mode(self):
@@ -184,6 +184,7 @@ class TestWhaleAlertEdgeCases(unittest.TestCase):
             resp.json.return_value = {"txs": []}
             resp.raise_for_status = MagicMock()
             return resp
+
         mock_cls.return_value = MockClient(get_fn=get_fn)
         tool = WhaleAlertTool()
         r = tool.execute(mode="mempool", min_btc=0.0)
@@ -199,6 +200,7 @@ class TestWhaleAlertEdgeCases(unittest.TestCase):
             resp.json.return_value = {}
             resp.raise_for_status = MagicMock()
             return resp
+
         mock_cls.return_value = MockClient(get_fn=get_fn)
         tool = WhaleAlertTool()
         r = tool.execute(mode="mempool", min_btc=0.0)
@@ -209,12 +211,15 @@ class TestWhaleAlertEdgeCases(unittest.TestCase):
     def test_mempool_tx_missing_fields(self, mock_cls):
         def get_fn(url, **kw):
             resp = MagicMock()
-            resp.json.return_value = {"txs": [
-                {},
-                {"out": [{"value": 100000000}]},
-            ]}
+            resp.json.return_value = {
+                "txs": [
+                    {},
+                    {"out": [{"value": 100000000}]},
+                ]
+            }
             resp.raise_for_status = MagicMock()
             return resp
+
         mock_cls.return_value = MockClient(get_fn=get_fn)
         tool = WhaleAlertTool()
         r = tool.execute(mode="mempool", min_btc=0.0)
@@ -228,6 +233,7 @@ class TestWhaleAlertEdgeCases(unittest.TestCase):
             resp = MagicMock()
             resp.raise_for_status.side_effect = Exception("503")
             return resp
+
         mock_cls.return_value = MockClient(get_fn=get_fn)
         tool = WhaleAlertTool()
         r = tool.execute(mode="mempool")
@@ -272,6 +278,7 @@ class TestWhaleAlertEdgeCases(unittest.TestCase):
             elif "rawblock" in url:
                 resp.json.return_value = {"hash": "0000abc", "height": 1, "time": 0, "tx": []}
             return resp
+
         mock_cls.return_value = MockClient(get_fn=get_fn)
         tool = WhaleAlertTool()
         r = tool.execute(mode="confirmed", min_btc=0.0)
@@ -288,6 +295,7 @@ class TestWhaleAlertEdgeCases(unittest.TestCase):
             if "latestblock" in url:
                 resp.json.return_value = {}  # no hash
             return resp
+
         mock_cls.return_value = MockClient(get_fn=get_fn)
         tool = WhaleAlertTool()
         r = tool.execute(mode="confirmed")
@@ -302,6 +310,7 @@ class TestWhaleAlertEdgeCases(unittest.TestCase):
             resp = MagicMock()
             resp.raise_for_status.side_effect = Exception("500")
             return resp
+
         mock_cls.return_value = MockClient(get_fn=get_fn)
         tool = WhaleAlertTool()
         r = tool.execute(mode="confirmed")
@@ -317,6 +326,7 @@ class TestWhaleAlertEdgeCases(unittest.TestCase):
             elif "rawblock" in url:
                 resp.raise_for_status.side_effect = Exception("404")
             return resp
+
         mock_cls.return_value = MockClient(get_fn=get_fn)
         tool = WhaleAlertTool()
         r = tool.execute(mode="confirmed")
@@ -328,15 +338,21 @@ class TestWhaleAlertEdgeCases(unittest.TestCase):
     def test_limit_truncation(self, mock_cls):
         many_txs = []
         for i in range(50):
-            many_txs.append({
-                "hash": f"tx_{i}", "time": 1700000000 + i,
-                "inputs": [], "out": [{"addr": f"a{i}", "value": 1100000000}],
-            })
+            many_txs.append(
+                {
+                    "hash": f"tx_{i}",
+                    "time": 1700000000 + i,
+                    "inputs": [],
+                    "out": [{"addr": f"a{i}", "value": 1100000000}],
+                }
+            )
+
         def get_fn(url, **kw):
             resp = MagicMock()
             resp.json.return_value = {"txs": many_txs}
             resp.raise_for_status = MagicMock()
             return resp
+
         mock_cls.return_value = MockClient(get_fn=get_fn)
         tool = WhaleAlertTool()
         r = tool.execute(mode="mempool", min_btc=0.0, limit=5)
@@ -376,6 +392,7 @@ class TestWhaleAlertEdgeCases(unittest.TestCase):
             resp.json.return_value = {"txs": []}
             resp.raise_for_status = MagicMock()
             return resp
+
         mock_cls.return_value = MockClient(get_fn=get_fn)
         tool = WhaleAlertTool()
         r = tool.execute(mode="mempool", min_btc=0.0)
@@ -406,14 +423,18 @@ class TestWhaleAlertEdgeCases(unittest.TestCase):
     @patch("agent.tools.whale_alert.httpx.Client")
     def test_very_large_btc(self, mock_cls):
         big_tx = {
-            "hash": "bigtx", "time": 1700000000, "inputs": [],
+            "hash": "bigtx",
+            "time": 1700000000,
+            "inputs": [],
             "out": [{"addr": "bigaddr", "value": 100000_00000000}],
         }
+
         def get_fn(url, **kw):
             resp = MagicMock()
             resp.json.return_value = {"txs": [big_tx]}
             resp.raise_for_status = MagicMock()
             return resp
+
         mock_cls.return_value = MockClient(get_fn=get_fn)
         tool = WhaleAlertTool()
         r = tool.execute(mode="mempool", min_btc=0.0)
@@ -424,14 +445,18 @@ class TestWhaleAlertEdgeCases(unittest.TestCase):
     @patch("agent.tools.whale_alert.httpx.Client")
     def test_one_satoshi(self, mock_cls):
         tiny_tx = {
-            "hash": "tinytx", "time": 1700000000, "inputs": [],
+            "hash": "tinytx",
+            "time": 1700000000,
+            "inputs": [],
             "out": [{"addr": "tinyaddr", "value": 1}],
         }
+
         def get_fn(url, **kw):
             resp = MagicMock()
             resp.json.return_value = {"txs": [tiny_tx]}
             resp.raise_for_status = MagicMock()
             return resp
+
         mock_cls.return_value = MockClient(get_fn=get_fn)
         tool = WhaleAlertTool()
         r = tool.execute(mode="mempool", min_btc=0.0)
@@ -442,18 +467,22 @@ class TestWhaleAlertEdgeCases(unittest.TestCase):
     @patch("agent.tools.whale_alert.httpx.Client")
     def test_multi_output_sum(self, mock_cls):
         tx = {
-            "hash": "multi", "time": 1700000000, "inputs": [],
+            "hash": "multi",
+            "time": 1700000000,
+            "inputs": [],
             "out": [
-                {"addr": "a1", "value": 1000000000},   # 10 BTC
-                {"addr": "a2", "value": 2000000000},   # 20 BTC
-                {"addr": "a3", "value": 500000000},    # 5 BTC
+                {"addr": "a1", "value": 1000000000},  # 10 BTC
+                {"addr": "a2", "value": 2000000000},  # 20 BTC
+                {"addr": "a3", "value": 500000000},  # 5 BTC
             ],
         }
+
         def get_fn(url, **kw):
             resp = MagicMock()
             resp.json.return_value = {"txs": [tx]}
             resp.raise_for_status = MagicMock()
             return resp
+
         mock_cls.return_value = MockClient(get_fn=get_fn)
         tool = WhaleAlertTool()
         r = tool.execute(mode="mempool", min_btc=0.0)
@@ -464,17 +493,21 @@ class TestWhaleAlertEdgeCases(unittest.TestCase):
     @patch("agent.tools.whale_alert.httpx.Client")
     def test_no_addr_excluded(self, mock_cls):
         tx = {
-            "hash": "noaddr", "time": 1700000000, "inputs": [],
+            "hash": "noaddr",
+            "time": 1700000000,
+            "inputs": [],
             "out": [
-                {"value": 1000000000},                 # no addr
+                {"value": 1000000000},  # no addr
                 {"addr": "real", "value": 500000000},
             ],
         }
+
         def get_fn(url, **kw):
             resp = MagicMock()
             resp.json.return_value = {"txs": [tx]}
             resp.raise_for_status = MagicMock()
             return resp
+
         mock_cls.return_value = MockClient(get_fn=get_fn)
         tool = WhaleAlertTool()
         r = tool.execute(mode="mempool", min_btc=0.0)
@@ -504,11 +537,13 @@ class TestWhaleAlertEdgeCases(unittest.TestCase):
 
     def test_bandit_arm_exists(self):
         from agent.learning.bandit import DEFAULT_ARMS
+
         arm_names = [a.name for a in DEFAULT_ARMS]
         self.assertIn("crypto_whale_flows", arm_names)
 
     def test_bandit_arm_tools(self):
         from agent.learning.bandit import DEFAULT_ARMS
+
         arm = next(a for a in DEFAULT_ARMS if a.name == "crypto_whale_flows")
         self.assertIn("whale_alert", arm.tools)
 
@@ -516,6 +551,7 @@ class TestWhaleAlertEdgeCases(unittest.TestCase):
 
     def test_no_whale_alert_key_in_config(self):
         from agent.config.settings import AgentConfig
+
         cfg = AgentConfig.from_env()
         self.assertFalse(hasattr(cfg, "whale_alert_key"))
 

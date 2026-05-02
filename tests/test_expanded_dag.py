@@ -14,13 +14,10 @@ import numpy as np
 import pytest
 
 from agent.features.protocol import EngineeredFeature
-from agent.models.belief import BeliefState
+from agent.models.graph import WorldModelGraph
 from agent.models.initial_graph import (
-    ALL_EDGES,
-    ALL_NODES,
     build_initial_graph,
 )
-from agent.models.graph import WorldModelGraph
 from agent.models.propagator import BeliefPropagator
 from agent.pipeline.dags.world_model_update import (
     _FEATURE_TO_OBS_INDEX,
@@ -30,7 +27,6 @@ from agent.pipeline.dags.world_model_update import (
     run_world_model_update,
 )
 from agent.pipeline.store import PipelineStore
-
 
 # ── helpers ────────────────────────────────────────────────────
 
@@ -84,9 +80,7 @@ class TestExpandedDAGStructure:
             parents = set(graph.get_parents(f"obs.{t}_anomaly"))
             assert parents == {"regime.stress"}
 
-    def test_person_company_wallet_activity_parent(
-        self, graph: WorldModelGraph
-    ) -> None:
+    def test_person_company_wallet_activity_parent(self, graph: WorldModelGraph) -> None:
         for t in ("person", "company", "wallet"):
             parents = set(graph.get_parents(f"obs.{t}_activity"))
             assert parents == {"latent.risk_appetite"}
@@ -182,9 +176,7 @@ class TestGNNEvidencePropagation:
         stress = next(b for b in beliefs if b.variable_name == "regime.stress")
         # P(extreme|high anomaly) should be higher than P(extreme) under prior
         prior_beliefs = prop.propagate_priors(as_of=time.time())
-        stress_prior = next(
-            b for b in prior_beliefs if b.variable_name == "regime.stress"
-        )
+        stress_prior = next(b for b in prior_beliefs if b.variable_name == "regime.stress")
         assert stress.probabilities["extreme"] > stress_prior.probabilities["extreme"]
 
     def test_activity_evidence_affects_risk_appetite(self) -> None:
@@ -196,19 +188,14 @@ class TestGNNEvidencePropagation:
         )
         ra = next(b for b in beliefs if b.variable_name == "latent.risk_appetite")
         prior_beliefs = prop.propagate_priors(as_of=time.time())
-        ra_prior = next(
-            b for b in prior_beliefs if b.variable_name == "latent.risk_appetite"
-        )
+        ra_prior = next(b for b in prior_beliefs if b.variable_name == "latent.risk_appetite")
         assert ra.probabilities["risk_on"] > ra_prior.probabilities["risk_on"]
 
     def test_all_anomaly_high_shifts_stress_extreme(self) -> None:
         """All anomaly nodes high → strong shift to extreme stress."""
         graph = build_initial_graph()
         prop = BeliefPropagator(graph)
-        evidence = {
-            f"obs.{t}_anomaly": "high"
-            for t in ("person", "company", "wallet", "country", "vessel")
-        }
+        evidence = {f"obs.{t}_anomaly": "high" for t in ("person", "company", "wallet", "country", "vessel")}
         beliefs = prop.propagate(evidence=evidence, as_of=time.time())
         stress = next(b for b in beliefs if b.variable_name == "regime.stress")
         assert stress.probabilities["extreme"] > 0.5

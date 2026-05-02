@@ -13,13 +13,13 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
 
 from agent.config.settings import AgentConfig
 from agent.core.orchestrator import AgentResult, Orchestrator
-from agent.learning.bandit import GoalArm, StrategyBandit, DEFAULT_ARMS
+from agent.learning.bandit import DEFAULT_ARMS, GoalArm, StrategyBandit
 from agent.learning.evaluator import Evaluation, Evaluator
 from agent.learning.goal_generator import Goal, GoalGenerator
 from agent.learning.reflection import ReflectionResult, Reflector
@@ -29,7 +29,6 @@ from agent.memory.store import (
     EpisodicMemory,
     LearningEntry,
     SemanticMemory,
-    WorkingMemory,
 )
 from agent.reasoning.llm_client import LLMClient
 from agent.tools.base import ToolRegistry
@@ -66,7 +65,7 @@ class AutonomousRunSummary:
 
     def report(self) -> str:
         lines = [
-            f"Autonomous Run Summary",
+            "Autonomous Run Summary",
             f"  Iterations: {self.iterations_completed}",
             f"  Goals attempted: {self.total_goals_attempted}",
             f"  Successes: {self.successful_goals}",
@@ -78,8 +77,7 @@ class AutonomousRunSummary:
         for it in self.iterations:
             status = "✓" if it.evaluation.success else "✗"
             lines.append(
-                f"  [{status}] #{it.iteration} arm={it.arm.name:20s} "
-                f"reward={it.reward:.3f}  {it.goal.description[:60]}"
+                f"  [{status}] #{it.iteration} arm={it.arm.name:20s} reward={it.reward:.3f}  {it.goal.description[:60]}"
             )
         if self.bandit_report:
             lines.append("")
@@ -164,8 +162,7 @@ class AutonomousRunner:
         # Suggest reward weights for this run via GP-BO (Tier 3, Change 5)
         learned_weights = self._reward_optimizer.suggest_weights()
         log.info(
-            "Using learned reward weights: eval=%.3f sharpe=%.3f "
-            "facts=%.3f novelty=%.3f dead_end=%.3f",
+            "Using learned reward weights: eval=%.3f sharpe=%.3f facts=%.3f novelty=%.3f dead_end=%.3f",
             learned_weights.eval_weight,
             learned_weights.sharpe_weight,
             learned_weights.facts_weight,

@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import logging
 from typing import Any
-from urllib.parse import quote_plus
 
 import httpx
 
@@ -48,8 +47,7 @@ class WebSearchTool(Tool):
             if not results:
                 return ToolResult(success=True, output="No results found.", data=[])
             formatted = "\n\n".join(
-                f"[{i+1}] {r['title']}\n    {r['url']}\n    {r['snippet']}"
-                for i, r in enumerate(results)
+                f"[{i + 1}] {r['title']}\n    {r['url']}\n    {r['snippet']}" for i, r in enumerate(results)
             )
             return ToolResult(success=True, output=formatted, data=results)
         except Exception as exc:
@@ -71,17 +69,21 @@ class WebSearchTool(Tool):
         # Simple parsing — extract result blocks
         # DuckDuckGo HTML results are in <a class="result__a"> tags
         import re
+
         blocks = re.findall(
             r'<a[^>]+class="result__a"[^>]*href="([^"]*)"[^>]*>(.*?)</a>.*?'
             r'<a[^>]+class="result__snippet"[^>]*>(.*?)</a>',
-            html, re.DOTALL,
+            html,
+            re.DOTALL,
         )
         for url, title, snippet in blocks[:max_results]:
             # Clean HTML tags from title and snippet
             clean = lambda s: re.sub(r"<[^>]+>", "", s).strip()
-            results.append({
-                "title": clean(title),
-                "url": url,
-                "snippet": clean(snippet),
-            })
+            results.append(
+                {
+                    "title": clean(title),
+                    "url": url,
+                    "snippet": clean(snippet),
+                }
+            )
         return results

@@ -2,14 +2,10 @@
 
 from __future__ import annotations
 
-import time
 from typing import Any
 from unittest.mock import MagicMock
 
-import pytest
-
 from agent.tools.supply_chain_monitor import SupplyChainMonitorTool
-
 
 # ── Helpers ──────────────────────────────────────────────────────
 
@@ -68,11 +64,7 @@ class TestEntityRegistration:
         tool = SupplyChainMonitorTool(cache=None, pipeline_store=store)
         data = _make_series_data()
         tool._persist_entities(data)
-        topic_calls = [
-            c
-            for c in store.register_entity.call_args_list
-            if c.kwargs.get("entity_type") == "topic"
-        ]
+        topic_calls = [c for c in store.register_entity.call_args_list if c.kwargs.get("entity_type") == "topic"]
         assert len(topic_calls) == 2
 
     def test_entity_canonical_name_is_label(self):

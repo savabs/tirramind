@@ -30,8 +30,7 @@ Rate limits: None detected. Sub-second responses.
 from __future__ import annotations
 
 import logging
-import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -293,10 +292,7 @@ class AISVesselTool(Tool):
             },
             "from_date": {
                 "type": "string",
-                "description": (
-                    "Start date for port_calls mode (YYYY-MM-DD). "
-                    "Default: yesterday."
-                ),
+                "description": ("Start date for port_calls mode (YYYY-MM-DD). Default: yesterday."),
                 "default": "",
             },
             "limit": {
@@ -334,9 +330,7 @@ class AISVesselTool(Tool):
     # HTTP helpers
     # ------------------------------------------------------------------
 
-    def _get(
-        self, url: str, params: dict | None = None, timeout: int = _TIMEOUT
-    ) -> httpx.Response:
+    def _get(self, url: str, params: dict | None = None, timeout: int = _TIMEOUT) -> httpx.Response:
         """HTTP GET with standard headers and timeout."""
         return httpx.get(
             url,
@@ -372,9 +366,7 @@ class AISVesselTool(Tool):
         """Fetch all vessel metadata, indexed by MMSI. Cached for 6hr."""
         cache_key = "ais_metadata_bulk"
         if self._cache:
-            cached = self._cache.get(
-                "ais_vessel_meta", {"key": cache_key}, ttl=_META_TTL
-            )
+            cached = self._cache.get("ais_vessel_meta", {"key": cache_key}, ttl=_META_TTL)
             if cached is not None:
                 return cached
 
@@ -399,9 +391,7 @@ class AISVesselTool(Tool):
         """Fetch metadata for a single vessel by MMSI."""
         cache_key = f"ais_meta_{mmsi}"
         if self._cache:
-            cached = self._cache.get(
-                "ais_vessel_meta_single", {"key": cache_key}, ttl=_META_TTL
-            )
+            cached = self._cache.get("ais_vessel_meta_single", {"key": cache_key}, ttl=_META_TTL)
             if cached is not None:
                 return cached
 
@@ -420,9 +410,7 @@ class AISVesselTool(Tool):
         """Fetch Finnish port call data from a given date."""
         cache_key = f"ais_port_calls_{from_date}"
         if self._cache:
-            cached = self._cache.get(
-                "ais_port_calls", {"key": cache_key}, ttl=_PORT_TTL
-            )
+            cached = self._cache.get("ais_port_calls", {"key": cache_key}, ttl=_PORT_TTL)
             if cached is not None:
                 return cached
 
@@ -458,9 +446,7 @@ class AISVesselTool(Tool):
         # Resolve bounding box
         if area_name and area_name in _NAMED_AREAS:
             lat_min, lat_max, lon_min, lon_max = _NAMED_AREAS[area_name]
-        elif all(
-            kw.get(k) is not None for k in ("lat_min", "lat_max", "lon_min", "lon_max")
-        ):
+        elif all(kw.get(k) is not None for k in ("lat_min", "lat_max", "lon_min", "lon_max")):
             lat_min = float(kw["lat_min"])
             lat_max = float(kw["lat_max"])
             lon_min = float(kw["lon_min"])
@@ -481,9 +467,7 @@ class AISVesselTool(Tool):
         try:
             features = self._fetch_locations()
         except httpx.HTTPError as exc:
-            return ToolResult(
-                success=False, output=f"AIS locations fetch failed: {exc}"
-            )
+            return ToolResult(success=False, output=f"AIS locations fetch failed: {exc}")
 
         # Need metadata if filtering by ship type
         meta = {}
@@ -491,9 +475,7 @@ class AISVesselTool(Tool):
             try:
                 meta = self._fetch_metadata()
             except httpx.HTTPError as exc:
-                return ToolResult(
-                    success=False, output=f"AIS metadata fetch failed: {exc}"
-                )
+                return ToolResult(success=False, output=f"AIS metadata fetch failed: {exc}")
 
         # Filter vessels
         matched = []
@@ -551,11 +533,7 @@ class AISVesselTool(Tool):
             st = m.get("ship_type", "unknown")
             type_counts[st] = type_counts.get(st, 0) + 1
 
-        area_label = (
-            area_name
-            if area_name
-            else f"[{lat_min:.1f}-{lat_max:.1f}°N, {lon_min:.1f}-{lon_max:.1f}°E]"
-        )
+        area_label = area_name if area_name else f"[{lat_min:.1f}-{lat_max:.1f}°N, {lon_min:.1f}-{lon_max:.1f}°E]"
 
         lines = [
             f"AIS Area: {area_label} | {len(matched)} vessels"
@@ -565,19 +543,11 @@ class AISVesselTool(Tool):
 
         if type_counts and ship_type == "all":
             lines.append(
-                "By type: "
-                + ", ".join(
-                    f"{k}={v}"
-                    for k, v in sorted(type_counts.items(), key=lambda x: -x[1])
-                )
+                "By type: " + ", ".join(f"{k}={v}" for k, v in sorted(type_counts.items(), key=lambda x: -x[1]))
             )
         if status_counts:
             lines.append(
-                "By status: "
-                + ", ".join(
-                    f"{k}={v}"
-                    for k, v in sorted(status_counts.items(), key=lambda x: -x[1])
-                )
+                "By status: " + ", ".join(f"{k}={v}" for k, v in sorted(status_counts.items(), key=lambda x: -x[1]))
             )
         lines.append("")
 
@@ -623,9 +593,7 @@ class AISVesselTool(Tool):
         """Track a specific vessel by MMSI."""
         mmsi = kw.get("mmsi")
         if mmsi is None:
-            return ToolResult(
-                success=False, output="vessel mode requires 'mmsi' parameter."
-            )
+            return ToolResult(success=False, output="vessel mode requires 'mmsi' parameter.")
 
         mmsi = int(mmsi)
 
@@ -652,18 +620,14 @@ class AISVesselTool(Tool):
                             "sog": props.get("sog"),
                             "cog": props.get("cog"),
                             "heading": props.get("heading"),
-                            "nav_status": _NAV_STATUS.get(
-                                props.get("navStat", 15), "unknown"
-                            ),
+                            "nav_status": _NAV_STATUS.get(props.get("navStat", 15), "unknown"),
                         }
                     break
         except httpx.HTTPError as exc:
             log.warning("Failed to fetch locations for MMSI %d: %s", mmsi, exc)
 
         if meta is None and position is None:
-            return ToolResult(
-                success=False, output=f"MMSI {mmsi} not found in AIS data."
-            )
+            return ToolResult(success=False, output=f"MMSI {mmsi} not found in AIS data.")
 
         result: dict[str, Any] = {"mmsi": mmsi}
 
@@ -684,12 +648,8 @@ class AISVesselTool(Tool):
         lines = [f"Vessel: {name} (MMSI: {mmsi})"]
 
         if meta:
-            lines.append(
-                f"  IMO: {result.get('imo', '?')} | Call: {result.get('call_sign', '?')}"
-            )
-            lines.append(
-                f"  Type: {result.get('ship_type', '?')} (code: {result.get('ship_type_code', '?')})"
-            )
+            lines.append(f"  IMO: {result.get('imo', '?')} | Call: {result.get('call_sign', '?')}")
+            lines.append(f"  Type: {result.get('ship_type', '?')} (code: {result.get('ship_type_code', '?')})")
             dest = result.get("destination", "").strip()
             if dest:
                 lines.append(f"  Destination: {dest}")
@@ -710,9 +670,7 @@ class AISVesselTool(Tool):
 
         # L2: entity_id + persistence
         if entity_id_from_key is not None:
-            result["entity_id"] = self._vessel_entity_id(
-                result["mmsi"], result.get("imo")
-            )
+            result["entity_id"] = self._vessel_entity_id(result["mmsi"], result.get("imo"))
 
         try:
             self._persist_entities([result])
@@ -727,7 +685,7 @@ class AISVesselTool(Tool):
         limit = min(max(int(kw.get("limit", 50)), 1), 500)
 
         if not from_date:
-            yesterday = datetime.now(timezone.utc) - timedelta(days=1)
+            yesterday = datetime.now(UTC) - timedelta(days=1)
             from_date = yesterday.strftime("%Y-%m-%d")
 
         try:
@@ -748,11 +706,7 @@ class AISVesselTool(Tool):
 
         if port_counts:
             lines.append(
-                "By port: "
-                + ", ".join(
-                    f"{k}={v}"
-                    for k, v in sorted(port_counts.items(), key=lambda x: -x[1])[:20]
-                )
+                "By port: " + ", ".join(f"{k}={v}" for k, v in sorted(port_counts.items(), key=lambda x: -x[1])[:20])
             )
             lines.append("")
 
@@ -864,8 +818,7 @@ class AISVesselTool(Tool):
                 "unique_destinations": len(dest_counts),
                 "destinations": dict(sorted_dests[:limit]),
                 "strategic": {
-                    group: sum(dest_counts.get(k, 0) for k in keywords)
-                    for group, keywords in strategic.items()
+                    group: sum(dest_counts.get(k, 0) for k in keywords) for group, keywords in strategic.items()
                 },
             },
         )
@@ -882,7 +835,7 @@ class AISVesselTool(Tool):
 
     def _persist_entities_inner(self, vessels: list[dict[str, Any]]) -> None:
         seen: set[str] = set()
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         for v in vessels:
             mmsi = v.get("mmsi")
             imo = v.get("imo")
@@ -957,7 +910,7 @@ class AISVesselTool(Tool):
 
     def _persist_port_call_entities_inner(self, calls: list[dict[str, Any]]) -> None:
         seen: set[str] = set()
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         for c in calls:
             mmsi = c.get("mmsi")
             imo = c.get("imoLloyds")
@@ -972,11 +925,7 @@ class AISVesselTool(Tool):
                     entity_type="vessel",
                     canonical_name=name.strip(),
                     entity_id=eid,
-                    metadata={
-                        k: c.get(k)
-                        for k in ("vesselTypeCode", "nationality")
-                        if c.get(k) is not None
-                    },
+                    metadata={k: c.get(k) for k in ("vesselTypeCode", "nationality") if c.get(k) is not None},
                 )
                 if mmsi:
                     self._store.add_entity_alias(eid, "mmsi", str(mmsi))

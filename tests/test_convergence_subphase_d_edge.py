@@ -15,10 +15,8 @@ Coverage:
 from __future__ import annotations
 
 import json
-import time
 from unittest.mock import MagicMock, patch
 
-import numpy as np
 import pytest
 
 from agent.convergence.detector import (
@@ -49,7 +47,6 @@ from agent.pipeline.dags.convergence_detection import (
     run_convergence_detection,
 )
 from agent.pipeline.store import PipelineStore
-
 
 # ── Helpers ────────────────────────────────────────────────────
 
@@ -108,9 +105,7 @@ def _clique(
     categories: tuple[str, ...] = ("positioning", "macro_momentum"),
     score: float = 0.8,
 ) -> ConvergenceClique:
-    return ConvergenceClique(
-        signals=signals, categories=categories, score=score, edges=()
-    )
+    return ConvergenceClique(signals=signals, categories=categories, score=score, edges=())
 
 
 def _detection(
@@ -576,10 +571,7 @@ class TestRegistryBuilderEdge:
 
     def test_large_evidence_count(self):
         """1000 distinct signals should register fine."""
-        evs = [
-            _evidence(signal_id=f"sig_{i}", source=f"tool_{i % 10}")
-            for i in range(1000)
-        ]
+        evs = [_evidence(signal_id=f"sig_{i}", source=f"tool_{i % 10}") for i in range(1000)]
         reg = build_registry_from_evidence(evs)
         assert len(reg) == 1000
 

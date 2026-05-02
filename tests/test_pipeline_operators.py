@@ -13,7 +13,6 @@ from agent.pipeline.operators import (
 )
 from agent.tools.base import Tool, ToolRegistry, ToolResult
 
-
 # ── Mock tools ─────────────────────────────────────────────────
 
 

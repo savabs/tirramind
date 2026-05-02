@@ -14,8 +14,6 @@ Validates:
 
 from __future__ import annotations
 
-import math
-
 import numpy as np
 import pytest
 from pgmpy.factors.discrete import TabularCPD
@@ -42,9 +40,7 @@ def _build_chain_graph() -> WorldModelGraph:
     """
     a = NodeSpec("chain.a", "regime", "test", 2, ("low", "high"))
     b = NodeSpec("chain.b", "latent", "test", 2, ("low", "high"))
-    c = NodeSpec(
-        "chain.c", "observed", "test", 2, ("low", "high"), feature_name="test.c.feat"
-    )
+    c = NodeSpec("chain.c", "observed", "test", 2, ("low", "high"), feature_name="test.c.feat")
 
     graph = WorldModelGraph(
         nodes=[a, b, c],

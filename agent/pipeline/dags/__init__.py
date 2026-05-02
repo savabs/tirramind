@@ -19,34 +19,34 @@ def get_default_dags(tool_registry: Any) -> list[DAG]:
     tool existence, but DAG nodes reference tools by string name —
     resolution happens at execution time in the operator layer.
     """
-    from agent.pipeline.dags.daily_collection import build_daily_collection_dag
+    from agent.pipeline.dags.adversarial_scan import (
+        build_adversarial_scan_dag,
+    )
     from agent.pipeline.dags.convergence_detection import (
         build_convergence_detection_dag,
+    )
+    from agent.pipeline.dags.daily_collection import build_daily_collection_dag
+    from agent.pipeline.dags.entity_scoring import (
+        build_entity_scoring_dag,
     )
     from agent.pipeline.dags.feature_generation import (
         build_feature_generation_dag,
     )
-    from agent.pipeline.dags.entity_scoring import (
-        build_entity_scoring_dag,
-    )
     from agent.pipeline.dags.gnn_inference import (
         build_gnn_inference_dag,
     )
-    from agent.pipeline.dags.whale_tracking import (
-        build_whale_tracking_dag,
-        build_whale_scoring_dag,
-    )
-    from agent.pipeline.dags.world_model_update import (
-        build_world_model_dag,
+    from agent.pipeline.dags.inference import (
+        build_inference_dag,
     )
     from agent.pipeline.dags.rl_training import (
         build_rl_training_dag,
     )
-    from agent.pipeline.dags.adversarial_scan import (
-        build_adversarial_scan_dag,
+    from agent.pipeline.dags.whale_tracking import (
+        build_whale_scoring_dag,
+        build_whale_tracking_dag,
     )
-    from agent.pipeline.dags.inference import (
-        build_inference_dag,
+    from agent.pipeline.dags.world_model_update import (
+        build_world_model_dag,
     )
 
     return [

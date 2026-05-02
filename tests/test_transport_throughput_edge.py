@@ -16,18 +16,16 @@ import httpx
 import pytest
 
 from agent.tools.transport_throughput import (
-    TransportThroughputTool,
-    VALID_MEASURES,
-    VALID_BORDERS,
-    MEASURE_ALIASES,
-    BORDER_ALIASES,
     _KEY_MEASURES,
-    _resolve_measure,
+    BORDER_ALIASES,
+    MEASURE_ALIASES,
+    VALID_BORDERS,
+    VALID_MEASURES,
+    TransportThroughputTool,
     _resolve_border,
+    _resolve_measure,
     _safe_int,
 )
-from agent.tools.base import ToolResult
-
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -181,9 +179,7 @@ class TestMeasureResolution:
     def test_all_aliases_resolve(self):
         for alias, expected in MEASURE_ALIASES.items():
             result = _resolve_measure(alias)
-            assert (
-                result == expected
-            ), f"Alias '{alias}' → {result}, expected {expected}"
+            assert result == expected, f"Alias '{alias}' → {result}, expected {expected}"
 
     def test_all_valid_measures_resolve(self):
         for m in VALID_MEASURES:
@@ -648,9 +644,7 @@ class TestBTSFetch:
             mc = MagicMock()
             mc.__enter__ = MagicMock(return_value=mc)
             mc.__exit__ = MagicMock(return_value=False)
-            mc.get.return_value = _mock_resp(
-                [{"border": "US-Canada Border", "value": "100"}]
-            )
+            mc.get.return_value = _mock_resp([{"border": "US-Canada Border", "value": "100"}])
             mock_client.return_value = mc
 
             data, err = _tool()._fetch_bts({"$select": "count(*)"})
@@ -718,9 +712,7 @@ class TestBTSFetch:
     def test_cache_hit(self):
         cache = MagicMock()
         cache.get.return_value = [{"border": "test"}]
-        data, err = TransportThroughputTool(cache=cache)._fetch_bts(
-            {"$select": "count(*)"}
-        )
+        data, err = TransportThroughputTool(cache=cache)._fetch_bts({"$select": "count(*)"})
         assert err is None
         assert len(data) == 1
 
@@ -734,9 +726,7 @@ class TestBTSFetch:
             mc.get.return_value = _mock_resp([{"border": "test"}])
             mock_client.return_value = mc
 
-            data, err = TransportThroughputTool(cache=cache)._fetch_bts(
-                {"$select": "count(*)"}
-            )
+            data, err = TransportThroughputTool(cache=cache)._fetch_bts({"$select": "count(*)"})
         assert err is None
         cache.put.assert_called_once()
 
@@ -750,9 +740,7 @@ class TestBTSFetch:
             mc.get.return_value = _mock_resp([])
             mock_client.return_value = mc
 
-            data, err = TransportThroughputTool(cache=cache)._fetch_bts(
-                {"$select": "count(*)"}
-            )
+            data, err = TransportThroughputTool(cache=cache)._fetch_bts({"$select": "count(*)"})
         assert err is None
         cache.put.assert_not_called()
 
@@ -773,9 +761,7 @@ class TestConstants:
 
     def test_all_aliases_map_to_valid(self):
         for alias, target in MEASURE_ALIASES.items():
-            assert (
-                target in VALID_MEASURES
-            ), f"Alias '{alias}' maps to invalid measure '{target}'"
+            assert target in VALID_MEASURES, f"Alias '{alias}' maps to invalid measure '{target}'"
 
     def test_all_border_aliases_map_to_valid(self):
         for alias, target in BORDER_ALIASES.items():

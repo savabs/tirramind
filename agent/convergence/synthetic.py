@@ -21,7 +21,6 @@ from __future__ import annotations
 import logging
 import math
 import re
-import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -217,9 +216,7 @@ def _pick_signal_for_step(
     rng.shuffle(valid_cats)  # type: ignore[arg-type]
     for cat in valid_cats:
         candidates = _SIGNAL_IDS_BY_CATEGORY.get(cat, [])
-        matching = [
-            sid for sid in candidates if re.search(step.signal_pattern, sid) is not None
-        ]
+        matching = [sid for sid in candidates if re.search(step.signal_pattern, sid) is not None]
         if matching:
             return rng.choice(matching), cat  # type: ignore[return-value]
 
@@ -335,15 +332,11 @@ def generate_planted_chain(
 
     # Build evidence items — ALL signals share the same timestamp grid
     evidence: list[Evidence] = []
-    for i, (step, (sig_id, cat)) in enumerate(
-        zip(template.steps, step_signals, strict=True)
-    ):
+    for i, (step, (sig_id, cat)) in enumerate(zip(template.steps, step_signals, strict=True)):
         for j in range(n_points):
             ts = start_ts + j * _DAY
             val = float(series[i, j])
-            direction = (
-                step.direction if step.direction is not None else (1 if val > 0 else -1)
-            )
+            direction = step.direction if step.direction is not None else (1 if val > 0 else -1)
             evidence.append(
                 Evidence(
                     source=f"synthetic_{sig_id.split('.')[0]}",
@@ -652,9 +645,7 @@ def run_synthetic_validation(
         try:
             results = detector.detect(as_of=as_of)
         except Exception:
-            log.warning(
-                "Detection failed for scenario %s", scenario.name, exc_info=True
-            )
+            log.warning("Detection failed for scenario %s", scenario.name, exc_info=True)
             results = []
 
         # Evaluate
@@ -677,11 +668,7 @@ def run_synthetic_validation(
     # Compute aggregate metrics
     precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
     recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-    f1 = (
-        (2 * precision * recall / (precision + recall))
-        if (precision + recall) > 0
-        else 0.0
-    )
+    f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) > 0 else 0.0
     tmpl_acc = template_ok / tp if tp > 0 else 0.0
     dir_acc = direction_ok / tp if tp > 0 else 0.0
 

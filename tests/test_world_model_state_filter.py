@@ -19,7 +19,6 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from agent.models.belief import BeliefState
 from agent.models.state_filter import ContinuousStateFilter, RegimeConfig
 
 # ── Helpers ────────────────────────────────────────────────────

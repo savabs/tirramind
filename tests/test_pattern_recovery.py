@@ -11,15 +11,9 @@ Covers:
 from __future__ import annotations
 
 import math
-from collections import Counter
-from unittest.mock import MagicMock
 
 import pytest
-import torch
-from torch_geometric.data import HeteroData
 
-from agent.models.gnn.graph_builder import ENTITY_TYPES, IDMap, OBSERVATION_TYPES
-from agent.models.gnn.het_tgn import HetTGN
 from agent.models.gnn.pattern_extractor import (
     CrystallizedPattern,
     MetaPathPattern,
@@ -37,7 +31,6 @@ from agent.models.gnn.trainer import (
     entity_id_from_key,
 )
 from agent.pipeline.store import PipelineStore
-
 
 # ─── Fixtures ─────────────────────────────────────────────────
 
@@ -158,11 +151,7 @@ class TestMultiHopMetaPaths:
             ("B", "r1", "A"): 10,
         }
         patterns = extractor._score_2hop_metapaths(attention_scores, edge_counts)
-        self_loops = [
-            p
-            for p in patterns
-            if p.src_type == p.dst_type and "r1_via_r1" in p.edge_type
-        ]
+        self_loops = [p for p in patterns if p.src_type == p.dst_type and "r1_via_r1" in p.edge_type]
         assert len(self_loops) == 0
 
     def test_empty_graph_returns_empty(self):
@@ -278,9 +267,7 @@ class TestCooccurrenceTable:
         eid_to_type = {"c1": "company", "co1": "country"}
         obs_by_entity = {
             "c1": [{"entity_id": "c1", "observation_type": "a", "observed_at": 0.0}],
-            "co1": [
-                {"entity_id": "co1", "observation_type": "b", "observed_at": 100.0}
-            ],
+            "co1": [{"entity_id": "co1", "observation_type": "b", "observed_at": 100.0}],
         }
         link_index = {("c1", "headquartered_in"): ["co1"]}
 
@@ -306,9 +293,7 @@ class TestCooccurrenceTable:
         eid_to_type = {"c1": "company", "co1": "country"}
         obs_by_entity = {
             "c1": [{"entity_id": "c1", "observation_type": "a", "observed_at": 200.0}],
-            "co1": [
-                {"entity_id": "co1", "observation_type": "b", "observed_at": 100.0}
-            ],
+            "co1": [{"entity_id": "co1", "observation_type": "b", "observed_at": 100.0}],
         }
         link_index = {("c1", "headquartered_in"): ["co1"]}
 
@@ -581,9 +566,7 @@ class TestCrystallizeWithValidation:
         extractor = PatternExtractor(model, store)
         patterns = extractor.extract_metapath_importance()
         patterns = extract_temporal_lags(patterns, store, top_k=5)
-        configs_unvalidated = crystallize(
-            patterns, store, threshold=0.0, validate=False
-        )
+        configs_unvalidated = crystallize(patterns, store, threshold=0.0, validate=False)
         configs_validated = crystallize(patterns, store, threshold=0.0, validate=True)
         assert len(configs_unvalidated) >= len(configs_validated)
 

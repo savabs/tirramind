@@ -8,14 +8,11 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from agent.models.gnn.graph_builder import ENRICHMENT_DIM, OBSERVATION_TYPES
-from agent.tools.comtrade import ComtradeTool, _ISO3_TO_ISO2
+from agent.tools.comtrade import _ISO3_TO_ISO2, ComtradeTool
 from agent.tools.disease_surveillance import DiseaseSurveillanceTool
 from agent.tools.political_risk import PoliticalRiskTool
 from agent.tools.transport_throughput import TransportThroughputTool
-
 
 # ── Helpers ──────────────────────────────────────────────────
 
@@ -34,7 +31,7 @@ def _store() -> MagicMock:
 
 class TestGraphBuilderPhase32:
     def test_obs_types_sorted(self):
-        assert OBSERVATION_TYPES == sorted(OBSERVATION_TYPES)
+        assert sorted(OBSERVATION_TYPES) == OBSERVATION_TYPES
 
     def test_new_obs_types_present(self):
         for ot in (
@@ -49,7 +46,7 @@ class TestGraphBuilderPhase32:
         assert len(OBSERVATION_TYPES) == 46
 
     def test_enrichment_dim(self):
-        assert ENRICHMENT_DIM == 9 + len(OBSERVATION_TYPES)
+        assert 9 + len(OBSERVATION_TYPES) == ENRICHMENT_DIM
         assert ENRICHMENT_DIM == 55
 
 
@@ -61,16 +58,12 @@ class TestGraphBuilderPhase32:
 class TestComtradeL2:
     def test_no_store_returns_zero(self):
         tool = ComtradeTool()
-        assert tool._persist_entities({"reporter": "USA"}, "flows") == {
-            "trade_flow_obs": 0
-        }
+        assert tool._persist_entities({"reporter": "USA"}, "flows") == {"trade_flow_obs": 0}
 
     @patch("agent.tools.comtrade._entity_id_from_key", None)
     def test_no_entity_id_returns_zero(self):
         tool = ComtradeTool(pipeline_store=_store())
-        assert tool._persist_entities({"reporter": "USA"}, "flows") == {
-            "trade_flow_obs": 0
-        }
+        assert tool._persist_entities({"reporter": "USA"}, "flows") == {"trade_flow_obs": 0}
 
     def test_exception_caught(self):
         store = _store()
@@ -82,9 +75,7 @@ class TestComtradeL2:
     def test_unknown_iso3_skipped(self):
         store = _store()
         tool = ComtradeTool(pipeline_store=store)
-        result = tool._persist_entities_inner(
-            {"reporter": "ZZZ", "records": []}, "flows"
-        )
+        result = tool._persist_entities_inner({"reporter": "ZZZ", "records": []}, "flows")
         assert result == {"trade_flow_obs": 0}
         assert store.register_entity.call_count == 0
 
@@ -166,24 +157,18 @@ class TestComtradeL2:
 class TestTransportThroughputL2:
     def test_no_store_returns_zero(self):
         tool = TransportThroughputTool()
-        assert tool._persist_entities({"records": []}, "recent") == {
-            "border_throughput_obs": 0
-        }
+        assert tool._persist_entities({"records": []}, "recent") == {"border_throughput_obs": 0}
 
     @patch("agent.tools.transport_throughput._entity_id_from_key", None)
     def test_no_entity_id_returns_zero(self):
         tool = TransportThroughputTool(pipeline_store=_store())
-        assert tool._persist_entities({"records": []}, "recent") == {
-            "border_throughput_obs": 0
-        }
+        assert tool._persist_entities({"records": []}, "recent") == {"border_throughput_obs": 0}
 
     def test_exception_caught(self):
         store = _store()
         store.register_entity.side_effect = RuntimeError("boom")
         tool = TransportThroughputTool(pipeline_store=store)
-        result = tool._persist_entities(
-            {"records": [{"border": "US-Canada Border"}]}, "recent"
-        )
+        result = tool._persist_entities({"records": [{"border": "US-Canada Border"}]}, "recent")
         assert result == {"border_throughput_obs": 0}
 
     def test_empty_records_zero(self):
@@ -196,9 +181,7 @@ class TestTransportThroughputL2:
         store = _store()
         tool = TransportThroughputTool(pipeline_store=store)
         data = {
-            "records": [
-                {"border": "US-Canada Border", "measure": "Trucks", "total": 100}
-            ],
+            "records": [{"border": "US-Canada Border", "measure": "Trucks", "total": 100}],
             "period": "2024-01",
         }
         result = tool._persist_entities_inner(data, "recent")
@@ -287,9 +270,7 @@ class TestDiseaseSurveillanceL2:
         store = _store()
         store.register_entity.side_effect = RuntimeError("boom")
         tool = DiseaseSurveillanceTool(pipeline_store=store)
-        result = tool._persist_entities(
-            {"pathogen": "covid", "total_samples": 100}, "wastewater"
-        )
+        result = tool._persist_entities({"pathogen": "covid", "total_samples": 100}, "wastewater")
         assert result == {"pathogen_level_obs": 0}
 
     # ── wastewater ──
@@ -388,9 +369,7 @@ class TestDiseaseSurveillanceL2:
         tool = DiseaseSurveillanceTool(pipeline_store=store)
         # Genomics never reaches _persist_entities — it returns directly
         # But if someone calls _persist_entities_inner, it should return 0
-        result = tool._persist_entities_inner(
-            {"organism": "SARS-CoV-2", "signal": "STABLE"}, "genomics"
-        )
+        result = tool._persist_entities_inner({"organism": "SARS-CoV-2", "signal": "STABLE"}, "genomics")
         assert result == {"pathogen_level_obs": 0}
 
     def test_no_entries_in_data(self):
@@ -408,16 +387,12 @@ class TestDiseaseSurveillanceL2:
 class TestPoliticalRiskL2:
     def test_no_store_returns_zero(self):
         tool = PoliticalRiskTool()
-        assert tool._persist_entities({"records": []}, "candidates") == {
-            "campaign_finance_obs": 0
-        }
+        assert tool._persist_entities({"records": []}, "candidates") == {"campaign_finance_obs": 0}
 
     @patch("agent.tools.political_risk._entity_id_from_key", None)
     def test_no_entity_id_returns_zero(self):
         tool = PoliticalRiskTool(pipeline_store=_store())
-        assert tool._persist_entities({"records": []}, "candidates") == {
-            "campaign_finance_obs": 0
-        }
+        assert tool._persist_entities({"records": []}, "candidates") == {"campaign_finance_obs": 0}
 
     def test_exception_caught(self):
         store = _store()
@@ -565,7 +540,5 @@ class TestPoliticalRiskL2:
     def test_empty_records(self):
         store = _store()
         tool = PoliticalRiskTool(pipeline_store=store)
-        result = tool._persist_entities_inner(
-            {"records": [], "result_type": "candidates"}, "candidates"
-        )
+        result = tool._persist_entities_inner({"records": [], "result_type": "candidates"}, "candidates")
         assert result == {"campaign_finance_obs": 0}

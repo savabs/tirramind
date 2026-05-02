@@ -56,13 +56,7 @@ class StateAssembler:
     def state_dim(self) -> int:
         """Total dimensionality of assembled state."""
         E = self._max_entities
-        return (
-            E * self._surprise_dim
-            + E * self._belief_dim
-            + self._market_dim
-            + 1
-            + _ADVERSARIAL_DIM
-        )
+        return E * self._surprise_dim + E * self._belief_dim + self._market_dim + 1 + _ADVERSARIAL_DIM
 
     def assemble(
         self,
@@ -269,14 +263,12 @@ class InstrumentStateAssembler:
         for ticker, sv in instrument_surprises.items():
             idx = self._ticker_index.get(ticker)
             if idx is not None:
-                inst_block[idx] = sv[:self._surprise_dim]
+                inst_block[idx] = sv[: self._surprise_dim]
                 n_instruments_active += 1
 
         # ── Entity surprise block (E, 5) — top-E by composite ──
         if asset_map:
-            tradeable_alerts = [
-                a for a in entity_alerts if a.entity_id in asset_map
-            ]
+            tradeable_alerts = [a for a in entity_alerts if a.entity_id in asset_map]
         else:
             tradeable_alerts = list(entity_alerts)
         tradeable_alerts.sort(key=lambda a: a.composite_surprise, reverse=True)
@@ -317,9 +309,7 @@ class InstrumentStateAssembler:
             market_block[j] = market_features.get(key, 0.0)
 
         # ── Entity count + adversarial ──
-        entity_count = np.array(
-            [n_entities_active / max(E, 1)], dtype=np.float32
-        )
+        entity_count = np.array([n_entities_active / max(E, 1)], dtype=np.float32)
         adv_block = StateAssembler._adversarial_block(adversarial_flags)
 
         state = np.concatenate(
@@ -437,9 +427,7 @@ class DifferentiableStateAssembler:
 
         # ── Entity surprise block (E, 5) — detached ──
         if asset_map:
-            tradeable_alerts = [
-                a for a in entity_alerts if a.entity_id in asset_map
-            ]
+            tradeable_alerts = [a for a in entity_alerts if a.entity_id in asset_map]
         else:
             tradeable_alerts = list(entity_alerts)
         tradeable_alerts.sort(key=lambda a: a.composite_surprise, reverse=True)
@@ -483,9 +471,7 @@ class DifferentiableStateAssembler:
             market_block[j] = market_features.get(key, 0.0)
 
         # ── Entity count + adversarial — detached ──
-        entity_count = np.array(
-            [n_entities_active / max(E, 1)], dtype=np.float32
-        )
+        entity_count = np.array([n_entities_active / max(E, 1)], dtype=np.float32)
         adv_block = StateAssembler._adversarial_block(adversarial_flags)
 
         # ── Concatenate: detached numpy → tensor, then cat with diff belief ──

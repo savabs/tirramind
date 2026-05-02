@@ -18,7 +18,6 @@ References:
 from __future__ import annotations
 
 import logging
-import time
 from collections import defaultdict
 from dataclasses import dataclass
 
@@ -110,9 +109,7 @@ class EntityAnomalyScorer:
         enrichment = self._compute_enrichment(observations, as_of)
 
         # 2. Build enriched graph
-        data, id_map, events = self._graph_builder.build(
-            since=since, until=as_of, enrichment=enrichment
-        )
+        data, id_map, events = self._graph_builder.build(since=since, until=as_of, enrichment=enrichment)
 
         if id_map.num_nodes == 0:
             return [], []
@@ -144,10 +141,7 @@ class EntityAnomalyScorer:
         # 7. Detect convergence
         links = self._store.query_all_entity_links()
         # Map PipelineStore link format to ConvergenceDetector format
-        detector_links = [
-            {"src_id": link["entity_id_a"], "dst_id": link["entity_id_b"]}
-            for link in links
-        ]
+        detector_links = [{"src_id": link["entity_id_a"], "dst_id": link["entity_id_b"]} for link in links]
         clusters = self._convergence_detector.detect(
             entity_surprises,
             detector_links,
@@ -188,9 +182,7 @@ class EntityAnomalyScorer:
 
             # Hawkes
             if eid not in self._hawkes:
-                self._hawkes[eid] = HawkesIntensity(
-                    mu=cfg.hawkes_mu, alpha=cfg.hawkes_alpha, beta=cfg.hawkes_beta
-                )
+                self._hawkes[eid] = HawkesIntensity(mu=cfg.hawkes_mu, alpha=cfg.hawkes_alpha, beta=cfg.hawkes_beta)
             hawkes = self._hawkes[eid]
             hawkes_val = 0.0
             for obs in eid_obs:
@@ -199,9 +191,7 @@ class EntityAnomalyScorer:
 
             # Entity baseline (event study)
             if eid not in self._baselines:
-                self._baselines[eid] = EntityBaseline(
-                    window=cfg.baseline_window, gap=cfg.baseline_gap
-                )
+                self._baselines[eid] = EntityBaseline(window=cfg.baseline_window, gap=cfg.baseline_gap)
             baseline = self._baselines[eid]
             event_study = 0.0
             last_val = 0.0
@@ -248,16 +238,12 @@ class EntityAnomalyScorer:
                     cusum_statistic=enrich.get("cusum", 0.0),
                     hawkes_intensity=enrich.get("hawkes", 0.0),
                     event_study_score=enrich.get("event_study", 0.0),
-                    observation_count=len(
-                        self._store.query_entity_observations(eid, until=as_of)
-                    ),
+                    observation_count=len(self._store.query_entity_observations(eid, until=as_of)),
                     evidence_sources=tuple(
                         sorted(
                             {
                                 obs.get("source_tool", "unknown")
-                                for obs in self._store.query_entity_observations(
-                                    eid, until=as_of
-                                )
+                                for obs in self._store.query_entity_observations(eid, until=as_of)
                             }
                         )
                     ),

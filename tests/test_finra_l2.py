@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
-
-import pytest
+from datetime import UTC
+from unittest.mock import MagicMock
 
 from agent.tools.finra_short_volume import FinraShortVolumeTool
-
 
 # ── Helpers ───────────────────────────────────────────────────
 
@@ -29,9 +27,7 @@ def _make_tool(store: MagicMock | None = None) -> FinraShortVolumeTool:
 class TestNoPersistenceWithoutStore:
     def test_no_store_no_crash(self):
         tool = _make_tool(store=None)
-        tool._persist_entities(
-            [{"ticker": "AAPL", "short_ratio": 0.3, "date": "2025-01-01"}]
-        )
+        tool._persist_entities([{"ticker": "AAPL", "short_ratio": 0.3, "date": "2025-01-01"}])
         # No exception, no calls
 
     def test_empty_records_no_crash(self):
@@ -49,9 +45,7 @@ class TestEntityRegistration:
     def test_single_ticker_registered(self):
         store = _make_store()
         tool = _make_tool(store=store)
-        tool._persist_entities(
-            [{"ticker": "AAPL", "short_ratio": 0.42, "date": "2025-06-01"}]
-        )
+        tool._persist_entities([{"ticker": "AAPL", "short_ratio": 0.42, "date": "2025-06-01"}])
 
         store.register_entity.assert_called_once()
         call = store.register_entity.call_args
@@ -91,9 +85,7 @@ class TestEntityRegistration:
     def test_ticker_uppercased(self):
         store = _make_store()
         tool = _make_tool(store=store)
-        tool._persist_entities(
-            [{"ticker": "aapl", "short_ratio": 0.3, "date": "2025-06-01"}]
-        )
+        tool._persist_entities([{"ticker": "aapl", "short_ratio": 0.3, "date": "2025-06-01"}])
 
         call = store.register_entity.call_args
         assert call.kwargs["canonical_name"] == "AAPL"
@@ -106,9 +98,7 @@ class TestObservationStorage:
     def test_observation_type_is_short_interest(self):
         store = _make_store()
         tool = _make_tool(store=store)
-        tool._persist_entities(
-            [{"ticker": "AAPL", "short_ratio": 0.42, "date": "2025-06-01"}]
-        )
+        tool._persist_entities([{"ticker": "AAPL", "short_ratio": 0.42, "date": "2025-06-01"}])
 
         call = store.store_entity_observation.call_args
         assert call.kwargs["observation_type"] == "short_interest"
@@ -165,22 +155,18 @@ class TestObservationStorage:
     def test_timestamp_parsed_from_date(self):
         store = _make_store()
         tool = _make_tool(store=store)
-        tool._persist_entities(
-            [{"ticker": "AAPL", "short_ratio": 0.3, "date": "2025-06-15"}]
-        )
+        tool._persist_entities([{"ticker": "AAPL", "short_ratio": 0.3, "date": "2025-06-15"}])
 
         ts = store.store_entity_observation.call_args.kwargs["observed_at"]
-        from datetime import datetime, timezone
+        from datetime import datetime
 
-        expected = datetime(2025, 6, 15, tzinfo=timezone.utc).timestamp()
+        expected = datetime(2025, 6, 15, tzinfo=UTC).timestamp()
         assert ts == expected
 
     def test_timestamp_fallback_for_bad_date(self):
         store = _make_store()
         tool = _make_tool(store=store)
-        tool._persist_entities(
-            [{"ticker": "AAPL", "short_ratio": 0.3, "date": "bad-date"}]
-        )
+        tool._persist_entities([{"ticker": "AAPL", "short_ratio": 0.3, "date": "bad-date"}])
 
         ts = store.store_entity_observation.call_args.kwargs["observed_at"]
         assert isinstance(ts, float)
@@ -194,9 +180,7 @@ class TestEdgeCases:
     def test_missing_ticker_skipped(self):
         store = _make_store()
         tool = _make_tool(store=store)
-        tool._persist_entities(
-            [{"short_ratio": 0.3, "date": "2025-06-01"}]
-        )  # no ticker
+        tool._persist_entities([{"short_ratio": 0.3, "date": "2025-06-01"}])  # no ticker
 
         store.register_entity.assert_not_called()
 
@@ -222,9 +206,7 @@ class TestEdgeCases:
         tool = _make_tool(store=store)
 
         # Should not raise — exception is caught
-        tool._persist_entities(
-            [{"ticker": "AAPL", "short_ratio": 0.3, "date": "2025-06-01"}]
-        )
+        tool._persist_entities([{"ticker": "AAPL", "short_ratio": 0.3, "date": "2025-06-01"}])
 
     def test_symbol_field_used_as_fallback(self):
         """Short interest records use 'symbol' instead of 'ticker'."""

@@ -129,7 +129,8 @@ def run_entity_scoring(params: dict, upstream: dict) -> dict:
 
         # Load GNN model — skip gracefully if unavailable
         try:
-            import torch
+            import torch  # noqa: F401
+
             from agent.models.gnn.trainer import Trainer
         except ImportError:
             log.warning("torch not available — skipping entity scoring.")

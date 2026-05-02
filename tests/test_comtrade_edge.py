@@ -24,20 +24,16 @@ import httpx
 import pytest
 
 from agent.tools.comtrade import (
-    VALID_MODES,
-    ComtradeTool,
     M49_CODES,
     STRATEGIC_COMMODITIES,
-    _CACHE_TTL,
-    _PUBLIC_BASE,
-    _PREMIUM_BASE,
+    VALID_MODES,
+    ComtradeTool,
     _fetch_json,
     _get_api_key,
     _get_current_year,
     _parse_trade_records,
     _resolve_country,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -99,7 +95,7 @@ def _mock_response(data: dict, status: int = 200) -> httpx.Response:
 
 class TestModeValidation:
     def test_valid_modes(self, tool):
-        assert VALID_MODES == {"flows", "commodity", "partners"}
+        assert {"flows", "commodity", "partners"} == VALID_MODES
 
     def test_empty_mode(self, tool):
         r = tool.execute(mode="")
@@ -194,17 +190,21 @@ class TestParseTradeRecords:
         assert records[0]["trade_value_usd"] == 0
 
     def test_null_values(self):
-        data = {"data": [{
-            "reporterDesc": None,
-            "partnerDesc": None,
-            "cmdCode": None,
-            "primaryValue": None,
-        }]}
+        data = {
+            "data": [
+                {
+                    "reporterDesc": None,
+                    "partnerDesc": None,
+                    "cmdCode": None,
+                    "primaryValue": None,
+                }
+            ]
+        }
         records = _parse_trade_records(data)
         assert len(records) == 1
 
     def test_multiple_records(self):
-        recs = [_trade_record(partner=f"Country{i}", value=i*1000) for i in range(5)]
+        recs = [_trade_record(partner=f"Country{i}", value=i * 1000) for i in range(5)]
         data = _comtrade_response(recs)
         records = _parse_trade_records(data)
         assert len(records) == 5
@@ -236,9 +236,7 @@ class TestFlowsMode:
         mock_client = MagicMock()
         mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
-        mock_client.get.return_value = _mock_response(
-            _comtrade_response([_trade_record()])
-        )
+        mock_client.get.return_value = _mock_response(_comtrade_response([_trade_record()]))
 
         r = tool.execute(mode="flows", reporter="USA", partner="CHN")
         assert r.success
@@ -283,7 +281,7 @@ class TestFlowsMode:
     @patch("agent.tools.comtrade._get_api_key", return_value=None)
     @patch("agent.tools.comtrade.httpx.Client")
     def test_flows_many_records_truncated(self, mock_client_cls, mock_key, tool):
-        recs = [_trade_record(partner=f"Country{i}", value=i*1000) for i in range(20)]
+        recs = [_trade_record(partner=f"Country{i}", value=i * 1000) for i in range(20)]
         mock_client = MagicMock()
         mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
@@ -295,9 +293,15 @@ class TestFlowsMode:
 
     def test_flows_cache_hit(self, tool):
         cached_records = [
-            {"reporter": "USA", "partner": "China", "trade_value_usd": 1_000_000,
-             "commodity_code": "8542", "commodity": "IC", "period": "2023",
-             "flow": "Export"}
+            {
+                "reporter": "USA",
+                "partner": "China",
+                "trade_value_usd": 1_000_000,
+                "commodity_code": "8542",
+                "commodity": "IC",
+                "period": "2023",
+                "flow": "Export",
+            }
         ]
         tool._cache.get.return_value = cached_records
         r = tool.execute(mode="flows", reporter="USA")
@@ -321,9 +325,7 @@ class TestFlowsMode:
         mock_client = MagicMock()
         mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
-        mock_client.get.return_value = _mock_response(
-            _comtrade_response([_trade_record()])
-        )
+        mock_client.get.return_value = _mock_response(_comtrade_response([_trade_record()]))
 
         r = tool.execute(mode="flows", reporter="USA", commodity_code="8542")
         assert r.success
@@ -384,9 +386,15 @@ class TestCommodityMode:
 
     def test_commodity_cache_hit(self, tool):
         tool._cache.get.return_value = [
-            {"reporter": "China", "partner": "World", "trade_value_usd": 5_000_000,
-             "commodity_code": "2709", "commodity": "Crude petroleum", "period": "2023",
-             "flow": "Export"}
+            {
+                "reporter": "China",
+                "partner": "World",
+                "trade_value_usd": 5_000_000,
+                "commodity_code": "2709",
+                "commodity": "Crude petroleum",
+                "period": "2023",
+                "flow": "Export",
+            }
         ]
         r = tool.execute(mode="commodity", commodity_code="2709")
         assert r.success
@@ -426,9 +434,7 @@ class TestPartnersMode:
         assert r.data["record_count"] == 2
 
     def test_partners_cache_hit(self, tool):
-        tool._cache.get.return_value = [
-            {"partner": "China", "trade_value_usd": 1_000_000, "commodity": "TOTAL"}
-        ]
+        tool._cache.get.return_value = [{"partner": "China", "trade_value_usd": 1_000_000, "commodity": "TOTAL"}]
         r = tool.execute(mode="partners", reporter="USA")
         assert r.success
         assert "(cached)" in r.output
@@ -589,15 +595,18 @@ class TestPeriodHandling:
 class TestIntegration:
     def test_tool_count(self):
         from agent.cli import build_tool_registry
+
         reg = build_tool_registry()
         assert len(reg.list_names()) == 60
 
     def test_arm_count(self):
         from agent.learning.bandit import DEFAULT_ARMS
+
         assert len(DEFAULT_ARMS) == 48
 
     def test_tool_registered(self):
         from agent.cli import build_tool_registry
+
         reg = build_tool_registry()
         names = reg.list_names()
         assert "comtrade" in names

@@ -13,14 +13,11 @@ Validates:
 
 from __future__ import annotations
 
-import math
 import time
 
 import numpy as np
-import pytest
 
 from agent.features.protocol import EngineeredFeature
-from agent.models.graph import NodeSpec, WorldModelGraph
 from agent.models.initial_graph import build_initial_graph
 from agent.models.propagator import BeliefPropagator
 from agent.models.state_filter import ContinuousStateFilter, RegimeConfig
@@ -282,6 +279,4 @@ class TestMultipleUpdates:
         b2_stress = wm.query("latent.stress_level")
 
         # State should have evolved (not identical)
-        assert (
-            b1_stress.mean != b2_stress.mean or b1_stress.variance != b2_stress.variance
-        )
+        assert b1_stress.mean != b2_stress.mean or b1_stress.variance != b2_stress.variance

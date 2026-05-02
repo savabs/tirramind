@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from dataclasses import dataclass, field
-from datetime import date, datetime, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 import numpy as np
@@ -56,15 +56,9 @@ def load_instrument_returns(
     since = None
     until = None
     if start_date:
-        since = (
-            datetime.fromisoformat(start_date).replace(tzinfo=timezone.utc).timestamp()
-        )
+        since = datetime.fromisoformat(start_date).replace(tzinfo=UTC).timestamp()
     if end_date:
-        until = (
-            datetime.fromisoformat(end_date)
-            .replace(hour=23, minute=59, second=59, tzinfo=timezone.utc)
-            .timestamp()
-        )
+        until = datetime.fromisoformat(end_date).replace(hour=23, minute=59, second=59, tzinfo=UTC).timestamp()
 
     obs = store.query_all_observations(since=since, until=until)
 
@@ -84,7 +78,7 @@ def load_instrument_returns(
         lr = val.get("log_return")
         if lr is None:
             continue
-        dt = datetime.fromtimestamp(o["observed_at"], tz=timezone.utc)
+        dt = datetime.fromtimestamp(o["observed_at"], tz=UTC)
         day = dt.strftime("%Y-%m-%d")
         data[day][eid] = float(lr)
 
@@ -211,9 +205,7 @@ def per_instrument_attribution(
     Returns {ticker → sum of weighted returns across all folds}.
     Values sum to total portfolio return.
     """
-    all_per_inst = np.concatenate(
-        [f.per_instrument_returns for f in result.folds], axis=0
-    )
+    all_per_inst = np.concatenate([f.per_instrument_returns for f in result.folds], axis=0)
     names = result.instrument_names
     return {names[i]: float(all_per_inst[:, i].sum()) for i in range(len(names))}
 
@@ -233,9 +225,7 @@ def per_group_attribution(
     -------
     {group_label → cumulative return contribution}.
     """
-    all_per_inst = np.concatenate(
-        [f.per_instrument_returns for f in result.folds], axis=0
-    )
+    all_per_inst = np.concatenate([f.per_instrument_returns for f in result.folds], axis=0)
     names = result.instrument_names
     attr: dict[str, float] = {}
     for i, name in enumerate(names):
@@ -282,12 +272,8 @@ def concentration_stats(result: MultiAssetBacktestResult) -> dict[str, float]:
         "median_abs_weight": float(np.median(flat)) if flat.size else 0.0,
         "p90_abs_weight": float(np.percentile(flat, 90)) if flat.size else 0.0,
         "p99_abs_weight": float(np.percentile(flat, 99)) if flat.size else 0.0,
-        "mean_gross_leverage": (
-            float(gross_leverage.mean()) if gross_leverage.size else 0.0
-        ),
-        "max_gross_leverage": (
-            float(gross_leverage.max()) if gross_leverage.size else 0.0
-        ),
+        "mean_gross_leverage": (float(gross_leverage.mean()) if gross_leverage.size else 0.0),
+        "max_gross_leverage": (float(gross_leverage.max()) if gross_leverage.size else 0.0),
     }
 
 

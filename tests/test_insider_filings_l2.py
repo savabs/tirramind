@@ -12,14 +12,13 @@ from __future__ import annotations
 
 import textwrap
 from typing import Any
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from agent.pipeline.entity import entity_id_from_key
 from agent.pipeline.store import PipelineStore
 from agent.tools.insider_filings import InsiderFilingsTool, _parse_form4_xml
-
 
 # ── Fixtures ────────────────────────────────────────────────────────────
 
@@ -573,9 +572,7 @@ class TestPersistEntities:
         tool._persist_entities(txns)
 
         insider_eid = entity_id_from_key("person", "0001214156")
-        obs = store.query_entity_observations(
-            insider_eid, source_tool="insider_filings"
-        )
+        obs = store.query_entity_observations(insider_eid, source_tool="insider_filings")
         assert len(obs) == 1
         assert obs[0]["observation_type"] == "insider_trade"
         assert obs[0]["depth_level"] == 2
@@ -627,9 +624,7 @@ class TestPersistEntities:
         tool._persist_entities(txns)
 
         insider_eid = entity_id_from_key("person", "0001111111")
-        obs = store.query_entity_observations(
-            insider_eid, source_tool="insider_filings"
-        )
+        obs = store.query_entity_observations(insider_eid, source_tool="insider_filings")
         assert len(obs) == 2
 
     def test_skips_when_no_store(self):
@@ -708,9 +703,7 @@ class TestPersistEntities:
         """Three different companies → three entity registrations."""
         tool, store = self._make_tool_with_store()
         txns = [
-            _make_txn(
-                ticker="AAPL", company="Apple", issuer_cik="0001", reporter_cik="0010"
-            ),
+            _make_txn(ticker="AAPL", company="Apple", issuer_cik="0001", reporter_cik="0010"),
             _make_txn(
                 ticker="MSFT",
                 company="Microsoft",
@@ -772,13 +765,9 @@ class TestCIKBasedDedup:
     def test_same_cik_different_names_counted_as_one(self):
         """Same CIK with variant name spellings → counted as 1 insider."""
         buys = [
-            _make_txn(
-                name="SMITH JOHN A", reporter_cik="0001111111", date="2026-03-10"
-            ),
+            _make_txn(name="SMITH JOHN A", reporter_cik="0001111111", date="2026-03-10"),
             _make_txn(name="SMITH JOHN", reporter_cik="0001111111", date="2026-03-11"),
-            _make_txn(
-                name="SMITH, JOHN A.", reporter_cik="0001111111", date="2026-03-12"
-            ),
+            _make_txn(name="SMITH, JOHN A.", reporter_cik="0001111111", date="2026-03-12"),
         ]
         result = InsiderFilingsTool._find_best_cluster(buys, window_days=14, min_size=2)
         # Only 1 distinct insider (same CIK), so can't form a cluster of 2
@@ -799,9 +788,7 @@ class TestCIKBasedDedup:
         """Mix of CIK and no-CIK transactions deduplicates correctly."""
         buys = [
             _make_txn(name="ALICE", reporter_cik="0001111111", date="2026-03-10"),
-            _make_txn(
-                name="ALICE", reporter_cik="", date="2026-03-11"
-            ),  # no CIK → name dedup
+            _make_txn(name="ALICE", reporter_cik="", date="2026-03-11"),  # no CIK → name dedup
             _make_txn(name="BOB", reporter_cik="0002222222", date="2026-03-12"),
         ]
         result = InsiderFilingsTool._find_best_cluster(buys, window_days=14, min_size=3)
@@ -823,7 +810,7 @@ class TestEntityIdsInClusters:
             _make_txn(
                 name=f"INSIDER_{i}",
                 reporter_cik=f"000{i:07d}",
-                date=f"2026-03-{10+i:02d}",
+                date=f"2026-03-{10 + i:02d}",
             )
             for i in range(3)
         ]
@@ -840,10 +827,7 @@ class TestEntityIdsInClusters:
 
     def test_entity_ids_empty_when_no_cik(self):
         """When all transactions lack CIKs, entity_ids is empty dict."""
-        txns = [
-            _make_txn(name=f"PERSON_{i}", reporter_cik="", date=f"2026-03-{10+i:02d}")
-            for i in range(3)
-        ]
+        txns = [_make_txn(name=f"PERSON_{i}", reporter_cik="", date=f"2026-03-{10 + i:02d}") for i in range(3)]
         tool = InsiderFilingsTool()
         clusters = tool._detect_clusters(txns, min_size=3)
         assert clusters[0]["entity_ids"] == {}

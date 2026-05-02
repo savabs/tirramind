@@ -240,10 +240,7 @@ def _summarize_pipeline(records: list[dict]) -> dict:
             k: {"mw": round(v["mw"], 1), "count": v["count"], "label": v["label"]}
             for k, v in sorted(by_fuel.items(), key=lambda x: -x[1]["mw"])
         },
-        "by_state": {
-            k: round(v, 1)
-            for k, v in sorted(by_state.items(), key=lambda x: -x[1])[:15]
-        },
+        "by_state": {k: round(v, 1) for k, v in sorted(by_state.items(), key=lambda x: -x[1])[:15]},
         "by_status": {k: round(v, 1) for k, v in by_status.items()},
     }
 
@@ -280,8 +277,7 @@ class InterconnectionQueueTool(Tool):
             "fuel": {
                 "type": "string",
                 "description": (
-                    "Energy source code: SUN, WND, NG, NUC, WAT, MWH (battery), "
-                    "COL, GEO, etc. Optional filter."
+                    "Energy source code: SUN, WND, NG, NUC, WAT, MWH (battery), COL, GEO, etc. Optional filter."
                 ),
             },
             "status": {
@@ -339,11 +335,7 @@ class InterconnectionQueueTool(Tool):
             seen_companies.add(entity_name)
 
             try:
-                canon = (
-                    normalize_company_name(entity_name)
-                    if normalize_company_name
-                    else entity_name
-                )
+                canon = normalize_company_name(entity_name) if normalize_company_name else entity_name
             except ValueError:
                 canon = entity_name
 
@@ -452,10 +444,7 @@ class InterconnectionQueueTool(Tool):
             records = [
                 r
                 for r in records
-                if _safe_float(
-                    r.get("nameplate-capacity-mw", r.get("nameplate_capacity_mw"))
-                )
-                >= min_mw
+                if _safe_float(r.get("nameplate-capacity-mw", r.get("nameplate_capacity_mw"))) >= min_mw
             ]
 
         self._persist_entities(records)
@@ -484,25 +473,19 @@ class InterconnectionQueueTool(Tool):
         for i, r in enumerate(records[:25]):
             name = r.get("plantName", r.get("plant_name", "?"))
             entity = r.get("entityName", r.get("entity_name", "?"))
-            mw = _safe_float(
-                r.get("nameplate-capacity-mw", r.get("nameplate_capacity_mw"))
-            )
+            mw = _safe_float(r.get("nameplate-capacity-mw", r.get("nameplate_capacity_mw")))
             src = r.get("energy-source-code", r.get("energy_source_code", "?"))
             st = r.get("stateid", r.get("state", "?"))
             tech = r.get("technology", "?")
             lines.append(
-                f"  {i+1}. {name} ({entity}) — {mw:,.1f} MW, "
-                f"{ENERGY_SOURCES.get(src, src)}, {st}, tech={tech}"
+                f"  {i + 1}. {name} ({entity}) — {mw:,.1f} MW, {ENERGY_SOURCES.get(src, src)}, {st}, tech={tech}"
             )
 
         if len(records) > 25:
             lines.append(f"  ... and {len(records) - 25} more projects")
 
         # Quick summary
-        total_mw = sum(
-            _safe_float(r.get("nameplate-capacity-mw", r.get("nameplate_capacity_mw")))
-            for r in records
-        )
+        total_mw = sum(_safe_float(r.get("nameplate-capacity-mw", r.get("nameplate_capacity_mw"))) for r in records)
         lines.insert(2, f"Total capacity: {total_mw:,.1f} MW")
 
         result = "\n".join(lines)
@@ -561,7 +544,7 @@ class InterconnectionQueueTool(Tool):
         summary = _summarize_pipeline(all_records)
 
         lines = [
-            f"🔌 Generator Pipeline Summary",
+            "🔌 Generator Pipeline Summary",
             f"Status: {status_str}",
         ]
         if state:
@@ -574,10 +557,7 @@ class InterconnectionQueueTool(Tool):
             ]
         )
         for code, info in summary["by_fuel"].items():
-            lines.append(
-                f"  {info['label']} ({code}): {info['mw']:,.1f} MW, "
-                f"{info['count']} projects"
-            )
+            lines.append(f"  {info['label']} ({code}): {info['mw']:,.1f} MW, {info['count']} projects")
 
         lines.append("")
         lines.append("Top states:")
@@ -632,9 +612,7 @@ class InterconnectionQueueTool(Tool):
         for r in all_records:
             entity = r.get("entityName", r.get("entity_name", ""))
             plant = r.get("plantName", r.get("plant_name", ""))
-            mw = _safe_float(
-                r.get("nameplate-capacity-mw", r.get("nameplate_capacity_mw"))
-            )
+            mw = _safe_float(r.get("nameplate-capacity-mw", r.get("nameplate_capacity_mw")))
             if mw < min_mw:
                 continue
             if _is_datacenter(entity, plant):
@@ -649,13 +627,10 @@ class InterconnectionQueueTool(Tool):
                 self._cache.put(cache_ns, cache_key, result)
             return ToolResult(success=True, output=result)
 
-        total_mw = sum(
-            _safe_float(r.get("nameplate-capacity-mw", r.get("nameplate_capacity_mw")))
-            for r in dc_projects
-        )
+        total_mw = sum(_safe_float(r.get("nameplate-capacity-mw", r.get("nameplate_capacity_mw"))) for r in dc_projects)
 
         lines = [
-            f"🏢 Data Center Power Projects",
+            "🏢 Data Center Power Projects",
             f"Suspected hyperscaler/colocation projects: {len(dc_projects)}",
             f"Total capacity: {total_mw:,.1f} MW",
         ]
@@ -666,16 +641,13 @@ class InterconnectionQueueTool(Tool):
         for i, r in enumerate(dc_projects[:20]):
             entity = r.get("entityName", r.get("entity_name", "?"))
             plant = r.get("plantName", r.get("plant_name", "?"))
-            mw = _safe_float(
-                r.get("nameplate-capacity-mw", r.get("nameplate_capacity_mw"))
-            )
+            mw = _safe_float(r.get("nameplate-capacity-mw", r.get("nameplate_capacity_mw")))
             src = r.get("energy-source-code", r.get("energy_source_code", "?"))
             st = r.get("stateid", r.get("state", "?"))
             status = r.get("status", "?")
             status_label = {v: k for k, v in STATUS_MAP.items()}.get(status, status)
             lines.append(
-                f"  {i+1}. {plant} ({entity}) — {mw:,.1f} MW, "
-                f"{ENERGY_SOURCES.get(src, src)}, {st}, {status_label}"
+                f"  {i + 1}. {plant} ({entity}) — {mw:,.1f} MW, {ENERGY_SOURCES.get(src, src)}, {st}, {status_label}"
             )
 
         if len(dc_projects) > 20:
@@ -685,9 +657,7 @@ class InterconnectionQueueTool(Tool):
         state_mw: dict[str, float] = {}
         for r in dc_projects:
             st = r.get("stateid", r.get("state", "?"))
-            mw = _safe_float(
-                r.get("nameplate-capacity-mw", r.get("nameplate_capacity_mw"))
-            )
+            mw = _safe_float(r.get("nameplate-capacity-mw", r.get("nameplate_capacity_mw")))
             state_mw[st] = state_mw.get(st, 0) + mw
         if state_mw:
             lines.append("")

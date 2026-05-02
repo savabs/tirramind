@@ -14,8 +14,6 @@ from __future__ import annotations
 import tempfile
 import time
 
-import pytest
-
 from agent.pipeline.dags.world_model_update import (
     build_world_model_dag,
     run_world_model_update,

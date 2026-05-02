@@ -187,9 +187,7 @@ class SignalEvaluator:
         try:
             conn = self._store._get_conn()  # noqa: SLF001
             rows = conn.execute(
-                "SELECT feature_name, value FROM features "
-                "WHERE value IS NOT NULL "
-                "ORDER BY effective_at DESC LIMIT 500"
+                "SELECT feature_name, value FROM features WHERE value IS NOT NULL ORDER BY effective_at DESC LIMIT 500"
             ).fetchall()
             for r in rows:
                 fname = r[0]

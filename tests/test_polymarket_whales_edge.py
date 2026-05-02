@@ -26,16 +26,8 @@ import pytest
 
 from agent.pipeline.dags.whale_tracking import (
     _CONSENSUS_MIN_WALLETS,
-    _CONSENSUS_TOP_K,
-    _CONTRARIAN_HIGH,
-    _CONTRARIAN_LOW,
-    _LN2,
     _MICRO_RE,
-    _MIN_RESOLVED_TRADES,
-    _RECENCY_HALF_LIFE_DAYS,
-    _TOP_WALLETS_STORED,
     _WHALE_ALERT_MIN_USDC,
-    _WHALE_ALERT_TOP_K,
     _resolve_winner,
     _to_float,
     build_whale_scoring_dag,
@@ -48,7 +40,6 @@ from agent.pipeline.dags.whale_tracking import (
 )
 from agent.pipeline.store import PipelineStore
 from agent.tools.polymarket_whales import PolymarketWhalesTool
-
 
 # ═══════════════════════════════════════════════════════════════
 #  Fixtures
@@ -313,9 +304,7 @@ class TestFetchRecentTrades:
     @patch("agent.pipeline.dags.whale_tracking.httpx.Client")
     def test_http_error(self, mock_client_cls):
         mock_client = MagicMock()
-        mock_client.get.side_effect = httpx.HTTPStatusError(
-            "500", request=MagicMock(), response=MagicMock()
-        )
+        mock_client.get.side_effect = httpx.HTTPStatusError("500", request=MagicMock(), response=MagicMock())
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
         mock_client_cls.return_value = mock_client
@@ -496,8 +485,13 @@ class TestIndexTrades:
     def test_trade_fields_stored(self, db_path):
         """Verify all trade fields are preserved in DB."""
         trade = _make_parsed_trade(
-            tx_hash="0xfull", wallet="0xwallet99", condition_id="0xcond99",
-            side="SELL", size=500.0, price=0.3, outcome="No",
+            tx_hash="0xfull",
+            wallet="0xwallet99",
+            condition_id="0xcond99",
+            side="SELL",
+            size=500.0,
+            price=0.3,
+            outcome="No",
         )
         upstream = {"fetch_recent_trades": {"trades": [trade], "count": 1}}
         index_trades({"db_path": db_path}, upstream)
@@ -556,14 +550,18 @@ class TestTrackResolutions:
     @patch("agent.pipeline.dags.whale_tracking.httpx.Client")
     def test_ambiguous_prices_skipped(self, mock_client_cls, db_path):
         """Markets with ambiguous prices (not near 0/1) are skipped."""
-        events = [{
-            "title": "Ambiguous",
-            "markets": [{
-                "conditionId": "0xcond1",
-                "question": "Ambiguous",
-                "outcomePrices": '["0.5", "0.5"]',
-            }],
-        }]
+        events = [
+            {
+                "title": "Ambiguous",
+                "markets": [
+                    {
+                        "conditionId": "0xcond1",
+                        "question": "Ambiguous",
+                        "outcomePrices": '["0.5", "0.5"]',
+                    }
+                ],
+            }
+        ]
         mock_resp = MagicMock()
         mock_resp.json.return_value = events
         mock_resp.raise_for_status = MagicMock()
@@ -591,13 +589,17 @@ class TestTrackResolutions:
 
     @patch("agent.pipeline.dags.whale_tracking.httpx.Client")
     def test_missing_condition_id_skipped(self, mock_client_cls, db_path):
-        events = [{
-            "title": "Test",
-            "markets": [{
-                "conditionId": "",
-                "outcomePrices": '["0.999", "0.001"]',
-            }],
-        }]
+        events = [
+            {
+                "title": "Test",
+                "markets": [
+                    {
+                        "conditionId": "",
+                        "outcomePrices": '["0.999", "0.001"]',
+                    }
+                ],
+            }
+        ]
         mock_resp = MagicMock()
         mock_resp.json.return_value = events
         mock_resp.raise_for_status = MagicMock()
@@ -677,9 +679,18 @@ class TestScoreWallets:
             store.store_data(
                 "pm_trades",
                 {"tx_hash": f"0x{i}", "wallet": "0xw1", "condition_id": f"0xc{i}"},
-                {"tx_hash": f"0x{i}", "wallet": "0xw1", "condition_id": f"0xc{i}",
-                 "side": "BUY", "size": 10, "price": 0.5, "timestamp": time.time(),
-                 "outcome": "Yes", "outcome_index": 0, "usdc_value": 5},
+                {
+                    "tx_hash": f"0x{i}",
+                    "wallet": "0xw1",
+                    "condition_id": f"0xc{i}",
+                    "side": "BUY",
+                    "size": 10,
+                    "price": 0.5,
+                    "timestamp": time.time(),
+                    "outcome": "Yes",
+                    "outcome_index": 0,
+                    "usdc_value": 5,
+                },
             )
         store.close()
 
@@ -736,11 +747,20 @@ class TestScoreWallets:
         for i in range(10):
             cid = f"0xold_cond_{i}"
             trade = {
-                "tx_hash": f"0xold_{i}", "wallet": "0xold_wallet", "condition_id": cid,
-                "side": "BUY", "size": 100, "price": 0.6, "timestamp": old_ts,
-                "outcome": "Yes", "outcome_index": 0, "usdc_value": 60,
+                "tx_hash": f"0xold_{i}",
+                "wallet": "0xold_wallet",
+                "condition_id": cid,
+                "side": "BUY",
+                "size": 100,
+                "price": 0.6,
+                "timestamp": old_ts,
+                "outcome": "Yes",
+                "outcome_index": 0,
+                "usdc_value": 60,
             }
-            store.store_data("pm_trades", {"tx_hash": f"0xold_{i}", "wallet": "0xold_wallet", "condition_id": cid}, trade)
+            store.store_data(
+                "pm_trades", {"tx_hash": f"0xold_{i}", "wallet": "0xold_wallet", "condition_id": cid}, trade
+            )
             store.store_data("pm_resolutions", {"condition_id": cid}, {"condition_id": cid, "winning_index": 0})
         store.close()
 
@@ -777,9 +797,16 @@ class TestScoreWallets:
         for i in range(10):
             cid = f"0xsell_cond_{i}"
             trade = {
-                "tx_hash": f"0xsell_{i}", "wallet": wallet, "condition_id": cid,
-                "side": "SELL", "size": 100, "price": 0.6, "timestamp": now,
-                "outcome": "No", "outcome_index": 1, "usdc_value": 60,
+                "tx_hash": f"0xsell_{i}",
+                "wallet": wallet,
+                "condition_id": cid,
+                "side": "SELL",
+                "size": 100,
+                "price": 0.6,
+                "timestamp": now,
+                "outcome": "No",
+                "outcome_index": 1,
+                "usdc_value": 60,
             }
             store.store_data("pm_trades", {"tx_hash": f"0xsell_{i}", "wallet": wallet, "condition_id": cid}, trade)
             # outcome_index=1 (No), winning_index=0 (Yes) → SELL on non-winner = correct
@@ -807,36 +834,50 @@ def _seed_whale_scenario(db_path: str) -> None:
     # Create wallet scores (top 50 wallets)
     wallets = []
     for i in range(60):
-        wallets.append({
-            "wallet": f"0xwhale{i:04d}",
-            "composite": 100.0 - i,
-            "accuracy": 0.8,
-            "correct": 8,
-            "total_resolved": 10,
-            "profit_factor": 2.0,
-            "total_volume": 50000.0,
-            "markets": 20,
-            "recency": 0.95,
-            "latest_trade_ts": now,
-        })
+        wallets.append(
+            {
+                "wallet": f"0xwhale{i:04d}",
+                "composite": 100.0 - i,
+                "accuracy": 0.8,
+                "correct": 8,
+                "total_resolved": 10,
+                "profit_factor": 2.0,
+                "total_volume": 50000.0,
+                "markets": 20,
+                "recency": 0.95,
+                "latest_trade_ts": now,
+            }
+        )
     store.store_data("pm_wallet_scores", {"batch": "latest"}, {"wallets": wallets, "scored_at": now})
 
     # Create recent trades:
 
     # Whale alert: top wallet, big trade
     big_trade = _make_parsed_trade(
-        tx_hash="0xbig", wallet="0xwhale0000", condition_id="0xmarket_a",
-        side="BUY", size=5000, price=0.5, title="Big Market",
+        tx_hash="0xbig",
+        wallet="0xwhale0000",
+        condition_id="0xmarket_a",
+        side="BUY",
+        size=5000,
+        price=0.5,
+        title="Big Market",
     )
     big_trade["usdc_value"] = 2500.0
     big_trade["timestamp"] = now - 100
-    store.store_data("pm_trades", {"tx_hash": "0xbig", "wallet": "0xwhale0000", "condition_id": "0xmarket_a"}, big_trade)
+    store.store_data(
+        "pm_trades", {"tx_hash": "0xbig", "wallet": "0xwhale0000", "condition_id": "0xmarket_a"}, big_trade
+    )
 
     # Consensus: 4 top wallets on same side of same market
     for i in range(4):
         t = _make_parsed_trade(
-            tx_hash=f"0xcons{i}", wallet=f"0xwhale{i:04d}", condition_id="0xmarket_b",
-            side="BUY", size=100, price=0.6, title="Consensus Market",
+            tx_hash=f"0xcons{i}",
+            wallet=f"0xwhale{i:04d}",
+            condition_id="0xmarket_b",
+            side="BUY",
+            size=100,
+            price=0.6,
+            title="Consensus Market",
         )
         t["usdc_value"] = 60.0
         t["timestamp"] = now - 200
@@ -848,8 +889,13 @@ def _seed_whale_scenario(db_path: str) -> None:
 
     # Contrarian: top wallet buys at low price
     ct = _make_parsed_trade(
-        tx_hash="0xcontrarian", wallet="0xwhale0001", condition_id="0xmarket_c",
-        side="BUY", size=200, price=0.15, title="Underdog Market",
+        tx_hash="0xcontrarian",
+        wallet="0xwhale0001",
+        condition_id="0xmarket_c",
+        side="BUY",
+        size=200,
+        price=0.15,
+        title="Underdog Market",
     )
     ct["usdc_value"] = 30.0
     ct["timestamp"] = now - 300
@@ -897,9 +943,20 @@ class TestDetectSignals:
         """Trade by top wallet but below $1000 → no whale alert."""
         store = PipelineStore(db_path)
         now = time.time()
-        wallets = [{"wallet": "0xtop", "composite": 99, "accuracy": 0.8,
-                     "correct": 8, "total_resolved": 10, "profit_factor": 2,
-                     "total_volume": 5000, "markets": 5, "recency": 1, "latest_trade_ts": now}]
+        wallets = [
+            {
+                "wallet": "0xtop",
+                "composite": 99,
+                "accuracy": 0.8,
+                "correct": 8,
+                "total_resolved": 10,
+                "profit_factor": 2,
+                "total_volume": 5000,
+                "markets": 5,
+                "recency": 1,
+                "latest_trade_ts": now,
+            }
+        ]
         store.store_data("pm_wallet_scores", {"batch": "latest"}, {"wallets": wallets, "scored_at": now})
 
         small_trade = _make_parsed_trade(tx_hash="0xsmall", wallet="0xtop", usdc_value=500)
@@ -914,10 +971,21 @@ class TestDetectSignals:
         """Only 2 wallets on same side → no consensus signal."""
         store = PipelineStore(db_path)
         now = time.time()
-        wallets = [{"wallet": f"0xw{i}", "composite": 50 - i, "accuracy": 0.7,
-                     "correct": 7, "total_resolved": 10, "profit_factor": 1.5,
-                     "total_volume": 3000, "markets": 10, "recency": 0.9, "latest_trade_ts": now}
-                    for i in range(10)]
+        wallets = [
+            {
+                "wallet": f"0xw{i}",
+                "composite": 50 - i,
+                "accuracy": 0.7,
+                "correct": 7,
+                "total_resolved": 10,
+                "profit_factor": 1.5,
+                "total_volume": 3000,
+                "markets": 10,
+                "recency": 0.9,
+                "latest_trade_ts": now,
+            }
+            for i in range(10)
+        ]
         store.store_data("pm_wallet_scores", {"batch": "latest"}, {"wallets": wallets, "scored_at": now})
 
         for i in range(2):  # Only 2, below threshold of 3
@@ -933,9 +1001,20 @@ class TestDetectSignals:
         """Price at 0.5 is not contrarian (neither < 0.3 nor > 0.7)."""
         store = PipelineStore(db_path)
         now = time.time()
-        wallets = [{"wallet": "0xtop2", "composite": 80, "accuracy": 0.8,
-                     "correct": 8, "total_resolved": 10, "profit_factor": 2,
-                     "total_volume": 5000, "markets": 5, "recency": 1, "latest_trade_ts": now}]
+        wallets = [
+            {
+                "wallet": "0xtop2",
+                "composite": 80,
+                "accuracy": 0.8,
+                "correct": 8,
+                "total_resolved": 10,
+                "profit_factor": 2,
+                "total_volume": 5000,
+                "markets": 5,
+                "recency": 1,
+                "latest_trade_ts": now,
+            }
+        ]
         store.store_data("pm_wallet_scores", {"batch": "latest"}, {"wallets": wallets, "scored_at": now})
 
         t = _make_parsed_trade(tx_hash="0xmid", wallet="0xtop2", price=0.5, side="BUY")
@@ -1079,9 +1158,18 @@ class TestPolymarketWhalesTool:
     def test_top_wallets_with_data(self, db_path):
         store = PipelineStore(db_path)
         wallets = [
-            {"wallet": f"0xw{i}", "composite": 50 - i, "accuracy": 0.8,
-             "correct": 8, "total_resolved": 10, "profit_factor": 2,
-             "total_volume": 5000, "markets": 10, "recency": 0.9, "latest_trade_ts": time.time()}
+            {
+                "wallet": f"0xw{i}",
+                "composite": 50 - i,
+                "accuracy": 0.8,
+                "correct": 8,
+                "total_resolved": 10,
+                "profit_factor": 2,
+                "total_volume": 5000,
+                "markets": 10,
+                "recency": 0.9,
+                "latest_trade_ts": time.time(),
+            }
             for i in range(5)
         ]
         store.store_data("pm_wallet_scores", {"batch": "latest"}, {"wallets": wallets, "scored_at": time.time()})
@@ -1112,9 +1200,18 @@ class TestPolymarketWhalesTool:
     def test_wallet_detail_with_data(self, db_path):
         store = PipelineStore(db_path)
         wallets = [
-            {"wallet": "0xfound", "composite": 80, "accuracy": 0.85,
-             "correct": 8, "total_resolved": 10, "profit_factor": 3,
-             "total_volume": 10000, "markets": 15, "recency": 0.95, "latest_trade_ts": time.time()}
+            {
+                "wallet": "0xfound",
+                "composite": 80,
+                "accuracy": 0.85,
+                "correct": 8,
+                "total_resolved": 10,
+                "profit_factor": 3,
+                "total_volume": 10000,
+                "markets": 15,
+                "recency": 0.95,
+                "latest_trade_ts": time.time(),
+            }
         ]
         store.store_data("pm_wallet_scores", {"batch": "latest"}, {"wallets": wallets, "scored_at": time.time()})
         trade = _make_parsed_trade(tx_hash="0xt1", wallet="0xfound")
@@ -1142,9 +1239,20 @@ class TestPolymarketWhalesTool:
         store = PipelineStore(db_path)
         trade = _make_parsed_trade(tx_hash="0xm1", wallet="0xwhale1", title="Trump wins 2024?")
         store.store_data("pm_trades", {"tx_hash": "0xm1", "wallet": "0xwhale1", "condition_id": "0xc1"}, trade)
-        wallets = [{"wallet": "0xwhale1", "composite": 50, "accuracy": 0.7,
-                     "correct": 7, "total_resolved": 10, "profit_factor": 1.5,
-                     "total_volume": 3000, "markets": 5, "recency": 0.9, "latest_trade_ts": time.time()}]
+        wallets = [
+            {
+                "wallet": "0xwhale1",
+                "composite": 50,
+                "accuracy": 0.7,
+                "correct": 7,
+                "total_resolved": 10,
+                "profit_factor": 1.5,
+                "total_volume": 3000,
+                "markets": 5,
+                "recency": 0.9,
+                "latest_trade_ts": time.time(),
+            }
+        ]
         store.store_data("pm_wallet_scores", {"batch": "latest"}, {"wallets": wallets, "scored_at": time.time()})
         store.close()
 
@@ -1252,6 +1360,7 @@ class TestColdStart:
 class TestDagRegistration:
     def test_get_default_dags_includes_whale(self):
         from agent.pipeline.dags import get_default_dags
+
         dags = get_default_dags(tool_registry=None)
         names = [d.name for d in dags]
         assert "whale_tracking" in names
@@ -1259,6 +1368,7 @@ class TestDagRegistration:
 
     def test_registry_loads_whale_dags(self):
         from agent.pipeline.registry import DAGRegistry
+
         registry = DAGRegistry()
         registry.load_defaults(tool_registry=None)
         assert registry.get("whale_tracking") is not None
@@ -1273,6 +1383,7 @@ class TestDagRegistration:
 class TestCLIRegistration:
     def test_tool_in_registry(self):
         from agent.cli import build_tool_registry
+
         registry = build_tool_registry()
         tool = registry.get("polymarket_whales")
         assert tool is not None
@@ -1281,6 +1392,7 @@ class TestCLIRegistration:
     def test_tool_count_increased(self):
         """Registry should have polymarket_whales alongside polymarket."""
         from agent.cli import build_tool_registry
+
         registry = build_tool_registry()
         names = registry.list_names()
         assert "polymarket" in names

@@ -33,15 +33,12 @@ from __future__ import annotations
 import logging
 import math
 from collections import Counter
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
 
 import torch
 from torch_geometric.data import HeteroData
 
 from agent.models.gnn.graph_builder import (
-    ENTITY_TYPES,
-    OBSERVATION_TYPES,
     GraphBuilder,
     IDMap,
 )
@@ -374,12 +371,8 @@ def extract_temporal_lags(
             lags_t = torch.tensor(lags, dtype=torch.float)
             pattern.mean_lag = lags_t.mean().item()
             pattern.lag_std = lags_t.std().item() if len(lags) > 1 else 0.0
-            pattern.lag_p25 = (
-                lags_t.quantile(0.25).item() if len(lags) >= 4 else lags_t.min().item()
-            )
-            pattern.lag_p75 = (
-                lags_t.quantile(0.75).item() if len(lags) >= 4 else lags_t.max().item()
-            )
+            pattern.lag_p25 = lags_t.quantile(0.25).item() if len(lags) >= 4 else lags_t.min().item()
+            pattern.lag_p75 = lags_t.quantile(0.75).item() if len(lags) >= 4 else lags_t.max().item()
 
     return patterns[:top_k]
 
@@ -586,10 +579,7 @@ def _build_cooccurrence_table(
                 st = so.get("observed_at", 0.0)
                 s_ot = so.get("observation_type", "")
                 # Advance dst pointer past events before st
-                while (
-                    di < len(dst_sorted)
-                    and dst_sorted[di].get("observed_at", 0.0) <= st
-                ):
+                while di < len(dst_sorted) and dst_sorted[di].get("observed_at", 0.0) <= st:
                     di += 1
                 # Collect dst events within window
                 for j in range(di, len(dst_sorted)):
@@ -670,11 +660,7 @@ def validate_patterns(
             if eid_to_type.get(eid_a) != cp.source_type:
                 continue
 
-            src_obs = [
-                o
-                for o in obs_by_entity.get(eid_a, [])
-                if o.get("observation_type") == cp.obs_type_a
-            ]
+            src_obs = [o for o in obs_by_entity.get(eid_a, []) if o.get("observation_type") == cp.obs_type_a]
             if not src_obs:
                 continue
 
@@ -682,20 +668,13 @@ def validate_patterns(
                 if eid_to_type.get(eid_b) != cp.target_type:
                     continue
                 dst_obs = sorted(
-                    [
-                        o
-                        for o in obs_by_entity.get(eid_b, [])
-                        if o.get("observation_type") == cp.obs_type_b
-                    ],
+                    [o for o in obs_by_entity.get(eid_b, []) if o.get("observation_type") == cp.obs_type_b],
                     key=lambda o: o.get("observed_at", 0.0),
                 )
 
                 for so in src_obs:
                     st = so.get("observed_at", 0.0)
-                    hit = any(
-                        0 < (do.get("observed_at", 0.0) - st) <= cp.window_seconds
-                        for do in dst_obs
-                    )
+                    hit = any(0 < (do.get("observed_at", 0.0) - st) <= cp.window_seconds for do in dst_obs)
                     if hit:
                         a += 1
                     else:
@@ -703,9 +682,7 @@ def validate_patterns(
 
         # Baseline: target obs_type_b frequency on target entities
         # (events on target-type entities regardless of link)
-        target_entities = [
-            eid for eid, etype in eid_to_type.items() if etype == cp.target_type
-        ]
+        target_entities = [eid for eid, etype in eid_to_type.items() if etype == cp.target_type]
         total_target_obs = 0
         target_b_count = 0
         for te in target_entities:

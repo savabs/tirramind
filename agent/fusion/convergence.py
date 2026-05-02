@@ -60,9 +60,7 @@ class ConvergenceCluster:
 
     def __post_init__(self) -> None:
         if len(self.member_alerts) < 2:
-            raise ValueError(
-                f"ConvergenceCluster requires >= 2 member alerts, got {len(self.member_alerts)}"
-            )
+            raise ValueError(f"ConvergenceCluster requires >= 2 member alerts, got {len(self.member_alerts)}")
 
 
 class ConvergenceDetector:
@@ -96,11 +94,7 @@ class ConvergenceDetector:
             List of ConvergenceCluster (may be empty).
         """
         # 1. Filter to elevated entities
-        elevated = {
-            eid: s
-            for eid, s in entity_surprises.items()
-            if s.composite_surprise > surprise_threshold
-        }
+        elevated = {eid: s for eid, s in entity_surprises.items() if s.composite_surprise > surprise_threshold}
         if len(elevated) < 2:
             return []
 
@@ -166,9 +160,7 @@ class ConvergenceDetector:
 
             # Cluster ID from sorted member IDs
             sorted_ids = sorted(s.entity_id for s in surprises)
-            cluster_id = hashlib.sha256(
-                ("_".join(sorted_ids) + f"_{now}").encode()
-            ).hexdigest()[:16]
+            cluster_id = hashlib.sha256(("_".join(sorted_ids) + f"_{now}").encode()).hexdigest()[:16]
 
             # Contributing info
             domains = tuple(sorted({s.entity_type for s in surprises}))

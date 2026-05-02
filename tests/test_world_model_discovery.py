@@ -111,9 +111,7 @@ class TestComparisonReport:
         """Edge in discovery but NOT in expert → novel."""
         graph = build_initial_graph()
         edges = [
-            DiscoveredEdge(
-                "obs.rate_momentum", "obs.stress_breadth", 0, 0.01, 0.3, "-->"
-            ),
+            DiscoveredEdge("obs.rate_momentum", "obs.stress_breadth", 0, 0.01, 0.3, "-->"),
         ]
         disc_result = self._mock_discovery(edges)
         discovery = CausalStructureDiscovery()
@@ -139,12 +137,8 @@ class TestComparisonReport:
         graph = build_initial_graph()
         edges = [
             DiscoveredEdge("regime.macro", "obs.rate_momentum", 0, 0.001, 0.5, "-->"),
-            DiscoveredEdge(
-                "regime.macro", "obs.yield_curve_slope", 0, 0.01, 0.4, "-->"
-            ),
-            DiscoveredEdge(
-                "obs.stress_breadth", "obs.stress_intensity", 0, 0.02, 0.3, "-->"
-            ),
+            DiscoveredEdge("regime.macro", "obs.yield_curve_slope", 0, 0.01, 0.4, "-->"),
+            DiscoveredEdge("obs.stress_breadth", "obs.stress_intensity", 0, 0.02, 0.3, "-->"),
         ]
         disc_result = self._mock_discovery(edges)
         discovery = CausalStructureDiscovery()

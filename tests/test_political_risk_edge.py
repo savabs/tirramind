@@ -20,20 +20,18 @@ import httpx
 import pytest
 
 from agent.tools.political_risk import (
-    PoliticalRiskTool,
+    _CACHE_TTL,
+    _FEC_BASE,
     VALID_MODES,
     VALID_OFFICES,
-    _FEC_BASE,
-    _CACHE_TTL,
-    _get_api_key,
-    _parse_candidates,
-    _parse_filings,
-    _parse_expenditures,
+    PoliticalRiskTool,
     _compute_signals,
     _format_summary,
+    _get_api_key,
+    _parse_candidates,
+    _parse_expenditures,
+    _parse_filings,
 )
-from agent.tools.base import ToolResult
-
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -160,9 +158,7 @@ class TestInputValidation:
         with patch("httpx.Client") as mc:
             mc.return_value.__enter__ = lambda s: s
             mc.return_value.__exit__ = MagicMock(return_value=False)
-            mc.return_value.get.return_value = _mock_resp(
-                _fec_response([_candidate()])
-            )
+            mc.return_value.get.return_value = _mock_resp(_fec_response([_candidate()]))
             r = _tool().execute(mode="candidates", cycle=2024)
         assert r.success
 
@@ -176,9 +172,7 @@ class TestInputValidation:
         with patch("httpx.Client") as mc:
             mc.return_value.__enter__ = lambda s: s
             mc.return_value.__exit__ = MagicMock(return_value=False)
-            mc.return_value.get.return_value = _mock_resp(
-                _fec_response([_candidate()])
-            )
+            mc.return_value.get.return_value = _mock_resp(_fec_response([_candidate()]))
             r = _tool().execute(mode="candidates", limit=500)
         assert r.success
         call_params = mc.return_value.get.call_args[1]["params"]
@@ -203,9 +197,7 @@ class TestAPIKeyHandling:
         with patch("httpx.Client") as mc:
             mc.return_value.__enter__ = lambda s: s
             mc.return_value.__exit__ = MagicMock(return_value=False)
-            mc.return_value.get.return_value = _mock_resp(
-                _fec_response([_candidate()])
-            )
+            mc.return_value.get.return_value = _mock_resp(_fec_response([_candidate()]))
             _tool().execute(mode="candidates")
         call_params = mc.return_value.get.call_args[1]["params"]
         assert "api_key" in call_params
@@ -232,10 +224,12 @@ class TestCandidateParsing:
         assert records[0]["has_raised_funds"] is False
 
     def test_parse_multiple(self):
-        records = _parse_candidates([
-            _candidate(name="A", party="DEM"),
-            _candidate(name="B", party="REP"),
-        ])
+        records = _parse_candidates(
+            [
+                _candidate(name="A", party="DEM"),
+                _candidate(name="B", party="REP"),
+            ]
+        )
         assert len(records) == 2
         assert records[0]["name"] == "A"
         assert records[1]["party"] == "REP"
@@ -370,9 +364,17 @@ class TestSignalComputation:
 
 class TestOutputFormatting:
     def test_candidates_format(self):
-        records = [{"name": "SMITH", "party": "DEM", "office_full": "President",
-                     "office": "P", "state": "", "district": "",
-                     "has_raised_funds": True}]
+        records = [
+            {
+                "name": "SMITH",
+                "party": "DEM",
+                "office_full": "President",
+                "office": "P",
+                "state": "",
+                "district": "",
+                "has_raised_funds": True,
+            }
+        ]
         signals = {"party_breakdown": {"DEM": 1}, "active_fundraisers": 1}
         out = _format_summary(records, signals, "candidates", 1)
         assert "SMITH" in out
@@ -380,21 +382,37 @@ class TestOutputFormatting:
         assert "fundraising" in out
 
     def test_filings_format(self):
-        records = [{"committee_name": "TEST COMMITTEE", "form_type": "F3P",
-                     "receipt_date": "2024-07-15", "cash_on_hand_end": 5000000}]
+        records = [
+            {
+                "committee_name": "TEST COMMITTEE",
+                "form_type": "F3P",
+                "receipt_date": "2024-07-15",
+                "cash_on_hand_end": 5000000,
+            }
+        ]
         signals = {"avg_cash_on_hand": 5000000}
         out = _format_summary(records, signals, "filings", 1)
         assert "TEST COMMITTEE" in out
         assert "$5,000,000" in out
 
     def test_expenditures_format(self):
-        records = [{"support_oppose": "O", "candidate_name": "JONES",
-                     "expenditure_amount": 100000, "committee_name": "PAC X",
-                     "expenditure_date": "2024-10-01"}]
-        signals = {"support_total": 0, "oppose_total": 100000,
-                   "support_count": 0, "oppose_count": 1,
-                   "oppose_ratio": 1.0,
-                   "top_targets": [{"candidate": "JONES", "total_spent": 100000}]}
+        records = [
+            {
+                "support_oppose": "O",
+                "candidate_name": "JONES",
+                "expenditure_amount": 100000,
+                "committee_name": "PAC X",
+                "expenditure_date": "2024-10-01",
+            }
+        ]
+        signals = {
+            "support_total": 0,
+            "oppose_total": 100000,
+            "support_count": 0,
+            "oppose_count": 1,
+            "oppose_ratio": 1.0,
+            "top_targets": [{"candidate": "JONES", "total_spent": 100000}],
+        }
         out = _format_summary(records, signals, "expenditures", 1)
         assert "OPPOSE" in out
         assert "JONES" in out
@@ -458,7 +476,8 @@ class TestHTTPErrors:
             mc.return_value.__enter__ = lambda s: s
             mc.return_value.__exit__ = MagicMock(return_value=False)
             resp = httpx.Response(
-                status_code=200, text="<!DOCTYPE html>",
+                status_code=200,
+                text="<!DOCTYPE html>",
                 request=httpx.Request("GET", "http://test"),
             )
             mc.return_value.get.return_value = resp
@@ -487,9 +506,7 @@ class TestCache:
         with patch("httpx.Client") as mc:
             mc.return_value.__enter__ = lambda s: s
             mc.return_value.__exit__ = MagicMock(return_value=False)
-            mc.return_value.get.return_value = _mock_resp(
-                _fec_response([_candidate()])
-            )
+            mc.return_value.get.return_value = _mock_resp(_fec_response([_candidate()]))
             r = _tool(cache=cache).execute(mode="candidates")
         assert r.success
         cache.set.assert_called_once()
@@ -499,9 +516,7 @@ class TestCache:
         with patch("httpx.Client") as mc:
             mc.return_value.__enter__ = lambda s: s
             mc.return_value.__exit__ = MagicMock(return_value=False)
-            mc.return_value.get.return_value = _mock_resp(
-                _fec_response([_candidate()])
-            )
+            mc.return_value.get.return_value = _mock_resp(_fec_response([_candidate()]))
             r = _tool(cache=None).execute(mode="candidates")
         assert r.success
 
@@ -511,10 +526,10 @@ class TestCache:
 
 class TestConstants:
     def test_valid_modes(self):
-        assert VALID_MODES == {"candidates", "filings", "expenditures"}
+        assert {"candidates", "filings", "expenditures"} == VALID_MODES
 
     def test_valid_offices(self):
-        assert VALID_OFFICES == {"P", "S", "H"}
+        assert {"P", "S", "H"} == VALID_OFFICES
 
     def test_fec_base_url(self):
         assert _FEC_BASE.startswith("https://api.open.fec.gov")
@@ -526,16 +541,19 @@ class TestConstants:
 class TestRegistryAndBandit:
     def test_tool_in_cli_registry(self):
         from agent.cli import build_tool_registry
+
         registry = build_tool_registry()
         assert "political_risk" in registry.list_names()
 
     def test_bandit_arm_exists(self):
         from agent.learning.bandit import DEFAULT_ARMS
+
         arm_names = [a.name for a in DEFAULT_ARMS]
         assert "political_risk_monitor" in arm_names
 
     def test_bandit_arm_references_tool(self):
         from agent.learning.bandit import DEFAULT_ARMS
+
         arm = next(a for a in DEFAULT_ARMS if a.name == "political_risk_monitor")
         assert "political_risk" in arm.tools
 
@@ -548,9 +566,7 @@ class TestCandidatesMode:
         with patch("httpx.Client") as mc:
             mc.return_value.__enter__ = lambda s: s
             mc.return_value.__exit__ = MagicMock(return_value=False)
-            mc.return_value.get.return_value = _mock_resp(
-                _fec_response([_candidate(name="BIDEN")])
-            )
+            mc.return_value.get.return_value = _mock_resp(_fec_response([_candidate(name="BIDEN")]))
             r = _tool().execute(mode="candidates", query="BIDEN")
         assert r.success
         call_params = mc.return_value.get.call_args[1]["params"]
@@ -560,9 +576,7 @@ class TestCandidatesMode:
         with patch("httpx.Client") as mc:
             mc.return_value.__enter__ = lambda s: s
             mc.return_value.__exit__ = MagicMock(return_value=False)
-            mc.return_value.get.return_value = _mock_resp(
-                _fec_response([_candidate(office="S")])
-            )
+            mc.return_value.get.return_value = _mock_resp(_fec_response([_candidate(office="S")]))
             r = _tool().execute(mode="candidates", office="S")
         assert r.success
 
@@ -570,9 +584,7 @@ class TestCandidatesMode:
         with patch("httpx.Client") as mc:
             mc.return_value.__enter__ = lambda s: s
             mc.return_value.__exit__ = MagicMock(return_value=False)
-            mc.return_value.get.return_value = _mock_resp(
-                _fec_response([_candidate()])
-            )
+            mc.return_value.get.return_value = _mock_resp(_fec_response([_candidate()]))
             r = _tool().execute(mode="candidates", cycle=2024)
         assert r.success
         call_params = mc.return_value.get.call_args[1]["params"]
@@ -587,9 +599,7 @@ class TestFilingsMode:
         with patch("httpx.Client") as mc:
             mc.return_value.__enter__ = lambda s: s
             mc.return_value.__exit__ = MagicMock(return_value=False)
-            mc.return_value.get.return_value = _mock_resp(
-                _fec_response([_filing()])
-            )
+            mc.return_value.get.return_value = _mock_resp(_fec_response([_filing()]))
             r = _tool().execute(mode="filings", query="C00703975")
         assert r.success
         call_params = mc.return_value.get.call_args[1]["params"]
@@ -599,9 +609,7 @@ class TestFilingsMode:
         with patch("httpx.Client") as mc:
             mc.return_value.__enter__ = lambda s: s
             mc.return_value.__exit__ = MagicMock(return_value=False)
-            mc.return_value.get.return_value = _mock_resp(
-                _fec_response([_filing()])
-            )
+            mc.return_value.get.return_value = _mock_resp(_fec_response([_filing()]))
             r = _tool().execute(mode="filings", sort_order="asc")
         call_params = mc.return_value.get.call_args[1]["params"]
         assert call_params["sort"] == "receipt_date"
@@ -615,9 +623,7 @@ class TestExpendituresMode:
         with patch("httpx.Client") as mc:
             mc.return_value.__enter__ = lambda s: s
             mc.return_value.__exit__ = MagicMock(return_value=False)
-            mc.return_value.get.return_value = _mock_resp(
-                _fec_response([_expenditure()])
-            )
+            mc.return_value.get.return_value = _mock_resp(_fec_response([_expenditure()]))
             r = _tool().execute(mode="expenditures")
         assert r.success
         assert r.data["result_type"] == "expenditures"
@@ -626,9 +632,7 @@ class TestExpendituresMode:
         with patch("httpx.Client") as mc:
             mc.return_value.__enter__ = lambda s: s
             mc.return_value.__exit__ = MagicMock(return_value=False)
-            mc.return_value.get.return_value = _mock_resp(
-                _fec_response([_expenditure()])
-            )
+            mc.return_value.get.return_value = _mock_resp(_fec_response([_expenditure()]))
             r = _tool().execute(mode="expenditures", query="P00000001")
         call_params = mc.return_value.get.call_args[1]["params"]
         assert call_params["candidate_id"] == "P00000001"
@@ -642,9 +646,7 @@ class TestEdgeCombinations:
         with patch("httpx.Client") as mc:
             mc.return_value.__enter__ = lambda s: s
             mc.return_value.__exit__ = MagicMock(return_value=False)
-            mc.return_value.get.return_value = _mock_resp(
-                _fec_response([], total=0)
-            )
+            mc.return_value.get.return_value = _mock_resp(_fec_response([], total=0))
             r = _tool().execute(mode="candidates")
         assert r.success
         assert r.data["count"] == 0
@@ -654,9 +656,7 @@ class TestEdgeCombinations:
         with patch("httpx.Client") as mc:
             mc.return_value.__enter__ = lambda s: s
             mc.return_value.__exit__ = MagicMock(return_value=False)
-            mc.return_value.get.return_value = _mock_resp(
-                _fec_response([_candidate()])
-            )
+            mc.return_value.get.return_value = _mock_resp(_fec_response([_candidate()]))
             r = _tool().execute(mode="candidates")
         assert r.success
         call_params = mc.return_value.get.call_args[1]["params"]
@@ -671,9 +671,7 @@ class TestEdgeCombinations:
             with patch("httpx.Client") as mc:
                 mc.return_value.__enter__ = lambda s: s
                 mc.return_value.__exit__ = MagicMock(return_value=False)
-                mc.return_value.get.return_value = _mock_resp(
-                    _fec_response([fixture])
-                )
+                mc.return_value.get.return_value = _mock_resp(_fec_response([fixture]))
                 r = _tool().execute(mode=mode)
             assert r.success
             assert r.data["result_type"] == mode

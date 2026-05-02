@@ -13,7 +13,6 @@ from unittest.mock import MagicMock, patch
 
 import httpx
 
-
 # ──────────────────────────────────────────────────────────────────
 # Synthetic data factories
 # ──────────────────────────────────────────────────────────────────
@@ -70,9 +69,7 @@ def _mock_response(text, status=200):
     resp.status_code = status
     resp.text = text
     if status >= 400:
-        resp.raise_for_status.side_effect = httpx.HTTPStatusError(
-            f"HTTP {status}", request=MagicMock(), response=resp
-        )
+        resp.raise_for_status.side_effect = httpx.HTTPStatusError(f"HTTP {status}", request=MagicMock(), response=resp)
     else:
         resp.raise_for_status.return_value = None
     return resp
@@ -136,9 +133,7 @@ class TestGlobalPmiTool(unittest.TestCase):
             mock_cls.return_value.__exit__ = MagicMock(return_value=False)
             client.get.return_value = _mock_response(_make_csv())
 
-            result = tool.execute(
-                mode="cli", start_period="2025-06", end_period="2026-01"
-            )
+            result = tool.execute(mode="cli", start_period="2025-06", end_period="2026-01")
             self.assertTrue(result.success)
 
     # ── CLI mode basic ──────────────────────────────────────────────
@@ -194,9 +189,7 @@ class TestGlobalPmiTool(unittest.TestCase):
         client = MagicMock()
         mock_cls.return_value.__enter__ = MagicMock(return_value=client)
         mock_cls.return_value.__exit__ = MagicMock(return_value=False)
-        csv = _make_single_country_csv(
-            "DEU", [("2025-11", "99.50"), ("2025-12", "99.20"), ("2026-01", "98.90")]
-        )
+        csv = _make_single_country_csv("DEU", [("2025-11", "99.50"), ("2025-12", "99.20"), ("2026-01", "98.90")])
         client.get.return_value = _mock_response(csv)
 
         tool = self._make_tool()
@@ -227,9 +220,7 @@ class TestGlobalPmiTool(unittest.TestCase):
         client = MagicMock()
         mock_cls.return_value.__enter__ = MagicMock(return_value=client)
         mock_cls.return_value.__exit__ = MagicMock(return_value=False)
-        csv = _make_single_country_csv(
-            "USA", [("2025-12", "100.50"), ("2026-01", "100.80")]
-        )
+        csv = _make_single_country_csv("USA", [("2025-12", "100.50"), ("2026-01", "100.80")])
         client.get.return_value = _mock_response(csv)
 
         tool = self._make_tool()
@@ -331,9 +322,7 @@ class TestGlobalPmiTool(unittest.TestCase):
         client = MagicMock()
         mock_cls.return_value.__enter__ = MagicMock(return_value=client)
         mock_cls.return_value.__exit__ = MagicMock(return_value=False)
-        client.get.return_value = _mock_response(
-            "REF_AREA,FREQ,MEASURE,TIME_PERIOD,OBS_VALUE\n"
-        )
+        client.get.return_value = _mock_response("REF_AREA,FREQ,MEASURE,TIME_PERIOD,OBS_VALUE\n")
 
         tool = self._make_tool()
         result = tool.execute(mode="cli")
@@ -468,9 +457,7 @@ class TestGlobalPmiTool(unittest.TestCase):
         client = MagicMock()
         mock_cls.return_value.__enter__ = MagicMock(return_value=client)
         mock_cls.return_value.__exit__ = MagicMock(return_value=False)
-        csv = _make_single_country_csv(
-            "USA", [("2025-12", "101.50"), ("2026-01", "101.20")]
-        )
+        csv = _make_single_country_csv("USA", [("2025-12", "101.50"), ("2026-01", "101.20")])
         client.get.return_value = _mock_response(csv)
 
         tool = self._make_tool()
@@ -485,9 +472,7 @@ class TestGlobalPmiTool(unittest.TestCase):
         client = MagicMock()
         mock_cls.return_value.__enter__ = MagicMock(return_value=client)
         mock_cls.return_value.__exit__ = MagicMock(return_value=False)
-        csv = _make_single_country_csv(
-            "USA", [("2025-12", "98.50"), ("2026-01", "98.80")]
-        )
+        csv = _make_single_country_csv("USA", [("2025-12", "98.50"), ("2026-01", "98.80")])
         client.get.return_value = _mock_response(csv)
 
         tool = self._make_tool()
@@ -535,8 +520,8 @@ class TestL2PersistenceGuards(unittest.TestCase):
         self.assertEqual(counts, {"economic_activity_obs": 0})
 
     def test_no_entity_id_fn_returns_zeros(self):
-        from agent.tools.global_pmi import GlobalPmiTool
         import agent.tools.global_pmi as gp_mod
+        from agent.tools.global_pmi import GlobalPmiTool
 
         tool = GlobalPmiTool()
         tool._store = _make_store_mock()
@@ -604,8 +589,8 @@ class TestL2PersistencePerCountry(unittest.TestCase):
         self.assertEqual(obs.kwargs["source_tool"], "global_pmi")
 
     def test_targets_correct_country_entity(self):
-        from agent.tools.global_pmi import GlobalPmiTool
         from agent.pipeline.entity import entity_id_from_key
+        from agent.tools.global_pmi import GlobalPmiTool
 
         tool = GlobalPmiTool()
         store = _make_store_mock()

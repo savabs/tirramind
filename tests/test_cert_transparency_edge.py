@@ -17,7 +17,7 @@ integration of count assertions (32 tools, 21 arms).
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -25,21 +25,18 @@ import httpx
 import pytest
 
 from agent.tools.cert_transparency import (
+    _CACHE_TTL,
+    VALID_MODES,
     CertTransparencyTool,
+    _format_cert,
+    _normalize_record,
     _parse_timestamp,
     _shorten_issuer,
-    _normalize_record,
-    _format_cert,
-    VALID_MODES,
-    _CRTSH_URL,
-    _CACHE_TTL,
 )
-from agent.tools.base import ToolResult
-
 
 # ── Timestamps ───────────────────────────────────────────────
 
-NOW = datetime(2026, 3, 28, 12, 0, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 3, 28, 12, 0, 0, tzinfo=UTC)
 YESTERDAY = (NOW - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S")
 LAST_WEEK = (NOW - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%S")
 LAST_MONTH = (NOW - timedelta(days=31)).strftime("%Y-%m-%dT%H:%M:%S")
@@ -158,7 +155,7 @@ MOCK_RECENT_BASE = [
 class TestParseTimestamp:
     def test_iso_no_fractional(self):
         result = _parse_timestamp("2026-03-27T07:49:06")
-        assert result == datetime(2026, 3, 27, 7, 49, 6, tzinfo=timezone.utc)
+        assert result == datetime(2026, 3, 27, 7, 49, 6, tzinfo=UTC)
 
     def test_iso_with_fractional(self):
         result = _parse_timestamp("2026-03-27T07:49:06.083")
@@ -184,9 +181,7 @@ class TestParseTimestamp:
 
 class TestShortenIssuer:
     def test_extract_cn(self):
-        result = _shorten_issuer(
-            'C=US, O="DigiCert, Inc.", CN=DigiCert SHA2 Extended Validation Server CA'
-        )
+        result = _shorten_issuer('C=US, O="DigiCert, Inc.", CN=DigiCert SHA2 Extended Validation Server CA')
         assert result == "DigiCert SHA2 Extended Validation Server CA"
 
     def test_no_cn(self):
@@ -327,7 +322,7 @@ class TestInputValidation:
         assert "Invalid mode" in result.output
 
     def test_modes_match_constant(self):
-        assert VALID_MODES == {"search", "subdomains", "recent"}
+        assert {"search", "subdomains", "recent"} == VALID_MODES
 
     def test_days_back_clamped_high(self):
         tool = CertTransparencyTool()
@@ -343,17 +338,13 @@ class TestInputValidation:
 
     def test_limit_clamped_high(self):
         tool = CertTransparencyTool()
-        with patch.object(
-            tool, "_fetch_crtsh", return_value=(MOCK_SEARCH_RESULTS, None)
-        ):
+        with patch.object(tool, "_fetch_crtsh", return_value=(MOCK_SEARCH_RESULTS, None)):
             result = tool.execute(domain="stripe.com", limit=10000)
             assert result.success
 
     def test_limit_clamped_low(self):
         tool = CertTransparencyTool()
-        with patch.object(
-            tool, "_fetch_crtsh", return_value=(MOCK_SEARCH_RESULTS, None)
-        ):
+        with patch.object(tool, "_fetch_crtsh", return_value=(MOCK_SEARCH_RESULTS, None)):
             result = tool.execute(domain="stripe.com", limit=0)
             assert result.success
             # limit clamped to 1, so max 1 result
@@ -372,9 +363,7 @@ class TestInputValidation:
 class TestSearchMode:
     def test_search_returns_certs(self):
         tool = CertTransparencyTool()
-        with patch.object(
-            tool, "_fetch_crtsh", return_value=(MOCK_SEARCH_RESULTS, None)
-        ):
+        with patch.object(tool, "_fetch_crtsh", return_value=(MOCK_SEARCH_RESULTS, None)):
             result = tool.execute(mode="search", domain="api.stripe.com")
         assert result.success
         assert result.data["count"] == 3
@@ -391,9 +380,7 @@ class TestSearchMode:
 
     def test_search_sorted_by_entry_timestamp_desc(self):
         tool = CertTransparencyTool()
-        with patch.object(
-            tool, "_fetch_crtsh", return_value=(MOCK_SEARCH_RESULTS, None)
-        ):
+        with patch.object(tool, "_fetch_crtsh", return_value=(MOCK_SEARCH_RESULTS, None)):
             result = tool.execute(mode="search", domain="api.stripe.com")
         certs = result.data["certs"]
         # Should be most recent first
@@ -402,9 +389,7 @@ class TestSearchMode:
 
     def test_search_limit(self):
         tool = CertTransparencyTool()
-        with patch.object(
-            tool, "_fetch_crtsh", return_value=(MOCK_SEARCH_RESULTS, None)
-        ):
+        with patch.object(tool, "_fetch_crtsh", return_value=(MOCK_SEARCH_RESULTS, None)):
             result = tool.execute(mode="search", domain="stripe.com", limit=2)
         assert result.data["count"] == 2
 
@@ -417,9 +402,7 @@ class TestSearchMode:
 
     def test_search_output_mentions_domain(self):
         tool = CertTransparencyTool()
-        with patch.object(
-            tool, "_fetch_crtsh", return_value=(MOCK_SEARCH_RESULTS, None)
-        ):
+        with patch.object(tool, "_fetch_crtsh", return_value=(MOCK_SEARCH_RESULTS, None)):
             result = tool.execute(mode="search", domain="api.stripe.com")
         assert "api.stripe.com" in result.output
 
@@ -432,9 +415,7 @@ class TestSearchMode:
 
     def test_default_mode_is_search(self):
         tool = CertTransparencyTool()
-        with patch.object(
-            tool, "_fetch_crtsh", return_value=(MOCK_SEARCH_RESULTS, None)
-        ):
+        with patch.object(tool, "_fetch_crtsh", return_value=(MOCK_SEARCH_RESULTS, None)):
             result = tool.execute(domain="api.stripe.com")
         assert result.success
         assert result.data["count"] == 3
@@ -467,9 +448,7 @@ class TestSubdomainsMode:
                 (MOCK_BASE_RESULTS, None),
             ]
             result = tool.execute(mode="subdomains", domain="stripe.com")
-        api_sub = next(
-            s for s in result.data["subdomains"] if s["subdomain"] == "api.stripe.com"
-        )
+        api_sub = next(s for s in result.data["subdomains"] if s["subdomain"] == "api.stripe.com")
         assert api_sub["cert_count"] == 2
 
     def test_subdomains_wildcard_vs_concrete(self):
@@ -723,9 +702,7 @@ class TestFetchCrtsh:
 
     @patch("agent.tools.cert_transparency.httpx.get")
     def test_non_list_response(self, mock_get):
-        mock_get.return_value = self._make_mock_response(
-            json_data={"error": "bad request"}
-        )
+        mock_get.return_value = self._make_mock_response(json_data={"error": "bad request"})
         tool = CertTransparencyTool()
         records, error = tool._fetch_crtsh(query="x.com")
         assert records == []
@@ -802,9 +779,7 @@ class TestCacheInteraction:
 class TestOutputFormatting:
     def test_search_output_has_active_expired_count(self):
         tool = CertTransparencyTool()
-        with patch.object(
-            tool, "_fetch_crtsh", return_value=(MOCK_SEARCH_RESULTS, None)
-        ):
+        with patch.object(tool, "_fetch_crtsh", return_value=(MOCK_SEARCH_RESULTS, None)):
             result = tool.execute(domain="api.stripe.com")
         assert "active" in result.output.lower()
         assert "expired" in result.output.lower()
@@ -847,17 +822,13 @@ class TestIntegration:
     def test_tool_count(self):
         registry = self._build_registry()
         assert len(registry._tools) == 60, (
-            f"Expected 60 tools, got {len(registry._tools)}: "
-            f"{sorted(registry._tools.keys())}"
+            f"Expected 60 tools, got {len(registry._tools)}: {sorted(registry._tools.keys())}"
         )
 
     def test_bandit_arm_count(self):
         from agent.learning.bandit import DEFAULT_ARMS
 
-        assert len(DEFAULT_ARMS) == 48, (
-            f"Expected 48 arms, got {len(DEFAULT_ARMS)}: "
-            f"{[a.name for a in DEFAULT_ARMS]}"
-        )
+        assert len(DEFAULT_ARMS) == 48, f"Expected 48 arms, got {len(DEFAULT_ARMS)}: {[a.name for a in DEFAULT_ARMS]}"
 
     def test_cert_transparency_in_registry(self):
         registry = self._build_registry()

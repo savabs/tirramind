@@ -8,14 +8,12 @@ produce the expected graph connectivity in the GraphBuilder output.
 from __future__ import annotations
 
 import time
-from unittest.mock import MagicMock
 
 import pytest
 
+from agent.models.gnn.graph_builder import ENTITY_TYPES, OBSERVATION_TYPES, GraphBuilder
 from agent.pipeline.entity import entity_id_from_key
 from agent.pipeline.store import PipelineStore
-from agent.models.gnn.graph_builder import GraphBuilder, ENTITY_TYPES, OBSERVATION_TYPES
-
 
 # ── Helpers ───────────────────────────────────────────────────
 
@@ -63,9 +61,7 @@ class TestInstrumentCompanyCountryGraph:
         spy = _register(store, "instrument", "SPY", "SPDR S&P 500 ETF")
         _observe(store, spy, "instrument_return", {"log_return": 0.01})
         # Company: BlackRock (issuer of SPY via iShares — using for test)
-        blackrock = _register(
-            store, "company", "State Street", "State Street Global Advisors"
-        )
+        blackrock = _register(store, "company", "State Street", "State Street Global Advisors")
         # Country: US
         us = _register(store, "country", "US", "United States")
         # Links
@@ -157,9 +153,7 @@ class TestCftcInstrumentGraph:
     def test_cftc_observation_in_events(self, cftc_store):
         builder = GraphBuilder(cftc_store)
         _, _, events = builder.build()
-        futures_events = [
-            e for e in events if e.get("observation_type") == "futures_positioning"
-        ]
+        futures_events = [e for e in events if e.get("observation_type") == "futures_positioning"]
         assert len(futures_events) >= 1
 
     def test_instrument_reachable_from_cftc(self, cftc_store):
@@ -180,9 +174,7 @@ class TestPolymarketEntitiesInGraph:
     def poly_store(self, tmp_path):
         store = _make_store(tmp_path)
         # Topic entity
-        topic = _register(
-            store, "topic", "will-trump-win-2024", "Will Trump win the 2024 election?"
-        )
+        topic = _register(store, "topic", "will-trump-win-2024", "Will Trump win the 2024 election?")
         _observe(
             store,
             topic,
@@ -225,9 +217,7 @@ class TestPolymarketEntitiesInGraph:
     def test_market_probability_events(self, poly_store):
         builder = GraphBuilder(poly_store)
         _, _, events = builder.build()
-        mp_events = [
-            e for e in events if e.get("observation_type") == "market_probability"
-        ]
+        mp_events = [e for e in events if e.get("observation_type") == "market_probability"]
         assert len(mp_events) >= 1
 
     def test_whale_trade_events(self, poly_store):
@@ -365,8 +355,8 @@ class TestNewTypeRegistrations:
 
     def test_entity_types_sorted(self):
         """Entity types should be alphabetically sorted for deterministic one-hot encoding."""
-        assert ENTITY_TYPES == sorted(ENTITY_TYPES)
+        assert sorted(ENTITY_TYPES) == ENTITY_TYPES
 
     def test_observation_types_sorted(self):
         """Obs types should be alphabetically sorted for deterministic encoding."""
-        assert OBSERVATION_TYPES == sorted(OBSERVATION_TYPES)
+        assert sorted(OBSERVATION_TYPES) == OBSERVATION_TYPES

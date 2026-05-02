@@ -13,7 +13,6 @@ Covers:
 from __future__ import annotations
 
 import re
-import time
 
 import pytest
 
@@ -23,7 +22,6 @@ from agent.convergence.taxonomy import CATEGORIES
 from agent.convergence.templates import (
     TEMPLATE_LIBRARY,
     CausalTemplate,
-    TemplateStep,
     match_template,
 )
 
@@ -126,9 +124,7 @@ class TestLibraryStructure:
             "digital_infrastructure_crisis",
         ]
         for i, name in enumerate(expected):
-            assert TEMPLATE_LIBRARY[i].name == name, (
-                f"Template #{i} expected {name}, got {TEMPLATE_LIBRARY[i].name}"
-            )
+            assert TEMPLATE_LIBRARY[i].name == name, f"Template #{i} expected {name}, got {TEMPLATE_LIBRARY[i].name}"
 
 
 class TestNewTemplateProperties:
@@ -142,9 +138,7 @@ class TestNewTemplateProperties:
     @pytest.mark.parametrize("name", NEW_TEMPLATE_NAMES)
     def test_step_zero_within_days_zero(self, name: str):
         t = _template_by_name(name)
-        assert t.steps[0].within_days == 0, (
-            f"{name} step 0 within_days={t.steps[0].within_days}, expected 0"
-        )
+        assert t.steps[0].within_days == 0, f"{name} step 0 within_days={t.steps[0].within_days}, expected 0"
 
     @pytest.mark.parametrize("name", NEW_TEMPLATE_NAMES)
     def test_within_days_non_decreasing(self, name: str):
@@ -152,8 +146,7 @@ class TestNewTemplateProperties:
         days = [s.within_days for s in t.steps]
         for i in range(1, len(days)):
             assert days[i] >= days[i - 1], (
-                f"{name} within_days not non-decreasing at step {i}: "
-                f"{days[i - 1]} → {days[i]}"
+                f"{name} within_days not non-decreasing at step {i}: {days[i - 1]} → {days[i]}"
             )
 
     @pytest.mark.parametrize("name", NEW_TEMPLATE_NAMES)
@@ -161,9 +154,7 @@ class TestNewTemplateProperties:
         t = _template_by_name(name)
         for idx, step in enumerate(t.steps):
             for cat in step.category_pattern.split("|"):
-                assert cat in CATEGORIES, (
-                    f"{name} step {idx} has invalid category {cat!r}"
-                )
+                assert cat in CATEGORIES, f"{name} step {idx} has invalid category {cat!r}"
 
     @pytest.mark.parametrize("name", NEW_TEMPLATE_NAMES)
     def test_regex_compiles(self, name: str):
@@ -172,40 +163,28 @@ class TestNewTemplateProperties:
             try:
                 re.compile(step.signal_pattern)
             except re.error as e:
-                pytest.fail(
-                    f"{name} step {idx} has invalid regex "
-                    f"{step.signal_pattern!r}: {e}"
-                )
+                pytest.fail(f"{name} step {idx} has invalid regex {step.signal_pattern!r}: {e}")
 
     @pytest.mark.parametrize("name", NEW_TEMPLATE_NAMES)
     def test_direction_valid(self, name: str):
         t = _template_by_name(name)
         for idx, step in enumerate(t.steps):
-            assert step.direction in (+1, -1, None), (
-                f"{name} step {idx} direction={step.direction}"
-            )
+            assert step.direction in (+1, -1, None), f"{name} step {idx} direction={step.direction}"
 
     @pytest.mark.parametrize("name", NEW_TEMPLATE_NAMES)
     def test_description_nonempty(self, name: str):
         t = _template_by_name(name)
-        assert len(t.description.strip()) > 20, (
-            f"{name} description too short"
-        )
+        assert len(t.description.strip()) > 20, f"{name} description too short"
 
 
 class TestMinMatchValues:
     """Verify min_match settings match spec."""
 
     def test_five_step_templates_min_match_3(self):
-        five_step = [
-            n for n in NEW_TEMPLATE_NAMES
-            if len(_template_by_name(n).steps) == 5
-        ]
+        five_step = [n for n in NEW_TEMPLATE_NAMES if len(_template_by_name(n).steps) == 5]
         for n in five_step:
             t = _template_by_name(n)
-            assert t.min_match == 3, (
-                f"{n} has {len(t.steps)} steps but min_match={t.min_match}"
-            )
+            assert t.min_match == 3, f"{n} has {len(t.steps)} steps but min_match={t.min_match}"
 
     def test_carry_trade_unwind_six_steps_min_match_4(self):
         t = _template_by_name("carry_trade_unwind")
@@ -216,9 +195,7 @@ class TestMinMatchValues:
     def test_effective_min_match_all_new(self):
         for n in NEW_TEMPLATE_NAMES:
             t = _template_by_name(n)
-            assert t.effective_min_match >= 3, (
-                f"{n} effective_min_match={t.effective_min_match}"
-            )
+            assert t.effective_min_match >= 3, f"{n} effective_min_match={t.effective_min_match}"
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -235,9 +212,7 @@ class TestCategorySpan:
         cats = set()
         for step in t.steps:
             cats.update(step.category_pattern.split("|"))
-        assert len(cats) >= 3, (
-            f"{name} only spans {len(cats)} categories: {sorted(cats)}"
-        )
+        assert len(cats) >= 3, f"{name} only spans {len(cats)} categories: {sorted(cats)}"
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -280,8 +255,7 @@ class TestSilentNationalization:
     def test_partial_match_3_of_5(self):
         t = _template_by_name("silent_nationalization")
         t0 = 1_000_000.0
-        sigs = ["lobbying.energy.spend", "satellite.fire.hotspot_count",
-                "regulatory_gazette.ng.export_ban"]
+        sigs = ["lobbying.energy.spend", "satellite.fire.hotspot_count", "regulatory_gazette.ng.export_ban"]
         cats = ["behavioral_intent", "physical_disruption", "regulatory_action"]
         timeline = [
             _ev(sigs[0], cats[0], t0, +1),
@@ -502,7 +476,7 @@ class TestSmartMoneyDivergence:
             "financial_stress",
         ]
         timeline = [
-            _ev(sigs[0], cats[0], t0, +1),        # retail euphoria ↑
+            _ev(sigs[0], cats[0], t0, +1),  # retail euphoria ↑
             _ev(sigs[1], cats[1], t0 + 5 * _DAY, +1),  # public bullish ↑
             _ev(sigs[2], cats[2], t0 + 12 * _DAY, -1),  # insiders selling ↓
             _ev(sigs[3], cats[3], t0 + 18 * _DAY, +1),  # shorts increasing ↑

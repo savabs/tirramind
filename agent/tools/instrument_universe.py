@@ -21,7 +21,7 @@ import logging
 import math
 import time
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -54,9 +54,7 @@ class InstrumentDef:
     base_country: str | None = None  # ISO code for base currency country
     quote_country: str | None = None  # ISO code for quote currency country
     # Crypto protocol metadata (Phase 30).
-    protocol: str | None = (
-        None  # lowercased protocol name (e.g., "bitcoin", "ethereum")
-    )
+    protocol: str | None = None  # lowercased protocol name (e.g., "bitcoin", "ethereum")
     # Exchange country metadata (Phase 34).
     # ISO 3166-1 alpha-2 code for the country where the exchange is domiciled.
     # Distinct from `country` (underlying domicile) — enables GNN to learn
@@ -385,12 +383,8 @@ INSTRUMENTS: tuple[InstrumentDef, ...] = (
         issuer="State Street Global Advisors",
         country="US",
     ),
-    InstrumentDef(
-        "QQQ", "Nasdaq 100 ETF", "equity_etf", "US", issuer="Invesco", country="US"
-    ),
-    InstrumentDef(
-        "IWM", "Russell 2000 ETF", "equity_etf", "US", issuer="BlackRock", country="US"
-    ),
+    InstrumentDef("QQQ", "Nasdaq 100 ETF", "equity_etf", "US", issuer="Invesco", country="US"),
+    InstrumentDef("IWM", "Russell 2000 ETF", "equity_etf", "US", issuer="BlackRock", country="US"),
     InstrumentDef(
         "DIA",
         "Dow Jones ETF",
@@ -399,21 +393,11 @@ INSTRUMENTS: tuple[InstrumentDef, ...] = (
         issuer="State Street Global Advisors",
         country="US",
     ),
-    InstrumentDef(
-        "EWZ", "Brazil ETF", "equity_etf", "LatAm", issuer="BlackRock", country="BR"
-    ),
-    InstrumentDef(
-        "EWG", "Germany ETF", "equity_etf", "Europe", issuer="BlackRock", country="DE"
-    ),
-    InstrumentDef(
-        "FXI", "China ETF", "equity_etf", "Asia", issuer="BlackRock", country="CN"
-    ),
-    InstrumentDef(
-        "EWJ", "Japan ETF", "equity_etf", "Asia", issuer="BlackRock", country="JP"
-    ),
-    InstrumentDef(
-        "EWY", "South Korea ETF", "equity_etf", "Asia", issuer="BlackRock", country="KR"
-    ),
+    InstrumentDef("EWZ", "Brazil ETF", "equity_etf", "LatAm", issuer="BlackRock", country="BR"),
+    InstrumentDef("EWG", "Germany ETF", "equity_etf", "Europe", issuer="BlackRock", country="DE"),
+    InstrumentDef("FXI", "China ETF", "equity_etf", "Asia", issuer="BlackRock", country="CN"),
+    InstrumentDef("EWJ", "Japan ETF", "equity_etf", "Asia", issuer="BlackRock", country="JP"),
+    InstrumentDef("EWY", "South Korea ETF", "equity_etf", "Asia", issuer="BlackRock", country="KR"),
     InstrumentDef(
         "EWA",
         "Australia ETF",
@@ -422,9 +406,7 @@ INSTRUMENTS: tuple[InstrumentDef, ...] = (
         issuer="BlackRock",
         country="AU",
     ),
-    InstrumentDef(
-        "EWC", "Canada ETF", "equity_etf", "US", issuer="BlackRock", country="CA"
-    ),
+    InstrumentDef("EWC", "Canada ETF", "equity_etf", "US", issuer="BlackRock", country="CA"),
     InstrumentDef(
         "EWU",
         "United Kingdom ETF",
@@ -433,30 +415,14 @@ INSTRUMENTS: tuple[InstrumentDef, ...] = (
         issuer="BlackRock",
         country="GB",
     ),
-    InstrumentDef(
-        "EWQ", "France ETF", "equity_etf", "Europe", issuer="BlackRock", country="FR"
-    ),
-    InstrumentDef(
-        "EWP", "Spain ETF", "equity_etf", "Europe", issuer="BlackRock", country="ES"
-    ),
-    InstrumentDef(
-        "EWI", "Italy ETF", "equity_etf", "Europe", issuer="BlackRock", country="IT"
-    ),
-    InstrumentDef(
-        "INDA", "India ETF", "equity_etf", "Asia", issuer="BlackRock", country="IN"
-    ),
-    InstrumentDef(
-        "EWT", "Taiwan ETF", "equity_etf", "Asia", issuer="BlackRock", country="TW"
-    ),
-    InstrumentDef(
-        "EWH", "Hong Kong ETF", "equity_etf", "Asia", issuer="BlackRock", country="HK"
-    ),
-    InstrumentDef(
-        "THD", "Thailand ETF", "equity_etf", "Asia", issuer="BlackRock", country="TH"
-    ),
-    InstrumentDef(
-        "EWW", "Mexico ETF", "equity_etf", "LatAm", issuer="BlackRock", country="MX"
-    ),
+    InstrumentDef("EWQ", "France ETF", "equity_etf", "Europe", issuer="BlackRock", country="FR"),
+    InstrumentDef("EWP", "Spain ETF", "equity_etf", "Europe", issuer="BlackRock", country="ES"),
+    InstrumentDef("EWI", "Italy ETF", "equity_etf", "Europe", issuer="BlackRock", country="IT"),
+    InstrumentDef("INDA", "India ETF", "equity_etf", "Asia", issuer="BlackRock", country="IN"),
+    InstrumentDef("EWT", "Taiwan ETF", "equity_etf", "Asia", issuer="BlackRock", country="TW"),
+    InstrumentDef("EWH", "Hong Kong ETF", "equity_etf", "Asia", issuer="BlackRock", country="HK"),
+    InstrumentDef("THD", "Thailand ETF", "equity_etf", "Asia", issuer="BlackRock", country="TH"),
+    InstrumentDef("EWW", "Mexico ETF", "equity_etf", "LatAm", issuer="BlackRock", country="MX"),
     InstrumentDef(
         "VGK",
         "FTSE Europe ETF",
@@ -555,18 +521,10 @@ INSTRUMENTS: tuple[InstrumentDef, ...] = (
         issuer="State Street Global Advisors",
         country="US",
     ),
-    InstrumentDef(
-        "GDX", "Gold Miners ETF", "sector_etf", "Global", issuer="VanEck", country="US"
-    ),
-    InstrumentDef(
-        "SLV", "Silver ETF", "sector_etf", "Global", issuer="BlackRock", country="US"
-    ),
-    InstrumentDef(
-        "USO", "US Oil Fund", "sector_etf", "US", issuer="USCF", country="US"
-    ),
-    InstrumentDef(
-        "UNG", "US Natural Gas Fund", "sector_etf", "US", issuer="USCF", country="US"
-    ),
+    InstrumentDef("GDX", "Gold Miners ETF", "sector_etf", "Global", issuer="VanEck", country="US"),
+    InstrumentDef("SLV", "Silver ETF", "sector_etf", "Global", issuer="BlackRock", country="US"),
+    InstrumentDef("USO", "US Oil Fund", "sector_etf", "US", issuer="USCF", country="US"),
+    InstrumentDef("UNG", "US Natural Gas Fund", "sector_etf", "US", issuer="USCF", country="US"),
     # ── Fixed Income (10) ─────────────────────────────────
     InstrumentDef("ZN=F", "10-Year T-Note Futures", "fixed_income", "US", country="US"),
     InstrumentDef("ZB=F", "30-Year T-Bond Futures", "fixed_income", "US", country="US"),
@@ -611,9 +569,7 @@ INSTRUMENTS: tuple[InstrumentDef, ...] = (
         issuer="BlackRock",
         country="US",
     ),
-    InstrumentDef(
-        "EMB", "EM Bond ETF", "fixed_income", "EM", issuer="BlackRock"
-    ),  # no single country
+    InstrumentDef("EMB", "EM Bond ETF", "fixed_income", "EM", issuer="BlackRock"),  # no single country
     InstrumentDef(
         "AGG",
         "US Aggregate Bond ETF",
@@ -743,9 +699,7 @@ def _persist_instrument_links(store: PipelineStore) -> dict[str, int]:
             try:
                 canon = normalize_company_name(inst.issuer)
             except ValueError:
-                log.warning(
-                    "Cannot normalize issuer %r for %s", inst.issuer, inst.ticker
-                )
+                log.warning("Cannot normalize issuer %r for %s", inst.issuer, inst.ticker)
                 continue
 
             if canon not in seen_issuers:
@@ -971,11 +925,7 @@ def ingest_daily_prices(
 
             # ── Compute signals from history ───────────────
             closes = df["Close"].values.astype(float)
-            volumes = (
-                df["Volume"].values.astype(float)
-                if "Volume" in df.columns
-                else np.zeros(len(closes))
-            )
+            volumes = df["Volume"].values.astype(float) if "Volume" in df.columns else np.zeros(len(closes))
             highs = df["High"].values.astype(float) if "High" in df.columns else closes
             lows = df["Low"].values.astype(float) if "Low" in df.columns else closes
 
@@ -1216,11 +1166,7 @@ def backfill_historical_prices(
 
                 # Compute log returns
                 closes = df["Close"].values.astype(float)
-                volumes = (
-                    df["Volume"].values.astype(float)
-                    if "Volume" in df.columns
-                    else np.zeros(len(closes))
-                )
+                volumes = df["Volume"].values.astype(float) if "Volume" in df.columns else np.zeros(len(closes))
 
                 log_returns = np.diff(np.log(closes))
                 dates = df.index.tolist()
@@ -1240,9 +1186,7 @@ def backfill_historical_prices(
 
                     # 20d realized vol (annualised) — rolling window
                     if i >= 20:
-                        rv = float(
-                            np.std(log_returns[i - 20 : i]) * math.sqrt(252)
-                        )
+                        rv = float(np.std(log_returns[i - 20 : i]) * math.sqrt(252))
                     elif i >= 2:
                         rv = float(np.std(log_returns[:i]) * math.sqrt(252))
                     else:

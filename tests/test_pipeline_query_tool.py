@@ -9,13 +9,11 @@ CLI registration, and integration with PipelineStore.
 from __future__ import annotations
 
 import time
-from unittest.mock import MagicMock
 
 import pytest
 
 from agent.pipeline.store import PipelineStore
 from agent.tools.pipeline_query import PipelineQueryTool, _parse_relative_time
-
 
 # ── Helpers ───────────────────────────────────────────────────
 
@@ -325,8 +323,8 @@ class TestCLIRegistration:
     def test_pipeline_query_in_registry(self):
         """Verify pipeline_query tool is registered in build_tool_registry."""
         pytest.importorskip("hmmlearn")
-        from agent.config.settings import AgentConfig
         from agent.cli import build_tool_registry
+        from agent.config.settings import AgentConfig
 
         config = AgentConfig()
         registry = build_tool_registry(config)
@@ -334,8 +332,8 @@ class TestCLIRegistration:
 
     def test_pipeline_query_tool_instance(self):
         pytest.importorskip("hmmlearn")
-        from agent.config.settings import AgentConfig
         from agent.cli import build_tool_registry
+        from agent.config.settings import AgentConfig
 
         config = AgentConfig()
         registry = build_tool_registry(config)

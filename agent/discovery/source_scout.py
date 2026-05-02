@@ -15,13 +15,12 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import urllib.request
 import urllib.error
+import urllib.request
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from agent.discovery.signal_evaluator import SignalEvaluator
     from agent.learning.tool_router import ToolRoutingBandit
     from agent.pipeline.store import PipelineStore
     from agent.tools.base import ToolRegistry
@@ -178,11 +177,7 @@ class SourceScout:
                     description=pkg.get("notes", "")[:500],
                     format=fmt,
                     update_frequency=self._extract_frequency(pkg),
-                    topic_tags=[
-                        t.get("name", "")
-                        for t in pkg.get("tags", [])
-                        if t.get("name")
-                    ],
+                    topic_tags=[t.get("name", "") for t in pkg.get("tags", []) if t.get("name")],
                 )
             )
         return candidates
@@ -317,9 +312,7 @@ def run_source_discovery(
     # Add feature name prefixes
     try:
         conn = store._get_conn()  # noqa: SLF001
-        rows = conn.execute(
-            "SELECT DISTINCT feature_name FROM features"
-        ).fetchall()
+        rows = conn.execute("SELECT DISTINCT feature_name FROM features").fetchall()
         for r in rows:
             prefix = r[0].split(".")[0] if "." in r[0] else r[0]
             vocabulary.add(prefix)

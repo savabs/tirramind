@@ -7,7 +7,6 @@ Execute shell commands with timeout, output capture, and filtered environment.
 from __future__ import annotations
 
 import logging
-import shlex
 import subprocess
 import tempfile
 from typing import Any
@@ -21,10 +20,21 @@ _DEFAULT_TIMEOUT = 30
 _MAX_OUTPUT_LEN = 8_000
 
 # Commands that are never allowed
-_BLOCKED_PATTERNS = frozenset({
-    "rm -rf /", "rm -rf /*", "mkfs", "dd if=", ":(){", "fork bomb",
-    "chmod -R 777 /", "shutdown", "reboot", "halt", "poweroff",
-})
+_BLOCKED_PATTERNS = frozenset(
+    {
+        "rm -rf /",
+        "rm -rf /*",
+        "mkfs",
+        "dd if=",
+        ":(){",
+        "fork bomb",
+        "chmod -R 777 /",
+        "shutdown",
+        "reboot",
+        "halt",
+        "poweroff",
+    }
+)
 
 
 class ShellRunnerTool(Tool):

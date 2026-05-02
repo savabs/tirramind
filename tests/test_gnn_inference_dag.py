@@ -23,9 +23,7 @@ torch = pytest.importorskip("torch")
 from agent.models.gnn.trainer import (
     InjectedPattern,
     SyntheticGraphGenerator,
-    TrainerConfig,
 )
-
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -108,9 +106,7 @@ class TestDAGStructure:
 
 
 class TestEmptyStore:
-    def test_empty_store_skips(
-        self, empty_store: PipelineStore, tmp_path: Path
-    ) -> None:
+    def test_empty_store_skips(self, empty_store: PipelineStore, tmp_path: Path) -> None:
         result = run_gnn_inference(
             params={
                 "db_path": str(empty_store._db_path),
@@ -123,9 +119,7 @@ class TestEmptyStore:
         assert result["reason"] == "insufficient_entities"
         assert result["trained"] is False
 
-    def test_empty_store_no_model_saved(
-        self, empty_store: PipelineStore, tmp_path: Path
-    ) -> None:
+    def test_empty_store_no_model_saved(self, empty_store: PipelineStore, tmp_path: Path) -> None:
         model_path = tmp_path / "model.pt"
         run_gnn_inference(
             params={
@@ -144,9 +138,7 @@ class TestEmptyStore:
 
 
 class TestPopulatedStore:
-    def test_trains_and_saves(
-        self, populated_store: PipelineStore, tmp_path: Path, small_config: dict
-    ) -> None:
+    def test_trains_and_saves(self, populated_store: PipelineStore, tmp_path: Path, small_config: dict) -> None:
         model_path = tmp_path / "model.pt"
         result = run_gnn_inference(
             params={
@@ -161,9 +153,7 @@ class TestPopulatedStore:
         assert result["trained"] is True
         assert model_path.exists()
 
-    def test_loads_existing_model(
-        self, populated_store: PipelineStore, tmp_path: Path, small_config: dict
-    ) -> None:
+    def test_loads_existing_model(self, populated_store: PipelineStore, tmp_path: Path, small_config: dict) -> None:
         model_path = tmp_path / "model.pt"
         # First run trains
         run_gnn_inference(
@@ -188,9 +178,7 @@ class TestPopulatedStore:
         assert result["status"] == "completed"
         assert result["trained"] is False
 
-    def test_result_has_entity_count(
-        self, populated_store: PipelineStore, tmp_path: Path, small_config: dict
-    ) -> None:
+    def test_result_has_entity_count(self, populated_store: PipelineStore, tmp_path: Path, small_config: dict) -> None:
         result = run_gnn_inference(
             params={
                 "db_path": str(populated_store._db_path),

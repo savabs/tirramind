@@ -16,7 +16,6 @@ import pytest
 
 from agent.pipeline.store import PipelineStore
 
-
 # ── Fixtures ──────────────────────────────────────────────────
 
 
@@ -227,7 +226,7 @@ class TestConvergenceClusterStorage:
             store.store_convergence_cluster(
                 cluster_id=f"cl_{i}",
                 cluster_time=NOW + i * 100,
-                member_entity_ids=[f"c{i}", f"c{i+1}"],
+                member_entity_ids=[f"c{i}", f"c{i + 1}"],
                 correlated_surprise_score=0.5,
                 temporal_span_hours=1.0,
             )
@@ -239,7 +238,7 @@ class TestConvergenceClusterStorage:
             store.store_convergence_cluster(
                 cluster_id=f"cl_{i}",
                 cluster_time=NOW,
-                member_entity_ids=[f"c{i}", f"c{i+1}"],
+                member_entity_ids=[f"c{i}", f"c{i + 1}"],
                 correlated_surprise_score=i * 0.2,
                 temporal_span_hours=1.0,
             )
@@ -267,7 +266,7 @@ class TestConvergenceClusterStorage:
             store.store_convergence_cluster(
                 cluster_id=f"cl_{i}",
                 cluster_time=NOW + i,
-                member_entity_ids=[f"c{i}", f"c{i+1}"],
+                member_entity_ids=[f"c{i}", f"c{i + 1}"],
                 correlated_surprise_score=0.5,
                 temporal_span_hours=1.0,
             )

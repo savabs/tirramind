@@ -8,19 +8,19 @@ from typing import Any
 import numpy as np
 
 from agent.data.cache import DataCache
-from agent.tools.base import Tool, ToolResult
-from agent.tools.macro_data import MacroDataTool
-from agent.tools.market_data import MarketDataTool
 from agent.quant.backtest import (
-    WalkForward,
     BuyAndHoldStrategy,
     RegimeAvoidStrategy,
     RegimeOnlyStrategy,
+    WalkForward,
     regime_conditional_analysis,
 )
 from agent.quant.liquidity import LiquidityComposite
 from agent.quant.regime import RegimeHMM
 from agent.quant.scoring import block_bootstrap_ci, sharpe_ratio
+from agent.tools.base import Tool, ToolResult
+from agent.tools.macro_data import MacroDataTool
+from agent.tools.market_data import MarketDataTool
 
 log = logging.getLogger(__name__)
 
@@ -106,9 +106,7 @@ class BacktestTool(Tool):
             # Fetch liquidity composite
             lc = LiquidityComposite(self._macro, self._market)
             end = pd.Timestamp.now().strftime("%Y-%m-%d")
-            start = (
-                pd.Timestamp.now() - pd.DateOffset(years=lookback_years)
-            ).strftime("%Y-%m-%d")
+            start = (pd.Timestamp.now() - pd.DateOffset(years=lookback_years)).strftime("%Y-%m-%d")
 
             raw = lc.fetch_us(start, end)
             composite = lc.compute(raw)
@@ -126,19 +124,13 @@ class BacktestTool(Tool):
             regimes = hmm_result.states
 
             # Fetch SPY returns aligned to composite dates (use daily, resample to W-WED)
-            spy_result = self._market.execute(
-                tickers="SPY", period="max", interval="1d"
-            )
+            spy_result = self._market.execute(tickers="SPY", period="max", interval="1d")
             spy_bars = spy_result.data.get("SPY", [])
             if not spy_bars:
                 return ToolResult(success=False, output="Failed to fetch SPY data.")
 
-            spy_dates = pd.to_datetime(
-                [b["Date"] for b in spy_bars], utc=True
-            ).tz_localize(None).normalize()
-            spy_close = pd.Series(
-                [b["Close"] for b in spy_bars], index=spy_dates, name="spy"
-            ).sort_index()
+            spy_dates = pd.to_datetime([b["Date"] for b in spy_bars], utc=True).tz_localize(None).normalize()
+            spy_close = pd.Series([b["Close"] for b in spy_bars], index=spy_dates, name="spy").sort_index()
             spy_close = spy_close[~spy_close.index.duplicated(keep="last")]
 
             # Resample to W-WED to match composite grid

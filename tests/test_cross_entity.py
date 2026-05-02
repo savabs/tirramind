@@ -14,31 +14,21 @@ Covers:
 from __future__ import annotations
 
 import json
-import time
 from pathlib import Path
-from typing import Any
-from unittest.mock import patch
 
 import pytest
 
 from agent.pipeline.cross_entity import (
-    DEFAULT_WINDOW_SECONDS,
     GOLDSTEIN_THRESHOLD,
     CrossEntityDetector,
+    resolve_port_country,
+    resolve_wallet_exchange,
     seed_company_country_links,
     seed_vessel_country_links,
-    resolve_port_country,
-    SANCTIONS_ROOT_CODES,
-    VESSEL_WINDOW_SECONDS,
-    WHALE_GOLDSTEIN_THRESHOLD,
-    WHALE_VALUE_SCALE,
-    WHALE_WINDOW_SECONDS,
-    resolve_wallet_exchange,
     seed_whale_country_links,
 )
 from agent.pipeline.entity import entity_id_from_key
 from agent.pipeline.store import PipelineStore
-
 
 # ── fixtures ──────────────────────────────────────────────────
 
@@ -75,9 +65,7 @@ def _register_country(store: PipelineStore, fips: str, name: str) -> str:
     return eid
 
 
-def _add_insider_obs(
-    store: PipelineStore, entity_id: str, ts: float, value: dict | None = None
-) -> int:
+def _add_insider_obs(store: PipelineStore, entity_id: str, ts: float, value: dict | None = None) -> int:
     return store.store_entity_observation(
         entity_id=entity_id,
         source_tool="insider_filings",
@@ -125,9 +113,7 @@ class TestSeedCompanyCountryLinks:
         assert us is not None
         assert us["entity_type"] == "country"
 
-    def test_skips_unregistered_companies(
-        self, store: PipelineStore, tickers_file: Path
-    ) -> None:
+    def test_skips_unregistered_companies(self, store: PipelineStore, tickers_file: Path) -> None:
         # Only register one of the three
         _register_company(store, "320193", "apple")
         count = seed_company_country_links(store, str(tickers_file))
@@ -146,9 +132,7 @@ class TestSeedCompanyCountryLinks:
         count = seed_company_country_links(store, str(empty))
         assert count == 0
 
-    def test_link_type_and_source(
-        self, store: PipelineStore, tickers_file: Path
-    ) -> None:
+    def test_link_type_and_source(self, store: PipelineStore, tickers_file: Path) -> None:
         cid = _register_company(store, "320193", "apple")
         seed_company_country_links(store, str(tickers_file))
         links = store.query_entity_links(cid, direction="outgoing")
@@ -221,9 +205,7 @@ class TestDetectInsiderGdelt:
         patterns = detector.detect_insider_gdelt(cid)
         assert len(patterns) == 1
 
-    def test_goldstein_just_above_threshold_excluded(
-        self, store: PipelineStore
-    ) -> None:
+    def test_goldstein_just_above_threshold_excluded(self, store: PipelineStore) -> None:
         cid = _register_company(store, "320193", "apple")
         kid = _register_country(store, "US", "United States")
         store.link_entities(cid, kid, "headquartered_in", "sec_tickers")
@@ -645,9 +627,7 @@ class TestSeedVesselCountryLinks:
         count = seed_vessel_country_links(store)
         assert count == 3  # FI, RS, PL
 
-        links = store.query_entity_links(
-            vid, direction="outgoing", link_type="port_call_to"
-        )
+        links = store.query_entity_links(vid, direction="outgoing", link_type="port_call_to")
         countries = {lk["entity_id_b"] for lk in links}
         assert len(countries) == 3
 
@@ -737,17 +717,13 @@ class TestDetectVesselSanctions:
         t0 = 1_700_000_000.0
         _add_port_call_obs(store, vid, t0, port="ST PETERSBURG")
         # Root code 01 = Make Public Statement, not sanctions
-        _add_sanctions_gdelt(
-            store, kid, t0 + 3600, goldstein=-3.0, event_root_code="01", quad_class=3
-        )
+        _add_sanctions_gdelt(store, kid, t0 + 3600, goldstein=-3.0, event_root_code="01", quad_class=3)
 
         detector = CrossEntityDetector(store)
         patterns = detector.detect_vessel_sanctions(vid)
         assert patterns == []
 
-    def test_quad_class_4_included_even_without_sanctions_code(
-        self, store: PipelineStore
-    ) -> None:
+    def test_quad_class_4_included_even_without_sanctions_code(self, store: PipelineStore) -> None:
         """Material conflict (quad_class=4) should pass even with non-sanctions root code."""
         vid = _register_vessel(store, "9000001", "MV Test")
         kid = _register_country(store, "RS", "Russia")
@@ -756,9 +732,7 @@ class TestDetectVesselSanctions:
         t0 = 1_700_000_000.0
         _add_port_call_obs(store, vid, t0, port="ST PETERSBURG")
         # Root code 19 = Fight, but quad_class=4 should still match
-        _add_sanctions_gdelt(
-            store, kid, t0 + 3600, goldstein=-8.0, event_root_code="19", quad_class=4
-        )
+        _add_sanctions_gdelt(store, kid, t0 + 3600, goldstein=-8.0, event_root_code="19", quad_class=4)
 
         detector = CrossEntityDetector(store)
         patterns = detector.detect_vessel_sanctions(vid)
@@ -837,9 +811,7 @@ class TestDetectVesselSanctions:
         assert patterns[0]["vessel_obs_type"] == "port_call"
         assert patterns[0]["event_root_code"] == "17"
 
-    def test_missing_root_code_with_quad4_still_matches(
-        self, store: PipelineStore
-    ) -> None:
+    def test_missing_root_code_with_quad4_still_matches(self, store: PipelineStore) -> None:
         """Event with no event_root_code but quad_class=4."""
         vid = _register_vessel(store, "9000001", "MV Test")
         kid = _register_country(store, "RS", "Russia")
@@ -887,9 +859,7 @@ class TestVesselSanctionsIntegration:
 
         # 4. Add GDELT sanctions event for Russia
         rs_id = entity_id_from_key("country", "RS")
-        _add_sanctions_gdelt(
-            store, rs_id, t0 + 7200, goldstein=-8.0, event_root_code="17"
-        )
+        _add_sanctions_gdelt(store, rs_id, t0 + 7200, goldstein=-8.0, event_root_code="17")
 
         # 5. Detect patterns
         detector = CrossEntityDetector(store)
@@ -1016,9 +986,7 @@ class TestSeedWhaleCountryLinks:
         assert count == 1
 
         wid = entity_id_from_key("wallet", "1ExchangeUSaddr0001")
-        links = store.query_entity_links(
-            wid, direction="outgoing", link_type="exchange_based_in"
-        )
+        links = store.query_entity_links(wid, direction="outgoing", link_type="exchange_based_in")
         assert len(links) == 1
         us_eid = entity_id_from_key("country", "US")
         assert links[0]["entity_id_b"] == us_eid

@@ -163,9 +163,7 @@ class RewardFunction:
         total -= adv_pen
 
         # Diagnostics
-        vol = max(
-            float(np.std(rolling)) if len(rolling) > 0 else 0.0, self._cfg.vol_floor
-        )
+        vol = max(float(np.std(rolling)) if len(rolling) > 0 else 0.0, self._cfg.vol_floor)
 
         if len(rolling) >= 2:
             alpha = 1.0 - self._cfg.cvar_confidence

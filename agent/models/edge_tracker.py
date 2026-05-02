@@ -133,9 +133,7 @@ class EdgeConfidenceTracker:
                 continue
 
             # Get current parents from edges list
-            current_parents = tuple(
-                sorted(p for p, c in edges if c == child and p in feature_df.columns)
-            )
+            current_parents = tuple(sorted(p for p, c in edges if c == child and p in feature_df.columns))
             parents_without = tuple(p for p in current_parents if p != parent)
 
             try:
@@ -303,9 +301,7 @@ class EdgeConfidenceTracker:
         return {
             "node_names": list(self._node_names),
             "windows_days": list(self._windows_days),
-            "consecutive": {
-                f"{p}|{c}": count for (p, c), count in self._consecutive.items()
-            },
+            "consecutive": {f"{p}|{c}": count for (p, c), count in self._consecutive.items()},
         }
 
     @classmethod

@@ -28,10 +28,7 @@ def test_drift_watcher_parses_findings(tmp_path: Path) -> None:
     scripts = tmp_path / "scripts"
     scripts.mkdir()
     fake = scripts / "fact_lint.py"
-    fake.write_text(
-        "import sys, json\n"
-        "print(json.dumps([{'code':'FL01','path':'x.md','line':1,'msg':'drift'}]))\n"
-    )
+    fake.write_text("import sys, json\nprint(json.dumps([{'code':'FL01','path':'x.md','line':1,'msg':'drift'}]))\n")
     w = DriftWatcher(bus, tmp_path)
     events = w.scan()
     assert len(events) == 1
@@ -56,6 +53,7 @@ def test_staleness_detects_old_tasks(tmp_path: Path) -> None:
     old.write_text("old")
     past = time.time() - 30 * 86400
     import os as _os
+
     _os.utime(old, (past, past))
     w = StalenessWatcher(bus, tmp_path, stale_task_days=7)
     events = w.scan()
@@ -87,9 +85,7 @@ def test_obsidian_watcher_findings(tmp_path: Path) -> None:
     bus = EventBus(tmp_path / "e.db")
     scripts = tmp_path / "scripts"
     scripts.mkdir()
-    (scripts / "obsidian_lint.py").write_text(
-        "import json; print(json.dumps([{'code':'FM01','path':'a.md'}]))\n"
-    )
+    (scripts / "obsidian_lint.py").write_text("import json; print(json.dumps([{'code':'FM01','path':'a.md'}]))\n")
     w = ObsidianWatcher(bus, tmp_path)
     events = w.scan()
     assert len(events) == 1
@@ -100,9 +96,7 @@ def test_obsidian_filters_soft_findings(tmp_path: Path) -> None:
     bus = EventBus(tmp_path / "e.db")
     scripts = tmp_path / "scripts"
     scripts.mkdir()
-    (scripts / "obsidian_lint.py").write_text(
-        "import json; print(json.dumps([{'code':'LK02','path':'a.md'}]))\n"
-    )
+    (scripts / "obsidian_lint.py").write_text("import json; print(json.dumps([{'code':'LK02','path':'a.md'}]))\n")
     w = ObsidianWatcher(bus, tmp_path)
     assert w.scan() == []
 
@@ -126,9 +120,7 @@ def test_chat_log_processes_new_text(tmp_path: Path) -> None:
     logs.mkdir()
     f = logs / "chat.log"
     f.write_text(
-        "Lots of routine chatter. "
-        "We should always write checkpoints before ending a session. "
-        "More routine text here."
+        "Lots of routine chatter. We should always write checkpoints before ending a session. More routine text here."
     )
     w = ChatLogWatcher(
         bus,
@@ -153,8 +145,11 @@ def test_chat_log_skips_already_read(tmp_path: Path) -> None:
     f.write_text("we should always test")
     state_file = tmp_path / "state.json"
     w = ChatLogWatcher(
-        bus, tmp_path, classifier=HeuristicClassifier(),
-        state_file=state_file, log_dir=logs,
+        bus,
+        tmp_path,
+        classifier=HeuristicClassifier(),
+        state_file=state_file,
+        log_dir=logs,
     )
     w.scan()
     second = w.scan()
@@ -165,14 +160,15 @@ def test_chat_log_classifier_error_isolated(tmp_path: Path) -> None:
     bus = EventBus(tmp_path / "e.db")
     logs = tmp_path / "logs"
     logs.mkdir()
-    (logs / "chat.log").write_text(
-        "a fairly long chunk of text that should trigger classification " * 3
-    )
+    (logs / "chat.log").write_text("a fairly long chunk of text that should trigger classification " * 3)
     bad = MagicMock()
     bad.classify.side_effect = RuntimeError("boom")
     w = ChatLogWatcher(
-        bus, tmp_path, classifier=bad,
-        state_file=tmp_path / "state.json", log_dir=logs,
+        bus,
+        tmp_path,
+        classifier=bad,
+        state_file=tmp_path / "state.json",
+        log_dir=logs,
     )
     # should not raise, just skip
     assert w.scan() == []
@@ -181,8 +177,8 @@ def test_chat_log_classifier_error_isolated(tmp_path: Path) -> None:
 # ----- base watcher errors ----------------------------------------------
 def test_base_watcher_catches_scan_errors(tmp_path: Path) -> None:
     bus = EventBus(tmp_path / "e.db")
-    from agent.awos.watchers.base import Watcher
     from agent.awos.events.schema import Event
+    from agent.awos.watchers.base import Watcher
 
     class Boom(Watcher):
         name = "boom"

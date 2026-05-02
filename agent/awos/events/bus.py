@@ -16,7 +16,7 @@ import sqlite3
 import threading
 import time
 from collections.abc import Iterable
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -96,24 +96,19 @@ class EventBus:
         payload_json = json.dumps(event.payload, default=_json_default)
         truncated = False
         if len(payload_json) > self.max_payload_bytes:
-            payload_json = json.dumps(
-                {"truncated": True, "prefix": payload_json[: self.max_payload_bytes]}
-            )
+            payload_json = json.dumps({"truncated": True, "prefix": payload_json[: self.max_payload_bytes]})
             truncated = True
 
-        dedup_hash = event.dedup_hash or _hash_for_dedup(
-            event.source, event.category, payload_json
-        )
+        dedup_hash = event.dedup_hash or _hash_for_dedup(event.source, event.category, payload_json)
 
         conn = self._conn()
         # transactional lookup + insert to avoid dedup races
         with _retry_on_lock():
             conn.execute("BEGIN IMMEDIATE")
             try:
-                cutoff = (datetime.now(timezone.utc) - self.dedup_window).isoformat()
+                cutoff = (datetime.now(UTC) - self.dedup_window).isoformat()
                 existing = conn.execute(
-                    "SELECT * FROM events WHERE dedup_hash = ? AND ts >= ? "
-                    "ORDER BY ts DESC LIMIT 1",
+                    "SELECT * FROM events WHERE dedup_hash = ? AND ts >= ? ORDER BY ts DESC LIMIT 1",
                     (dedup_hash, cutoff),
                 ).fetchone()
                 if existing is not None:
@@ -145,9 +140,7 @@ class EventBus:
                 conn.execute("ROLLBACK")
                 raise
 
-        return event.model_copy(
-            update={"dedup_hash": dedup_hash, "payload_truncated": truncated}
-        )
+        return event.model_copy(update={"dedup_hash": dedup_hash, "payload_truncated": truncated})
 
     # ------------------------------------------------------------------
     def fetch(
@@ -179,9 +172,7 @@ class EventBus:
     def get(self, event_id: str) -> Event | None:
         conn = self._conn()
         with _retry_on_lock():
-            row = conn.execute(
-                "SELECT * FROM events WHERE id = ?", (event_id,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
         return _row_to_event(row) if row else None
 
     def mark(self, event_id: str, status: EventStatus) -> None:
@@ -208,9 +199,7 @@ class EventBus:
         if status is None:
             sql, args = "SELECT COUNT(*) FROM events", ()
         else:
-            sql, args = "SELECT COUNT(*) FROM events WHERE status = ?", (
-                status.value,
-            )
+            sql, args = "SELECT COUNT(*) FROM events WHERE status = ?", (status.value,)
         with _retry_on_lock():
             return int(conn.execute(sql, args).fetchone()[0])
 
@@ -265,7 +254,7 @@ class _retry_on_lock:
         self.retries = retries
         self.initial_delay = initial_delay
 
-    def __enter__(self) -> "_retry_on_lock":
+    def __enter__(self) -> _retry_on_lock:
         return self
 
     def __exit__(self, exc_type, exc, tb) -> bool:

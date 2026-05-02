@@ -21,21 +21,21 @@ import pandas as pd
 import pytest
 
 from agent.convergence.backtest import (
+    FRED_SERIES,
     ConvergenceDirectionalStrategy,
     ConvergenceRiskOffStrategy,
     ConvergenceTemplateStrategy,
     FredSeriesConfig,
-    FRED_SERIES,
     HistoricalEvidenceBuilder,
     MacroBacktestResult,
     StepScore,
+    _apply_direction_rule,
+    _fetch_target_returns,
+    _get_fred_api_key,
+    _is_placeholder_api_key,
+    _parse_fred_response,
     _resolve_macro_runtime,
     main,
-    _get_fred_api_key,
-    _fetch_target_returns,
-    _is_placeholder_api_key,
-    _apply_direction_rule,
-    _parse_fred_response,
     precompute_convergence_scores,
     run_macro_backtest,
     save_baseline,
@@ -168,14 +168,8 @@ def _make_fred_data(
 ) -> dict[str, list[tuple[float, float]]]:
     """Build fake FRED data for DFF and WALCL."""
     rng = np.random.default_rng(42)
-    dff_data = [
-        (start_ts + i * step, base_value + trend * i + rng.normal(0, 1))
-        for i in range(n_points)
-    ]
-    walcl_data = [
-        (start_ts + i * step, 7_000_000 + 50_000 * i + rng.normal(0, 10000))
-        for i in range(n_points)
-    ]
+    dff_data = [(start_ts + i * step, base_value + trend * i + rng.normal(0, 1)) for i in range(n_points)]
+    walcl_data = [(start_ts + i * step, 7_000_000 + 50_000 * i + rng.normal(0, 10000)) for i in range(n_points)]
     return {"DFF": dff_data, "WALCL": walcl_data}
 
 
@@ -576,9 +570,7 @@ class TestFetchTargetReturns:
         )
 
         with patch("yfinance.download", return_value=df):
-            timestamps, log_returns = _fetch_target_returns(
-                "SPY", "2024-01-01", "2024-02-01"
-            )
+            timestamps, log_returns = _fetch_target_returns("SPY", "2024-01-01", "2024-02-01")
 
         assert len(timestamps) == 2
         assert len(log_returns) == 2
@@ -610,11 +602,7 @@ class TestEdgeCases:
         assert len(result) == 2
 
     def test_fred_series_config_fields(self):
-        for cfg in [
-            FredSeriesConfig(
-                "DFF", "rate_monitor.fed.rate", "monetary_policy", "delta_pos_down"
-            )
-        ]:
+        for cfg in [FredSeriesConfig("DFF", "rate_monitor.fed.rate", "monetary_policy", "delta_pos_down")]:
             assert cfg.fred_id == "DFF"
             assert cfg.frequency == "weekly"  # default
 
@@ -676,11 +664,11 @@ class TestMacroRuntimeResolution:
 
 class TestBacktestCli:
     def test_macro_fast_mode_passes_reduced_runtime(self):
-        with patch(
-            "agent.convergence.backtest.run_macro_backtest", return_value={}
-        ) as mock_run:
-            with patch("sys.argv", ["backtest", "--macro", "--fast"]):
-                main()
+        with (
+            patch("agent.convergence.backtest.run_macro_backtest", return_value={}) as mock_run,
+            patch("sys.argv", ["backtest", "--macro", "--fast"]),
+        ):
+            main()
 
         mock_run.assert_called_once_with(
             start_year=2018,
@@ -704,11 +692,11 @@ class TestBacktestCli:
             "--bootstrap-count",
             "75",
         ]
-        with patch(
-            "agent.convergence.backtest.run_macro_backtest", return_value={}
-        ) as mock_run:
-            with patch("sys.argv", argv):
-                main()
+        with (
+            patch("agent.convergence.backtest.run_macro_backtest", return_value={}) as mock_run,
+            patch("sys.argv", argv),
+        ):
+            main()
 
         mock_run.assert_called_once_with(
             start_year=2022,
@@ -796,9 +784,9 @@ class TestBuildAllEvidence:
             new_evidence = all_ev[lo:hi]
 
             # Same number of evidence items.
-            assert len(new_evidence) == len(
-                old_evidence
-            ), f"at as_of={as_of}: {len(new_evidence)} != {len(old_evidence)}"
+            assert len(new_evidence) == len(old_evidence), (
+                f"at as_of={as_of}: {len(new_evidence)} != {len(old_evidence)}"
+            )
 
             # Same signal_ids and timestamps.
             old_ids = [(e.signal_id, e.timestamp) for e in old_evidence]
@@ -822,14 +810,8 @@ class TestVectorizedConfidence:
 
     def test_confidence_first_three_points_default(self):
         """First 3 observations should get default confidence 0.3."""
-        fred_data = {
-            "DFF": [(1_600_000_000.0 + i * _DAY, 1.0 + i * 0.1) for i in range(10)]
-        }
-        series_cfg = [
-            FredSeriesConfig(
-                "DFF", "test.signal", "monetary_policy", "delta_pos_up", "daily"
-            )
-        ]
+        fred_data = {"DFF": [(1_600_000_000.0 + i * _DAY, 1.0 + i * 0.1) for i in range(10)]}
+        series_cfg = [FredSeriesConfig("DFF", "test.signal", "monetary_policy", "delta_pos_up", "daily")]
         builder = HistoricalEvidenceBuilder(fred_data, series_cfg)
         all_ev = builder.build_all_evidence()
 
@@ -845,11 +827,7 @@ class TestVectorizedConfidence:
     def test_constant_series_gets_default_confidence(self):
         """When all values are identical, std=0 so confidence=0.3."""
         fred_data = {"DFF": [(1_600_000_000.0 + i * _DAY * 7, 5.0) for i in range(10)]}
-        series_cfg = [
-            FredSeriesConfig(
-                "DFF", "test.signal", "monetary_policy", "delta_pos_up", "daily"
-            )
-        ]
+        series_cfg = [FredSeriesConfig("DFF", "test.signal", "monetary_policy", "delta_pos_up", "daily")]
         builder = HistoricalEvidenceBuilder(fred_data, series_cfg)
         all_ev = builder.build_all_evidence()
         for ev in all_ev:

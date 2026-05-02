@@ -8,16 +8,12 @@ round-trip, diagnostic output, integration with LearnedStateEncoder.
 from __future__ import annotations
 
 import math
-import tempfile
-from pathlib import Path
 
 import pytest
 import torch
-import torch.nn as nn
 
 from agent.learning.policy.feature_gate import FeatureGate, FeatureGateConfig
 from agent.learning.policy.state_encoder import LearnedStateEncoder
-
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -195,9 +191,7 @@ class TestEntropyLoss:
 
         gate_small(state, regime)
         gate_large(state, regime)
-        assert abs(gate_large.entropy_loss().item()) > abs(
-            gate_small.entropy_loss().item()
-        )
+        assert abs(gate_large.entropy_loss().item()) > abs(gate_small.entropy_loss().item())
 
 
 # ── Regime Conditioning ──────────────────────────────────────
@@ -235,9 +229,7 @@ class TestConfigValidation:
 
     def test_mismatched_group_dims(self) -> None:
         with pytest.raises(ValueError, match="n_feature_groups"):
-            FeatureGate(
-                FeatureGateConfig(n_feature_groups=3, group_dims=(10, 5))
-            )
+            FeatureGate(FeatureGateConfig(n_feature_groups=3, group_dims=(10, 5)))
 
     def test_total_dim_property(self, default_gate: FeatureGate) -> None:
         assert default_gate.total_dim == 463
@@ -361,9 +353,7 @@ class TestEncoderIntegration:
         encoder2 = LearnedStateEncoder()
         # Copy only the non-gate weights from the original
         sd_orig = encoder.state_dict()
-        sd_no_gate = {
-            k: v for k, v in sd_orig.items() if "feat_gate" not in k
-        }
+        sd_no_gate = {k: v for k, v in sd_orig.items() if "feat_gate" not in k}
         encoder2.load_state_dict(sd_no_gate)
         encoder2.eval()
         out_no_gate = encoder2(state)

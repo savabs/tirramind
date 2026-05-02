@@ -9,7 +9,6 @@ from pathlib import Path
 
 import pytest
 
-from agent.awos.config import AWOSConfig
 from agent.awos.events.bus import EventBus
 from agent.awos.events.schema import Event, EventStatus, TriggerCategory
 from agent.awos.hooks.install import hook_names, install, uninstall
@@ -44,9 +43,7 @@ def test_dispatch_unmatched_marks_ignored(awos_cfg) -> None:
     bus = EventBus(awos_cfg.db_path)
     policies = PolicyEngine.load()
     disp = Dispatcher(awos_cfg, bus, policies)
-    ev = Event(
-        source="t", category=TriggerCategory.ROUTINE, confidence=0.9
-    )
+    ev = Event(source="t", category=TriggerCategory.ROUTINE, confidence=0.9)
     stored = bus.publish(ev)
     disp.dispatch(stored)
     assert bus.get(stored.id).status == EventStatus.IGNORED
@@ -134,12 +131,12 @@ def test_e2e_chat_to_awos(tmp_path: Path, awos_cfg) -> None:
     logs = tmp_path / "chat_logs"
     logs.mkdir()
     (logs / "sess.log").write_text(
-        "We should always architecturally separate layers. "
-        "quant code never fetches data, that is the rule."
+        "We should always architecturally separate layers. quant code never fetches data, that is the rule."
     )
     bus = EventBus(awos_cfg.db_path)
     w = ChatLogWatcher(
-        bus, tmp_path,
+        bus,
+        tmp_path,
         classifier=HeuristicClassifier(),
         state_file=awos_cfg.state_file,
         log_dir=logs,
@@ -160,7 +157,9 @@ def test_e2e_chat_to_awos(tmp_path: Path, awos_cfg) -> None:
 def test_cli_help() -> None:
     r = subprocess.run(
         [sys.executable, "-m", "agent.awos.cli", "--help"],
-        capture_output=True, text=True, timeout=10,
+        capture_output=True,
+        text=True,
+        timeout=10,
     )
     assert r.returncode == 0
     assert "daemon" in r.stdout
@@ -177,10 +176,14 @@ def test_cli_status(tmp_path: Path, awos_cfg, monkeypatch) -> None:
         "PATH": "/usr/bin:/bin",
     }
     import os
+
     env["PYTHONPATH"] = os.path.abspath(".")
     r = subprocess.run(
         [sys.executable, "-m", "agent.awos.cli", "status"],
-        capture_output=True, text=True, timeout=10, env=env,
+        capture_output=True,
+        text=True,
+        timeout=10,
+        env=env,
     )
     assert r.returncode == 0, r.stderr
     data = json.loads(r.stdout)
@@ -191,6 +194,7 @@ def test_cli_status(tmp_path: Path, awos_cfg, monkeypatch) -> None:
 def test_cli_publish_and_dispatch(awos_cfg) -> None:
     awos_cfg.ensure_dirs()
     import os
+
     env = {
         "TIRRA_AWOS_REPO_ROOT": str(awos_cfg.repo_root),
         "TIRRA_AWOS_STATE_DIR": str(awos_cfg.state_dir),
@@ -201,13 +205,22 @@ def test_cli_publish_and_dispatch(awos_cfg) -> None:
     }
     r = subprocess.run(
         [
-            sys.executable, "-m", "agent.awos.cli", "publish",
-            "--category", "workflow_pattern",
-            "--confidence", "0.9",
-            "--principle", "CLI integration rule.",
+            sys.executable,
+            "-m",
+            "agent.awos.cli",
+            "publish",
+            "--category",
+            "workflow_pattern",
+            "--confidence",
+            "0.9",
+            "--principle",
+            "CLI integration rule.",
             "--dispatch",
         ],
-        capture_output=True, text=True, timeout=10, env=env,
+        capture_output=True,
+        text=True,
+        timeout=10,
+        env=env,
     )
     assert r.returncode == 0, r.stderr
     data = json.loads(r.stdout)

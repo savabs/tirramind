@@ -13,7 +13,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from agent.pipeline.store import PipelineStore
@@ -50,9 +50,7 @@ def format_signal_name(event_type: str, date: str) -> str:
         If *event_type* contains unsafe characters.
     """
     if not _SAFE_RE.match(event_type):
-        raise ValueError(
-            f"event_type must be alphanumeric + underscore, got {event_type!r}"
-        )
+        raise ValueError(f"event_type must be alphanumeric + underscore, got {event_type!r}")
     # Date allows hyphens
     if not re.match(r"^[a-zA-Z0-9_-]+$", date):
         raise ValueError(f"date contains unsafe characters: {date!r}")
@@ -156,7 +154,7 @@ def from_detection_result(
     if as_of is None:
         as_of = time.time()
 
-    iso_date = datetime.fromtimestamp(as_of, tz=timezone.utc).strftime("%Y-%m-%d")
+    iso_date = datetime.fromtimestamp(as_of, tz=UTC).strftime("%Y-%m-%d")
     signal_name = format_signal_name(result.event_type, iso_date)
 
     clique = result.clique

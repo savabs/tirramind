@@ -12,8 +12,7 @@ Mathematical proofs:
 from __future__ import annotations
 
 import time
-from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
@@ -29,7 +28,6 @@ from agent.learning.policy.sac import SACTrainer
 from agent.learning.policy.state_assembler import StateAssembler
 from agent.models.belief import BeliefState
 from agent.quant.backtest import Strategy
-
 
 # ── Helpers ───────────────────────────────────────────────────
 
@@ -82,9 +80,7 @@ def _mock_asset_mapper(mappings: dict[str, str]) -> AssetMapper:
     mapper = MagicMock(spec=AssetMapper)
     mapper.resolve.side_effect = lambda eid: mappings.get(eid)
     mapper.tradeable_entities.return_value = dict(mappings)
-    mapper.resolve_batch.side_effect = lambda ids: {
-        eid: mappings[eid] for eid in ids if eid in mappings
-    }
+    mapper.resolve_batch.side_effect = lambda ids: {eid: mappings[eid] for eid in ids if eid in mappings}
     return mapper
 
 
@@ -122,12 +118,8 @@ class TestWeightedSurpriseThreshold:
         s = WeightedSurpriseStrategy(weights, mapper, threshold=1.0)
 
         # Alert with signals that sum to 1.5 > threshold 1.0
-        alert = _make_alert(
-            "e1", obs=0.3, temporal=0.3, value=0.3, neighborhood=0.3, drift=0.3
-        )
-        result = s.generate_weights(
-            np.zeros(10), 3, test_extra={"alerts": [[alert], [], [alert]]}
-        )
+        alert = _make_alert("e1", obs=0.3, temporal=0.3, value=0.3, neighborhood=0.3, drift=0.3)
+        result = s.generate_weights(np.zeros(10), 3, test_extra={"alerts": [[alert], [], [alert]]})
         assert result[0] == 1.0  # triggered
         assert result[1] == 0.0  # no alerts
         assert result[2] == 1.0  # triggered
@@ -138,9 +130,7 @@ class TestWeightedSurpriseThreshold:
         s = WeightedSurpriseStrategy(weights, mapper, threshold=10.0)
 
         alert = _make_alert("e1")
-        result = s.generate_weights(
-            np.zeros(10), 3, test_extra={"alerts": [[alert], [alert], [alert]]}
-        )
+        result = s.generate_weights(np.zeros(10), 3, test_extra={"alerts": [[alert], [alert], [alert]]})
         np.testing.assert_array_equal(result, 0.0)
 
 
@@ -160,9 +150,7 @@ class TestWeightedSurpriseWeights:
         # obs=0.2 → composite = 2.0 * 0.2 = 0.4 < 0.5 → not triggered
         alert_below = _make_alert("e1", obs=0.2)
 
-        result = s.generate_weights(
-            np.zeros(10), 2, test_extra={"alerts": [[alert_above], [alert_below]]}
-        )
+        result = s.generate_weights(np.zeros(10), 2, test_extra={"alerts": [[alert_above], [alert_below]]})
         assert result[0] == 1.0
         assert result[1] == 0.0
 
@@ -190,17 +178,12 @@ class TestSACPortfolioWeights:
 
     def test_produces_weights_from_alerts(self):
         state_dim = StateAssembler(max_entities=5).state_dim
-        cfg = SACConfig(
-            hidden_dim=16, num_hidden=1, max_position=0.5, leverage_limit=1.0
-        )
+        cfg = SACConfig(hidden_dim=16, num_hidden=1, max_position=0.5, leverage_limit=1.0)
         trainer = SACTrainer(state_dim, 5, cfg)
         assembler = StateAssembler(max_entities=5)
         mapper = _mock_asset_mapper({"e1": "AAPL", "e2": "GOOG"})
 
-        alerts = [
-            [_make_alert("e1", composite=3.0), _make_alert("e2", composite=2.0)]
-            for _ in range(3)
-        ]
+        alerts = [[_make_alert("e1", composite=3.0), _make_alert("e2", composite=2.0)] for _ in range(3)]
         beliefs = [[_make_belief("e1"), _make_belief("e2")] for _ in range(3)]
         market = [{"vol": 0.02, "return": 0.01} for _ in range(3)]
 

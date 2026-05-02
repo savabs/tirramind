@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 import jsonschema
@@ -24,9 +24,7 @@ class ToolResult:
     success: bool
     output: str
     data: Any = None  # structured data for downstream processing
-    trust_level: str = (
-        "tool_trusted"  # provenance tag (see security.tool_policy.TrustLevel)
-    )
+    trust_level: str = "tool_trusted"  # provenance tag (see security.tool_policy.TrustLevel)
 
 
 class Tool(ABC):

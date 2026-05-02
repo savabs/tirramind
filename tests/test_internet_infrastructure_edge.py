@@ -10,32 +10,22 @@ registry integration.
 
 from __future__ import annotations
 
-import json
-import time
-from collections import namedtuple
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from agent.tools.internet_infrastructure import (
-    CACHE_IODA_ALERTS,
-    CACHE_IODA_SIGNALS,
     CACHE_OONI_AGGREGATION,
-    CACHE_OONI_INCIDENTS,
     GTR_NORM_CRITICAL,
     GTR_NORM_WARNING,
-    IODA_BASE,
-    InternetInfrastructureTool,
-    OONI_BASE,
     VALID_MODES,
-    OONI_TEST_TYPES,
+    InternetInfrastructureTool,
     _safe_float,
     _safe_int,
     _severity_from_gtr_norm,
     _ts_to_iso,
 )
-
 
 # ── Fixtures ─────────────────────────────────────────────────
 
@@ -414,9 +404,7 @@ class TestOutagesMode:
             assert "No outage" in r.output
 
     def test_critical_alert_parsed(self):
-        alerts = [
-            _ioda_alert(code="IR", name="Iran", level="critical", value=50, history=200)
-        ]
+        alerts = [_ioda_alert(code="IR", name="Iran", level="critical", value=50, history=200)]
         with patch("httpx.get") as mock:
             mock.side_effect = [
                 _mock_response(200, _ioda_alerts_response(alerts)),
@@ -580,10 +568,7 @@ class TestCensorshipMode:
             assert "No OONI" in r.output
 
     def test_normal_aggregation(self):
-        rows = [
-            _ooni_agg_row(date=f"2026-03-{d:02d}", ok=100, anomaly=5)
-            for d in range(1, 16)
-        ]
+        rows = [_ooni_agg_row(date=f"2026-03-{d:02d}", ok=100, anomaly=5) for d in range(1, 16)]
         with patch("httpx.get") as mock:
             mock.return_value = _mock_response(200, _ooni_aggregation_response(rows))
             r = _tool().execute(mode="censorship", country="IR")
@@ -611,7 +596,7 @@ class TestCensorshipMode:
         rows = []
         for i in range(14):
             anom = 2 if i < 7 else 20
-            rows.append(_ooni_agg_row(date=f"2026-03-{i+1:02d}", ok=100, anomaly=anom))
+            rows.append(_ooni_agg_row(date=f"2026-03-{i + 1:02d}", ok=100, anomaly=anom))
         with patch("httpx.get") as mock:
             mock.return_value = _mock_response(200, _ooni_aggregation_response(rows))
             r = _tool().execute(mode="censorship", country="IR")
@@ -621,17 +606,14 @@ class TestCensorshipMode:
         rows = []
         for i in range(14):
             anom = 20 if i < 7 else 2
-            rows.append(_ooni_agg_row(date=f"2026-03-{i+1:02d}", ok=100, anomaly=anom))
+            rows.append(_ooni_agg_row(date=f"2026-03-{i + 1:02d}", ok=100, anomaly=anom))
         with patch("httpx.get") as mock:
             mock.return_value = _mock_response(200, _ooni_aggregation_response(rows))
             r = _tool().execute(mode="censorship", country="IR")
             assert "FALLING" in r.output
 
     def test_trend_stable(self):
-        rows = [
-            _ooni_agg_row(date=f"2026-03-{d:02d}", ok=100, anomaly=5)
-            for d in range(1, 15)
-        ]
+        rows = [_ooni_agg_row(date=f"2026-03-{d:02d}", ok=100, anomaly=5) for d in range(1, 15)]
         with patch("httpx.get") as mock:
             mock.return_value = _mock_response(200, _ooni_aggregation_response(rows))
             r = _tool().execute(mode="censorship", country="US")
@@ -640,9 +622,7 @@ class TestCensorshipMode:
     def test_different_test_types(self):
         for test_type in ["telegram", "tor", "whatsapp", "signal"]:
             with patch("httpx.get") as mock:
-                mock.return_value = _mock_response(
-                    200, _ooni_aggregation_response([_ooni_agg_row(ok=10, anomaly=5)])
-                )
+                mock.return_value = _mock_response(200, _ooni_aggregation_response([_ooni_agg_row(ok=10, anomaly=5)]))
                 r = _tool().execute(mode="censorship", country="RU", test=test_type)
                 assert r.success
                 assert test_type in r.output
@@ -777,9 +757,7 @@ class TestSignalsMode:
     def test_step_displayed(self):
         values = [0.95, 0.94]
         with patch("httpx.get") as mock:
-            mock.return_value = _mock_response(
-                200, _ioda_signals_response(values, step=1800)
-            )
+            mock.return_value = _mock_response(200, _ioda_signals_response(values, step=1800))
             r = _tool().execute(mode="signals", country="US")
             assert "1800s" in r.output
             assert "30min" in r.output
@@ -875,9 +853,7 @@ class TestCacheInteraction:
         cache.get.return_value = {"result": [_ooni_agg_row()]}
         tool = _tool(cache=cache)
         with patch("httpx.get") as mock:
-            mock.return_value = _mock_response(
-                200, _ooni_aggregation_response([_ooni_agg_row()])
-            )
+            mock.return_value = _mock_response(200, _ooni_aggregation_response([_ooni_agg_row()]))
             tool.execute(mode="censorship", country="US")
         # Cache was checked
         assert cache.get.called
@@ -887,9 +863,7 @@ class TestCacheInteraction:
         cache.get.return_value = None
         tool = _tool(cache=cache)
         with patch("httpx.get") as mock:
-            mock.return_value = _mock_response(
-                200, _ooni_aggregation_response([_ooni_agg_row()])
-            )
+            mock.return_value = _mock_response(200, _ooni_aggregation_response([_ooni_agg_row()]))
             tool.execute(mode="censorship", country="US")
         assert cache.set.called
 
@@ -898,9 +872,7 @@ class TestCacheInteraction:
         cache.get.return_value = None
         tool = _tool(cache=cache)
         with patch("httpx.get") as mock:
-            mock.return_value = _mock_response(
-                200, _ooni_aggregation_response([_ooni_agg_row()])
-            )
+            mock.return_value = _mock_response(200, _ooni_aggregation_response([_ooni_agg_row()]))
             tool.execute(mode="censorship", country="US")
         # Check ttl was CACHE_OONI_AGGREGATION
         for call in cache.set.call_args_list:
@@ -909,9 +881,7 @@ class TestCacheInteraction:
     def test_no_cache_still_works(self):
         tool = _tool(cache=None)
         with patch("httpx.get") as mock:
-            mock.return_value = _mock_response(
-                200, _ooni_aggregation_response([_ooni_agg_row()])
-            )
+            mock.return_value = _mock_response(200, _ooni_aggregation_response([_ooni_agg_row()]))
             r = tool.execute(mode="censorship", country="US")
             assert r.success
 
@@ -977,11 +947,7 @@ class TestRegistryIntegration:
         except ImportError:
             pytest.skip("cli dependencies not available in test env")
         registry = build_tool_registry()
-        names = (
-            [t.name for t in registry._tools.values()]
-            if hasattr(registry, "_tools")
-            else []
-        )
+        names = [t.name for t in registry._tools.values()] if hasattr(registry, "_tools") else []
         if not names:
             names = [t.name for t in getattr(registry, "tools", {}).values()]
         assert "internet_infrastructure" in names
@@ -995,9 +961,7 @@ class TestRegistryIntegration:
     def test_bandit_arm_includes_new_tool(self):
         from agent.learning.bandit import DEFAULT_ARMS
 
-        arm = next(
-            a for a in DEFAULT_ARMS if a.name == "internet_infrastructure_monitor"
-        )
+        arm = next(a for a in DEFAULT_ARMS if a.name == "internet_infrastructure_monitor")
         assert "internet_infrastructure" in arm.tools
 
 
@@ -1015,9 +979,7 @@ class TestOutputFormat:
 
     def test_censorship_header(self):
         with patch("httpx.get") as mock:
-            mock.return_value = _mock_response(
-                200, _ooni_aggregation_response([_ooni_agg_row()])
-            )
+            mock.return_value = _mock_response(200, _ooni_aggregation_response([_ooni_agg_row()]))
             r = _tool().execute(mode="censorship", country="IR")
             assert "Source: OONI" in r.output
 
@@ -1029,9 +991,7 @@ class TestOutputFormat:
 
     def test_incidents_header(self):
         with patch("httpx.get") as mock:
-            mock.return_value = _mock_response(
-                200, _ooni_incidents_response([_ooni_incident()])
-            )
+            mock.return_value = _mock_response(200, _ooni_incidents_response([_ooni_incident()]))
             r = _tool().execute(mode="incidents")
             assert "Source: OONI" in r.output
 
@@ -1059,9 +1019,7 @@ class TestEdgeCombinations:
 
     def test_censorship_single_day(self):
         with patch("httpx.get") as mock:
-            mock.return_value = _mock_response(
-                200, _ooni_aggregation_response([_ooni_agg_row()])
-            )
+            mock.return_value = _mock_response(200, _ooni_aggregation_response([_ooni_agg_row()]))
             r = _tool().execute(mode="censorship", country="US")
             assert r.success
 

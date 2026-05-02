@@ -24,19 +24,18 @@ import httpx
 import pytest
 
 from agent.tools.building_permits import (
-    VALID_MODES,
-    BuildingPermitsTool,
     _CACHE_TTL,
     _PERMIT_SERIES,
     _REGIONAL_SERIES,
     _STARTS_SERIES,
+    VALID_MODES,
+    BuildingPermitsTool,
     _consecutive_declines,
     _fetch_fred,
     _latest,
     _pct_change,
     _trend_direction,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -84,7 +83,7 @@ def _mock_response(data: dict, status: int = 200) -> httpx.Response:
 
 class TestModeValidation:
     def test_valid_modes(self, tool):
-        assert VALID_MODES == {"permits", "regional", "housing_starts"}
+        assert {"permits", "regional", "housing_starts"} == VALID_MODES
 
     def test_empty_mode(self, tool):
         r = tool.execute(mode="")
@@ -140,9 +139,7 @@ class TestPermitsMode:
         mock_client = MagicMock()
         mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
-        mock_client.get.return_value = _mock_response(
-            _fred_response([_obs("2025-01-01", "1500")])
-        )
+        mock_client.get.return_value = _mock_response(_fred_response([_obs("2025-01-01", "1500")]))
 
         r = tool.execute(mode="permits")
         assert r.success
@@ -186,6 +183,7 @@ class TestPermitsMode:
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
 
         call_count = [0]
+
         def get_side_effect(*args, **kwargs):
             call_count[0] += 1
             series_id = kwargs.get("params", {}).get("series_id", "")
@@ -235,9 +233,7 @@ class TestRegionalMode:
         mock_client = MagicMock()
         mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
-        mock_client.get.return_value = _mock_response(
-            _fred_response([_obs(value="400")])
-        )
+        mock_client.get.return_value = _mock_response(_fred_response([_obs(value="400")]))
 
         r = tool.execute(mode="regional")
         assert r.success
@@ -252,6 +248,7 @@ class TestRegionalMode:
         # Return different values for different regions
         call_idx = [0]
         values = ["50", "100", "800", "300", "40", "90", "750", "280"]
+
         def get_side_effect(*args, **kwargs):
             idx = min(call_idx[0], len(values) - 1)
             call_idx[0] += 1
@@ -283,9 +280,7 @@ class TestHousingStartsMode:
         mock_client = MagicMock()
         mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
-        mock_client.get.return_value = _mock_response(
-            _fred_response([_obs(value="1400")])
-        )
+        mock_client.get.return_value = _mock_response(_fred_response([_obs(value="1400")]))
 
         r = tool.execute(mode="housing_starts")
         assert r.success
@@ -460,9 +455,7 @@ class TestFetchFred:
         mock_client = MagicMock()
         mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
-        mock_client.get.return_value = _mock_response(
-            _fred_response([_obs("2025-01-01", "1500")])
-        )
+        mock_client.get.return_value = _mock_response(_fred_response([_obs("2025-01-01", "1500")]))
 
         result = _fetch_fred("PERMIT", "key")
         assert len(result) == 1
@@ -474,12 +467,14 @@ class TestFetchFred:
         mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
         mock_client.get.return_value = _mock_response(
-            _fred_response([
-                _obs("2025-01-01", "1500"),
-                {"date": "2024-12-01", "value": "."},
-                {"date": "2024-11-01", "value": ""},
-                {"date": "2024-10-01", "value": "1400"},
-            ])
+            _fred_response(
+                [
+                    _obs("2025-01-01", "1500"),
+                    {"date": "2024-12-01", "value": "."},
+                    {"date": "2024-11-01", "value": ""},
+                    {"date": "2024-10-01", "value": "1400"},
+                ]
+            )
         )
 
         result = _fetch_fred("PERMIT", "key")
@@ -613,15 +608,18 @@ class TestConstants:
 class TestIntegration:
     def test_tool_count(self):
         from agent.cli import build_tool_registry
+
         reg = build_tool_registry()
         assert len(reg.list_names()) == 60
 
     def test_arm_count(self):
         from agent.learning.bandit import DEFAULT_ARMS
+
         assert len(DEFAULT_ARMS) == 48
 
     def test_tool_registered(self):
         from agent.cli import build_tool_registry
+
         reg = build_tool_registry()
         names = reg.list_names()
         assert "building_permits" in names

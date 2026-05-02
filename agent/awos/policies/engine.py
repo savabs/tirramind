@@ -59,7 +59,7 @@ class PolicyEngine:
 
     # ------------------------------------------------------------------
     @classmethod
-    def load(cls, user_file: Path | None = None) -> "PolicyEngine":
+    def load(cls, user_file: Path | None = None) -> PolicyEngine:
         rules = _load_yaml_rules(_DEFAULT_RULES)
         if user_file is not None and user_file.exists():
             user_rules = _load_yaml_rules(user_file)

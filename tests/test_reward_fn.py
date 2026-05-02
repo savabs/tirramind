@@ -104,36 +104,28 @@ class TestLambdaDecay:
         """step=0 → λ = λ₀."""
         config = RewardConfig(intrinsic_weight_initial=0.1, intrinsic_decay=True)
         rf = RewardFunction(config)
-        _, bd = rf.combined(
-            0.0, np.array([0.01]), np.array([1.0]), step=0, total_steps=100
-        )
+        _, bd = rf.combined(0.0, np.array([0.01]), np.array([1.0]), step=0, total_steps=100)
         assert bd["lambda_t"] == pytest.approx(0.1)
 
     def test_decay_at_midpoint(self) -> None:
         """step=T/2 → λ = λ₀/2."""
         config = RewardConfig(intrinsic_weight_initial=0.1, intrinsic_decay=True)
         rf = RewardFunction(config)
-        _, bd = rf.combined(
-            0.0, np.array([0.01]), np.array([1.0]), step=50, total_steps=100
-        )
+        _, bd = rf.combined(0.0, np.array([0.01]), np.array([1.0]), step=50, total_steps=100)
         assert bd["lambda_t"] == pytest.approx(0.05)
 
     def test_decay_at_end(self) -> None:
         """step=T → λ = 0."""
         config = RewardConfig(intrinsic_weight_initial=0.1, intrinsic_decay=True)
         rf = RewardFunction(config)
-        _, bd = rf.combined(
-            0.0, np.array([0.01]), np.array([1.0]), step=100, total_steps=100
-        )
+        _, bd = rf.combined(0.0, np.array([0.01]), np.array([1.0]), step=100, total_steps=100)
         assert bd["lambda_t"] == pytest.approx(0.0)
 
     def test_no_decay(self) -> None:
         """intrinsic_decay=False → λ = λ₀ always."""
         config = RewardConfig(intrinsic_weight_initial=0.1, intrinsic_decay=False)
         rf = RewardFunction(config)
-        _, bd = rf.combined(
-            0.0, np.array([0.01]), np.array([1.0]), step=99, total_steps=100
-        )
+        _, bd = rf.combined(0.0, np.array([0.01]), np.array([1.0]), step=99, total_steps=100)
         assert bd["lambda_t"] == pytest.approx(0.1)
 
 
@@ -143,41 +135,29 @@ class TestLambdaDecay:
 class TestCombined:
     def test_additive_decomposition(self) -> None:
         """r = ext + λ(t) · int − adv_penalty — verify the additive structure."""
-        rf = RewardFunction(
-            RewardConfig(intrinsic_weight_initial=0.5, intrinsic_decay=False)
-        )
+        rf = RewardFunction(RewardConfig(intrinsic_weight_initial=0.5, intrinsic_decay=False))
         rolling = np.array([0.01, -0.02, 0.03, 0.005, -0.01])
         surprise = np.array([2.0, 4.0])
 
         total, bd = rf.combined(0.01, rolling, surprise, step=0, total_steps=100)
-        reconstructed = (
-            bd["extrinsic"]
-            + bd["lambda_t"] * bd["intrinsic"]
-            - bd["adversarial_penalty"]
-        )
+        reconstructed = bd["extrinsic"] + bd["lambda_t"] * bd["intrinsic"] - bd["adversarial_penalty"]
         assert total == pytest.approx(reconstructed, abs=1e-10)
 
     def test_combined_empty_surprise(self) -> None:
         rf = RewardFunction()
-        total, bd = rf.combined(
-            0.01, np.array([0.01, -0.01]), np.array([]), step=0, total_steps=100
-        )
+        total, bd = rf.combined(0.01, np.array([0.01, -0.01]), np.array([]), step=0, total_steps=100)
         assert total == pytest.approx(bd["extrinsic"])
         assert bd["intrinsic"] == 0.0
 
     def test_combined_empty_rolling(self) -> None:
         rf = RewardFunction()
-        total, bd = rf.combined(
-            0.01, np.array([]), np.array([3.0]), step=0, total_steps=100
-        )
+        total, bd = rf.combined(0.01, np.array([]), np.array([3.0]), step=0, total_steps=100)
         # extrinsic returns 0 for empty rolling
         assert bd["extrinsic"] == 0.0
         assert total == pytest.approx(bd["lambda_t"] * bd["intrinsic"])
 
     def test_breakdown_keys(self, rf: RewardFunction) -> None:
-        _, bd = rf.combined(
-            0.01, np.array([0.01]), np.array([1.0]), step=0, total_steps=10
-        )
+        _, bd = rf.combined(0.01, np.array([0.01]), np.array([1.0]), step=0, total_steps=10)
         expected_keys = {
             "extrinsic",
             "intrinsic",
@@ -191,7 +171,5 @@ class TestCombined:
 
     def test_adversarial_penalty_zero_without_flags(self, rf: RewardFunction) -> None:
         """No adversarial flags → penalty = 0 (backward compatible)."""
-        total, bd = rf.combined(
-            0.01, np.array([0.01]), np.array([1.0]), step=0, total_steps=10
-        )
+        total, bd = rf.combined(0.01, np.array([0.01]), np.array([1.0]), step=0, total_steps=10)
         assert bd["adversarial_penalty"] == 0.0

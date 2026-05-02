@@ -16,11 +16,11 @@ from __future__ import annotations
 
 import logging
 import time
-import xml.etree.ElementTree as ET
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
+import defusedxml.ElementTree as ET
 import httpx
 
 from agent.data.cache import DataCache
@@ -44,7 +44,6 @@ _SEC_REQUEST_DELAY = 0.15  # seconds between requests (< 10 req/sec)
 
 
 class InsiderFilingsTool(Tool):
-
     name = "insider_filings"
 
     description = (
@@ -66,10 +65,7 @@ class InsiderFilingsTool(Tool):
             },
             "ticker": {
                 "type": "string",
-                "description": (
-                    "Optional: filter to a specific company ticker. "
-                    "If omitted, scans all companies."
-                ),
+                "description": ("Optional: filter to a specific company ticker. If omitted, scans all companies."),
                 "default": "",
             },
             "min_cluster_size": {
@@ -165,9 +161,7 @@ class InsiderFilingsTool(Tool):
             )
 
         # Format output
-        lines = [
-            f"Insider Buying Clusters — {len(clusters)} found (last {days_back} days):\n"
-        ]
+        lines = [f"Insider Buying Clusters — {len(clusters)} found (last {days_back} days):\n"]
         for i, c in enumerate(clusters, 1):
             lines.append(
                 f"  {i}. {c['ticker']} ({c['company']}) — {c['insider_count']} insiders, "
@@ -195,9 +189,7 @@ class InsiderFilingsTool(Tool):
     # Fetching from EDGAR
     # ------------------------------------------------------------------
 
-    def _fetch_recent_filings(
-        self, start_dt: date, end_dt: date
-    ) -> list[dict[str, Any]]:
+    def _fetch_recent_filings(self, start_dt: date, end_dt: date) -> list[dict[str, Any]]:
         """Fetch Form 4 filing metadata from EDGAR full-text search."""
         cache_params = {"start": str(start_dt), "end": str(end_dt)}
         if self._cache:
@@ -251,9 +243,7 @@ class InsiderFilingsTool(Tool):
 
         return all_hits
 
-    def _fetch_filing_xml(
-        self, cik: str, accession: str, primary_doc: str
-    ) -> str | None:
+    def _fetch_filing_xml(self, cik: str, accession: str, primary_doc: str) -> str | None:
         """Fetch a single Form 4 XML from EDGAR archives."""
         # Normalize accession: remove dashes for URL path
         accession_clean = accession.replace("-", "")
@@ -269,9 +259,7 @@ class InsiderFilingsTool(Tool):
         time.sleep(_SEC_REQUEST_DELAY)
 
         try:
-            with httpx.Client(
-                timeout=15, headers={"User-Agent": _USER_AGENT}, follow_redirects=True
-            ) as client:
+            with httpx.Client(timeout=15, headers={"User-Agent": _USER_AGENT}, follow_redirects=True) as client:
                 resp = client.get(url)
                 resp.raise_for_status()
                 xml_text = resp.text
@@ -328,11 +316,7 @@ class InsiderFilingsTool(Tool):
                 continue
 
             # Determine primary document name from the hit
-            primary_doc = (
-                hit.get("_id", "").split(":", 1)[-1]
-                if ":" in hit.get("_id", "")
-                else ""
-            )
+            primary_doc = hit.get("_id", "").split(":", 1)[-1] if ":" in hit.get("_id", "") else ""
             if not primary_doc:
                 primary_doc = "form4.xml"  # fallback
 
@@ -447,9 +431,7 @@ class InsiderFilingsTool(Tool):
                     metadata={"relationship": txn.get("role", "")},
                 )
 
-    def _detect_clusters(
-        self, transactions: list[dict[str, Any]], min_size: int = 3
-    ) -> list[dict[str, Any]]:
+    def _detect_clusters(self, transactions: list[dict[str, Any]], min_size: int = 3) -> list[dict[str, Any]]:
         """Detect insider buying clusters: 3+ distinct insiders within 14 days."""
 
         # Group by ticker
@@ -468,9 +450,7 @@ class InsiderFilingsTool(Tool):
             buys.sort(key=lambda t: t["date"])
 
             # Sliding window: find maximal clusters of distinct insiders within 14 days
-            best_cluster = self._find_best_cluster(
-                buys, window_days=14, min_size=min_size
-            )
+            best_cluster = self._find_best_cluster(buys, window_days=14, min_size=min_size)
             if best_cluster:
                 clusters.append(best_cluster)
 
@@ -513,9 +493,7 @@ class InsiderFilingsTool(Tool):
                     window_buys.append(buys[j])
 
             if len(seen_names) >= min_size:
-                total_value = sum(
-                    b["shares"] * b["price"] for b in window_buys if b["price"] > 0
-                )
+                total_value = sum(b["shares"] * b["price"] for b in window_buys if b["price"] > 0)
                 score = len(seen_names) * total_value
 
                 if score > best_score:
@@ -523,12 +501,7 @@ class InsiderFilingsTool(Tool):
                     # Classify conviction
                     roles = [b.get("role", "").upper() for b in window_buys]
                     has_csuite = any(
-                        r
-                        for r in roles
-                        if any(
-                            title in r
-                            for title in ("CEO", "CFO", "COO", "PRESIDENT", "CHIEF")
-                        )
+                        r for r in roles if any(title in r for title in ("CEO", "CFO", "COO", "PRESIDENT", "CHIEF"))
                     )
 
                     # Build entity_ids mapping for L2 traceability
@@ -550,11 +523,7 @@ class InsiderFilingsTool(Tool):
                         "conviction": (
                             "high"
                             if (has_csuite and len(seen_names) >= 4)
-                            else (
-                                "medium-high"
-                                if has_csuite
-                                else "medium" if len(seen_names) >= 4 else "moderate"
-                            )
+                            else ("medium-high" if has_csuite else "medium" if len(seen_names) >= 4 else "moderate")
                         ),
                         "entity_ids": eid_map,
                     }
@@ -639,34 +608,22 @@ def _parse_form4_xml(
             continue
         for txn in txn_group.findall(f"{ns}nonDerivativeTransaction"):
             code_elem = txn.find(f".//{ns}transactionCode")
-            code = (
-                code_elem.text.strip()
-                if code_elem is not None and code_elem.text
-                else ""
-            )
+            code = code_elem.text.strip() if code_elem is not None and code_elem.text else ""
 
             if code != "P":
                 continue  # only open-market purchases
 
             # Shares
             shares_elem = txn.find(f".//{ns}transactionShares/{ns}value")
-            shares = _safe_float_or_zero(
-                shares_elem.text if shares_elem is not None else None
-            )
+            shares = _safe_float_or_zero(shares_elem.text if shares_elem is not None else None)
 
             # Price
             price_elem = txn.find(f".//{ns}transactionPricePerShare/{ns}value")
-            price = _safe_float_or_zero(
-                price_elem.text if price_elem is not None else None
-            )
+            price = _safe_float_or_zero(price_elem.text if price_elem is not None else None)
 
             # Date
             date_elem = txn.find(f".//{ns}transactionDate/{ns}value")
-            txn_date = (
-                date_elem.text.strip()
-                if date_elem is not None and date_elem.text
-                else fallback_date
-            )
+            txn_date = date_elem.text.strip() if date_elem is not None and date_elem.text else fallback_date
 
             if shares > 0:
                 transactions.append(

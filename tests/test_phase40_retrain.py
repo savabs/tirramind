@@ -12,20 +12,17 @@ Covers:
 from __future__ import annotations
 
 import tempfile
-import time
 from pathlib import Path
 
 import pytest
 import torch
 
-from agent.models.gnn.graph_builder import ENTITY_TYPES, OBSERVATION_TYPES
 from agent.models.gnn.trainer import (
     Trainer,
     TrainerConfig,
     evaluate,
 )
 from agent.pipeline.store import PipelineStore
-
 
 # ═══════════════════════════════════════════════════════════════
 # Fixtures

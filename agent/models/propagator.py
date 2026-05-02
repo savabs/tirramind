@@ -39,7 +39,7 @@ import numpy as np
 from pgmpy.inference import VariableElimination
 
 from agent.models.belief import BeliefState
-from agent.models.graph import NodeSpec, WorldModelGraph
+from agent.models.graph import WorldModelGraph
 
 
 def value_to_state_index(value: float, bin_edges: tuple[float, ...]) -> int:
@@ -99,30 +99,19 @@ class BeliefPropagator:
             if spec is None:
                 raise ValueError(f"Evidence node '{node_name}' not in graph")
             if spec.states is None:
-                raise ValueError(
-                    f"Node '{node_name}' has no states — cannot inject evidence"
-                )
+                raise ValueError(f"Node '{node_name}' has no states — cannot inject evidence")
 
             # Determine state index
             if isinstance(value, str):
                 if value not in spec.states:
-                    raise ValueError(
-                        f"Value '{value}' not in states for '{node_name}': "
-                        f"{spec.states}"
-                    )
+                    raise ValueError(f"Value '{value}' not in states for '{node_name}': {spec.states}")
                 state_idx = spec.states.index(value)
             elif isinstance(value, (int, float)):
                 if spec.bin_edges is None:
-                    raise ValueError(
-                        f"Node '{node_name}' has no bin_edges for continuous→"
-                        f"discrete mapping"
-                    )
+                    raise ValueError(f"Node '{node_name}' has no bin_edges for continuous→discrete mapping")
                 state_idx = value_to_state_index(float(value), spec.bin_edges)
             else:
-                raise TypeError(
-                    f"Evidence for '{node_name}' must be str, int, or float, "
-                    f"got {type(value).__name__}"
-                )
+                raise TypeError(f"Evidence for '{node_name}' must be str, int, or float, got {type(value).__name__}")
 
             q = quality.get(node_name, 1.0)
             if q <= 0.0:
@@ -151,9 +140,7 @@ class BeliefPropagator:
         inference = VariableElimination(self._graph.bn)
 
         # Query non-evidence nodes
-        non_evidence_nodes = [
-            n for n in self._graph.node_names if n not in hard_evidence
-        ]
+        non_evidence_nodes = [n for n in self._graph.node_names if n not in hard_evidence]
 
         beliefs: list[BeliefState] = []
 
@@ -165,10 +152,7 @@ class BeliefPropagator:
                     evidence=hard_evidence,
                     show_progress=False,
                 )
-                probs = {
-                    state: float(result.values[i])
-                    for i, state in enumerate(spec.states)
-                }
+                probs = {state: float(result.values[i]) for i, state in enumerate(spec.states)}
             except Exception:
                 # Fallback: return uniform if inference fails
                 n = spec.cardinality or len(spec.states)

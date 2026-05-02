@@ -11,11 +11,8 @@ All tests use an in-memory PipelineStore and synthetic data — no real APIs.
 from __future__ import annotations
 
 import json
-import math
-import time
 
 import numpy as np
-import pytest
 
 from agent.convergence.atomic_signals import AtomicSignalResult
 from agent.convergence.detector import (
@@ -24,7 +21,6 @@ from agent.convergence.detector import (
     DetectionResult,
 )
 from agent.convergence.evidence import Evidence
-from agent.convergence.extractors import extract_evidence
 from agent.convergence.taxonomy import CATEGORIES, SignalMeta, SignalRegistry
 from agent.pipeline.store import PipelineStore
 
@@ -85,8 +81,7 @@ def _inject_synthetic_data(
         ts = base_ts + i * _WEEK
         data = make_data_fn(i)
         conn.execute(
-            "INSERT INTO pipeline_data (source, fetched_at, params_json, data_json) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT INTO pipeline_data (source, fetched_at, params_json, data_json) VALUES (?, ?, ?, ?)",
             (tool_name, ts, json.dumps({}), json.dumps(data, default=str)),
         )
     conn.commit()
@@ -261,9 +256,7 @@ class TestSmartPairSelection:
         reg = _build_registry(*metas)
         return ConvergenceDetector(store, reg)
 
-    def _fake_atomic(
-        self, signal_id: str, z: float, anomaly: bool = False
-    ) -> AtomicSignalResult:
+    def _fake_atomic(self, signal_id: str, z: float, anomaly: bool = False) -> AtomicSignalResult:
         return AtomicSignalResult(
             signal_id=signal_id,
             timestamp=_BASE_TS,
@@ -327,10 +320,7 @@ class TestSmartPairSelection:
         det = self._make_detector(*metas)
         det._config.max_pairs = 5
 
-        atomics = {
-            f"sig_{i}": self._fake_atomic(f"sig_{i}", float(i), anomaly=(i > 15))
-            for i in range(20)
-        }
+        atomics = {f"sig_{i}": self._fake_atomic(f"sig_{i}", float(i), anomaly=(i > 15)) for i in range(20)}
         pairs = det._select_pairs(atomics)
         assert len(pairs) <= 5
 
@@ -526,9 +516,7 @@ class TestPositiveScenario:
                 ]
             }
             # At least some convergent signals should appear
-            assert all_involved & convergent_ids, (
-                f"Expected some convergent signals in results. " f"Got: {all_involved}"
-            )
+            assert all_involved & convergent_ids, f"Expected some convergent signals in results. Got: {all_involved}"
 
     def test_detection_result_structure(self):
         """Verify DetectionResult fields when detection succeeds."""
@@ -594,8 +582,7 @@ class TestConfigPropagation:
         conn = store._get_conn()
         old_ts = _BASE_TS - 30 * _DAY
         conn.execute(
-            "INSERT INTO pipeline_data (source, fetched_at, params_json, data_json) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT INTO pipeline_data (source, fetched_at, params_json, data_json) VALUES (?, ?, ?, ?)",
             (
                 "cftc",
                 old_ts,

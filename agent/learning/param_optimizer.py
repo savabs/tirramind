@@ -105,19 +105,13 @@ class Trial:
 # ---------------------------------------------------------------------------
 
 
-def _rbf_kernel(
-    X1: np.ndarray, X2: np.ndarray, length_scale: float, signal_var: float = 1.0
-) -> np.ndarray:
+def _rbf_kernel(X1: np.ndarray, X2: np.ndarray, length_scale: float, signal_var: float = 1.0) -> np.ndarray:
     """Squared-exponential (RBF) kernel matrix.
 
     k(x, x') = σ_f² exp(-‖x - x'‖² / (2 ℓ²))
     """
     # Pairwise squared distances
-    sq_dist = (
-        np.sum(X1**2, axis=1, keepdims=True)
-        + np.sum(X2**2, axis=1, keepdims=True).T
-        - 2.0 * X1 @ X2.T
-    )
+    sq_dist = np.sum(X1**2, axis=1, keepdims=True) + np.sum(X2**2, axis=1, keepdims=True).T - 2.0 * X1 @ X2.T
     return signal_var * np.exp(-0.5 * sq_dist / (length_scale**2))
 
 
@@ -283,9 +277,7 @@ class BayesianParamOptimizer:
         candidates = np.vstack([candidates_rand, perturbations])
 
         # GP posterior + EI
-        mu, var = _gp_posterior(
-            X_norm, y_norm, candidates, self._length_scale, self._noise_var
-        )
+        mu, var = _gp_posterior(X_norm, y_norm, candidates, self._length_scale, self._noise_var)
         f_best = y_norm.max()
         ei = _expected_improvement(mu, var, f_best)
 
@@ -305,9 +297,7 @@ class BayesianParamOptimizer:
         )
         return self._space.to_dict(x)
 
-    def record(
-        self, params: dict[str, float], objective: float, metadata: dict | None = None
-    ) -> None:
+    def record(self, params: dict[str, float], objective: float, metadata: dict | None = None) -> None:
         """Record a completed trial.
 
         Args:

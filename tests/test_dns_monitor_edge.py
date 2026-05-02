@@ -16,15 +16,16 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
+from agent.tools.base import ToolResult
 from agent.tools.dns_monitor import (
-    ALL_RECORD_TYPES,
-    DEFAULT_RECORD_TYPES,
-    VALID_MODES,
-    DnsMonitorTool,
     _CACHE_TTL_RESOLVE,
     _CACHE_TTL_SNAPSHOT,
     _MAX_BULK_DOMAINS,
     _RATE_LIMIT_INTERVAL,
+    ALL_RECORD_TYPES,
+    DEFAULT_RECORD_TYPES,
+    VALID_MODES,
+    DnsMonitorTool,
     _analyze_records,
     _compute_diff,
     _format_analysis,
@@ -40,8 +41,6 @@ from agent.tools.dns_monitor import (
     _resolve_type,
     _validate_domain,
 )
-from agent.tools.base import ToolResult
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -250,10 +249,7 @@ class TestMXProviderDetection:
         assert _identify_mx_provider("20 alt2.aspmx.l.google.com") == "Google Workspace"
 
     def test_microsoft_365(self):
-        assert (
-            _identify_mx_provider("10 company.mail.protection.outlook.com")
-            == "Microsoft 365"
-        )
+        assert _identify_mx_provider("10 company.mail.protection.outlook.com") == "Microsoft 365"
 
     def test_proofpoint(self):
         assert _identify_mx_provider("10 mx.pphosted.com") == "Proofpoint"
@@ -290,9 +286,7 @@ class TestNSProviderDetection:
         assert _identify_ns_provider("ns1-01.azure-dns.com") == "Azure DNS"
 
     def test_google_domains(self):
-        assert (
-            _identify_ns_provider("ns-cloud-a1.googledomains.com") == "Google Domains"
-        )
+        assert _identify_ns_provider("ns-cloud-a1.googledomains.com") == "Google Domains"
 
     def test_godaddy(self):
         assert _identify_ns_provider("ns49.domaincontrol.com") == "GoDaddy"
@@ -432,9 +426,7 @@ class TestDoHResponseParsing:
 
     def test_parse_txt_not_quoted(self):
         # Handle TXT records that aren't wrapped in quotes
-        data = _make_doh_response(
-            [{"name": "example.com", "type": 16, "TTL": 300, "data": "v=spf1 ~all"}]
-        )
+        data = _make_doh_response([{"name": "example.com", "type": 16, "TTL": 300, "data": "v=spf1 ~all"}])
         records = _parse_doh_response(data, "TXT")
         assert records[0]["value"] == "v=spf1 ~all"
 
@@ -768,7 +760,7 @@ class TestModeRouting:
         assert "invalid" in result.output.lower()
 
     def test_valid_modes_constant(self):
-        assert VALID_MODES == {"resolve", "diff", "bulk_resolve"}
+        assert {"resolve", "diff", "bulk_resolve"} == VALID_MODES
 
     def test_mode_case_insensitive(self):
         tool = DnsMonitorTool()
@@ -791,17 +783,13 @@ class TestModeRouting:
 class TestParameterValidation:
     def test_invalid_record_type(self):
         tool = DnsMonitorTool()
-        result = tool.execute(
-            mode="resolve", domain="example.com", record_types=["FAKE"]
-        )
+        result = tool.execute(mode="resolve", domain="example.com", record_types=["FAKE"])
         assert not result.success
         assert "invalid record type" in result.output.lower()
 
     def test_multiple_invalid_record_types(self):
         tool = DnsMonitorTool()
-        result = tool.execute(
-            mode="resolve", domain="example.com", record_types=["FAKE", "BOGUS"]
-        )
+        result = tool.execute(mode="resolve", domain="example.com", record_types=["FAKE", "BOGUS"])
         assert not result.success
         assert "FAKE" in result.output
         assert "BOGUS" in result.output
@@ -949,9 +937,7 @@ class TestDiffMode:
         cache = MagicMock()
         # Return same records as previous snapshot
         cache.get.side_effect = lambda source, key: (
-            None
-            if key.get("mode") == "resolve"
-            else current if key.get("mode") == "snapshot" else None
+            None if key.get("mode") == "resolve" else current if key.get("mode") == "snapshot" else None
         )
         tool = DnsMonitorTool(cache=cache)
         result = tool.execute(mode="diff", domain="example.com")
@@ -970,9 +956,7 @@ class TestDiffMode:
         }
         mock_resolve.return_value = new
         cache = MagicMock()
-        cache.get.side_effect = lambda source, key: (
-            old if key.get("mode") == "snapshot" else None
-        )
+        cache.get.side_effect = lambda source, key: old if key.get("mode") == "snapshot" else None
         tool = DnsMonitorTool(cache=cache)
         result = tool.execute(mode="diff", domain="example.com")
         assert result.success
@@ -982,15 +966,11 @@ class TestDiffMode:
 
     @patch("agent.tools.dns_monitor._resolve_all_types")
     def test_diff_detects_removed_record(self, mock_resolve):
-        old = {
-            "A": [{"value": "1.2.3.4", "ttl": 300}, {"value": "5.6.7.8", "ttl": 300}]
-        }
+        old = {"A": [{"value": "1.2.3.4", "ttl": 300}, {"value": "5.6.7.8", "ttl": 300}]}
         new = {"A": [{"value": "1.2.3.4", "ttl": 300}]}
         mock_resolve.return_value = new
         cache = MagicMock()
-        cache.get.side_effect = lambda source, key: (
-            old if key.get("mode") == "snapshot" else None
-        )
+        cache.get.side_effect = lambda source, key: old if key.get("mode") == "snapshot" else None
         tool = DnsMonitorTool(cache=cache)
         result = tool.execute(mode="diff", domain="example.com")
         assert result.success
@@ -1003,9 +983,7 @@ class TestDiffMode:
         new = {"A": [{"value": "1.2.3.4", "ttl": 300}]}
         mock_resolve.return_value = new
         cache = MagicMock()
-        cache.get.side_effect = lambda source, key: (
-            old if key.get("mode") == "snapshot" else None
-        )
+        cache.get.side_effect = lambda source, key: old if key.get("mode") == "snapshot" else None
         tool = DnsMonitorTool(cache=cache)
         result = tool.execute(mode="diff", domain="example.com")
         assert result.success
@@ -1185,9 +1163,7 @@ class TestFormatting:
         assert "+" in lines[0]
 
     def test_format_changes_removed(self):
-        changes = [
-            {"type": "A", "action": "removed", "value": "1.2.3.4", "old_ttl": 300}
-        ]
+        changes = [{"type": "A", "action": "removed", "value": "1.2.3.4", "old_ttl": 300}]
         lines = _format_changes(changes)
         assert len(lines) == 1
         assert "-" in lines[0]
@@ -1299,10 +1275,7 @@ class TestRegistryIntegration:
     def test_arm_count(self):
         from agent.learning.bandit import DEFAULT_ARMS
 
-        assert len(DEFAULT_ARMS) == 48, (
-            f"Expected 48 arms, got {len(DEFAULT_ARMS)}: "
-            f"{[a.name for a in DEFAULT_ARMS]}"
-        )
+        assert len(DEFAULT_ARMS) == 48, f"Expected 48 arms, got {len(DEFAULT_ARMS)}: {[a.name for a in DEFAULT_ARMS]}"
 
     def test_infrastructure_recon_arm_includes_dns(self):
         from agent.learning.bandit import DEFAULT_ARMS

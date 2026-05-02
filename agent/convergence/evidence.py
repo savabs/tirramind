@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any
 
 from agent.convergence.taxonomy import CATEGORIES
 
@@ -63,18 +62,11 @@ class Evidence:
         if self.timestamp <= 0:
             raise ValueError(f"timestamp must be positive, got {self.timestamp}")
         if not (0.0 <= self.confidence <= 1.0):
-            raise ValueError(
-                f"confidence must be in [0.0, 1.0], got {self.confidence}"
-            )
+            raise ValueError(f"confidence must be in [0.0, 1.0], got {self.confidence}")
         if self.direction not in (-1, 0, 1):
-            raise ValueError(
-                f"direction must be -1, 0, or 1, got {self.direction}"
-            )
+            raise ValueError(f"direction must be -1, 0, or 1, got {self.direction}")
         if self.category not in VALID_CATEGORIES:
-            raise ValueError(
-                f"category must be one of {sorted(VALID_CATEGORIES)}, "
-                f"got {self.category!r}"
-            )
+            raise ValueError(f"category must be one of {sorted(VALID_CATEGORIES)}, got {self.category!r}")
         if self.ttl <= 0:
             raise ValueError(f"ttl must be positive, got {self.ttl}")
 
@@ -91,9 +83,7 @@ class EvidenceBus:
     def submit(self, evidence: Evidence) -> None:
         """Validate type and append evidence to the bus."""
         if not isinstance(evidence, Evidence):
-            raise TypeError(
-                f"Expected Evidence, got {type(evidence).__name__}"
-            )
+            raise TypeError(f"Expected Evidence, got {type(evidence).__name__}")
         self._items.append(evidence)
 
     def flush(self) -> list[Evidence]:

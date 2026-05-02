@@ -316,20 +316,13 @@ def joint_exceedance_score(
     if n_trials < _MIN_VALID:
         return _no_evidence("joint_exceedance", "too few valid pairs in window")
 
-    observed = int(
-        np.sum(
-            (np.abs(wa[pair_mask]) > z_threshold)
-            & (np.abs(wb[pair_mask]) > z_threshold)
-        )
-    )
+    observed = int(np.sum((np.abs(wa[pair_mask]) > z_threshold) & (np.abs(wb[pair_mask]) > z_threshold)))
 
     expected = n_trials * p_joint_null
     variance = n_trials * p_joint_null * (1.0 - p_joint_null)
 
     # One-tailed binomial test (excess joint exceedances)
-    p_value = float(
-        stats.binomtest(observed, n_trials, p_joint_null, alternative="greater").pvalue
-    )
+    p_value = float(stats.binomtest(observed, n_trials, p_joint_null, alternative="greater").pvalue)
 
     # Z-score approximation (normal approx to binomial)
     if variance > _EPSILON:
@@ -409,9 +402,7 @@ def concordance_score(
     if n_trials < _MIN_VALID:
         return _no_evidence("concordance", "too few valid first-differences")
 
-    concordant = int(
-        np.sum(np.sign(recent_da[pair_mask]) == np.sign(recent_db[pair_mask]))
-    )
+    concordant = int(np.sum(np.sign(recent_da[pair_mask]) == np.sign(recent_db[pair_mask])))
 
     hit_rate = concordant / n_trials
     expected = n_trials * 0.5
@@ -422,9 +413,7 @@ def concordance_score(
 
     z_approx = (concordant - expected) / math.sqrt(variance)
 
-    p_value = float(
-        stats.binomtest(concordant, n_trials, 0.5, alternative="two-sided").pvalue
-    )
+    p_value = float(stats.binomtest(concordant, n_trials, 0.5, alternative="two-sided").pvalue)
 
     return CoincidenceResult(
         method="concordance",

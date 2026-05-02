@@ -22,7 +22,6 @@ from agent.convergence.taxonomy import CATEGORIES
 from agent.convergence.templates import (
     TEMPLATE_LIBRARY,
     CausalTemplate,
-    TemplateStep,
     match_template,
 )
 
@@ -148,17 +147,13 @@ class TestBatch2Structure:
     def test_within_days_non_decreasing(self, name: str):
         t = _template_by_name(name)
         for i in range(1, len(t.steps)):
-            assert t.steps[i].within_days >= t.steps[i - 1].within_days, (
-                f"{name} step {i} within_days decreases"
-            )
+            assert t.steps[i].within_days >= t.steps[i - 1].within_days, f"{name} step {i} within_days decreases"
 
     def test_valid_categories(self, name: str):
         t = _template_by_name(name)
         for i, s in enumerate(t.steps):
             for cat in s.category_pattern.split("|"):
-                assert cat in CATEGORIES, (
-                    f"{name} step {i} has unknown category {cat!r}"
-                )
+                assert cat in CATEGORIES, f"{name} step {i} has unknown category {cat!r}"
 
     def test_valid_regex(self, name: str):
         t = _template_by_name(name)
@@ -171,9 +166,7 @@ class TestBatch2Structure:
     def test_direction_values(self, name: str):
         t = _template_by_name(name)
         for i, s in enumerate(t.steps):
-            assert s.direction in (+1, -1, None), (
-                f"{name} step {i} direction={s.direction}"
-            )
+            assert s.direction in (+1, -1, None), f"{name} step {i} direction={s.direction}"
 
     def test_effective_min_match(self, name: str):
         t = _template_by_name(name)
@@ -1131,10 +1124,7 @@ class TestEdgeCases:
             "physical_flow",
         ]
         clique = _clique(signals, wrong_cats)
-        timeline = [
-            _ev(signals[i], wrong_cats[i], t0 + i * 5 * _DAY, -1)
-            for i in range(5)
-        ]
+        timeline = [_ev(signals[i], wrong_cats[i], t0 + i * 5 * _DAY, -1) for i in range(5)]
         result = match_template(clique, timeline, tmpl)
         assert result.match_score == 0.0
 

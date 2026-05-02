@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -20,7 +19,6 @@ from agent.learning.tool_router import (
     ToolRoutingBandit,
 )
 from agent.pipeline.dag import DAG, Node
-
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -83,16 +81,8 @@ class TestConvergence:
             router.record_outcome("bad_tool", 0.0)
 
         # Check many decisions: good_tool should be on most of the time
-        good_on = sum(
-            1
-            for _ in range(100)
-            if router.decide(ToolContext()).get("good_tool", False)
-        )
-        bad_on = sum(
-            1
-            for _ in range(100)
-            if router.decide(ToolContext()).get("bad_tool", False)
-        )
+        good_on = sum(1 for _ in range(100) if router.decide(ToolContext()).get("good_tool", False))
+        bad_on = sum(1 for _ in range(100) if router.decide(ToolContext()).get("bad_tool", False))
         assert good_on > 90, f"good_tool only selected {good_on}/100 times"
         assert bad_on < 20, f"bad_tool selected {bad_on}/100 times"
 
@@ -173,11 +163,7 @@ class TestMinExploration:
             router.record_outcome("t1", 0.0)
 
         # With Beta heavily weighted toward 0, most decisions should be OFF
-        off_count = sum(
-            1
-            for _ in range(100)
-            if not router.decide(ToolContext()).get("t1", False)
-        )
+        off_count = sum(1 for _ in range(100) if not router.decide(ToolContext()).get("t1", False))
         assert off_count > 80
 
 
@@ -191,16 +177,12 @@ class TestPersistence:
         with tempfile.TemporaryDirectory() as d:
             path = Path(d) / "router.json"
 
-            router = ToolRoutingBandit(
-                tool_names=("t1", "t2"), persist_path=path, seed=42
-            )
+            router = ToolRoutingBandit(tool_names=("t1", "t2"), persist_path=path, seed=42)
             router.record_outcome("t1", 0.8)
             router.record_outcome("t2", 0.2)
 
             # Load into fresh bandit
-            router2 = ToolRoutingBandit(
-                tool_names=("t1", "t2"), persist_path=path, seed=42
-            )
+            router2 = ToolRoutingBandit(tool_names=("t1", "t2"), persist_path=path, seed=42)
             assert router2.stats()["t1"]["alpha"] == router.stats()["t1"]["alpha"]
             assert router2.stats()["t2"]["beta"] == router.stats()["t2"]["beta"]
 
@@ -221,9 +203,7 @@ class TestPersistence:
             path = Path(d) / "router.json"
             path.write_text("not valid json {{{")
             # Should not crash — warns and uses defaults
-            router = ToolRoutingBandit(
-                tool_names=("t1",), persist_path=path, seed=42
-            )
+            router = ToolRoutingBandit(tool_names=("t1",), persist_path=path, seed=42)
             assert router.stats()["t1"]["alpha"] == 1.0
 
     def test_missing_tool_in_state_file(self) -> None:
@@ -240,9 +220,7 @@ class TestPersistence:
             path.write_text(json.dumps(state))
 
             # Load but with t1 + t2
-            router = ToolRoutingBandit(
-                tool_names=("t1", "t2"), persist_path=path, seed=42
-            )
+            router = ToolRoutingBandit(tool_names=("t1", "t2"), persist_path=path, seed=42)
             assert router.stats()["t1"]["alpha"] == 5.0
             assert router.stats()["t2"]["alpha"] == 1.0  # default
 
@@ -310,11 +288,7 @@ class TestDAGIntegration:
         assert dag.nodes["fetch_instruments"].enabled is True
 
         # At least some optional tools should be disabled
-        disabled = [
-            nid
-            for nid in dag.nodes
-            if not dag.nodes[nid].enabled and nid != "fetch_instruments"
-        ]
+        disabled = [nid for nid in dag.nodes if not dag.nodes[nid].enabled and nid != "fetch_instruments"]
         assert len(disabled) > 0
 
     def test_build_dag_without_router(self) -> None:
@@ -334,7 +308,7 @@ class TestDAGIntegration:
 
     def test_executor_skips_disabled_node(self) -> None:
         """DAGExecutor skips disabled nodes."""
-        from agent.pipeline.executor import DAGExecutor, NodeResult
+        from agent.pipeline.executor import DAGExecutor
 
         dag = DAG(name="test_dag")
         dag.add("enabled_node", operator=lambda params, upstream: {"ok": True})

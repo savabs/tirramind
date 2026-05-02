@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import pytest
-
 from pgmpy.factors.discrete import TabularCPD
 
 from agent.models.graph import NodeSpec, WorldModelGraph
-
 
 # ── Helpers ────────────────────────────────────────────────────
 
@@ -144,21 +142,15 @@ class TestGraphHashing:
         r = _regime_node()
         o = _observed_node()
         g1 = WorldModelGraph(nodes=[r, o])
-        g2 = WorldModelGraph(
-            nodes=[r, o], edges=[("regime.macro", "obs.rate_momentum")]
-        )
+        g2 = WorldModelGraph(nodes=[r, o], edges=[("regime.macro", "obs.rate_momentum")])
         assert g1.graph_hash() != g2.graph_hash()
 
     def test_hash_order_independent(self):
         """Nodes added in different order produce same hash."""
         r = _regime_node()
         o = _observed_node()
-        g1 = WorldModelGraph(
-            nodes=[r, o], edges=[("regime.macro", "obs.rate_momentum")]
-        )
-        g2 = WorldModelGraph(
-            nodes=[o, r], edges=[("regime.macro", "obs.rate_momentum")]
-        )
+        g1 = WorldModelGraph(nodes=[r, o], edges=[("regime.macro", "obs.rate_momentum")])
+        g2 = WorldModelGraph(nodes=[o, r], edges=[("regime.macro", "obs.rate_momentum")])
         assert g1.graph_hash() == g2.graph_hash()
 
 

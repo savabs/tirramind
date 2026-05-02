@@ -32,8 +32,6 @@ from agent.tools.satellite_activity import (
     _ndvi_health,
     _safe_float,
 )
-from agent.tools.base import ToolResult
-
 
 # ── FIXTURES ──
 
@@ -101,7 +99,7 @@ class TestModeValidation:
         assert not r.success
 
     def test_valid_modes_constant(self):
-        assert VALID_MODES == {"fire", "vegetation", "events"}
+        assert {"fire", "vegetation", "events"} == VALID_MODES
 
     def test_case_insensitive_mode(self, tool):
         # Fire mode without key returns API key error, proving mode was recognized
@@ -299,9 +297,7 @@ class TestVegetationMode:
         assert "start_date" in r.output.lower() or "end_date" in r.output.lower()
 
     def test_km_radius_clamped(self, tool):
-        with patch(
-            "agent.tools.satellite_activity._fetch_ndvi", return_value={"subset": []}
-        ):
+        with patch("agent.tools.satellite_activity._fetch_ndvi", return_value={"subset": []}):
             r = tool.execute(
                 mode="vegetation",
                 latitude=40,
@@ -313,9 +309,7 @@ class TestVegetationMode:
             assert r.success
 
     def test_km_radius_non_numeric(self, tool):
-        with patch(
-            "agent.tools.satellite_activity._fetch_ndvi", return_value={"subset": []}
-        ):
+        with patch("agent.tools.satellite_activity._fetch_ndvi", return_value={"subset": []}):
             r = tool.execute(
                 mode="vegetation",
                 latitude=40,
@@ -472,16 +466,12 @@ class TestEventsMode:
             {
                 "title": "Wildfire in California",
                 "categories": [{"id": "wildfires"}],
-                "geometry": [
-                    {"coordinates": [-120.5, 37.2], "date": "2024-03-15T00:00:00Z"}
-                ],
+                "geometry": [{"coordinates": [-120.5, 37.2], "date": "2024-03-15T00:00:00Z"}],
             },
             {
                 "title": "Volcanic Eruption in Iceland",
                 "categories": [{"id": "volcanoes"}],
-                "geometry": [
-                    {"coordinates": [-21.3, 63.6], "date": "2024-03-14T00:00:00Z"}
-                ],
+                "geometry": [{"coordinates": [-21.3, 63.6], "date": "2024-03-14T00:00:00Z"}],
             },
         ]
         r = tool.execute(mode="events")
@@ -539,10 +529,7 @@ class TestEventsMode:
 
     @patch("agent.tools.satellite_activity._fetch_eonet")
     def test_events_many_truncated(self, mock_fetch, tool):
-        events = [
-            {"title": f"Event {i}", "categories": [{"id": "wildfires"}], "geometry": []}
-            for i in range(30)
-        ]
+        events = [{"title": f"Event {i}", "categories": [{"id": "wildfires"}], "geometry": []} for i in range(30)]
         mock_fetch.return_value = events
         r = tool.execute(mode="events")
         assert r.success
@@ -673,9 +660,7 @@ class TestHelpers:
 class TestFetchFirms:
     @patch("agent.tools.satellite_activity.httpx.get")
     def test_success(self, mock_get):
-        csv = _firms_csv(
-            {"latitude": "10", "longitude": "20", "frp": "50", "confidence": "high"}
-        )
+        csv = _firms_csv({"latitude": "10", "longitude": "20", "frp": "50", "confidence": "high"})
         mock_get.return_value = _mock_response(200, text=csv)
         result = _fetch_firms("USA", "VIIRS_NOAA20_NRT", 1, "key")
         assert result is not None
@@ -730,9 +715,7 @@ class TestFetchNdvi:
 class TestFetchEonet:
     @patch("agent.tools.satellite_activity.httpx.get")
     def test_success(self, mock_get):
-        mock_get.return_value = _mock_response(
-            200, json_data={"events": [{"title": "Fire 1"}]}
-        )
+        mock_get.return_value = _mock_response(200, json_data={"events": [{"title": "Fire 1"}]})
         result = _fetch_eonet()
         assert result is not None
         assert len(result) == 1

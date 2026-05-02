@@ -8,24 +8,20 @@ empty responses, malformed data, output formatting, registry + bandit.
 
 from __future__ import annotations
 
-import json
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
 
 from agent.tools.gov_contracts import (
-    GovContractsTool,
-    VALID_MODES,
-    VALID_REGIONS,
+    _AWARDS_URL,
     _CONTRACT_CODES,
     _FIELDS,
-    _AWARDS_URL,
     _UK_OCDS_URL,
+    VALID_MODES,
+    VALID_REGIONS,
+    GovContractsTool,
 )
-from agent.tools.base import ToolResult
-
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -141,9 +137,7 @@ class TestInputValidation:
         assert not r.success
 
     def test_extra_kwargs_ignored(self):
-        with patch.object(
-            GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE
-        ):
+        with patch.object(GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE):
             r = _tool().execute(mode="recent", bogus="thing")
             assert r.success
 
@@ -153,27 +147,21 @@ class TestInputValidation:
 
 class TestRecentMode:
     def test_basic_recent(self):
-        with patch.object(
-            GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE
-        ):
+        with patch.object(GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE):
             r = _tool().execute(mode="recent")
             assert r.success
             assert "awards" in r.data
             assert r.data["count"] == 2
 
     def test_recent_sorted_by_date(self):
-        with patch.object(
-            GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE
-        ) as mock:
+        with patch.object(GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE) as mock:
             r = _tool().execute(mode="recent")
             call_payload = mock.call_args[0][1]
             assert call_payload["sort"] == "Start Date"
             assert call_payload["order"] == "desc"
 
     def test_recent_default_dates(self):
-        with patch.object(
-            GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE
-        ) as mock:
+        with patch.object(GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE) as mock:
             r = _tool().execute(mode="recent")
             call_payload = mock.call_args[0][1]
             time_period = call_payload["filters"]["time_period"][0]
@@ -181,12 +169,8 @@ class TestRecentMode:
             assert "end_date" in time_period
 
     def test_recent_custom_dates(self):
-        with patch.object(
-            GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE
-        ) as mock:
-            r = _tool().execute(
-                mode="recent", start_date="2024-01-01", end_date="2024-12-31"
-            )
+        with patch.object(GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE) as mock:
+            r = _tool().execute(mode="recent", start_date="2024-01-01", end_date="2024-12-31")
             call_payload = mock.call_args[0][1]
             time_period = call_payload["filters"]["time_period"][0]
             assert time_period["start_date"] == "2024-01-01"
@@ -198,17 +182,13 @@ class TestRecentMode:
 
 class TestTopMode:
     def test_basic_top(self):
-        with patch.object(
-            GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE
-        ):
+        with patch.object(GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE):
             r = _tool().execute(mode="top")
             assert r.success
             assert r.data["count"] == 2
 
     def test_top_sorted_by_amount(self):
-        with patch.object(
-            GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE
-        ) as mock:
+        with patch.object(GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE) as mock:
             r = _tool().execute(mode="top")
             call_payload = mock.call_args[0][1]
             assert call_payload["sort"] == "Award Amount"
@@ -220,9 +200,7 @@ class TestTopMode:
 
 class TestAgencyMode:
     def test_basic_agency(self):
-        with patch.object(
-            GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE
-        ) as mock:
+        with patch.object(GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE) as mock:
             r = _tool().execute(mode="agency", agency="Department of Defense")
             assert r.success
             call_payload = mock.call_args[0][1]
@@ -231,9 +209,7 @@ class TestAgencyMode:
             assert agencies[0]["name"] == "Department of Defense"
 
     def test_agency_filter_structure(self):
-        with patch.object(
-            GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE
-        ) as mock:
+        with patch.object(GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE) as mock:
             r = _tool().execute(mode="agency", agency="NASA")
             call_payload = mock.call_args[0][1]
             agency = call_payload["filters"]["agencies"][0]
@@ -246,18 +222,14 @@ class TestAgencyMode:
 
 class TestSearchMode:
     def test_basic_search(self):
-        with patch.object(
-            GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE
-        ) as mock:
+        with patch.object(GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE) as mock:
             r = _tool().execute(mode="search", query="semiconductor")
             assert r.success
             call_payload = mock.call_args[0][1]
             assert "semiconductor" in call_payload["filters"]["keywords"]
 
     def test_search_output_mentions_query(self):
-        with patch.object(
-            GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE
-        ):
+        with patch.object(GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE):
             r = _tool().execute(mode="search", query="AI")
             assert "AI" in r.output
 
@@ -267,41 +239,31 @@ class TestSearchMode:
 
 class TestPayloadConstruction:
     def test_contract_codes(self):
-        with patch.object(
-            GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE
-        ) as mock:
+        with patch.object(GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE) as mock:
             r = _tool().execute(mode="recent")
             call_payload = mock.call_args[0][1]
             assert call_payload["filters"]["award_type_codes"] == _CONTRACT_CODES
 
     def test_fields_requested(self):
-        with patch.object(
-            GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE
-        ) as mock:
+        with patch.object(GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE) as mock:
             r = _tool().execute(mode="recent")
             call_payload = mock.call_args[0][1]
             assert call_payload["fields"] == _FIELDS
 
     def test_limit_in_payload(self):
-        with patch.object(
-            GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE
-        ) as mock:
+        with patch.object(GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE) as mock:
             r = _tool().execute(mode="recent", limit=5)
             call_payload = mock.call_args[0][1]
             assert call_payload["limit"] == 5
 
     def test_limit_clamped_low(self):
-        with patch.object(
-            GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE
-        ) as mock:
+        with patch.object(GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE) as mock:
             r = _tool().execute(mode="recent", limit=0)
             call_payload = mock.call_args[0][1]
             assert call_payload["limit"] == 1
 
     def test_limit_clamped_high(self):
-        with patch.object(
-            GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE
-        ) as mock:
+        with patch.object(GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE) as mock:
             r = _tool().execute(mode="recent", limit=999)
             call_payload = mock.call_args[0][1]
             assert call_payload["limit"] == 50
@@ -312,9 +274,7 @@ class TestPayloadConstruction:
 
 class TestResultParsing:
     def test_award_fields(self):
-        with patch.object(
-            GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE
-        ):
+        with patch.object(GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE):
             r = _tool().execute(mode="recent")
             a = r.data["awards"][0]
             assert a["award_id"] == "HT940216C0001"
@@ -325,17 +285,13 @@ class TestResultParsing:
             assert a["start_date"] == "2024-06-01"
 
     def test_description_truncated(self):
-        with patch.object(
-            GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE
-        ):
+        with patch.object(GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE):
             r = _tool().execute(mode="recent")
             for a in r.data["awards"]:
                 assert len(a["description"]) <= 200
 
     def test_total_count(self):
-        with patch.object(
-            GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE
-        ):
+        with patch.object(GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE):
             r = _tool().execute(mode="recent")
             assert r.data["total"] == 2
 
@@ -357,9 +313,7 @@ class TestResultParsing:
 
     def test_null_fields(self):
         data = {
-            "results": [
-                {"Award ID": None, "Recipient Name": None, "Award Amount": None}
-            ],
+            "results": [{"Award ID": None, "Recipient Name": None, "Award Amount": None}],
             "page_metadata": {"total": 1},
         }
         with patch.object(GovContractsTool, "_post_json", return_value=data):
@@ -395,16 +349,12 @@ class TestHTTPErrors:
             assert not r.success
 
     def test_connection_error(self):
-        with patch.object(
-            GovContractsTool, "_post_json", side_effect=httpx.ConnectError("fail")
-        ):
+        with patch.object(GovContractsTool, "_post_json", side_effect=httpx.ConnectError("fail")):
             r = _tool().execute(mode="recent")
             assert not r.success
 
     def test_generic_exception(self):
-        with patch.object(
-            GovContractsTool, "_post_json", side_effect=RuntimeError("boom")
-        ):
+        with patch.object(GovContractsTool, "_post_json", side_effect=RuntimeError("boom")):
             r = _tool().execute(mode="recent")
             assert not r.success
 
@@ -420,23 +370,17 @@ class TestHTTPErrors:
 
 class TestOutputFormatting:
     def test_recent_output(self):
-        with patch.object(
-            GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE
-        ):
+        with patch.object(GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE):
             r = _tool().execute(mode="recent")
             assert "federal contract" in r.output.lower()
 
     def test_agency_output_mentions_agency(self):
-        with patch.object(
-            GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE
-        ):
+        with patch.object(GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE):
             r = _tool().execute(mode="agency", agency="DoD")
             assert "DoD" in r.output
 
     def test_search_output_mentions_keyword(self):
-        with patch.object(
-            GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE
-        ):
+        with patch.object(GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE):
             r = _tool().execute(mode="search", query="chips")
             assert "chips" in r.output
 
@@ -446,7 +390,7 @@ class TestOutputFormatting:
 
 class TestConstants:
     def test_valid_modes(self):
-        assert VALID_MODES == {"recent", "top", "agency", "search"}
+        assert {"recent", "top", "agency", "search"} == VALID_MODES
 
     def test_contract_codes(self):
         assert _CONTRACT_CODES == ["A", "B", "C", "D"]
@@ -467,7 +411,6 @@ class TestRegistryAndBandit:
             from agent.cli import build_tool_registry
         except (ImportError, ModuleNotFoundError):
             pytest.skip("optional dep not installed")
-        from unittest.mock import MagicMock
 
         mock_config = MagicMock()
         mock_config.tool_timeout = 30
@@ -480,7 +423,6 @@ class TestRegistryAndBandit:
             from agent.cli import build_tool_registry
         except (ImportError, ModuleNotFoundError):
             pytest.skip("optional dep not installed")
-        from unittest.mock import MagicMock
 
         mock_config = MagicMock()
         mock_config.tool_timeout = 30
@@ -587,7 +529,7 @@ def _uk_ocds_releases():
 
 class TestRegionParameter:
     def test_valid_regions_constant(self):
-        assert VALID_REGIONS == {"us", "uk"}
+        assert {"us", "uk"} == VALID_REGIONS
 
     def test_invalid_region_rejected(self):
         r = _tool().execute(mode="recent", region="fr")
@@ -595,38 +537,28 @@ class TestRegionParameter:
         assert "Invalid region" in r.output
 
     def test_empty_region_defaults_to_us(self):
-        with patch.object(
-            GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE
-        ):
+        with patch.object(GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE):
             r = _tool().execute(mode="recent", region="")
             assert r.success
 
     def test_none_region_defaults_to_us(self):
-        with patch.object(
-            GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE
-        ):
+        with patch.object(GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE):
             r = _tool().execute(mode="recent", region=None)
             assert r.success
 
     def test_region_case_insensitive(self):
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()
-        ):
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()):
             r = _tool().execute(mode="recent", region="UK")
             assert r.success
             assert r.data["region"] == "uk"
 
     def test_region_whitespace_stripped(self):
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()
-        ):
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()):
             r = _tool().execute(mode="recent", region="  uk  ")
             assert r.success
 
     def test_us_region_explicit(self):
-        with patch.object(
-            GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE
-        ):
+        with patch.object(GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE):
             r = _tool().execute(mode="recent", region="us")
             assert r.success
             # US results should not have "region" key in data
@@ -645,9 +577,7 @@ class TestRegionParameter:
 
 class TestUKRecentMode:
     def test_basic_recent(self):
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()
-        ):
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()):
             r = _tool().execute(mode="recent", region="uk")
             assert r.success
             assert "awards" in r.data
@@ -655,17 +585,13 @@ class TestUKRecentMode:
             assert r.data["region"] == "uk"
 
     def test_recent_sorted_by_date_descending(self):
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()
-        ):
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()):
             r = _tool().execute(mode="recent", region="uk")
             dates = [a["start_date"] for a in r.data["awards"]]
             assert dates == sorted(dates, reverse=True)
 
     def test_recent_custom_dates(self):
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()
-        ) as mock:
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()) as mock:
             r = _tool().execute(
                 mode="recent",
                 region="uk",
@@ -676,9 +602,7 @@ class TestUKRecentMode:
             assert r.success
 
     def test_recent_output_mentions_uk(self):
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()
-        ):
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()):
             r = _tool().execute(mode="recent", region="uk")
             assert "UK" in r.output
 
@@ -688,25 +612,19 @@ class TestUKRecentMode:
 
 class TestUKTopMode:
     def test_basic_top(self):
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()
-        ):
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()):
             r = _tool().execute(mode="top", region="uk")
             assert r.success
             assert r.data["count"] == 3
 
     def test_top_sorted_by_amount_descending(self):
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()
-        ):
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()):
             r = _tool().execute(mode="top", region="uk")
             amounts = [a["amount"] for a in r.data["awards"]]
             assert amounts == sorted(amounts, reverse=True)
 
     def test_top_largest_first(self):
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()
-        ):
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()):
             r = _tool().execute(mode="top", region="uk")
             assert r.data["awards"][0]["amount"] == 75_000_000
 
@@ -725,48 +643,34 @@ class TestUKAgencyMode:
         assert not r.success
 
     def test_agency_filters_by_buyer(self):
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()
-        ):
-            r = _tool().execute(
-                mode="agency", region="uk", agency="Ministry of Defence"
-            )
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()):
+            r = _tool().execute(mode="agency", region="uk", agency="Ministry of Defence")
             assert r.success
             assert r.data["count"] == 2
             for a in r.data["awards"]:
                 assert "Ministry of Defence" in a["agency"]
 
     def test_agency_case_insensitive_filter(self):
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()
-        ):
-            r = _tool().execute(
-                mode="agency", region="uk", agency="ministry of defence"
-            )
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()):
+            r = _tool().execute(mode="agency", region="uk", agency="ministry of defence")
             assert r.success
             assert r.data["count"] == 2
 
     def test_agency_partial_match(self):
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()
-        ):
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()):
             r = _tool().execute(mode="agency", region="uk", agency="NHS")
             assert r.success
             assert r.data["count"] == 1
             assert r.data["awards"][0]["agency"] == "NHS England"
 
     def test_agency_no_match(self):
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()
-        ):
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()):
             r = _tool().execute(mode="agency", region="uk", agency="NONEXISTENT_DEPT")
             assert r.success
             assert r.data["count"] == 0
 
     def test_agency_output_mentions_buyer(self):
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()
-        ):
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()):
             r = _tool().execute(mode="agency", region="uk", agency="NHS England")
             assert "NHS England" in r.output
 
@@ -785,50 +689,38 @@ class TestUKSearchMode:
         assert not r.success
 
     def test_search_by_title(self):
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()
-        ):
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()):
             r = _tool().execute(mode="search", region="uk", query="satellite")
             assert r.success
             assert r.data["count"] == 1
             assert "satellite" in r.data["awards"][0]["description"].lower()
 
     def test_search_by_description(self):
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()
-        ):
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()):
             r = _tool().execute(mode="search", region="uk", query="patient records")
             assert r.success
             assert r.data["count"] == 1
 
     def test_search_by_buyer_name(self):
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()
-        ):
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()):
             r = _tool().execute(mode="search", region="uk", query="NHS")
             assert r.success
             assert r.data["count"] == 1
 
     def test_search_case_insensitive(self):
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()
-        ):
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()):
             r = _tool().execute(mode="search", region="uk", query="SATELLITE")
             assert r.success
             assert r.data["count"] == 1
 
     def test_search_no_match(self):
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()
-        ):
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()):
             r = _tool().execute(mode="search", region="uk", query="quantum_unicorn_xyz")
             assert r.success
             assert r.data["count"] == 0
 
     def test_search_output_mentions_query(self):
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()
-        ):
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()):
             r = _tool().execute(mode="search", region="uk", query="digital")
             assert "digital" in r.output
 
@@ -838,9 +730,7 @@ class TestUKSearchMode:
 
 class TestUKResultParsing:
     def test_award_fields_present(self):
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()
-        ):
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()):
             r = _tool().execute(mode="recent", region="uk")
             a = r.data["awards"][0]
             assert "award_id" in a
@@ -855,9 +745,7 @@ class TestUKResultParsing:
             assert "region" in a
 
     def test_first_award_values(self):
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()
-        ):
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()):
             r = _tool().execute(mode="recent", region="uk")
             # Most recent (by start_date) should be the MoD SATCOM one: 2024-09-01
             a = r.data["awards"][0]
@@ -880,24 +768,18 @@ class TestUKResultParsing:
                 "awards": [],
             }
         ]
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=releases
-        ):
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=releases):
             r = _tool().execute(mode="recent", region="uk")
             assert len(r.data["awards"][0]["description"]) <= 200
 
     def test_total_and_count(self):
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()
-        ):
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()):
             r = _tool().execute(mode="recent", region="uk")
             assert r.data["total"] == 3
             assert r.data["count"] == 3
 
     def test_limit_applied(self):
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()
-        ):
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()):
             r = _tool().execute(mode="recent", region="uk", limit=1)
             assert r.data["count"] == 1
             assert r.data["total"] == 3
@@ -911,9 +793,7 @@ class TestUKResultParsing:
 
     def test_release_missing_tender(self):
         releases = [{"ocid": "no-tender", "buyer": {"name": "Test"}, "awards": []}]
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=releases
-        ):
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=releases):
             r = _tool().execute(mode="recent", region="uk")
             assert r.success
             assert r.data["count"] == 1
@@ -926,9 +806,7 @@ class TestUKResultParsing:
                 "awards": [{"value": {"amount": 100}, "suppliers": []}],
             }
         ]
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=releases
-        ):
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=releases):
             r = _tool().execute(mode="recent", region="uk")
             assert r.success
             assert r.data["awards"][0]["agency"] == ""
@@ -941,9 +819,7 @@ class TestUKResultParsing:
                 "tender": {"title": "Test", "description": ""},
             }
         ]
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=releases
-        ):
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=releases):
             r = _tool().execute(mode="recent", region="uk")
             assert r.success
             a = r.data["awards"][0]
@@ -959,9 +835,7 @@ class TestUKResultParsing:
                 "awards": [{"value": {"amount": 500}, "suppliers": []}],
             }
         ]
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=releases
-        ):
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=releases):
             r = _tool().execute(mode="recent", region="uk")
             assert r.data["awards"][0]["recipient"] == ""
 
@@ -974,9 +848,7 @@ class TestUKResultParsing:
                 "awards": [{"suppliers": [{"name": "Someone"}]}],
             }
         ]
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=releases
-        ):
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=releases):
             r = _tool().execute(mode="recent", region="uk")
             assert r.data["awards"][0]["amount"] is None
             assert r.data["awards"][0]["recipient"] == "Someone"
@@ -998,9 +870,7 @@ class TestUKResultParsing:
                 "awards": [],
             }
         ]
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=releases
-        ):
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=releases):
             r = _tool().execute(mode="recent", region="uk")
             a = r.data["awards"][0]
             assert a["start_date"] == "2024-03-01"
@@ -1015,9 +885,7 @@ class TestUKResultParsing:
                 "awards": [{"value": {"amount": 100}, "suppliers": []}],
             }
         ]
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=releases
-        ):
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=releases):
             r = _tool().execute(mode="recent", region="uk")
             assert r.data["awards"][0]["currency"] == "GBP"
 
@@ -1027,21 +895,15 @@ class TestUKResultParsing:
                 "ocid": "eur-award",
                 "buyer": {"name": "Test"},
                 "tender": {"title": "Test", "description": ""},
-                "awards": [
-                    {"value": {"amount": 500, "currency": "EUR"}, "suppliers": []}
-                ],
+                "awards": [{"value": {"amount": 500, "currency": "EUR"}, "suppliers": []}],
             }
         ]
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=releases
-        ):
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=releases):
             r = _tool().execute(mode="recent", region="uk")
             assert r.data["awards"][0]["currency"] == "EUR"
 
     def test_ocid_used_as_award_id(self):
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()
-        ):
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()):
             r = _tool().execute(mode="recent", region="uk")
             ids = {a["award_id"] for a in r.data["awards"]}
             assert "ocds-b5fd17-cf-12345" in ids
@@ -1055,9 +917,7 @@ class TestUKResultParsing:
                 "awards": [],
             }
         ]
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=releases
-        ):
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=releases):
             r = _tool().execute(mode="recent", region="uk")
             assert r.data["awards"][0]["award_id"] == "fallback-id-123"
 
@@ -1138,30 +998,22 @@ class TestUKHTTPErrors:
 
 class TestUKOutputFormatting:
     def test_recent_output_mentions_uk(self):
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()
-        ):
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()):
             r = _tool().execute(mode="recent", region="uk")
             assert "UK" in r.output
 
     def test_agency_output_mentions_buyer(self):
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()
-        ):
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()):
             r = _tool().execute(mode="agency", region="uk", agency="NHS England")
             assert "NHS England" in r.output
 
     def test_search_output_mentions_keyword(self):
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()
-        ):
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()):
             r = _tool().execute(mode="search", region="uk", query="satellite")
             assert "satellite" in r.output
 
     def test_output_includes_count(self):
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()
-        ):
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()):
             r = _tool().execute(mode="recent", region="uk")
             assert "3" in r.output
 
@@ -1178,9 +1030,7 @@ class TestUKConstants:
 
     def test_modes_shared_across_regions(self):
         """Both US and UK support the same 4 modes."""
-        with patch.object(
-            GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE
-        ):
+        with patch.object(GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE):
             for m in VALID_MODES:
                 kw = {"mode": m, "region": "us"}
                 if m == "agency":
@@ -1190,9 +1040,7 @@ class TestUKConstants:
                 r = _tool().execute(**kw)
                 assert r.success, f"US mode '{m}' failed"
 
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()
-        ):
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=_uk_ocds_releases()):
             for m in VALID_MODES:
                 kw = {"mode": m, "region": "uk"}
                 if m == "agency":
@@ -1223,9 +1071,7 @@ class TestUKTopModeEdge:
                 "awards": [],
             },
         ]
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=releases
-        ):
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=releases):
             r = _tool().execute(mode="top", region="uk")
             assert r.success
             assert r.data["awards"][0]["amount"] == 1000
@@ -1241,9 +1087,7 @@ class TestUKTopModeEdge:
             }
             for i in range(3)
         ]
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=releases
-        ):
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=releases):
             r = _tool().execute(mode="top", region="uk")
             assert r.success
             assert r.data["count"] == 3
@@ -1268,9 +1112,7 @@ class TestUKTopModeEdge:
                 "awards": [],
             },
         ]
-        with patch.object(
-            GovContractsTool, "_fetch_uk_contracts", return_value=releases
-        ):
+        with patch.object(GovContractsTool, "_fetch_uk_contracts", return_value=releases):
             r = _tool().execute(mode="recent", region="uk")
             assert r.success
             assert r.data["count"] == 2

@@ -6,22 +6,18 @@ archive fallback, demand/fuel_mix/pricing/forecast modes, zone filtering,
 zone aliases, signal computation, error handling, cache interaction,
 tool metadata, output formatting, live network tests.
 """
+
 from __future__ import annotations
 
-import csv
 import io
-import json
 import zipfile
 from datetime import date, timedelta
-from typing import Any
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
 
-from agent.tools.power_grid import PowerGridTool, NYISO_ZONES, _safe_float
-from agent.tools.base import ToolResult
-
+from agent.tools.power_grid import NYISO_ZONES, PowerGridTool, _safe_float
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -67,10 +63,38 @@ def _make_da_lbmp_csv(rows: list[dict] | None = None) -> str:
     header = "Time Stamp,Name,PTID,LBMP ($/MWHr),Marginal Cost Losses ($/MWHr),Marginal Cost Congestion ($/MWHr)\n"
     if rows is None:
         rows = [
-            {"ts": "03/25/2026 00:00", "name": "N.Y.C.", "ptid": "61761", "lbmp": "42.50", "loss": "1.20", "cong": "0.30"},
-            {"ts": "03/25/2026 01:00", "name": "N.Y.C.", "ptid": "61761", "lbmp": "40.00", "loss": "1.10", "cong": "0.25"},
-            {"ts": "03/25/2026 00:00", "name": "CAPITL", "ptid": "61757", "lbmp": "38.00", "loss": "0.90", "cong": "0.00"},
-            {"ts": "03/25/2026 01:00", "name": "CAPITL", "ptid": "61757", "lbmp": "36.50", "loss": "0.85", "cong": "0.00"},
+            {
+                "ts": "03/25/2026 00:00",
+                "name": "N.Y.C.",
+                "ptid": "61761",
+                "lbmp": "42.50",
+                "loss": "1.20",
+                "cong": "0.30",
+            },
+            {
+                "ts": "03/25/2026 01:00",
+                "name": "N.Y.C.",
+                "ptid": "61761",
+                "lbmp": "40.00",
+                "loss": "1.10",
+                "cong": "0.25",
+            },
+            {
+                "ts": "03/25/2026 00:00",
+                "name": "CAPITL",
+                "ptid": "61757",
+                "lbmp": "38.00",
+                "loss": "0.90",
+                "cong": "0.00",
+            },
+            {
+                "ts": "03/25/2026 01:00",
+                "name": "CAPITL",
+                "ptid": "61757",
+                "lbmp": "36.50",
+                "loss": "0.85",
+                "cong": "0.00",
+            },
         ]
     lines = header
     for r in rows:
@@ -83,10 +107,38 @@ def _make_rt_lbmp_csv(rows: list[dict] | None = None) -> str:
     header = '"Time Stamp","Name","PTID","LBMP ($/MWHr)","Marginal Cost Losses ($/MWHr)","Marginal Cost Congestion ($/MWHr)"\n'
     if rows is None:
         rows = [
-            {"ts": "03/25/2026 00:00:00", "name": "N.Y.C.", "ptid": "61761", "lbmp": "45.00", "loss": "1.50", "cong": "0.50"},
-            {"ts": "03/25/2026 00:05:00", "name": "N.Y.C.", "ptid": "61761", "lbmp": "44.50", "loss": "1.45", "cong": "0.48"},
-            {"ts": "03/25/2026 00:00:00", "name": "CAPITL", "ptid": "61757", "lbmp": "35.00", "loss": "0.80", "cong": "0.00"},
-            {"ts": "03/25/2026 00:05:00", "name": "CAPITL", "ptid": "61757", "lbmp": "34.80", "loss": "0.78", "cong": "0.00"},
+            {
+                "ts": "03/25/2026 00:00:00",
+                "name": "N.Y.C.",
+                "ptid": "61761",
+                "lbmp": "45.00",
+                "loss": "1.50",
+                "cong": "0.50",
+            },
+            {
+                "ts": "03/25/2026 00:05:00",
+                "name": "N.Y.C.",
+                "ptid": "61761",
+                "lbmp": "44.50",
+                "loss": "1.45",
+                "cong": "0.48",
+            },
+            {
+                "ts": "03/25/2026 00:00:00",
+                "name": "CAPITL",
+                "ptid": "61757",
+                "lbmp": "35.00",
+                "loss": "0.80",
+                "cong": "0.00",
+            },
+            {
+                "ts": "03/25/2026 00:05:00",
+                "name": "CAPITL",
+                "ptid": "61757",
+                "lbmp": "34.80",
+                "loss": "0.78",
+                "cong": "0.00",
+            },
         ]
     lines = header
     for r in rows:
@@ -434,7 +486,9 @@ class TestFuelMixMode:
         assert not r.success
         assert "Zero total generation" in r.output
 
+
 # ── 7. Pricing Mode ──────────────────────────────────────────
+
 
 class TestPricingMode:
     """Pricing mode with mocked CSV data."""
@@ -447,6 +501,7 @@ class TestPricingMode:
         rt_rows = t._parse_csv(rt_text)
 
         call_count = [0]
+
         def mock_fetch(dataset, date_str, directory=None):
             call_count[0] += 1
             if "damlbmp" in dataset:
@@ -490,10 +545,24 @@ class TestPricingMode:
     def test_pricing_stressed_zone(self):
         """Zone with |spread| > $5 should be flagged."""
         da_rows = [
-            {"ts": "03/25/2026 00:00", "name": "N.Y.C.", "ptid": "61761", "lbmp": "30.00", "loss": "1.0", "cong": "0.0"},
+            {
+                "ts": "03/25/2026 00:00",
+                "name": "N.Y.C.",
+                "ptid": "61761",
+                "lbmp": "30.00",
+                "loss": "1.0",
+                "cong": "0.0",
+            },
         ]
         rt_rows = [
-            {"ts": "03/25/2026 00:00:00", "name": "N.Y.C.", "ptid": "61761", "lbmp": "50.00", "loss": "2.0", "cong": "5.0"},
+            {
+                "ts": "03/25/2026 00:00:00",
+                "name": "N.Y.C.",
+                "ptid": "61761",
+                "lbmp": "50.00",
+                "loss": "2.0",
+                "cong": "5.0",
+            },
         ]
         t = _make_tool()
         da_csv = _make_da_lbmp_csv(da_rows)
@@ -949,16 +1018,19 @@ class TestBanditIntegration:
 
     def test_arm_exists(self):
         from agent.learning.bandit import DEFAULT_ARMS
+
         names = [a.name for a in DEFAULT_ARMS]
         assert "energy_demand" in names
 
     def test_arm_tools(self):
         from agent.learning.bandit import DEFAULT_ARMS
+
         arm = [a for a in DEFAULT_ARMS if a.name == "energy_demand"][0]
         assert "power_grid" in arm.tools
 
     def test_arm_has_examples(self):
         from agent.learning.bandit import DEFAULT_ARMS
+
         arm = [a for a in DEFAULT_ARMS if a.name == "energy_demand"][0]
         assert len(arm.examples) >= 2
 
@@ -966,12 +1038,14 @@ class TestBanditIntegration:
 # ── 17. Live Network Tests ──────────────────────────────────
 
 
-@pytest.mark.skipif(
-    not _can_reach_nyiso(),
-    reason="NYISO MIS not reachable",
-) if False else lambda f: f  # Always attempt, skip decorator handled below
-
-
+@(
+    pytest.mark.skipif(
+        not _can_reach_nyiso(),  # noqa: F821  # defined below; if False short-circuits call
+        reason="NYISO MIS not reachable",
+    )
+    if False
+    else lambda f: f
+)  # Always attempt, skip decorator handled below
 class TestLiveNetwork:
     """Live tests against NYISO MIS. Auto-skip if network unavailable."""
 
@@ -1000,6 +1074,7 @@ class TestLiveNetwork:
         t = _make_tool()
         # Use yesterday — today's data might not have full pricing yet
         from datetime import date, timedelta
+
         yesterday = (date.today() - timedelta(days=1)).strftime("%Y-%m-%d")
         r = t.execute(mode="pricing", date=yesterday)
         assert r.success

@@ -16,16 +16,13 @@ extraction, unmapped categories, graceful fallback on no match.
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 from agent.pipeline.entity import entity_id_from_key
 from agent.tools.cert_transparency import CertTransparencyTool
 from agent.tools.dns_monitor import DnsMonitorTool
 from agent.tools.instrument_universe import build_domain_company_map
-from agent.tools.polymarket import PolymarketTool, _TOPIC_INSTRUMENT_MAP
-
+from agent.tools.polymarket import _TOPIC_INSTRUMENT_MAP, PolymarketTool
 
 # ── Helpers ───────────────────────────────────────────────────
 
@@ -33,8 +30,7 @@ from agent.tools.polymarket import PolymarketTool, _TOPIC_INSTRUMENT_MAP
 def _make_store() -> MagicMock:
     store = MagicMock()
     store.register_entity = MagicMock(
-        side_effect=lambda *args, **kw: kw.get("entity_id")
-        or (args[2] if len(args) > 2 else "eid")
+        side_effect=lambda *args, **kw: kw.get("entity_id") or (args[2] if len(args) > 2 else "eid")
     )
     store.store_entity_observation = MagicMock(return_value=1)
     store.link_entities = MagicMock(return_value=1)
@@ -226,9 +222,7 @@ class TestPolymarketTopicInstrumentLinks:
         tool._persist_entities_inner(markets)
 
         # crypto: 2 links, finance: 3 links, politics: 0
-        expected_link_count = len(_TOPIC_INSTRUMENT_MAP["crypto"]) + len(
-            _TOPIC_INSTRUMENT_MAP["finance"]
-        )
+        expected_link_count = len(_TOPIC_INSTRUMENT_MAP["crypto"]) + len(_TOPIC_INSTRUMENT_MAP["finance"])
         assert store.link_entities.call_count == expected_link_count
 
 
@@ -299,11 +293,7 @@ class TestCertTransparencyDomainLinks:
         tool._persist_entities_inner(domain, certs)
 
         # Should have link_entities called for domain_owned_by
-        link_calls = [
-            c
-            for c in store.link_entities.call_args_list
-            if c.kwargs.get("link_type") == "domain_owned_by"
-        ]
+        link_calls = [c for c in store.link_entities.call_args_list if c.kwargs.get("link_type") == "domain_owned_by"]
         assert len(link_calls) == 1
         assert link_calls[0].kwargs["source"] == "cert_transparency"
         assert link_calls[0].kwargs["confidence"] == 0.8
@@ -325,11 +315,7 @@ class TestCertTransparencyDomainLinks:
         ]
         tool._persist_entities_inner(domain, certs)
 
-        link_calls = [
-            c
-            for c in store.link_entities.call_args_list
-            if c.kwargs.get("link_type") == "domain_owned_by"
-        ]
+        link_calls = [c for c in store.link_entities.call_args_list if c.kwargs.get("link_type") == "domain_owned_by"]
         assert len(link_calls) == 0
 
     def test_subdomain_extraction(self) -> None:
@@ -349,11 +335,7 @@ class TestCertTransparencyDomainLinks:
         ]
         tool._persist_entities_inner(domain, certs)
 
-        link_calls = [
-            c
-            for c in store.link_entities.call_args_list
-            if c.kwargs.get("link_type") == "domain_owned_by"
-        ]
+        link_calls = [c for c in store.link_entities.call_args_list if c.kwargs.get("link_type") == "domain_owned_by"]
         assert len(link_calls) == 1
 
     def test_no_dot_domain_handled(self) -> None:
@@ -396,11 +378,7 @@ class TestCertTransparencyDomainLinks:
         tool._persist_entities_inner(domain, certs)
 
         expected_domain_eid = entity_id_from_key("domain", domain)
-        link_calls = [
-            c
-            for c in store.link_entities.call_args_list
-            if c.kwargs.get("link_type") == "domain_owned_by"
-        ]
+        link_calls = [c for c in store.link_entities.call_args_list if c.kwargs.get("link_type") == "domain_owned_by"]
         assert link_calls[0].kwargs["entity_id_a"] == expected_domain_eid
 
 
@@ -422,11 +400,7 @@ class TestDnsMonitorDomainLinks:
         analysis = {"cloud_providers": ["aws"], "record_count": 5}
         tool._persist_entities_inner(domain, analysis)
 
-        link_calls = [
-            c
-            for c in store.link_entities.call_args_list
-            if c.kwargs.get("link_type") == "domain_owned_by"
-        ]
+        link_calls = [c for c in store.link_entities.call_args_list if c.kwargs.get("link_type") == "domain_owned_by"]
         assert len(link_calls) == 1
         assert link_calls[0].kwargs["source"] == "dns_monitor"
         assert link_calls[0].kwargs["confidence"] == 0.8
@@ -441,11 +415,7 @@ class TestDnsMonitorDomainLinks:
         analysis = {"cloud_providers": [], "record_count": 1}
         tool._persist_entities_inner(domain, analysis)
 
-        link_calls = [
-            c
-            for c in store.link_entities.call_args_list
-            if c.kwargs.get("link_type") == "domain_owned_by"
-        ]
+        link_calls = [c for c in store.link_entities.call_args_list if c.kwargs.get("link_type") == "domain_owned_by"]
         assert len(link_calls) == 0
 
     def test_subdomain_extraction(self) -> None:
@@ -458,11 +428,7 @@ class TestDnsMonitorDomainLinks:
         analysis = {"cloud_providers": ["cloudflare"], "record_count": 3}
         tool._persist_entities_inner(domain, analysis)
 
-        link_calls = [
-            c
-            for c in store.link_entities.call_args_list
-            if c.kwargs.get("link_type") == "domain_owned_by"
-        ]
+        link_calls = [c for c in store.link_entities.call_args_list if c.kwargs.get("link_type") == "domain_owned_by"]
         assert len(link_calls) == 1
 
 
@@ -498,9 +464,7 @@ class TestSyntheticGeneratorPhase36:
         gen.generate(store)
 
         domain_links = [
-            c
-            for c in store.link_entities.call_args_list
-            if len(c.args) >= 3 and c.args[2] == "domain_owned_by"
+            c for c in store.link_entities.call_args_list if len(c.args) >= 3 and c.args[2] == "domain_owned_by"
         ]
         assert len(domain_links) == 3  # one per domain
 
@@ -564,9 +528,7 @@ class TestSyntheticGeneratorPhase36:
         gen.generate(store)
 
         domain_links = [
-            c
-            for c in store.link_entities.call_args_list
-            if len(c.args) >= 3 and c.args[2] == "domain_owned_by"
+            c for c in store.link_entities.call_args_list if len(c.args) >= 3 and c.args[2] == "domain_owned_by"
         ]
         assert len(domain_links) == 0
 
@@ -605,10 +567,7 @@ class TestTopicInstrumentMap:
         valid_tickers = {i.ticker for i in INSTRUMENTS}
         for category, tickers in _TOPIC_INSTRUMENT_MAP.items():
             for ticker in tickers:
-                assert ticker in valid_tickers, (
-                    f"Ticker {ticker!r} in category {category!r} "
-                    f"not found in INSTRUMENTS"
-                )
+                assert ticker in valid_tickers, f"Ticker {ticker!r} in category {category!r} not found in INSTRUMENTS"
 
     def test_crypto_maps_to_crypto_instruments(self) -> None:
         """Crypto category maps to BTC-USD and ETH-USD."""

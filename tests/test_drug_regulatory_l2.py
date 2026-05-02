@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import UTC
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from agent.tools.drug_regulatory import DrugRegulatoryTool
-
 
 # ── Helpers ───────────────────────────────────────────────────
 
@@ -150,10 +148,10 @@ class TestApprovalsObservations:
         tool = _make_tool(store=store)
         tool._persist_entities("approvals", [_approval_rec(sub_date="20250315")])
 
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         ts = store.store_entity_observation.call_args.kwargs["observed_at"]
-        expected = datetime(2025, 3, 15, tzinfo=timezone.utc).timestamp()
+        expected = datetime(2025, 3, 15, tzinfo=UTC).timestamp()
         assert ts == expected
 
     def test_bad_date_falls_back(self):
@@ -203,11 +201,7 @@ class TestMarketAuthorizationLink:
             ],
         )
 
-        country_calls = [
-            c
-            for c in store.register_entity.call_args_list
-            if c.kwargs.get("entity_type") == "country"
-        ]
+        country_calls = [c for c in store.register_entity.call_args_list if c.kwargs.get("entity_type") == "country"]
         assert len(country_calls) == 1
 
     def test_link_per_approval(self):

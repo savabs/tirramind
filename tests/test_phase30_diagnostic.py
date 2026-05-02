@@ -21,7 +21,6 @@ from agent.tools.instrument_universe import (
     _persist_instrument_links,
 )
 
-
 # ── Fixtures ──────────────────────────────────────────────────────
 
 

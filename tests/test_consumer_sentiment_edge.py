@@ -12,39 +12,33 @@ tool metadata, registry + bandit integration.
 from __future__ import annotations
 
 import json
-import os
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import httpx
-import pytest
 
+from agent.tools.base import ToolResult
 from agent.tools.consumer_sentiment import (
-    ConsumerSentimentTool,
-    VALID_MODES,
-    _EUROSTAT_BASE,
-    _FRED_BASE,
     _BLS_BASE,
     _BLS_CPI_SA,
-    _EU_GEOS,
     _DEFAULT_EU_COUNTRIES,
-    _FRED_SERIES,
-    _CACHE_TTL,
-    _safe_float,
-    _get_fred_key,
-    _fetch_eurostat,
-    _parse_eurostat_jsonstat,
-    _fetch_fred_series,
-    _fetch_bls_cpi,
+    _EU_GEOS,
+    _EUROSTAT_BASE,
+    VALID_MODES,
+    ConsumerSentimentTool,
+    _compute_cpi_signals,
     _compute_eu_signals,
     _compute_us_signals,
-    _compute_cpi_signals,
+    _fetch_bls_cpi,
+    _fetch_eurostat,
+    _fetch_fred_series,
+    _format_cpi_summary,
     _format_eu_summary,
     _format_us_summary,
-    _format_cpi_summary,
+    _get_fred_key,
+    _parse_eurostat_jsonstat,
+    _safe_float,
 )
-from agent.tools.base import ToolResult
-
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -110,6 +104,7 @@ def _bls_cpi_response(data: list[dict]) -> dict:
 
 # ── 1. _safe_float ────────────────────────────────────────────
 
+
 class TestSafeFloat:
     def test_normal_float(self):
         assert _safe_float("3.14") == 3.14
@@ -145,6 +140,7 @@ class TestSafeFloat:
 
 # ── 2. _get_fred_key ─────────────────────────────────────────
 
+
 class TestGetFredKey:
     def test_no_key(self, monkeypatch):
         monkeypatch.delenv("TIRRA_FRED_API_KEY", raising=False)
@@ -165,6 +161,7 @@ class TestGetFredKey:
 
 # ── 3. Mode validation ───────────────────────────────────────
 
+
 class TestModeValidation:
     def test_invalid_mode(self):
         r = _tool().execute(mode="bogus")
@@ -176,10 +173,11 @@ class TestModeValidation:
         assert not r.success
 
     def test_valid_modes_match(self):
-        assert VALID_MODES == {"eu_confidence", "us_sentiment", "inflation_reality"}
+        assert {"eu_confidence", "us_sentiment", "inflation_reality"} == VALID_MODES
 
 
 # ── 4. Parameter validation ──────────────────────────────────
+
 
 class TestParameterValidation:
     def test_invalid_months_string(self):
@@ -208,6 +206,7 @@ class TestParameterValidation:
 
 # ── 5. Eurostat fetch ────────────────────────────────────────
 
+
 class TestEurostatFetch:
     @patch("agent.tools.consumer_sentiment.httpx.Client")
     def test_success(self, mock_client_cls):
@@ -215,12 +214,18 @@ class TestEurostatFetch:
             geos=["DE", "FR"],
             periods=["2025-01", "2025-02", "2025-03"],
             values={
-                0: -5.0, 1: -4.5, 2: -3.8,  # DE
-                3: -8.1, 4: -7.2, 5: -6.5,  # FR
+                0: -5.0,
+                1: -4.5,
+                2: -3.8,  # DE
+                3: -8.1,
+                4: -7.2,
+                5: -6.5,  # FR
             },
         )
         mock_resp = _mock_resp(body)
-        mock_client_cls.return_value.__enter__ = MagicMock(return_value=MagicMock(get=MagicMock(return_value=mock_resp)))
+        mock_client_cls.return_value.__enter__ = MagicMock(
+            return_value=MagicMock(get=MagicMock(return_value=mock_resp))
+        )
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
 
         data, err = _fetch_eurostat(["DE", "FR"], 3)
@@ -243,7 +248,9 @@ class TestEurostatFetch:
     @patch("agent.tools.consumer_sentiment.httpx.Client")
     def test_non_200(self, mock_client_cls):
         mock_resp = _mock_resp({}, status=500)
-        mock_client_cls.return_value.__enter__ = MagicMock(return_value=MagicMock(get=MagicMock(return_value=mock_resp)))
+        mock_client_cls.return_value.__enter__ = MagicMock(
+            return_value=MagicMock(get=MagicMock(return_value=mock_resp))
+        )
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
 
         data, err = _fetch_eurostat(["DE"], 3)
@@ -266,6 +273,7 @@ class TestEurostatFetch:
 
 
 # ── 6. Eurostat JSON-stat parsing ────────────────────────────
+
 
 class TestEurostatParsing:
     def test_basic_parse(self):
@@ -313,15 +321,21 @@ class TestEurostatParsing:
 
 # ── 7. FRED fetch ────────────────────────────────────────────
 
+
 class TestFredFetch:
     @patch("agent.tools.consumer_sentiment.httpx.Client")
     def test_success(self, mock_client_cls):
-        body = _fred_response("UMCSENT", [
-            {"date": "2025-01-01", "value": "65.2"},
-            {"date": "2025-02-01", "value": "67.8"},
-        ])
+        body = _fred_response(
+            "UMCSENT",
+            [
+                {"date": "2025-01-01", "value": "65.2"},
+                {"date": "2025-02-01", "value": "67.8"},
+            ],
+        )
         mock_resp = _mock_resp(body)
-        mock_client_cls.return_value.__enter__ = MagicMock(return_value=MagicMock(get=MagicMock(return_value=mock_resp)))
+        mock_client_cls.return_value.__enter__ = MagicMock(
+            return_value=MagicMock(get=MagicMock(return_value=mock_resp))
+        )
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
 
         records, err = _fetch_fred_series("fake-key", "UMCSENT", 6)
@@ -332,7 +346,9 @@ class TestFredFetch:
     @patch("agent.tools.consumer_sentiment.httpx.Client")
     def test_bad_api_key(self, mock_client_cls):
         mock_resp = _mock_resp({}, status=400)
-        mock_client_cls.return_value.__enter__ = MagicMock(return_value=MagicMock(get=MagicMock(return_value=mock_resp)))
+        mock_client_cls.return_value.__enter__ = MagicMock(
+            return_value=MagicMock(get=MagicMock(return_value=mock_resp))
+        )
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
 
         records, err = _fetch_fred_series("bad-key", "UMCSENT", 6)
@@ -343,7 +359,9 @@ class TestFredFetch:
     def test_error_message_in_body(self, mock_client_cls):
         body = {"error_message": "Bad API key"}
         mock_resp = _mock_resp(body)
-        mock_client_cls.return_value.__enter__ = MagicMock(return_value=MagicMock(get=MagicMock(return_value=mock_resp)))
+        mock_client_cls.return_value.__enter__ = MagicMock(
+            return_value=MagicMock(get=MagicMock(return_value=mock_resp))
+        )
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
 
         records, err = _fetch_fred_series("key", "UMCSENT", 6)
@@ -352,12 +370,17 @@ class TestFredFetch:
 
     @patch("agent.tools.consumer_sentiment.httpx.Client")
     def test_dot_values_skipped(self, mock_client_cls):
-        body = _fred_response("UMCSENT", [
-            {"date": "2025-01-01", "value": "."},
-            {"date": "2025-02-01", "value": "70.3"},
-        ])
+        body = _fred_response(
+            "UMCSENT",
+            [
+                {"date": "2025-01-01", "value": "."},
+                {"date": "2025-02-01", "value": "70.3"},
+            ],
+        )
         mock_resp = _mock_resp(body)
-        mock_client_cls.return_value.__enter__ = MagicMock(return_value=MagicMock(get=MagicMock(return_value=mock_resp)))
+        mock_client_cls.return_value.__enter__ = MagicMock(
+            return_value=MagicMock(get=MagicMock(return_value=mock_resp))
+        )
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
 
         records, err = _fetch_fred_series("key", "UMCSENT", 6)
@@ -378,19 +401,24 @@ class TestFredFetch:
 
 # ── 8. BLS CPI fetch ────────────────────────────────────────
 
+
 class TestBlsCpiFetch:
     @patch("agent.tools.consumer_sentiment.httpx.Client")
     def test_success(self, mock_client_cls):
-        body = _bls_cpi_response([
-            {"year": "2025", "period": "M03", "value": "326.785"},
-            {"year": "2025", "period": "M02", "value": "325.402"},
-        ])
+        body = _bls_cpi_response(
+            [
+                {"year": "2025", "period": "M03", "value": "326.785"},
+                {"year": "2025", "period": "M02", "value": "325.402"},
+            ]
+        )
         mock_resp = httpx.Response(
             status_code=200,
             text=json.dumps(body),
             request=httpx.Request("POST", _BLS_BASE),
         )
-        mock_client_cls.return_value.__enter__ = MagicMock(return_value=MagicMock(post=MagicMock(return_value=mock_resp)))
+        mock_client_cls.return_value.__enter__ = MagicMock(
+            return_value=MagicMock(post=MagicMock(return_value=mock_resp))
+        )
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
 
         records, err = _fetch_bls_cpi(6)
@@ -400,16 +428,20 @@ class TestBlsCpiFetch:
 
     @patch("agent.tools.consumer_sentiment.httpx.Client")
     def test_m13_skipped(self, mock_client_cls):
-        body = _bls_cpi_response([
-            {"year": "2025", "period": "M13", "value": "999"},
-            {"year": "2025", "period": "M01", "value": "324.0"},
-        ])
+        body = _bls_cpi_response(
+            [
+                {"year": "2025", "period": "M13", "value": "999"},
+                {"year": "2025", "period": "M01", "value": "324.0"},
+            ]
+        )
         mock_resp = httpx.Response(
             status_code=200,
             text=json.dumps(body),
             request=httpx.Request("POST", _BLS_BASE),
         )
-        mock_client_cls.return_value.__enter__ = MagicMock(return_value=MagicMock(post=MagicMock(return_value=mock_resp)))
+        mock_client_cls.return_value.__enter__ = MagicMock(
+            return_value=MagicMock(post=MagicMock(return_value=mock_resp))
+        )
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
 
         records, err = _fetch_bls_cpi(6)
@@ -423,7 +455,9 @@ class TestBlsCpiFetch:
             text="Rate limit",
             request=httpx.Request("POST", _BLS_BASE),
         )
-        mock_client_cls.return_value.__enter__ = MagicMock(return_value=MagicMock(post=MagicMock(return_value=mock_resp)))
+        mock_client_cls.return_value.__enter__ = MagicMock(
+            return_value=MagicMock(post=MagicMock(return_value=mock_resp))
+        )
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
 
         records, err = _fetch_bls_cpi(6)
@@ -443,7 +477,9 @@ class TestBlsCpiFetch:
             text=json.dumps(body),
             request=httpx.Request("POST", _BLS_BASE),
         )
-        mock_client_cls.return_value.__enter__ = MagicMock(return_value=MagicMock(post=MagicMock(return_value=mock_resp)))
+        mock_client_cls.return_value.__enter__ = MagicMock(
+            return_value=MagicMock(post=MagicMock(return_value=mock_resp))
+        )
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
 
         records, err = _fetch_bls_cpi(6)
@@ -452,6 +488,7 @@ class TestBlsCpiFetch:
 
 
 # ── 9. EU signal computation ────────────────────────────────
+
 
 class TestEuSignals:
     def test_basic_signals(self):
@@ -538,6 +575,7 @@ class TestEuSignals:
 
 # ── 10. US signal computation ───────────────────────────────
 
+
 class TestUsSignals:
     def test_normal(self):
         series_data = {
@@ -594,6 +632,7 @@ class TestUsSignals:
 
 # ── 11. CPI signal computation ──────────────────────────────
 
+
 class TestCpiSignals:
     def test_mom_and_annualized(self):
         cpi = [
@@ -638,6 +677,7 @@ class TestCpiSignals:
 
 # ── 12. Cache interaction ────────────────────────────────────
 
+
 class TestCache:
     def test_cache_hit(self):
         cache = MagicMock()
@@ -672,6 +712,7 @@ class TestCache:
 
 # ── 13. us_sentiment requires FRED key ───────────────────────
 
+
 class TestUsSentimentKeyRequired:
     def test_no_key(self, monkeypatch):
         monkeypatch.delenv("TIRRA_FRED_API_KEY", raising=False)
@@ -686,6 +727,7 @@ class TestUsSentimentKeyRequired:
 
 
 # ── 14. inflation_reality mode ───────────────────────────────
+
 
 class TestInflationReality:
     @patch("agent.tools.consumer_sentiment._fetch_bls_cpi")
@@ -728,6 +770,7 @@ class TestInflationReality:
 
 # ── 15. Formatting ───────────────────────────────────────────
 
+
 class TestFormatting:
     def test_eu_summary_contains_country(self):
         data = {"DE": [{"period": "2025-03", "value": -5.0, "geo_label": "Germany"}]}
@@ -759,6 +802,7 @@ class TestFormatting:
 
 # ── 16. Tool metadata ───────────────────────────────────────
 
+
 class TestToolMetadata:
     def test_name(self):
         assert _tool().name == "consumer_sentiment"
@@ -782,6 +826,7 @@ class TestToolMetadata:
 
 
 # ── 17. EU geo constant consistency ─────────────────────────
+
 
 class TestConstants:
     def test_eu_geos_has_eu27(self):

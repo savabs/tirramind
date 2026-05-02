@@ -26,7 +26,7 @@ import io
 import logging
 import math
 import os
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 import httpx
@@ -485,7 +485,7 @@ class SatelliteActivityTool(Tool):
         ]
         if frps_valid:
             lines.append(
-                f"FRP (MW): avg={sum(frps_valid)/len(frps_valid):.1f}, "
+                f"FRP (MW): avg={sum(frps_valid) / len(frps_valid):.1f}, "
                 f"max={max(frps_valid):.1f}, total={sum(frps_valid):.1f}"
             )
         lines.append(f"Confidence: {confs}")
@@ -495,7 +495,7 @@ class SatelliteActivityTool(Tool):
             lines.append(f"\nTop clusters ({len(clusters)} total):")
             for i, cl in enumerate(clusters[:10]):
                 lines.append(
-                    f"  {i+1}. ({cl['centroid_lat']}, {cl['centroid_lon']}) — "
+                    f"  {i + 1}. ({cl['centroid_lat']}, {cl['centroid_lon']}) — "
                     f"{cl['count']} pts, FRP avg={cl['avg_frp']} max={cl['max_frp']} total={cl['total_frp']}"
                 )
 
@@ -511,9 +511,7 @@ class SatelliteActivityTool(Tool):
                 "source": source,
                 "days": days,
                 "hotspot_count": len(hotspots),
-                "frp_avg": (
-                    round(sum(frps_valid) / len(frps_valid), 2) if frps_valid else 0.0
-                ),
+                "frp_avg": (round(sum(frps_valid) / len(frps_valid), 2) if frps_valid else 0.0),
                 "frp_max": round(max(frps_valid), 2) if frps_valid else 0.0,
                 "frp_total": round(sum(frps_valid), 2) if frps_valid else 0.0,
                 "confidence_counts": confs,
@@ -790,7 +788,7 @@ class SatelliteActivityTool(Tool):
                 date = last_geom.get("date", "")
                 if date:
                     loc += f" @ {date[:10]}"
-            lines.append(f"  {i+1}. [{cats}] {title} {loc}")
+            lines.append(f"  {i + 1}. [{cats}] {title} {loc}")
 
         if len(events) > 20:
             lines.append(f"  ... and {len(events) - 20} more events")

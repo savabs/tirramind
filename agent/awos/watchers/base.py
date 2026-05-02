@@ -40,9 +40,7 @@ class Watcher(ABC):
         return len(events)
 
 
-def run_subprocess(
-    cmd: list[str], cwd: Path, timeout: float = 30.0
-) -> tuple[int, str, str]:
+def run_subprocess(cmd: list[str], cwd: Path, timeout: float = 30.0) -> tuple[int, str, str]:
     """Run a subprocess, returning (code, stdout, stderr)."""
     try:
         p = subprocess.run(

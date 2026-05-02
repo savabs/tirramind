@@ -180,9 +180,7 @@ class InternetInfrastructureTool(Tool):
     def __init__(self, cache: Any = None) -> None:
         self._cache = cache
 
-    def _cached_get(
-        self, url: str, ttl: int, params: dict | None = None
-    ) -> dict | list | None:
+    def _cached_get(self, url: str, ttl: int, params: dict | None = None) -> dict | list | None:
         """HTTP GET with optional caching."""
         cache_key = f"iinfra:{url}:{params}"
         if self._cache:
@@ -195,9 +193,7 @@ class InternetInfrastructureTool(Tool):
                 url,
                 params=params,
                 timeout=HTTP_TIMEOUT,
-                headers={
-                    "User-Agent": "TirraMind/1.0 (internet-infrastructure-monitor)"
-                },
+                headers={"User-Agent": "TirraMind/1.0 (internet-infrastructure-monitor)"},
             )
             if r.status_code != 200:
                 logger.warning("HTTP %d from %s", r.status_code, url)
@@ -251,9 +247,7 @@ class InternetInfrastructureTool(Tool):
                     success=False,
                     output=f"Invalid test '{test}'. Use: {', '.join(OONI_TEST_TYPES)}",
                 )
-            return self._execute_censorship(
-                country=country, test=test, days_back=days_back, limit=limit
-            )
+            return self._execute_censorship(country=country, test=test, days_back=days_back, limit=limit)
 
         if mode == "signals":
             if not country or len(country) != 2:
@@ -267,17 +261,13 @@ class InternetInfrastructureTool(Tool):
             return self._execute_incidents(limit=limit)
 
         # mode == "outages"
-        return self._execute_outages(
-            country=country, hours_back=hours_back, limit=limit
-        )
+        return self._execute_outages(country=country, hours_back=hours_back, limit=limit)
 
     # ------------------------------------------------------------------
     # Mode: outages (IODA)
     # ------------------------------------------------------------------
 
-    def _execute_outages(
-        self, *, country: str, hours_back: int, limit: int
-    ) -> ToolResult:
+    def _execute_outages(self, *, country: str, hours_back: int, limit: int) -> ToolResult:
         now = int(time.time())
         from_ts = now - (hours_back * 3600)
 
@@ -340,11 +330,7 @@ class InternetInfrastructureTool(Tool):
                     if not isinstance(e, dict):
                         continue
                     location = e.get("location", "")
-                    cc = (
-                        location.split("/")[-1]
-                        if "/" in str(location)
-                        else str(location)
-                    )
+                    cc = location.split("/")[-1] if "/" in str(location) else str(location)
                     events.append(
                         {
                             "type": "event",
@@ -352,9 +338,7 @@ class InternetInfrastructureTool(Tool):
                             "datasource": e.get("datasource", "unknown"),
                             "score": _safe_float(e.get("score")),
                             "start": _ts_to_iso(e.get("start")),
-                            "duration_minutes": round(
-                                _safe_float(e.get("duration")) / 60, 1
-                            ),
+                            "duration_minutes": round(_safe_float(e.get("duration")) / 60, 1),
                             "method": e.get("method", "unknown"),
                             "status": e.get("status"),
                         }
@@ -368,7 +352,7 @@ class InternetInfrastructureTool(Tool):
         lines = [f"## Internet Outage Monitor — last {hours_back}h"]
         if country:
             lines[0] += f" ({country})"
-        lines.append(f"Source: IODA (Georgia Tech)\n")
+        lines.append("Source: IODA (Georgia Tech)\n")
 
         _outage_data = {
             "mode": "outages",
@@ -401,9 +385,7 @@ class InternetInfrastructureTool(Tool):
                 )
 
         # Summary signals
-        critical_countries = {
-            a["country"] for a in alerts if a.get("level") == "critical"
-        }
+        critical_countries = {a["country"] for a in alerts if a.get("level") == "critical"}
         if critical_countries:
             lines.append(f"\n⚠ CRITICAL: {', '.join(sorted(critical_countries))}")
 
@@ -413,9 +395,7 @@ class InternetInfrastructureTool(Tool):
     # Mode: censorship (OONI)
     # ------------------------------------------------------------------
 
-    def _execute_censorship(
-        self, *, country: str, test: str, days_back: int, limit: int
-    ) -> ToolResult:
+    def _execute_censorship(self, *, country: str, test: str, days_back: int, limit: int) -> ToolResult:
         until_date = time.strftime("%Y-%m-%d", time.gmtime())
         since_ts = time.time() - (days_back * 86400)
         since_date = time.strftime("%Y-%m-%d", time.gmtime(since_ts))
@@ -471,9 +451,7 @@ class InternetInfrastructureTool(Tool):
         trend = "stable"
         if len(rates) >= 7:
             first_half = sum(rates[: len(rates) // 2]) / max(len(rates) // 2, 1)
-            second_half = sum(rates[len(rates) // 2 :]) / max(
-                len(rates) - len(rates) // 2, 1
-            )
+            second_half = sum(rates[len(rates) // 2 :]) / max(len(rates) - len(rates) // 2, 1)
             diff = second_half - first_half
             if diff > 0.02:
                 trend = "rising"
@@ -482,9 +460,7 @@ class InternetInfrastructureTool(Tool):
 
         avg_rate = sum(rates) / len(rates) if rates else 0
         max_rate = max(rates) if rates else 0
-        max_day = next(
-            (r["date"] for r in rows if r["anomaly_rate"] == max_rate), "unknown"
-        )
+        max_day = next((r["date"] for r in rows if r["anomaly_rate"] == max_rate), "unknown")
 
         lines = [
             f"## Censorship Monitor — {country} ({test})",
@@ -498,14 +474,10 @@ class InternetInfrastructureTool(Tool):
         if trend == "rising":
             lines.append("\n⚠ RISING censorship detected — anomaly rate increasing")
         if avg_rate > 0.5:
-            lines.append(
-                f"\n🔴 HEAVY BLOCKING: {avg_rate:.0%} of {test} tests show anomalies"
-            )
+            lines.append(f"\n🔴 HEAVY BLOCKING: {avg_rate:.0%} of {test} tests show anomalies")
 
         # Recent days detail
-        lines.append(
-            f"\n### Recent Daily Breakdown (last {min(limit, len(rows))} days)"
-        )
+        lines.append(f"\n### Recent Daily Breakdown (last {min(limit, len(rows))} days)")
         for r in rows[-limit:]:
             marker = " ⚠" if r["anomaly_rate"] > 0.1 else ""
             lines.append(
@@ -624,26 +596,16 @@ class InternetInfrastructureTool(Tool):
         ]
 
         if drops:
-            lines.append(
-                f"\n### Connectivity Drops ({len(drops)} below {GTR_NORM_WARNING})"
-            )
+            lines.append(f"\n### Connectivity Drops ({len(drops)} below {GTR_NORM_WARNING})")
             for d in drops[:20]:
-                lines.append(
-                    f"  {d['time']}: {d['value']:.4f} ({d['severity'].upper()})"
-                )
+                lines.append(f"  {d['time']}: {d['value']:.4f} ({d['severity'].upper()})")
 
         if severity == "critical":
-            lines.append(
-                f"\n🔴 CRITICAL: {country} connectivity at {current:.1%} of normal"
-            )
+            lines.append(f"\n🔴 CRITICAL: {country} connectivity at {current:.1%} of normal")
         elif severity == "warning":
-            lines.append(
-                f"\n⚠ WARNING: {country} connectivity at {current:.1%} of normal"
-            )
+            lines.append(f"\n⚠ WARNING: {country} connectivity at {current:.1%} of normal")
         else:
-            lines.append(
-                f"\n✓ {country} connectivity nominal ({current:.1%} of normal)"
-            )
+            lines.append(f"\n✓ {country} connectivity nominal ({current:.1%} of normal)")
 
         return ToolResult(
             success=True,
@@ -695,9 +657,7 @@ class InternetInfrastructureTool(Tool):
                 continue
             title = inc.get("title", "Unknown incident")
             countries = inc.get("CCs", [])
-            cc_str = (
-                ", ".join(countries) if isinstance(countries, list) else str(countries)
-            )
+            cc_str = ", ".join(countries) if isinstance(countries, list) else str(countries)
             published = inc.get("published", False)
             start = inc.get("start_time", inc.get("create_time", "unknown"))
             lines.append(f"  [{cc_str}] {title}")
@@ -717,7 +677,7 @@ class InternetInfrastructureTool(Tool):
 
             freq = Counter(all_ccs).most_common(10)
             country_frequency = dict(freq)
-            lines.append(f"\n### Most Affected Countries")
+            lines.append("\n### Most Affected Countries")
             for cc, count in freq:
                 lines.append(f"  {cc}: {count} ongoing incidents")
 
@@ -728,9 +688,7 @@ class InternetInfrastructureTool(Tool):
             structured_incidents.append(
                 {
                     "title": inc.get("title", "Unknown incident"),
-                    "countries": (
-                        inc.get("CCs", []) if isinstance(inc.get("CCs"), list) else []
-                    ),
+                    "countries": (inc.get("CCs", []) if isinstance(inc.get("CCs"), list) else []),
                     "start": inc.get("start_time", inc.get("create_time", "unknown")),
                 }
             )

@@ -57,9 +57,7 @@ class TestParseFrontmatter:
         except ValueError as exc:
             assert "missing frontmatter start" in str(exc)
         else:
-            raise AssertionError(
-                "expected parse_frontmatter to reject missing frontmatter"
-            )
+            raise AssertionError("expected parse_frontmatter to reject missing frontmatter")
 
     def test_list_item_without_parent_key_raises(self):
         text = "---\n- bad\n---\n"
@@ -124,7 +122,7 @@ class TestBuildCatalog:
         _write_page(
             tmp_path,
             "wiki/pages/architecture/bad.md",
-            "---\n" "title Bad\n" "---\n",
+            "---\ntitle Bad\n---\n",
         )
 
         result = build_catalog(tmp_path)

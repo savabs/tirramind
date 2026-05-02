@@ -26,7 +26,6 @@ from typing import Any
 from pgmpy.factors.discrete import TabularCPD
 from pgmpy.models import DiscreteBayesianNetwork as BayesianNetwork
 
-
 # ── Node specification ─────────────────────────────────────────
 
 VALID_NODE_TYPES: frozenset[str] = frozenset({"observed", "latent", "regime"})
@@ -223,23 +222,14 @@ class WorldModelGraph:
         # Node-level checks
         for spec in self._nodes.values():
             if spec.node_type not in VALID_NODE_TYPES:
-                errors.append(
-                    f"Node '{spec.name}': invalid node_type '{spec.node_type}'"
-                )
+                errors.append(f"Node '{spec.name}': invalid node_type '{spec.node_type}'")
             if spec.node_type == "observed" and not spec.feature_name:
-                errors.append(
-                    f"Node '{spec.name}': observed node must have feature_name"
-                )
+                errors.append(f"Node '{spec.name}': observed node must have feature_name")
             if spec.cardinality is not None and spec.cardinality < 1:
                 errors.append(f"Node '{spec.name}': cardinality must be >= 1")
-            if (
-                spec.states
-                and spec.cardinality
-                and len(spec.states) != spec.cardinality
-            ):
+            if spec.states and spec.cardinality and len(spec.states) != spec.cardinality:
                 errors.append(
-                    f"Node '{spec.name}': states length ({len(spec.states)}) "
-                    f"!= cardinality ({spec.cardinality})"
+                    f"Node '{spec.name}': states length ({len(spec.states)}) != cardinality ({spec.cardinality})"
                 )
             if spec.bin_edges and spec.cardinality:
                 if len(spec.bin_edges) != spec.cardinality + 1:

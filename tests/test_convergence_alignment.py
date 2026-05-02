@@ -6,24 +6,18 @@ alignment, staleness, align_pair with mixed frequencies.
 
 from __future__ import annotations
 
-import math
-
 import numpy as np
-import pytest
 
 from agent.convergence.alignment import (
     FREQUENCY_TO_GRID,
     TimeGrid,
-    _align_events,
-    _align_locf,
     _make_grid,
     align_pair,
     align_to_grid,
     is_stale,
 )
 from agent.convergence.evidence import Evidence
-from agent.convergence.taxonomy import SignalMeta, VALID_FREQUENCIES
-
+from agent.convergence.taxonomy import VALID_FREQUENCIES, SignalMeta
 
 # ── Helpers ────────────────────────────────────────────────────
 
@@ -285,9 +279,7 @@ class TestAlignToGridLOCF:
 
     def test_weekly_downsampling_of_daily_data(self):
         """Daily observations aligned to weekly grid: only last obs per week."""
-        series = [
-            _ev(value=float(i), timestamp=T0 + i * DAY, ttl=8 * DAY) for i in range(14)
-        ]
+        series = [_ev(value=float(i), timestamp=T0 + i * DAY, ttl=8 * DAY) for i in range(14)]
         ts, vals = align_to_grid(series, TimeGrid.WEEKLY, T0, T0 + 13 * DAY)
         assert len(ts) >= 2
         # Grid points at/after T0 should have valid LOCF values;
@@ -385,13 +377,8 @@ class TestAlignToGridEvents:
 class TestAlignPair:
     def test_daily_weekly_aligns_to_weekly(self):
         """A daily signal paired with a weekly signal → weekly grid."""
-        daily = [
-            _ev(value=float(i), timestamp=T0 + i * DAY, ttl=8 * DAY) for i in range(14)
-        ]
-        weekly = [
-            _ev(value=float(i * 10), timestamp=T0 + i * WEEK, ttl=2 * WEEK)
-            for i in range(2)
-        ]
+        daily = [_ev(value=float(i), timestamp=T0 + i * DAY, ttl=8 * DAY) for i in range(14)]
+        weekly = [_ev(value=float(i * 10), timestamp=T0 + i * WEEK, ttl=2 * WEEK) for i in range(2)]
 
         meta_d = _meta(frequency="daily")
         meta_w = _meta(frequency="weekly", signal_id="test.weekly")
@@ -405,10 +392,7 @@ class TestAlignPair:
 
     def test_intraday_monthly_aligns_to_monthly(self):
         """Intraday + monthly → monthly grid."""
-        hourly = [
-            _ev(value=1.0, timestamp=T0 + i * HOUR, ttl=2 * MONTH)
-            for i in range(24 * 60)
-        ]
+        hourly = [_ev(value=1.0, timestamp=T0 + i * HOUR, ttl=2 * MONTH) for i in range(24 * 60)]
         monthly = [_ev(value=100.0, timestamp=T0, ttl=2 * MONTH)]
 
         meta_h = _meta(frequency="intraday")
@@ -423,10 +407,7 @@ class TestAlignPair:
     def test_both_daily(self):
         """Two daily signals → daily grid, values match."""
         series_a = [_ev(value=float(i), timestamp=T0 + i * DAY) for i in range(5)]
-        series_b = [
-            _ev(value=float(i * 10), timestamp=T0 + i * DAY, signal_id="test.b")
-            for i in range(5)
-        ]
+        series_b = [_ev(value=float(i * 10), timestamp=T0 + i * DAY, signal_id="test.b") for i in range(5)]
 
         meta_a = _meta(frequency="daily")
         meta_b = _meta(frequency="daily", signal_id="test.b")
@@ -471,9 +452,7 @@ class TestAlignPair:
             _ev(value=6.5, timestamp=T0 + 100),
             _ev(value=7.2, timestamp=T0 + 2 * DAY + 500),
         ]
-        daily = [
-            _ev(value=float(i), timestamp=T0 + i * DAY, ttl=2 * DAY) for i in range(4)
-        ]
+        daily = [_ev(value=float(i), timestamp=T0 + i * DAY, ttl=2 * DAY) for i in range(4)]
 
         meta_ev = _meta(frequency="event", signal_id="quake.mag")
         meta_d = _meta(frequency="daily")

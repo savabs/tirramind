@@ -9,14 +9,13 @@ from __future__ import annotations
 
 import threading
 import time
-from unittest.mock import MagicMock, PropertyMock
+from unittest.mock import MagicMock
 
 import pytest
 
 from agent.pipeline.dag import DAG
 from agent.pipeline.executor import DAGExecutor, DagRun, NodeResult
 from agent.pipeline.scheduler import PipelineScheduler
-
 
 # ── Helpers ───────────────────────────────────────────────────
 
@@ -403,11 +402,11 @@ class TestCronValidation:
     def test_valid_cron_expressions(self):
         s = PipelineScheduler(executor=_make_executor())
         valid_crons = [
-            "0 18 * * 1-5",     # weekdays at 6pm
-            "*/15 * * * *",     # every 15 minutes
-            "0 0 * * *",        # midnight daily
-            "30 6 1 * *",       # 6:30 on 1st of month
-            "0 */2 * * *",      # every 2 hours
+            "0 18 * * 1-5",  # weekdays at 6pm
+            "*/15 * * * *",  # every 15 minutes
+            "0 0 * * *",  # midnight daily
+            "30 6 1 * *",  # 6:30 on 1st of month
+            "0 */2 * * *",  # every 2 hours
         ]
         for cron in valid_crons:
             dag = _make_dag(f"dag_{cron.replace(' ', '_')}", schedule=cron)

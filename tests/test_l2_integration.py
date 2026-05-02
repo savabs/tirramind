@@ -7,18 +7,12 @@ correct node types, feature dimensions, and event observation types.
 
 from __future__ import annotations
 
-import time
-
 import pytest
-import torch
 
 from agent.models.gnn.graph_builder import (
     ENTITY_TYPES,
-    OBSERVATION_TYPES,
     GraphBuilder,
-    IDMap,
 )
-from agent.pipeline.entity import entity_id_from_key, normalize_company_name
 from agent.pipeline.store import PipelineStore
 
 # All L2 tools
@@ -30,7 +24,6 @@ from agent.tools.interconnection_queue import InterconnectionQueueTool
 from agent.tools.lobbying import LobbyingTool
 from agent.tools.patent_filings import PatentFilingsTool
 from agent.tools.wikipedia_pageviews import WikipediaPageviewsTool
-
 
 # ── Fixtures ───────────────────────────────────────────────────
 
@@ -196,9 +189,7 @@ class TestAllToolsToGraphBuilder:
         expected_types = {"company", "domain", "protocol", "topic"}
         # person depends on insider_filings implementation — may or may not be present
         present_types = set(id_map.type_local.keys())
-        assert expected_types.issubset(
-            present_types
-        ), f"Missing entity types: {expected_types - present_types}"
+        assert expected_types.issubset(present_types), f"Missing entity types: {expected_types - present_types}"
 
     def test_observation_types_present(self, store):
         """All obs types from L2 tools should appear in events."""
@@ -218,9 +209,7 @@ class TestAllToolsToGraphBuilder:
             "project_status",
         }
         # insider_trade depends on insider_filings L2 path
-        assert expected_obs.issubset(
-            obs_types_in_events
-        ), f"Missing obs types: {expected_obs - obs_types_in_events}"
+        assert expected_obs.issubset(obs_types_in_events), f"Missing obs types: {expected_obs - obs_types_in_events}"
 
     def test_node_feature_dimension(self, store):
         """Each node type should have features of dim = len(ENTITY_TYPES) + 3."""
@@ -232,9 +221,7 @@ class TestAllToolsToGraphBuilder:
         for etype in id_map.type_local:
             if id_map.num_nodes_of_type(etype) > 0:
                 x = data[etype].x
-                assert (
-                    x.shape[1] == expected_dim
-                ), f"Type {etype}: expected feat_dim={expected_dim}, got {x.shape[1]}"
+                assert x.shape[1] == expected_dim, f"Type {etype}: expected feat_dim={expected_dim}, got {x.shape[1]}"
 
     def test_node_counts_match_entities(self, store):
         """Number of graph nodes per type should match registered entities."""
@@ -462,9 +449,7 @@ class TestSourceToolAttribution:
 
         obs = store.query_all_observations()
         sources = {o["source_tool"] for o in obs}
-        assert (
-            expected_source in sources
-        ), f"Expected source_tool={expected_source!r}, got {sources}"
+        assert expected_source in sources, f"Expected source_tool={expected_source!r}, got {sources}"
 
 
 # ── Depth Level Verification ──────────────────────────────────

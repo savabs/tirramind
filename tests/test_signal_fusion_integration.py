@@ -23,7 +23,6 @@ import math
 import time
 from unittest.mock import MagicMock, patch
 
-import pytest
 import torch
 
 from agent.fusion.alert import EntityAlert
@@ -33,8 +32,7 @@ from agent.fusion.entity_baseline import EntityBaseline
 from agent.fusion.entity_scorer import EntityAnomalyScorer, ScorerConfig
 from agent.fusion.hawkes import HawkesIntensity
 from agent.fusion.surprise import EntitySurprise, SurpriseExtractor
-from agent.models.gnn.graph_builder import IDMap, OBSERVATION_TYPES
-
+from agent.models.gnn.graph_builder import OBSERVATION_TYPES, IDMap
 
 # ── Shared Helpers ────────────────────────────────────────────
 
@@ -100,10 +98,7 @@ def _mock_model(num_nodes: int = 5, hidden_dim: int = 16, memory_dim: int = 16):
 
 
 def _entities(*ids: str, etype: str = "company") -> list[dict]:
-    return [
-        {"entity_id": eid, "entity_type": etype, "canonical_name": f"Name_{eid}"}
-        for eid in ids
-    ]
+    return [{"entity_id": eid, "entity_type": etype, "canonical_name": f"Name_{eid}"} for eid in ids]
 
 
 def _observations(
@@ -127,9 +122,7 @@ def _observations(
 
 
 def _links(*pairs: tuple[str, str], link_type: str = "correlation") -> list[dict]:
-    return [
-        {"entity_id_a": a, "entity_id_b": b, "link_type": link_type} for a, b in pairs
-    ]
+    return [{"entity_id_a": a, "entity_id_b": b, "link_type": link_type} for a, b in pairs]
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -206,9 +199,7 @@ class TestFullPipeline:
     def test_pipeline_with_multiple_observation_types(self) -> None:
         """Multiple obs types per entity run cleanly."""
         ents = _entities("e1")
-        obs = _observations("e1", obs_type="price_movement") + _observations(
-            "e1", obs_type="insider_trade"
-        )
+        obs = _observations("e1", obs_type="price_movement") + _observations("e1", obs_type="insider_trade")
         alerts, _ = self._run_pipeline(ents, obs, [])
         assert len(alerts) >= 1
 
@@ -544,9 +535,7 @@ class TestEdgeCases:
         id_map = IDMap()
 
         extractor = SurpriseExtractor()
-        result = extractor.extract(
-            model, data, id_map, [], memory_before=torch.zeros(0, 16)
-        )
+        result = extractor.extract(model, data, id_map, [], memory_before=torch.zeros(0, 16))
         assert result == {}
 
     def test_multiple_obs_types_per_entity(self) -> None:
@@ -603,8 +592,9 @@ class TestPersistenceRoundTrip:
     """Verify alerts and clusters survive store → query."""
 
     def test_alert_round_trip(self) -> None:
-        from pathlib import Path
         import tempfile
+        from pathlib import Path
+
         from agent.pipeline.store import PipelineStore
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -636,8 +626,9 @@ class TestPersistenceRoundTrip:
             store.close()
 
     def test_cluster_round_trip(self) -> None:
-        from pathlib import Path
         import tempfile
+        from pathlib import Path
+
         from agent.pipeline.store import PipelineStore
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -660,8 +651,9 @@ class TestPersistenceRoundTrip:
             store.close()
 
     def test_alert_query_filters(self) -> None:
-        from pathlib import Path
         import tempfile
+        from pathlib import Path
+
         from agent.pipeline.store import PipelineStore
 
         with tempfile.TemporaryDirectory() as tmp:

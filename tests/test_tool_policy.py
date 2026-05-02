@@ -5,8 +5,6 @@ path sandboxing, policy guard, and phase-based tool filtering.
 
 from __future__ import annotations
 
-import pytest
-
 from agent.security.tool_policy import (
     OrchestratorPhase,
     ToolPolicyGuard,
@@ -17,9 +15,7 @@ from agent.security.tool_policy import (
     get_trust_level_for_tool,
     is_safe_path,
     is_safe_url,
-    set_allowed_roots,
 )
-
 
 # =====================================================================
 # Tool Risk Classification
@@ -236,12 +232,8 @@ class TestPathSandboxing:
         root2 = str(tmp_path / "cache")
         (tmp_path / "workspace").mkdir()
         (tmp_path / "cache").mkdir()
-        safe1, _ = is_safe_path(
-            str(tmp_path / "workspace" / "f.py"), allowed_roots=[root1, root2]
-        )
-        safe2, _ = is_safe_path(
-            str(tmp_path / "cache" / "data.json"), allowed_roots=[root1, root2]
-        )
+        safe1, _ = is_safe_path(str(tmp_path / "workspace" / "f.py"), allowed_roots=[root1, root2])
+        safe2, _ = is_safe_path(str(tmp_path / "cache" / "data.json"), allowed_roots=[root1, root2])
         safe3, _ = is_safe_path("/root/.ssh/id_rsa", allowed_roots=[root1, root2])
         assert safe1
         assert safe2
@@ -283,9 +275,7 @@ class TestPolicyGuard:
 
     def test_ssrf_blocked_for_data_fetch(self):
         guard = ToolPolicyGuard(autonomous_mode=False)
-        ok, reason = guard.check_execution(
-            "web_browse", {"url": "http://169.254.169.254/"}
-        )
+        ok, reason = guard.check_execution("web_browse", {"url": "http://169.254.169.254/"})
         assert not ok
         assert "SSRF" in reason
 
@@ -408,7 +398,5 @@ class TestFactTaint:
     def test_tainted_flag(self):
         from agent.memory.store import Fact
 
-        f = Fact(
-            key="k", content="c", source="web_search", confidence=0.5, tainted=True
-        )
+        f = Fact(key="k", content="c", source="web_search", confidence=0.5, tainted=True)
         assert f.tainted is True

@@ -8,14 +8,10 @@ Covers:
 
 from __future__ import annotations
 
-import time
-from unittest.mock import MagicMock, patch
-
 import pytest
 
 from agent.convergence.evidence import Evidence
 from agent.convergence.extractors import extract_evidence, registered_tools
-
 
 # ══════════════════════════════════════════════════════════════
 #  F1: consumer_sentiment extractor
@@ -463,10 +459,7 @@ class TestFoodSecurityExtractor:
         }
         result = extract_evidence("food_security", data)
         # Falls back to cleaned indicator
-        assert (
-            "xx_yy_zz" in result[0].signal_id.lower()
-            or "food_security" in result[0].signal_id
-        )
+        assert "xx_yy_zz" in result[0].signal_id.lower() or "food_security" in result[0].signal_id
 
 
 # ══════════════════════════════════════════════════════════════
@@ -733,12 +726,8 @@ class TestDirectionPropagation:
             score=0.7,
         )
         scores = {
-            ("a", "b"): CoincidenceResult(
-                method="combined", score=0.8, p_value=0.01, direction=1
-            ),
-            ("b", "c"): CoincidenceResult(
-                method="combined", score=0.6, p_value=0.02, direction=1
-            ),
+            ("a", "b"): CoincidenceResult(method="combined", score=0.8, p_value=0.01, direction=1),
+            ("b", "c"): CoincidenceResult(method="combined", score=0.6, p_value=0.02, direction=1),
         }
         assert ConvergenceDetector._aggregate_direction(clique, scores) == 1
 
@@ -754,9 +743,7 @@ class TestDirectionPropagation:
             score=0.7,
         )
         scores = {
-            ("a", "b"): CoincidenceResult(
-                method="combined", score=0.9, p_value=0.01, direction=-1
-            ),
+            ("a", "b"): CoincidenceResult(method="combined", score=0.9, p_value=0.01, direction=-1),
         }
         assert ConvergenceDetector._aggregate_direction(clique, scores) == -1
 
@@ -773,12 +760,8 @@ class TestDirectionPropagation:
         )
         # Opposite directions, but +1 has more weight
         scores = {
-            ("a", "b"): CoincidenceResult(
-                method="combined", score=0.9, p_value=0.01, direction=1
-            ),
-            ("b", "c"): CoincidenceResult(
-                method="combined", score=0.3, p_value=0.1, direction=-1
-            ),
+            ("a", "b"): CoincidenceResult(method="combined", score=0.9, p_value=0.01, direction=1),
+            ("b", "c"): CoincidenceResult(method="combined", score=0.3, p_value=0.1, direction=-1),
         }
         assert ConvergenceDetector._aggregate_direction(clique, scores) == 1
 
@@ -795,9 +778,7 @@ class TestDirectionPropagation:
         )
         # No pairs match the clique's signals
         scores = {
-            ("x", "y"): CoincidenceResult(
-                method="combined", score=0.9, p_value=0.01, direction=-1
-            ),
+            ("x", "y"): CoincidenceResult(method="combined", score=0.9, p_value=0.01, direction=-1),
         }
         assert ConvergenceDetector._aggregate_direction(clique, scores) == 1  # default
 
@@ -813,13 +794,9 @@ class TestDirectionPropagation:
             score=0.5,
         )
         scores = {
-            ("a", "b"): CoincidenceResult(
-                method="combined", score=0.0, p_value=1.0, direction=-1
-            ),
+            ("a", "b"): CoincidenceResult(method="combined", score=0.0, p_value=1.0, direction=-1),
         }
-        assert (
-            ConvergenceDetector._aggregate_direction(clique, scores) == 1
-        )  # default (zero weight)
+        assert ConvergenceDetector._aggregate_direction(clique, scores) == 1  # default (zero weight)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -874,11 +851,11 @@ class TestPersistenceCountWiring:
 
     def test_dag_callback_passes_persistence(self):
         """Integration: DAG callback reads persistence_history from detector."""
-        from agent.pipeline.dags.convergence_detection import run_convergence_detection
-
         # This is a structural test — verify the code path exists
         # by checking the function source references persistence_history.
         import inspect
+
+        from agent.pipeline.dags.convergence_detection import run_convergence_detection
 
         src = inspect.getsource(run_convergence_detection)
         assert "persistence_history" in src
@@ -901,9 +878,7 @@ class TestAllNewExtractorsProduceValidEvidence:
                 "consumer_sentiment",
                 {
                     "mode": "eu_confidence",
-                    "signals": {
-                        "countries": {"DE": {"latest": -5.0, "mom_change": -1.0}}
-                    },
+                    "signals": {"countries": {"DE": {"latest": -5.0, "mom_change": -1.0}}},
                 },
             ),
             (

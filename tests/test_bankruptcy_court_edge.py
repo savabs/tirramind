@@ -10,25 +10,16 @@ tool schema, registry integration.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 from xml.etree.ElementTree import Element, SubElement, tostring
 
 import httpx
-import pytest
 
 from agent.tools.bankruptcy_court import (
+    _TITLE_RE,
     PACER_COURTS,
     BankruptcyCourtTool,
-    _ATOM_NS,
-    _CHAPTER_RE,
-    _SEC_ADMIN_RSS,
-    _SEC_EFTS,
-    _SEC_LIT_RSS,
-    _TITLE_RE,
-    _UK_GAZETTE,
     _fetch_json,
-    _fetch_pacer_court,
     _fetch_xml,
     _keyword_match,
     _parse_chapter,
@@ -40,7 +31,6 @@ from agent.tools.bankruptcy_court import (
     _parse_sec_rss,
 )
 from agent.tools.base import ToolRegistry, ToolResult
-
 
 # ── XML builders ──────────────────────────────────────────────────────────────
 
@@ -130,9 +120,7 @@ def _build_govuk_response(
     }
 
 
-def _mock_response(
-    content: bytes, status_code: int = 200, content_type: str = "text/xml"
-):
+def _mock_response(content: bytes, status_code: int = 200, content_type: str = "text/xml"):
     """Create a mock httpx.Response."""
     resp = MagicMock(spec=httpx.Response)
     resp.status_code = status_code
@@ -400,9 +388,7 @@ class TestPACERParsing:
         assert "2026-03-26" in e["pub_date"]
 
     def test_chapter_7_detection(self):
-        xml = _build_pacer_rss(
-            [("1:26-bk-999 John Doe", "http://x", "Ch 7 liquidation", "")]
-        )
+        xml = _build_pacer_rss([("1:26-bk-999 John Doe", "http://x", "Ch 7 liquidation", "")])
         import xml.etree.ElementTree as ET
 
         root = ET.fromstring(xml)
@@ -410,9 +396,7 @@ class TestPACERParsing:
         assert entries[0]["chapter"] == "7"
 
     def test_no_chapter_in_desc(self):
-        xml = _build_pacer_rss(
-            [("26-100 Jane Smith", "http://x", "Motion to dismiss case", "")]
-        )
+        xml = _build_pacer_rss([("26-100 Jane Smith", "http://x", "Motion to dismiss case", "")])
         import xml.etree.ElementTree as ET
 
         root = ET.fromstring(xml)
@@ -444,9 +428,7 @@ class TestPACERParsing:
         assert entries[0]["debtor_name"] == "SINGLEWORD"
 
     def test_unicode_debtor_name(self):
-        xml = _build_pacer_rss(
-            [("26-999 José García LLC", "http://x", "Chapter 11 filing", "")]
-        )
+        xml = _build_pacer_rss([("26-999 José García LLC", "http://x", "Chapter 11 filing", "")])
         import xml.etree.ElementTree as ET
 
         root = ET.fromstring(xml)
@@ -463,10 +445,7 @@ class TestPACERParsing:
         assert len(entries[0]["description"]) <= 300
 
     def test_multiple_items(self):
-        items = [
-            (f"26-{i} Corp{i}", "http://x", f"Chapter {11 if i % 2 else 7}", "")
-            for i in range(10)
-        ]
+        items = [(f"26-{i} Corp{i}", "http://x", f"Chapter {11 if i % 2 else 7}", "") for i in range(10)]
         xml = _build_pacer_rss(items)
         import xml.etree.ElementTree as ET
 
@@ -988,9 +967,7 @@ class TestUKInsolvencyCombined:
         mock_client.__exit__ = MagicMock(return_value=False)
         mock_client_cls.return_value = mock_client
 
-        xml = _build_atom_feed(
-            [("Gazette Notice", "http://x", "2026-03-26T12:00:00Z", "desc")]
-        )
+        xml = _build_atom_feed([("Gazette Notice", "http://x", "2026-03-26T12:00:00Z", "desc")])
         import xml.etree.ElementTree as ET
 
         mock_fetch_xml.return_value = ET.fromstring(xml)
@@ -1358,9 +1335,7 @@ class TestL2PersistenceNoStore(unittest.TestCase):
     def test_no_store_returns_zeros(self):
         tool = BankruptcyCourtTool()
         tool._store = None
-        counts = tool._persist_entities(
-            {"entries": [{"debtor_name": "Foo Corp"}]}, "us_bankruptcy"
-        )
+        counts = tool._persist_entities({"entries": [{"debtor_name": "Foo Corp"}]}, "us_bankruptcy")
         assert counts == {"bankruptcy_status_obs": 0}
 
     def test_no_entity_id_fn_returns_zeros(self):
@@ -1371,9 +1346,7 @@ class TestL2PersistenceNoStore(unittest.TestCase):
         original = bc_mod._entity_id_from_key
         try:
             bc_mod._entity_id_from_key = None
-            counts = tool._persist_entities(
-                {"entries": [{"debtor_name": "Foo Corp"}]}, "us_bankruptcy"
-            )
+            counts = tool._persist_entities({"entries": [{"debtor_name": "Foo Corp"}]}, "us_bankruptcy")
             assert counts == {"bankruptcy_status_obs": 0}
         finally:
             bc_mod._entity_id_from_key = original
@@ -1404,9 +1377,7 @@ class TestL2PersistenceUSBankruptcy(unittest.TestCase):
         tool = BankruptcyCourtTool()
         store = _make_store_mock()
         tool._store = store
-        data = {
-            "entries": [{"debtor_name": "Acme Corp", "chapter": "7", "court": "del"}]
-        }
+        data = {"entries": [{"debtor_name": "Acme Corp", "chapter": "7", "court": "del"}]}
         tool._persist_entities(data, "us_bankruptcy")
         obs_call = store.store_entity_observation.call_args_list[0]
         assert obs_call.kwargs["observation_type"] == "bankruptcy_status"
@@ -1417,11 +1388,7 @@ class TestL2PersistenceUSBankruptcy(unittest.TestCase):
         tool = BankruptcyCourtTool()
         store = _make_store_mock()
         tool._store = store
-        data = {
-            "entries": [
-                {"debtor_name": "In re: FooBar Inc", "chapter": "11", "court": "sdny"}
-            ]
-        }
+        data = {"entries": [{"debtor_name": "In re: FooBar Inc", "chapter": "11", "court": "sdny"}]}
         tool._persist_entities(data, "us_bankruptcy")
         reg_call = store.register_entity.call_args_list[0]
         assert reg_call.kwargs["canonical_name"] == "FooBar Inc"
@@ -1462,9 +1429,7 @@ class TestL2PersistenceUSBankruptcy(unittest.TestCase):
         tool = BankruptcyCourtTool()
         store = _make_store_mock()
         tool._store = store
-        data = {
-            "entries": [{"debtor_name": "X Corp", "chapter": "11", "court": "sdtx"}]
-        }
+        data = {"entries": [{"debtor_name": "X Corp", "chapter": "11", "court": "sdtx"}]}
         tool._persist_entities(data, "us_bankruptcy")
         obs_call = store.store_entity_observation.call_args_list[0]
         assert obs_call.kwargs["value"]["chapter"] == "11"
@@ -1532,11 +1497,7 @@ class TestL2PersistenceSECBankruptcy(unittest.TestCase):
         tool = BankruptcyCourtTool()
         store = _make_store_mock()
         tool._store = store
-        data = {
-            "entries": [
-                {"company_name": "Unknown", "cik": "", "file_date": "2026-04-05"}
-            ]
-        }
+        data = {"entries": [{"company_name": "Unknown", "cik": "", "file_date": "2026-04-05"}]}
         counts = tool._persist_entities(data, "sec_bankruptcy")
         assert counts["bankruptcy_status_obs"] == 0
 
@@ -1544,11 +1505,7 @@ class TestL2PersistenceSECBankruptcy(unittest.TestCase):
         tool = BankruptcyCourtTool()
         store = _make_store_mock()
         tool._store = store
-        data = {
-            "entries": [
-                {"company_name": "XYZ Corp", "cik": "123", "file_date": "2026-04-05"}
-            ]
-        }
+        data = {"entries": [{"company_name": "XYZ Corp", "cik": "123", "file_date": "2026-04-05"}]}
         tool._persist_entities(data, "sec_bankruptcy")
         obs_call = store.store_entity_observation.call_args_list[0]
         assert obs_call.kwargs["value"]["source"] == "sec_8k_103"
@@ -1612,9 +1569,7 @@ class TestL2PersistenceExceptionHandling(unittest.TestCase):
         store.store_entity_observation.side_effect = Exception("db error")
         tool._store = store
         # Should not raise
-        counts = tool._persist_entities(
-            {"entries": [{"debtor_name": "Crash Corp"}]}, "us_bankruptcy"
-        )
+        counts = tool._persist_entities({"entries": [{"debtor_name": "Crash Corp"}]}, "us_bankruptcy")
         assert counts == {"bankruptcy_status_obs": 0}
 
 

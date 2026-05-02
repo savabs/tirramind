@@ -15,7 +15,6 @@ from unittest.mock import MagicMock, patch
 
 import httpx
 
-
 # ──────────────────────────────────────────────────────────────────
 # Synthetic data factories
 # ──────────────────────────────────────────────────────────────────
@@ -156,9 +155,7 @@ def _mock_response(payload, status=200):
     resp.json.return_value = payload
     resp.text = json.dumps(payload)
     if status >= 400:
-        resp.raise_for_status.side_effect = httpx.HTTPStatusError(
-            f"HTTP {status}", request=MagicMock(), response=resp
-        )
+        resp.raise_for_status.side_effect = httpx.HTTPStatusError(f"HTTP {status}", request=MagicMock(), response=resp)
     else:
         resp.raise_for_status.return_value = None
     return resp
@@ -206,9 +203,7 @@ class TestDrugRegulatoryTool(unittest.TestCase):
             mock_cls.return_value.__exit__ = MagicMock(return_value=False)
             client.get.return_value = _mock_response(_make_approvals_response())
 
-            result = tool.execute(
-                mode="approvals", date_start="20260101", date_end="20260331"
-            )
+            result = tool.execute(mode="approvals", date_start="20260101", date_end="20260331")
             self.assertTrue(result.success)
 
     # ── Approvals mode ──────────────────────────────────────────────
@@ -511,9 +506,7 @@ class TestDrugRegulatoryTool(unittest.TestCase):
     def test_valid_modes_constant(self):
         from agent.tools.drug_regulatory import VALID_MODES
 
-        self.assertEqual(
-            VALID_MODES, frozenset({"approvals", "adverse_events", "labels"})
-        )
+        self.assertEqual(VALID_MODES, frozenset({"approvals", "adverse_events", "labels"}))
 
     # ── kwargs passthrough ──────────────────────────────────────────
 

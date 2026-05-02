@@ -17,7 +17,6 @@ Modes:
 from __future__ import annotations
 
 import logging
-import time
 from typing import Any
 
 import httpx
@@ -42,7 +41,6 @@ _VALID_SIGNAL_TYPES = {"consensus", "whale_alert", "contrarian", "all"}
 
 
 class PolymarketWhalesTool(Tool):
-
     name = "polymarket_whales"
 
     description = (
@@ -76,16 +74,11 @@ class PolymarketWhalesTool(Tool):
             },
             "market": {
                 "type": "string",
-                "description": (
-                    "Market condition ID or search term for market_whales mode."
-                ),
+                "description": ("Market condition ID or search term for market_whales mode."),
             },
             "signal_type": {
                 "type": "string",
-                "description": (
-                    "Filter signals: consensus, whale_alert, contrarian, or all. "
-                    "Default: all."
-                ),
+                "description": ("Filter signals: consensus, whale_alert, contrarian, or all. Default: all."),
                 "default": "all",
             },
             "limit": {
@@ -144,9 +137,7 @@ class PolymarketWhalesTool(Tool):
 
             wallets = rows[0]["data"].get("wallets", [])[:limit]
             if not wallets:
-                return ToolResult(
-                    success=True, output="No scored wallets yet.", data={"wallets": []}
-                )
+                return ToolResult(success=True, output="No scored wallets yet.", data={"wallets": []})
 
             # L2: persist wallet entities
             try:
@@ -193,11 +184,7 @@ class PolymarketWhalesTool(Tool):
 
             # Get recent trades for this wallet
             recent = store.query_data("pm_trades", limit=5000)
-            wallet_trades = [
-                r["data"]
-                for r in recent
-                if r["data"].get("wallet", "").lower() == wallet.lower()
-            ][:limit]
+            wallet_trades = [r["data"] for r in recent if r["data"].get("wallet", "").lower() == wallet.lower()][:limit]
 
             if not wallet_score and not wallet_trades:
                 return ToolResult(
@@ -285,9 +272,7 @@ class PolymarketWhalesTool(Tool):
                 wallet_agg[w]["trades"].append(t)
                 wallet_agg[w]["total_usdc"] += _to_float(t.get("usdc_value"))
 
-            ranked = sorted(
-                wallet_agg.values(), key=lambda x: x["score"], reverse=True
-            )[:limit]
+            ranked = sorted(wallet_agg.values(), key=lambda x: x["score"], reverse=True)[:limit]
 
             title = matched[0].get("title", market)
             lines = [f"Whale activity on: {title}\n"]
@@ -322,9 +307,7 @@ class PolymarketWhalesTool(Tool):
         try:
             signals: list[dict] = []
             types_to_query = (
-                ["pm_whale_alert", "pm_consensus", "pm_contrarian"]
-                if signal_type == "all"
-                else [f"pm_{signal_type}"]
+                ["pm_whale_alert", "pm_consensus", "pm_contrarian"] if signal_type == "all" else [f"pm_{signal_type}"]
             )
 
             for stype in types_to_query:
@@ -485,18 +468,12 @@ class PolymarketWhalesTool(Tool):
             price = _to_float(t.get("price"))
             wallet_agg[w]["volume"] += size * price
 
-        ranked = sorted(wallet_agg.values(), key=lambda x: x["volume"], reverse=True)[
-            :limit
-        ]
+        ranked = sorted(wallet_agg.values(), key=lambda x: x["volume"], reverse=True)[:limit]
 
-        lines = [
-            f"Top {len(ranked)} wallets by volume (cold start — no accuracy scores yet):\n"
-        ]
+        lines = [f"Top {len(ranked)} wallets by volume (cold start — no accuracy scores yet):\n"]
         for i, w in enumerate(ranked, 1):
             addr = w["wallet"][:10] + "..." + w["wallet"][-4:]
-            lines.append(
-                f"  {i}. {addr}  trades={w['trades']}  vol=${w['volume']:,.0f}"
-            )
+            lines.append(f"  {i}. {addr}  trades={w['trades']}  vol=${w['volume']:,.0f}")
 
         return ToolResult(
             success=True,

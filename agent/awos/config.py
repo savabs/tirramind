@@ -19,8 +19,7 @@ from pydantic import BaseModel, Field, field_validator
 ClassifierMode = Literal["heuristic", "llm", "hybrid", "off"]
 
 DEFAULT_AWOS_FILE = Path.home() / (
-    ".config/Code/User/globalStorage/github.copilot-chat/memory-tool/"
-    "memories/agent_workflow_os.md"
+    ".config/Code/User/globalStorage/github.copilot-chat/memory-tool/memories/agent_workflow_os.md"
 )
 
 
@@ -100,7 +99,7 @@ class AWOSConfig(BaseModel):
         cls,
         env: dict[str, str] | None = None,
         yaml_path: Path | None = None,
-    ) -> "AWOSConfig":
+    ) -> AWOSConfig:
         """Build a config from environment + optional YAML overrides.
 
         Precedence (low → high): defaults → YAML → env.

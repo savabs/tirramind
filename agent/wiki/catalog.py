@@ -8,7 +8,6 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-
 REQUIRED_FIELDS = (
     "title",
     "type",
@@ -89,9 +88,7 @@ def parse_frontmatter(text: str) -> tuple[dict[str, object], str]:
             metadata.setdefault(current_list_key, [])
             cast_list = metadata[current_list_key]
             if not isinstance(cast_list, list):
-                raise ValueError(
-                    f"field {current_list_key} mixes scalar and list values"
-                )
+                raise ValueError(f"field {current_list_key} mixes scalar and list values")
             cast_list.append(item)
             continue
 
@@ -202,9 +199,7 @@ def scan_pages(repo_root: Path) -> tuple[tuple[WikiPage, ...], tuple[LintFinding
     return tuple(pages), tuple(findings)
 
 
-def lint_pages(
-    pages: tuple[WikiPage, ...], findings: tuple[LintFinding, ...]
-) -> tuple[LintFinding, ...]:
+def lint_pages(pages: tuple[WikiPage, ...], findings: tuple[LintFinding, ...]) -> tuple[LintFinding, ...]:
     """Run structural lint checks on parsed pages."""
     all_findings = list(findings)
 
@@ -300,9 +295,7 @@ def build_catalog(repo_root: Path, *, write_index: bool = True) -> CatalogResult
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the CLI parser for the wiki catalog command."""
-    parser = argparse.ArgumentParser(
-        description="Build and lint the TirraMind wiki catalog"
-    )
+    parser = argparse.ArgumentParser(description="Build and lint the TirraMind wiki catalog")
     parser.add_argument(
         "--repo-root",
         default=".",

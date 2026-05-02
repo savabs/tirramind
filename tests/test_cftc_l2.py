@@ -14,10 +14,7 @@ from datetime import datetime
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from agent.tools.cftc import CFTCTool, _report_date_to_ts
-
 
 # ── Helpers ───────────────────────────────────────────────────
 
@@ -131,9 +128,7 @@ class TestCFTCPersistEntitiesBasic:
         tool = _make_tool(store=store)
         tool._persist_entities([_make_row(cftc_code="088691")])
         contract_calls = [
-            c
-            for c in store.register_entity.call_args_list
-            if c.kwargs.get("entity_type") == "cftc_contract"
+            c for c in store.register_entity.call_args_list if c.kwargs.get("entity_type") == "cftc_contract"
         ]
         assert len(contract_calls) == 1
         kw = contract_calls[0].kwargs
@@ -165,11 +160,7 @@ class TestCFTCPersistEntitiesBasic:
         tool = _make_tool(store=store)
         # 088691 = Gold = GC=F
         tool._persist_entities([_make_row(cftc_code="088691")])
-        link_calls = [
-            c
-            for c in store.link_entities.call_args_list
-            if c.kwargs.get("link_type") == "cftc_tracks"
-        ]
+        link_calls = [c for c in store.link_entities.call_args_list if c.kwargs.get("link_type") == "cftc_tracks"]
         assert len(link_calls) == 1
         kw = link_calls[0].kwargs
         assert kw["metadata"]["ticker"] == "GC=F"
@@ -180,11 +171,7 @@ class TestCFTCPersistEntitiesBasic:
         tool = _make_tool(store=store)
         # 999999 is not in the instrument universe
         tool._persist_entities([_make_row(cftc_code="999999")])
-        link_calls = [
-            c
-            for c in store.link_entities.call_args_list
-            if c.kwargs.get("link_type") == "cftc_tracks"
-        ]
+        link_calls = [c for c in store.link_entities.call_args_list if c.kwargs.get("link_type") == "cftc_tracks"]
         assert len(link_calls) == 0
         # But contract and observation should still be created
         assert store.register_entity.call_count == 1

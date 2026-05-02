@@ -12,8 +12,6 @@ Per spec: docs/specs/tier2_satellite_spec.md
 from __future__ import annotations
 
 import time
-from typing import Any
-from unittest.mock import patch
 
 import pytest
 
@@ -222,9 +220,7 @@ class TestDispatcher:
         assert _extract_satellite_activity("satellite_activity", {"key": "val"}) == []
 
     def test_unknown_mode_returns_empty(self):
-        assert (
-            _extract_satellite_activity("satellite_activity", {"mode": "radar"}) == []
-        )
+        assert _extract_satellite_activity("satellite_activity", {"mode": "radar"}) == []
         assert _extract_satellite_activity("satellite_activity", {"mode": ""}) == []
         assert _extract_satellite_activity("satellite_activity", {"mode": 123}) == []
 
@@ -234,9 +230,7 @@ class TestDispatcher:
         assert "satellite.fire.hotspot_count" in signal_ids
 
     def test_dispatches_vegetation(self, vegetation_data_typical):
-        result = _extract_satellite_activity(
-            "satellite_activity", vegetation_data_typical
-        )
+        result = _extract_satellite_activity("satellite_activity", vegetation_data_typical)
         signal_ids = {e.signal_id for e in result}
         assert "satellite.vegetation.ndvi_latest" in signal_ids
 
@@ -409,9 +403,7 @@ class TestVegetationExtractor:
     """Comprehensive tests for the vegetation mode extractor."""
 
     def test_typical_vegetation_produces_3_signals(self, vegetation_data_typical):
-        result = _extract_satellite_vegetation(
-            "satellite_activity", vegetation_data_typical
-        )
+        result = _extract_satellite_vegetation("satellite_activity", vegetation_data_typical)
         assert len(result) == 3
         ids = {e.signal_id for e in result}
         assert ids == {
@@ -421,9 +413,7 @@ class TestVegetationExtractor:
         }
 
     def test_vegetation_all_evidence_valid(self, vegetation_data_typical):
-        result = _extract_satellite_vegetation(
-            "satellite_activity", vegetation_data_typical
-        )
+        result = _extract_satellite_vegetation("satellite_activity", vegetation_data_typical)
         for ev in result:
             assert isinstance(ev, Evidence)
             assert ev.category == "supply_chain"
@@ -436,9 +426,7 @@ class TestVegetationExtractor:
 
     def test_vegetation_crop_stress_direction(self, vegetation_data_typical):
         """Anomaly < -10% → direction = -1 (crop stress)."""
-        result = _extract_satellite_vegetation(
-            "satellite_activity", vegetation_data_typical
-        )
+        result = _extract_satellite_vegetation("satellite_activity", vegetation_data_typical)
         by_id = {e.signal_id: e for e in result}
         anom = by_id["satellite.vegetation.anomaly_pct"]
         assert anom.value == -41.82
@@ -526,10 +514,9 @@ class TestVegetationExtractor:
             }
             result = _extract_satellite_vegetation("satellite_activity", data)
             by_id = {e.signal_id: e for e in result}
-            assert (
-                by_id["satellite.vegetation.health_class_ordinal"].value
-                == expected_ordinal
-            ), f"Health '{health}' → expected ordinal {expected_ordinal}"
+            assert by_id["satellite.vegetation.health_class_ordinal"].value == expected_ordinal, (
+                f"Health '{health}' → expected ordinal {expected_ordinal}"
+            )
 
     def test_vegetation_unknown_health_defaults_to_bare_soil(self):
         """Unknown health string → ordinal 1.0 (bare_soil)."""
@@ -647,9 +634,7 @@ class TestVegetationExtractor:
 
     def test_vegetation_timestamps_are_recent(self, vegetation_data_typical):
         now = time.time()
-        result = _extract_satellite_vegetation(
-            "satellite_activity", vegetation_data_typical
-        )
+        result = _extract_satellite_vegetation("satellite_activity", vegetation_data_typical)
         for ev in result:
             assert abs(ev.timestamp - now) < 5.0
 
@@ -838,9 +823,7 @@ class TestSignalProperties:
         }
         all_evidence = []
         all_evidence.extend(_extract_satellite_fire("satellite_activity", fire_data))
-        all_evidence.extend(
-            _extract_satellite_vegetation("satellite_activity", veg_data)
-        )
+        all_evidence.extend(_extract_satellite_vegetation("satellite_activity", veg_data))
         all_evidence.extend(_extract_satellite_events("satellite_activity", event_data))
         return all_evidence
 

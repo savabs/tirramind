@@ -6,15 +6,12 @@ schema creation, idempotent upsert, validation enforcement, edge cases.
 
 from __future__ import annotations
 
-import json
-import math
 import time
 
 import pytest
 
-from agent.features.protocol import EngineeredFeature, VALID_HORIZONS, VALID_UNITS
+from agent.features.protocol import VALID_HORIZONS, VALID_UNITS, EngineeredFeature
 from agent.pipeline.store import PipelineStore
-
 
 # ── helpers ────────────────────────────────────────────────────
 
@@ -55,22 +52,12 @@ def store():
 class TestFeaturesSchema:
     def test_features_table_exists(self, store: PipelineStore):
         conn = store._get_conn()
-        tables = [
-            r[0]
-            for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
-        ]
+        tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
         assert "features" in tables
 
     def test_features_indexes_exist(self, store: PipelineStore):
         conn = store._get_conn()
-        indexes = [
-            r[0]
-            for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='index'"
-            ).fetchall()
-        ]
+        indexes = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='index'").fetchall()]
         assert "idx_features_unique" in indexes
         assert "idx_features_lookup" in indexes
 
@@ -297,9 +284,7 @@ class TestQueryFeatures:
 
     def test_query_since_and_until(self, store: PipelineStore):
         for i in range(5):
-            store.store_feature(
-                _make_feature(effective_at=_NOW - 1000 * i, value=float(i))
-            )
+            store.store_feature(_make_feature(effective_at=_NOW - 1000 * i, value=float(i)))
         rows = store.query_features(
             "convergence.stress_breadth.7d",
             since=_NOW - 3500,
@@ -316,9 +301,7 @@ class TestQueryFeatures:
 
     def test_query_limit(self, store: PipelineStore):
         for i in range(10):
-            store.store_feature(
-                _make_feature(effective_at=_NOW - 100 * i, value=float(i))
-            )
+            store.store_feature(_make_feature(effective_at=_NOW - 100 * i, value=float(i)))
         rows = store.query_features("convergence.stress_breadth.7d", limit=3)
         assert len(rows) == 3
 
@@ -381,8 +364,7 @@ class TestFeatureRowToDict:
         # Manually corrupt the stored JSON
         conn = store._get_conn()
         conn.execute(
-            "UPDATE features SET source_signals_json='NOT JSON', "
-            "metadata_json='NOT JSON' WHERE feature_name=?",
+            "UPDATE features SET source_signals_json='NOT JSON', metadata_json='NOT JSON' WHERE feature_name=?",
             (feat.feature_name,),
         )
         conn.commit()
@@ -406,12 +388,7 @@ class TestCoexistence:
 
     def test_features_table_in_schema_check(self, store: PipelineStore):
         conn = store._get_conn()
-        tables = {
-            r[0]
-            for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
-        }
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
         assert {"dag_runs", "pipeline_data", "signals", "features"}.issubset(tables)
 
 

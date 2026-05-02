@@ -14,14 +14,13 @@ import numpy as np
 import pytest
 from pgmpy.factors.discrete import TabularCPD
 
-from agent.models.belief import BeliefState, BeliefValidationError, validate_belief
+from agent.models.belief import validate_belief
 from agent.models.graph import NodeSpec, WorldModelGraph
-from agent.models.initial_graph import ALL_EDGES, ALL_NODES, build_initial_graph
+from agent.models.initial_graph import build_initial_graph
 from agent.models.intervention import InterventionEngine, _kl_divergence
 from agent.models.propagator import BeliefPropagator, value_to_state_index
 from agent.models.state_filter import ContinuousStateFilter, RegimeConfig
 from agent.models.world_model import WorldModel
-
 
 # ═══════════════════════════════════════════════════════════════
 # Graph edge cases
@@ -260,9 +259,7 @@ class TestPropagatorPrecision:
         for b in beliefs:
             if b.probabilities:
                 total = sum(b.probabilities.values())
-                assert total == pytest.approx(
-                    1.0, abs=1e-6
-                ), f"{b.variable_name}: probs sum to {total}"
+                assert total == pytest.approx(1.0, abs=1e-6), f"{b.variable_name}: probs sum to {total}"
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -545,9 +542,9 @@ class TestInterventionOnEveryVariable:
             for b in beliefs:
                 if b.probabilities:
                     total = sum(b.probabilities.values())
-                    assert total == pytest.approx(
-                        1.0, abs=1e-6
-                    ), f"do({spec.name}={do_val}): {b.variable_name} sums to {total}"
+                    assert total == pytest.approx(1.0, abs=1e-6), (
+                        f"do({spec.name}={do_val}): {b.variable_name} sums to {total}"
+                    )
 
 
 class TestInterventionInvalidDoValue:

@@ -27,7 +27,7 @@ import json
 import logging
 import re
 from collections import Counter, defaultdict
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -128,9 +128,7 @@ class TypeInducer:
                     continue
 
                 # Compute cohesion (simplified silhouette)
-                cohesion = self._compute_cluster_cohesion(
-                    member_ids, entity_ids, entity_fields
-                )
+                cohesion = self._compute_cluster_cohesion(member_ids, entity_ids, entity_fields)
                 if cohesion < self._cohesion_threshold:
                     log.debug(
                         "Cluster %d from %s: cohesion %.2f below threshold",
@@ -141,9 +139,7 @@ class TypeInducer:
                     continue
 
                 # Derive type name
-                type_name = self._derive_type_name(
-                    source_tool, member_ids, entities, entity_fields, entity_ids
-                )
+                type_name = self._derive_type_name(source_tool, member_ids, entities, entity_fields, entity_ids)
                 if not type_name:
                     continue
 

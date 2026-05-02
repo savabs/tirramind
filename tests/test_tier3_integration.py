@@ -12,28 +12,23 @@ Covers:
 
 from __future__ import annotations
 
-import json
 import tempfile
 import time
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
 import numpy as np
-import pytest
 
 from agent.learning.bandit import DEFAULT_ARMS, GoalArm, StrategyBandit
+from agent.learning.goal_generator import Goal, GoalGenerator
 from agent.learning.reward import (
     DEFAULT_WEIGHTS,
-    RewardWeights,
     RewardWeightOptimizer,
+    RewardWeights,
     compute_reward,
 )
 from agent.learning.threshold_optimizer import ThresholdOptimizer
-from agent.learning.goal_generator import Goal, GoalGenerator
 from agent.memory.store import Episode
-
 
 # ═══════════════════════════════════════════════════════════════
 #  Helpers
@@ -428,10 +423,10 @@ class TestConvergenceDetectionThresholds:
 
     def test_values_within_bounds(self, tmp_path):
         """Loaded convergence thresholds should be within DETECTOR_SPACES bounds."""
+        from agent.learning.threshold_optimizer import DETECTOR_SPACES
         from agent.pipeline.dags.convergence_detection import (
             _load_convergence_thresholds,
         )
-        from agent.learning.threshold_optimizer import DETECTOR_SPACES
 
         threshold_dir = tmp_path / "threshold_bo"
         threshold_dir.mkdir()
@@ -445,9 +440,7 @@ class TestConvergenceDetectionThresholds:
         space = DETECTOR_SPACES["convergence"]
         for name, (lo, hi) in zip(space.names, space.bounds):
             if name in loaded:
-                assert (
-                    lo <= loaded[name] <= hi
-                ), f"{name}={loaded[name]} out of [{lo}, {hi}]"
+                assert lo <= loaded[name] <= hi, f"{name}={loaded[name]} out of [{lo}, {hi}]"
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -481,10 +474,7 @@ class TestGoalGeneratorNovelArm:
             examples=[],
         )
         goal = GoalGenerator._arm_fallback_goal(novel)
-        assert (
-            "open-ended" in goal.description.lower()
-            or "exploration" in goal.description.lower()
-        )
+        assert "open-ended" in goal.description.lower() or "exploration" in goal.description.lower()
         assert goal.expected_tool == "web_search"
 
     def test_fallback_regular_arm_unchanged(self):
@@ -679,17 +669,13 @@ class TestAutonomousRunnerIntegration:
             MockOrch.return_value.run.return_value = result
 
             # Patch compute_reward to capture the weights argument
-            with patch(
-                "agent.core.autonomous.compute_reward", wraps=compute_reward
-            ) as mock_cr:
+            with patch("agent.core.autonomous.compute_reward", wraps=compute_reward) as mock_cr:
                 summary = runner.run()
 
                 # Verify compute_reward was called with a RewardWeights instance
                 assert mock_cr.called
                 call_kwargs = mock_cr.call_args
-                weights_arg = call_kwargs.kwargs.get("weights") or call_kwargs[1].get(
-                    "weights"
-                )
+                weights_arg = call_kwargs.kwargs.get("weights") or call_kwargs[1].get("weights")
                 if weights_arg is None and len(call_kwargs.args) >= 3:
                     weights_arg = call_kwargs.args[2]
                 assert isinstance(weights_arg, RewardWeights)
@@ -865,10 +851,10 @@ class TestEdgeCases:
 
     def test_convergence_config_kwargs_valid(self, tmp_path):
         """Loaded convergence thresholds should be valid ConvergenceDetectorConfig kwargs."""
+        from agent.convergence.detector import ConvergenceDetectorConfig
         from agent.pipeline.dags.convergence_detection import (
             _load_convergence_thresholds,
         )
-        from agent.convergence.detector import ConvergenceDetectorConfig
 
         threshold_dir = tmp_path / "threshold_bo"
         threshold_dir.mkdir()

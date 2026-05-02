@@ -26,7 +26,6 @@ Design decision — separate optimizers per detector:
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from pathlib import Path
 
 from agent.learning.param_optimizer import BayesianParamOptimizer, ParamSpace
@@ -141,8 +140,5 @@ class ThresholdOptimizer:
 
     def _get(self, name: str) -> BayesianParamOptimizer:
         if name not in self._optimizers:
-            raise ValueError(
-                f"Unknown detector '{name}'. "
-                f"Available: {list(self._optimizers.keys())}"
-            )
+            raise ValueError(f"Unknown detector '{name}'. Available: {list(self._optimizers.keys())}")
         return self._optimizers[name]

@@ -108,7 +108,7 @@ class RegimeContext:
 
 
 def get_current_regime(
-    store: "PipelineStore",
+    store: PipelineStore,
     lookback_seconds: float = _LOOKBACK_SECONDS,
     as_of: float | None = None,
 ) -> RegimeContext:
@@ -181,23 +181,17 @@ def get_current_regime(
             "convergence.unknown_pattern",
         ]:
             try:
-                rows = store.query_signals(
-                    pattern_signal, since=since, until=as_of, limit=5
-                )
+                rows = store.query_signals(pattern_signal, since=since, until=as_of, limit=5)
                 recent_convergence.extend(rows)
             except Exception:
                 pass
 
         if recent_convergence:
             # Highest convergence score in the window = changepoint posterior
-            ctx.changepoint_posterior = max(
-                float(r.get("value", 0.0)) for r in recent_convergence
-            )
+            ctx.changepoint_posterior = max(float(r.get("value", 0.0)) for r in recent_convergence)
 
             # Stability = time since the most recent high-confidence convergence event
-            high_events = [
-                r for r in recent_convergence if float(r.get("value", 0.0)) > 0.5
-            ]
+            high_events = [r for r in recent_convergence if float(r.get("value", 0.0)) > 0.5]
             if high_events:
                 latest_event_ts = max(r.get("computed_at", 0.0) for r in high_events)
                 elapsed = as_of - latest_event_ts
@@ -209,8 +203,7 @@ def get_current_regime(
         log.warning("RegimeGate: could not load convergence signals: %s", exc)
 
     log.debug(
-        "RegimeContext: regime=%s changepoint_posterior=%.3f "
-        "stability=%.1fd regime_changed=%s",
+        "RegimeContext: regime=%s changepoint_posterior=%.3f stability=%.1fd regime_changed=%s",
         ctx.regime_label,
         ctx.changepoint_posterior,
         ctx.stability_duration_days,
@@ -220,7 +213,7 @@ def get_current_regime(
 
 
 def is_high_changepoint(
-    store: "PipelineStore",
+    store: PipelineStore,
     threshold: float = 0.9,
     *,
     ctx: RegimeContext | None = None,

@@ -34,9 +34,7 @@ class CUSUMMonitor:
 
     __slots__ = ("_k", "_h", "_cap", "_states")
 
-    def __init__(
-        self, k: float = 0.5, h: float = 5.0, cap_multiplier: float = 10.0
-    ) -> None:
+    def __init__(self, k: float = 0.5, h: float = 5.0, cap_multiplier: float = 10.0) -> None:
         if k < 0:
             raise ValueError(f"Allowance k must be >= 0, got {k}")
         if h <= 0:

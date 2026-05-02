@@ -35,9 +35,7 @@ from typing import Any
 # ── Constants ──────────────────────────────────────────────────
 
 # Dotted name: 2-4 segments of word chars, e.g. "convergence.stress_breadth.7d"
-FEATURE_NAME_PATTERN = re.compile(
-    r"^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*(\.[a-z0-9][a-z0-9_]*){0,2}$"
-)
+FEATURE_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*(\.[a-z0-9][a-z0-9_]*){0,2}$")
 
 VALID_HORIZONS: frozenset[str] = frozenset(
     {
@@ -209,30 +207,18 @@ def validate_feature(feature: EngineeredFeature) -> list[str]:
 
     # ── Temporal: effective_at <= computed_at (point-in-time safety) ──
     if feature.effective_at > feature.computed_at:
-        errors.append(
-            "effective_at must not be after computed_at "
-            "(look-ahead / information-leakage violation)"
-        )
+        errors.append("effective_at must not be after computed_at (look-ahead / information-leakage violation)")
 
     # Reasonable range guards
     now = time.time()
     if feature.effective_at < _EPOCH_FLOOR:
-        errors.append(
-            f"effective_at ({feature.effective_at}) is before 2020-01-01 — "
-            "likely a bug"
-        )
+        errors.append(f"effective_at ({feature.effective_at}) is before 2020-01-01 — likely a bug")
     if feature.computed_at > now + _EPOCH_CEILING_DRIFT:
-        errors.append(
-            f"computed_at ({feature.computed_at}) is more than 1 day in the "
-            "future — likely a bug"
-        )
+        errors.append(f"computed_at ({feature.computed_at}) is more than 1 day in the future — likely a bug")
 
     # ── Horizon ──
     if feature.horizon not in VALID_HORIZONS:
-        errors.append(
-            f"horizon '{feature.horizon}' not recognized; "
-            f"must be one of {sorted(VALID_HORIZONS)}"
-        )
+        errors.append(f"horizon '{feature.horizon}' not recognized; must be one of {sorted(VALID_HORIZONS)}")
 
     # ── Value + missingness consistency ──
     if feature.value is None:
@@ -245,10 +231,7 @@ def validate_feature(feature: EngineeredFeature) -> list[str]:
             errors.append("missing_reason must be None when value is present")
         # NaN / Inf check
         if math.isnan(feature.value) or math.isinf(feature.value):
-            errors.append(
-                "value must be finite (no NaN or Inf); use value=None with "
-                "missing_reason for missing data"
-            )
+            errors.append("value must be finite (no NaN or Inf); use value=None with missing_reason for missing data")
 
     # ── Quality ──
     if not isinstance(feature.quality, (int, float)):
@@ -260,10 +243,7 @@ def validate_feature(feature: EngineeredFeature) -> list[str]:
 
     # ── Unit ──
     if feature.unit not in VALID_UNITS:
-        errors.append(
-            f"unit '{feature.unit}' not recognized; "
-            f"must be one of {sorted(VALID_UNITS)}"
-        )
+        errors.append(f"unit '{feature.unit}' not recognized; must be one of {sorted(VALID_UNITS)}")
 
     # ── Source signals ──
     if not feature.source_signals:

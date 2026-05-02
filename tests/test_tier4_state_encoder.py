@@ -9,8 +9,8 @@ determinism, and edge cases (0/1/max entities).
 from __future__ import annotations
 
 import io
+
 import numpy as np
-import pytest
 import torch
 import torch.nn as nn
 
@@ -18,7 +18,6 @@ from agent.learning.policy.config import SACConfig, StateEncoderConfig
 from agent.learning.policy.replay_buffer import ReplayBuffer
 from agent.learning.policy.sac import SACTrainer
 from agent.learning.policy.state_encoder import LearnedStateEncoder
-
 
 # ── Helpers ───────────────────────────────────────────────────────
 
@@ -58,23 +57,15 @@ def _make_state(
             state[b, : n_active * surprise_dim] = torch.randn(n_active * surprise_dim)
             # Fill active entity belief block
             bstart = E * surprise_dim
-            state[b, bstart : bstart + n_active * belief_dim] = torch.randn(
-                n_active * belief_dim
-            )
+            state[b, bstart : bstart + n_active * belief_dim] = torch.randn(n_active * belief_dim)
             # Market + count + adversarial
-            state[b, E * surprise_dim + E * belief_dim :] = torch.randn(
-                market_dim + 1 + adv_dim
-            )
+            state[b, E * surprise_dim + E * belief_dim :] = torch.randn(market_dim + 1 + adv_dim)
     else:
         state = torch.zeros(total)
         state[: n_active * surprise_dim] = torch.randn(n_active * surprise_dim)
         bstart = E * surprise_dim
-        state[bstart : bstart + n_active * belief_dim] = torch.randn(
-            n_active * belief_dim
-        )
-        state[E * surprise_dim + E * belief_dim :] = torch.randn(
-            market_dim + 1 + adv_dim
-        )
+        state[bstart : bstart + n_active * belief_dim] = torch.randn(n_active * belief_dim)
+        state[E * surprise_dim + E * belief_dim :] = torch.randn(market_dim + 1 + adv_dim)
 
     return state
 
@@ -106,9 +97,7 @@ class TestEncoderForwardShape:
         enc = LearnedStateEncoder(cfg)
         state = _make_state(n_active=10)
         out = enc(state)
-        assert out.shape == (
-            cfg.entity_embed_dim + cfg.market_dim + 1 + cfg.adversarial_dim,
-        )
+        assert out.shape == (cfg.entity_embed_dim + cfg.market_dim + 1 + cfg.adversarial_dim,)
 
     def test_batch_state(self):
         cfg = _default_encoder_config()
@@ -317,9 +306,7 @@ class TestSACTrainerWithEncoder:
         # Actor optimizer should have more param groups than actor alone
         actor_param_count = sum(1 for _ in trainer._actor.parameters())
         encoder_param_count = sum(1 for _ in encoder.parameters())
-        optim_param_count = sum(
-            len(pg["params"]) for pg in trainer._actor_optim.param_groups
-        )
+        optim_param_count = sum(len(pg["params"]) for pg in trainer._actor_optim.param_groups)
         assert optim_param_count == actor_param_count + encoder_param_count
 
     def test_encoder_grads_after_update(self):

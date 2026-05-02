@@ -6,7 +6,6 @@ self-supervised training on synthetic (but structurally real) data.
 
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -19,7 +18,6 @@ from agent.models.gnn.trainer import (
     TrainerConfig,
 )
 from agent.pipeline.store import PipelineStore
-
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -82,9 +80,7 @@ def small_config() -> TrainerConfig:
 class TestTrainerInfer:
     """Tests for Trainer.infer() embedding extraction."""
 
-    def test_infer_returns_embeddings_and_idmap(
-        self, store_with_data: PipelineStore, small_config: TrainerConfig
-    ):
+    def test_infer_returns_embeddings_and_idmap(self, store_with_data: PipelineStore, small_config: TrainerConfig):
         trainer = Trainer(store_with_data, small_config)
         embeddings, id_map = trainer.infer()
 
@@ -95,9 +91,7 @@ class TestTrainerInfer:
             assert emb.ndim == 2
             assert emb.shape[1] == small_config.hidden_dim
 
-    def test_infer_without_explicit_build_model(
-        self, store_with_data: PipelineStore, small_config: TrainerConfig
-    ):
+    def test_infer_without_explicit_build_model(self, store_with_data: PipelineStore, small_config: TrainerConfig):
         """infer() should auto-build model if not built yet."""
         trainer = Trainer(store_with_data, small_config)
         assert trainer._model is None
@@ -105,9 +99,7 @@ class TestTrainerInfer:
         assert trainer._model is not None
         assert len(embeddings) > 0
 
-    def test_infer_with_until_excludes_future(
-        self, store_with_data: PipelineStore, small_config: TrainerConfig
-    ):
+    def test_infer_with_until_excludes_future(self, store_with_data: PipelineStore, small_config: TrainerConfig):
         trainer = Trainer(store_with_data, small_config)
         trainer.build_model()
 
@@ -120,17 +112,13 @@ class TestTrainerInfer:
         # Early graph should have same or fewer entities
         assert id_early.num_nodes <= id_full.num_nodes
 
-    def test_infer_produces_no_grad_tensors(
-        self, store_with_data: PipelineStore, small_config: TrainerConfig
-    ):
+    def test_infer_produces_no_grad_tensors(self, store_with_data: PipelineStore, small_config: TrainerConfig):
         trainer = Trainer(store_with_data, small_config)
         embeddings, _ = trainer.infer()
         for emb in embeddings.values():
             assert not emb.requires_grad
 
-    def test_infer_deterministic(
-        self, store_with_data: PipelineStore, small_config: TrainerConfig
-    ):
+    def test_infer_deterministic(self, store_with_data: PipelineStore, small_config: TrainerConfig):
         trainer = Trainer(store_with_data, small_config)
         trainer.build_model()
         emb1, _ = trainer.infer()
@@ -138,16 +126,12 @@ class TestTrainerInfer:
         for ntype in emb1:
             assert torch.allclose(emb1[ntype], emb2[ntype], atol=1e-6)
 
-    def test_infer_empty_store_returns_empty(
-        self, empty_store: PipelineStore, small_config: TrainerConfig
-    ):
+    def test_infer_empty_store_returns_empty(self, empty_store: PipelineStore, small_config: TrainerConfig):
         trainer = Trainer(empty_store, small_config)
         embeddings, id_map = trainer.infer()
         assert embeddings == {}
 
-    def test_infer_covers_all_entity_types_with_data(
-        self, store_with_data: PipelineStore, small_config: TrainerConfig
-    ):
+    def test_infer_covers_all_entity_types_with_data(self, store_with_data: PipelineStore, small_config: TrainerConfig):
         """All entity types that have entities should appear in embeddings."""
         trainer = Trainer(store_with_data, small_config)
         embeddings, id_map = trainer.infer()
@@ -165,9 +149,7 @@ class TestTrainerInfer:
 class TestTrainerSmokeTest:
     """Smoke tests for self-supervised training on synthetic data."""
 
-    def test_train_completes_without_error(
-        self, store_with_data: PipelineStore, small_config: TrainerConfig
-    ):
+    def test_train_completes_without_error(self, store_with_data: PipelineStore, small_config: TrainerConfig):
         trainer = Trainer(store_with_data, small_config)
         trainer.build_model()
         history = trainer.train()
@@ -175,9 +157,7 @@ class TestTrainerSmokeTest:
         assert "total" in history
         assert len(history["total"]) == small_config.epochs
 
-    def test_train_loss_dict_has_all_keys(
-        self, store_with_data: PipelineStore, small_config: TrainerConfig
-    ):
+    def test_train_loss_dict_has_all_keys(self, store_with_data: PipelineStore, small_config: TrainerConfig):
         trainer = Trainer(store_with_data, small_config)
         trainer.build_model()
         history = trainer.train()
@@ -186,9 +166,7 @@ class TestTrainerSmokeTest:
             assert key in history
             assert isinstance(history[key], list)
 
-    def test_infer_after_training_works(
-        self, store_with_data: PipelineStore, small_config: TrainerConfig
-    ):
+    def test_infer_after_training_works(self, store_with_data: PipelineStore, small_config: TrainerConfig):
         """Embeddings should be extractable after training."""
         trainer = Trainer(store_with_data, small_config)
         trainer.build_model()
@@ -196,9 +174,7 @@ class TestTrainerSmokeTest:
         embeddings, id_map = trainer.infer()
         assert len(embeddings) > 0
 
-    def test_train_embeddings_differ_from_untrained(
-        self, store_with_data: PipelineStore, small_config: TrainerConfig
-    ):
+    def test_train_embeddings_differ_from_untrained(self, store_with_data: PipelineStore, small_config: TrainerConfig):
         """Training should change embeddings (not identical to random init)."""
         trainer = Trainer(store_with_data, small_config)
         trainer.build_model()
@@ -293,13 +269,9 @@ class TestModelPersistence:
 
         for ntype in emb_original:
             assert ntype in emb_loaded
-            assert torch.allclose(
-                emb_original[ntype], emb_loaded[ntype], atol=1e-5
-            ), f"Embeddings differ for {ntype}"
+            assert torch.allclose(emb_original[ntype], emb_loaded[ntype], atol=1e-5), f"Embeddings differ for {ntype}"
 
-    def test_load_nonexistent_raises(
-        self, store_with_data: PipelineStore, tmp_path: Path
-    ):
+    def test_load_nonexistent_raises(self, store_with_data: PipelineStore, tmp_path: Path):
         with pytest.raises(FileNotFoundError):
             Trainer.load_model(tmp_path / "nonexistent.pt", store_with_data)
 

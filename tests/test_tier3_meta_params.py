@@ -17,10 +17,15 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from agent.learning.bandit import (
+    _NOVEL_PROMOTE_MIN_SUCCESSES,
+    DEFAULT_ARMS,
+    GoalArm,
+    StrategyBandit,
+)
 from agent.learning.param_optimizer import (
     BayesianParamOptimizer,
     ParamSpace,
-    Trial,
     _expected_improvement,
     _gp_posterior,
     _rbf_kernel,
@@ -34,14 +39,6 @@ from agent.learning.threshold_optimizer import (
     DETECTOR_SPACES,
     ThresholdOptimizer,
 )
-from agent.learning.bandit import (
-    DEFAULT_ARMS,
-    GoalArm,
-    StrategyBandit,
-    _NOVEL_PROMOTE_MIN_SUCCESSES,
-    _NOVEL_PROMOTE_REWARD_THRESHOLD,
-)
-
 
 # =====================================================================
 # 1. ParamSpace
@@ -337,9 +334,7 @@ class TestThresholdOptimizer:
         opt = ThresholdOptimizer(seed=42)
         for _ in range(10):
             params = opt.suggest("hawkes")
-            assert (
-                params["alpha"] < params["beta"]
-            ), f"alpha={params['alpha']} >= beta={params['beta']}"
+            assert params["alpha"] < params["beta"], f"alpha={params['alpha']} >= beta={params['beta']}"
             opt.record("hawkes", params, np.random.uniform())
 
     def test_suggest_convergence_within_bounds(self):
@@ -404,9 +399,7 @@ class TestNovelArmDiscovery:
         arms = [
             GoalArm(name="arm_a", description="A", tools=["t1"]),
             GoalArm(name="arm_b", description="B", tools=["t2"]),
-            GoalArm(
-                name="novel_exploration", description="Open-ended exploration", tools=[]
-            ),
+            GoalArm(name="novel_exploration", description="Open-ended exploration", tools=[]),
         ]
         return StrategyBandit(arms=arms, seed=42)
 
@@ -445,7 +438,7 @@ class TestNovelArmDiscovery:
             promoted = bandit.record_novel_pull(
                 tools_used=["t3", "t4"],
                 reward=0.8,
-                description=f"Success {i+1}",
+                description=f"Success {i + 1}",
             )
         assert promoted is not None
         assert promoted.name == "t3_t4"
@@ -460,7 +453,7 @@ class TestNovelArmDiscovery:
             bandit.record_novel_pull(
                 tools_used=["t5", "t6"],
                 reward=0.8,
-                description=f"S{i+1}",
+                description=f"S{i + 1}",
             )
         # Now try again — should not create another arm
         result = bandit.record_novel_pull(
@@ -476,7 +469,7 @@ class TestNovelArmDiscovery:
             bandit.record_novel_pull(
                 tools_used=["tnew"],
                 reward=0.8,
-                description=f"S{i+1}",
+                description=f"S{i + 1}",
             )
         stats = {s.name: s for s in bandit.stats()}
         promoted = stats.get("tnew")
@@ -541,7 +534,7 @@ class TestNovelArmDiscovery:
             ]
             b1 = StrategyBandit(arms=arms, persist_path=path, seed=42)
             for i in range(_NOVEL_PROMOTE_MIN_SUCCESSES):
-                b1.record_novel_pull(["tx", "ty"], 0.85, f"S{i+1}")
+                b1.record_novel_pull(["tx", "ty"], 0.85, f"S{i + 1}")
 
             # The promoted arm is in the JSON
             data = json.loads(path.read_text())

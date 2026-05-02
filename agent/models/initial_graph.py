@@ -664,9 +664,6 @@ def build_initial_graph() -> WorldModelGraph:
     # Validate — fail fast if priors are broken
     errors = graph.validate()
     if errors:
-        raise RuntimeError(
-            f"Initial graph validation failed:\n"
-            + "\n".join(f"  - {e}" for e in errors)
-        )
+        raise RuntimeError("Initial graph validation failed:\n" + "\n".join(f"  - {e}" for e in errors))
 
     return graph

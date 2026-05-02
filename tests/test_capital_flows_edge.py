@@ -26,19 +26,14 @@ import httpx
 import pytest
 
 from agent.tools.capital_flows import (
-    FLOW_SERIES,
-    HOLDINGS_SERIES,
-    RESERVE_SERIES,
     VALID_MODES,
     CapitalFlowsTool,
-    _CACHE_TTL,
     _detect_coordinated,
     _fetch_fred,
     _latest,
     _pct_change,
     _reserve_stress,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -78,9 +73,7 @@ def _mock_response(data: dict, status: int = 200) -> httpx.Response:
     r.json.return_value = data
     r.raise_for_status = MagicMock()
     if status >= 400:
-        r.raise_for_status.side_effect = httpx.HTTPStatusError(
-            "error", request=MagicMock(), response=r
-        )
+        r.raise_for_status.side_effect = httpx.HTTPStatusError("error", request=MagicMock(), response=r)
     return r
 
 
@@ -91,7 +84,7 @@ def _mock_response(data: dict, status: int = 200) -> httpx.Response:
 
 class TestModeValidation:
     def test_valid_modes(self, tool):
-        assert VALID_MODES == {"holdings", "flows", "reserves"}
+        assert {"holdings", "flows", "reserves"} == VALID_MODES
 
     def test_empty_mode(self, tool):
         r = tool.execute(mode="")
@@ -331,10 +324,7 @@ class TestFlowsMode:
     @patch("agent.tools.capital_flows._fetch_fred")
     def test_flows_reversal_detection(self, mock_fetch, tool):
         # Sign change from positive to negative
-        obs = [
-            _obs(f"2025-0{i}-01", str(val))
-            for i, val in enumerate([100, 200, 300, -50, -100, -200], 1)
-        ]
+        obs = [_obs(f"2025-0{i}-01", str(val)) for i, val in enumerate([100, 200, 300, -50, -100, -200], 1)]
         mock_fetch.return_value = obs
         r = tool.execute(mode="flows")
         assert r.success
@@ -482,9 +472,7 @@ class TestFetchFred:
         mock_client = MagicMock()
         mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
-        mock_client.get.return_value = _mock_response(
-            _fred_response([_obs("2025-01-01", "1000")])
-        )
+        mock_client.get.return_value = _mock_response(_fred_response([_obs("2025-01-01", "1000")]))
         result = _fetch_fred("TEST_SERIES", "key", "2024-01-01", "2025-01-01")
         assert len(result) == 1
         assert result[0]["value"] == "1000"
@@ -752,11 +740,7 @@ class TestL2PersistenceFlows:
         tool = CapitalFlowsTool(fred_api_key="test-key", cache=MagicMock())
         store = _make_store_mock()
         tool._store = store
-        data = {
-            "flows": [
-                {"series": "net_tic", "latest_value": -5000, "flow_reversal": True}
-            ]
-        }
+        data = {"flows": [{"series": "net_tic", "latest_value": -5000, "flow_reversal": True}]}
         tool._persist_entities(data, "flows")
         val = store.store_entity_observation.call_args_list[0].kwargs["value"]
         assert val["flow_type"] == "flows"

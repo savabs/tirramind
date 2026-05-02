@@ -22,7 +22,7 @@ Signal theory:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
 
@@ -168,11 +168,7 @@ class DrugRegulatoryTool(Tool):
                 sponsor = (rec.get("sponsor") or "").strip()
                 if not sponsor:
                     continue
-                canon = (
-                    normalize_company_name(sponsor)
-                    if normalize_company_name
-                    else sponsor
-                )
+                canon = normalize_company_name(sponsor) if normalize_company_name else sponsor
                 eid = entity_id_from_key("company", canon)
 
                 if eid not in seen:
@@ -187,13 +183,9 @@ class DrugRegulatoryTool(Tool):
                 # Timestamp from submission date
                 date_str = rec.get("latest_submission_date") or ""
                 try:
-                    ts = (
-                        datetime.strptime(date_str, "%Y%m%d")
-                        .replace(tzinfo=timezone.utc)
-                        .timestamp()
-                    )
+                    ts = datetime.strptime(date_str, "%Y%m%d").replace(tzinfo=UTC).timestamp()
                 except (ValueError, TypeError):
-                    ts = datetime.now(tz=timezone.utc).timestamp()
+                    ts = datetime.now(tz=UTC).timestamp()
 
                 store.store_entity_observation(
                     entity_id=eid,
@@ -235,11 +227,7 @@ class DrugRegulatoryTool(Tool):
                     drug_name = drug_name.strip()
                     if not drug_name or drug_name == "?":
                         continue
-                    canon = (
-                        normalize_company_name(drug_name)
-                        if normalize_company_name
-                        else drug_name
-                    )
+                    canon = normalize_company_name(drug_name) if normalize_company_name else drug_name
                     eid = entity_id_from_key("company", canon)
 
                     if eid not in seen:
@@ -253,13 +241,9 @@ class DrugRegulatoryTool(Tool):
 
                     date_str = rec.get("date") or ""
                     try:
-                        ts = (
-                            datetime.strptime(date_str, "%Y%m%d")
-                            .replace(tzinfo=timezone.utc)
-                            .timestamp()
-                        )
+                        ts = datetime.strptime(date_str, "%Y%m%d").replace(tzinfo=UTC).timestamp()
                     except (ValueError, TypeError):
-                        ts = datetime.now(tz=timezone.utc).timestamp()
+                        ts = datetime.now(tz=UTC).timestamp()
 
                     store.store_entity_observation(
                         entity_id=eid,
@@ -270,9 +254,7 @@ class DrugRegulatoryTool(Tool):
                             "reactions": rec.get("reactions", []),
                             "serious": rec.get("serious", False),
                             "receive_date": date_str,
-                            "seriousness_ratio": (signals or {}).get(
-                                "seriousness_ratio"
-                            ),
+                            "seriousness_ratio": (signals or {}).get("seriousness_ratio"),
                         },
                         observed_at=ts,
                         source_tool="drug_regulatory",
@@ -409,9 +391,7 @@ class DrugRegulatoryTool(Tool):
 
     # ── Fetch ────────────────────────────────────────────────────────
 
-    def _fetch(
-        self, mode: str, search: str, count_field: str, limit: int
-    ) -> dict[str, Any]:
+    def _fetch(self, mode: str, search: str, count_field: str, limit: int) -> dict[str, Any]:
         cache_key = {
             "source": f"openfda_{mode}",
             "search": search,
@@ -444,9 +424,7 @@ class DrugRegulatoryTool(Tool):
 
     # ── Formatters ───────────────────────────────────────────────────
 
-    def _format_approvals(
-        self, results: list[dict], total: int
-    ) -> tuple[str, dict[str, Any]]:
+    def _format_approvals(self, results: list[dict], total: int) -> tuple[str, dict[str, Any]]:
         lines = [f"## FDA Drug Approvals (Drugs@FDA) — {total} total\n"]
         parsed = []
 
@@ -456,9 +434,7 @@ class DrugRegulatoryTool(Tool):
             products = r.get("products", [])
             submissions = r.get("submissions", [])
 
-            brand_names = list(
-                {p.get("brand_name", "?") for p in products if p.get("brand_name")}
-            )
+            brand_names = list({p.get("brand_name", "?") for p in products if p.get("brand_name")})
             brand_str = ", ".join(brand_names[:3]) or "?"
 
             # Most recent submission
@@ -475,10 +451,7 @@ class DrugRegulatoryTool(Tool):
             sub_date = latest_sub.get("submission_status_date", "?")
             priority = latest_sub.get("review_priority", "STANDARD")
 
-            lines.append(
-                f"  {app_num} | {brand_str} | {sponsor} | "
-                f"{sub_type} ({sub_date}) | {priority}"
-            )
+            lines.append(f"  {app_num} | {brand_str} | {sponsor} | {sub_type} ({sub_date}) | {priority}")
             parsed.append(
                 {
                     "application_number": app_num,
@@ -497,9 +470,7 @@ class DrugRegulatoryTool(Tool):
             "total": total,
         }
 
-    def _format_adverse_events(
-        self, results: list[dict], total: int
-    ) -> tuple[str, dict[str, Any]]:
+    def _format_adverse_events(self, results: list[dict], total: int) -> tuple[str, dict[str, Any]]:
         lines = [f"## FDA Adverse Events (FAERS) — {total} total\n"]
         parsed = []
         serious_count = 0
@@ -537,9 +508,7 @@ class DrugRegulatoryTool(Tool):
             signals["seriousness_ratio"] = round(ratio, 3)
             signals["serious_count"] = serious_count
             signals["total_in_page"] = len(parsed)
-            lines.append(
-                f"\n  Seriousness ratio: {ratio:.1%} ({serious_count}/{len(parsed)})"
-            )
+            lines.append(f"\n  Seriousness ratio: {ratio:.1%} ({serious_count}/{len(parsed)})")
 
         lines.append(f"\n  Showing: {len(results)} / {total}")
         return "\n".join(lines), {
@@ -549,22 +518,16 @@ class DrugRegulatoryTool(Tool):
             "signals": signals,
         }
 
-    def _format_labels(
-        self, results: list[dict], total: int
-    ) -> tuple[str, dict[str, Any]]:
+    def _format_labels(self, results: list[dict], total: int) -> tuple[str, dict[str, Any]]:
         lines = [f"## FDA Drug Labels — {total} total\n"]
         parsed = []
 
         for r in results:
             ofda = r.get("openfda", {})
             brand = ofda.get("brand_name", ["?"])[0] if ofda.get("brand_name") else "?"
-            generic = (
-                ofda.get("generic_name", ["?"])[0] if ofda.get("generic_name") else "?"
-            )
+            generic = ofda.get("generic_name", ["?"])[0] if ofda.get("generic_name") else "?"
             has_boxed = bool(r.get("boxed_warning"))
-            warnings_text = (
-                (r.get("warnings") or [""])[0][:200] if r.get("warnings") else ""
-            )
+            warnings_text = (r.get("warnings") or [""])[0][:200] if r.get("warnings") else ""
 
             boxed_str = " [BOXED WARNING]" if has_boxed else ""
             lines.append(f"  {brand} ({generic}){boxed_str}")

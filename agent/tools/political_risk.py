@@ -70,7 +70,7 @@ class PoliticalRiskTool(Tool):
     def __init__(
         self,
         cache: DataCache | None = None,
-        pipeline_store: "PipelineStore | None" = None,
+        pipeline_store: PipelineStore | None = None,
     ) -> None:
         self._cache = cache
         self._store = pipeline_store
@@ -113,10 +113,7 @@ class PoliticalRiskTool(Tool):
                 "office": {
                     "type": "string",
                     "enum": ["P", "S", "H"],
-                    "description": (
-                        "Filter by office: P=President, S=Senate, "
-                        "H=House (candidates mode)."
-                    ),
+                    "description": ("Filter by office: P=President, S=Senate, H=House (candidates mode)."),
                 },
                 "cycle": {
                     "type": "integer",
@@ -227,9 +224,7 @@ class PoliticalRiskTool(Tool):
         params: dict[str, str] = {
             "api_key": _get_api_key(),
             "per_page": str(limit),
-            "sort": (
-                "-expenditure_date" if sort_order == "desc" else "expenditure_date"
-            ),
+            "sort": ("-expenditure_date" if sort_order == "desc" else "expenditure_date"),
         }
         if query:
             params["candidate_id"] = query
@@ -279,10 +274,7 @@ class PoliticalRiskTool(Tool):
         if resp.status_code == 429:
             return ToolResult(
                 success=False,
-                output=(
-                    "FEC API rate limit reached. "
-                    "Set TIRRA_FEC_API_KEY for higher limits."
-                ),
+                output=("FEC API rate limit reached. Set TIRRA_FEC_API_KEY for higher limits."),
             )
         if resp.status_code == 422:
             return ToolResult(
@@ -581,9 +573,7 @@ def _compute_signals(records: list[dict], result_type: str) -> dict[str, Any]:
             key=lambda x: x[1],
             reverse=True,
         )[:5]
-        signals["top_targets"] = [
-            {"candidate": c, "total_spent": round(s, 2)} for c, s in top_targets
-        ]
+        signals["top_targets"] = [{"candidate": c, "total_spent": round(s, 2)} for c, s in top_targets]
 
     return signals
 
@@ -612,19 +602,12 @@ def _format_summary(
         if signals.get("party_breakdown"):
             parts.append(f"\nParty breakdown: {signals['party_breakdown']}")
         if signals.get("active_fundraisers") is not None:
-            parts.append(
-                f"Active fundraisers: "
-                f"{signals['active_fundraisers']}/{len(records)}"
-            )
+            parts.append(f"Active fundraisers: {signals['active_fundraisers']}/{len(records)}")
 
     elif result_type == "filings" and records:
         parts.append("\nRecent filings:")
         for r in records[:8]:
-            cash = (
-                f"${r['cash_on_hand_end']:,.0f}"
-                if r.get("cash_on_hand_end") is not None
-                else "N/A"
-            )
+            cash = f"${r['cash_on_hand_end']:,.0f}" if r.get("cash_on_hand_end") is not None else "N/A"
             parts.append(
                 f"  {r['committee_name'][:50]} — {r.get('form_type', '?')} "
                 f"({r.get('receipt_date', '?')}) — Cash: {cash}"
@@ -635,30 +618,16 @@ def _format_summary(
     elif result_type == "expenditures" and records:
         parts.append("\nIndependent expenditures:")
         for r in records[:8]:
-            so = (
-                "SUPPORT"
-                if r.get("support_oppose") == "S"
-                else "OPPOSE" if r.get("support_oppose") == "O" else "?"
-            )
-            amt = (
-                f"${r['expenditure_amount']:,.0f}"
-                if r.get("expenditure_amount")
-                else "N/A"
-            )
+            so = "SUPPORT" if r.get("support_oppose") == "S" else "OPPOSE" if r.get("support_oppose") == "O" else "?"
+            amt = f"${r['expenditure_amount']:,.0f}" if r.get("expenditure_amount") else "N/A"
             parts.append(
                 f"  {so} {r.get('candidate_name', '?')}: {amt} "
                 f"by {r.get('committee_name', '?')[:40]} "
                 f"({r.get('expenditure_date', '?')})"
             )
         if "support_total" in signals:
-            parts.append(
-                f"\nSupport: ${signals['support_total']:,.0f} "
-                f"({signals.get('support_count', 0)} items)"
-            )
-            parts.append(
-                f"Oppose: ${signals['oppose_total']:,.0f} "
-                f"({signals.get('oppose_count', 0)} items)"
-            )
+            parts.append(f"\nSupport: ${signals['support_total']:,.0f} ({signals.get('support_count', 0)} items)")
+            parts.append(f"Oppose: ${signals['oppose_total']:,.0f} ({signals.get('oppose_count', 0)} items)")
             if "oppose_ratio" in signals:
                 parts.append(f"Oppose ratio: {signals['oppose_ratio']:.1%}")
         if signals.get("top_targets"):

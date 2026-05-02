@@ -18,21 +18,18 @@ import httpx
 import pytest
 
 from agent.tools.food_security import (
-    FoodSecurityTool,
-    VALID_MODES,
-    MAJOR_PRODUCERS,
-    VULNERABLE_IMPORTERS,
-    _PRODUCTION_INDICATORS,
-    _CEREAL_INDICATORS,
-    _TRADE_INDICATORS,
-    _WB_BASE,
     _CACHE_TTL,
+    _CEREAL_INDICATORS,
+    _PRODUCTION_INDICATORS,
+    _TRADE_INDICATORS,
+    MAJOR_PRODUCERS,
+    VALID_MODES,
+    VULNERABLE_IMPORTERS,
+    FoodSecurityTool,
     _compute_signals,
     _format_summary,
     _parse_wb_records,
 )
-from agent.tools.base import ToolResult
-
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -129,7 +126,10 @@ class TestInputValidation:
 
     def test_start_after_end_year(self):
         r = _tool().execute(
-            mode="production", country="US", start_year=2025, end_year=2020,
+            mode="production",
+            country="US",
+            start_year=2025,
+            end_year=2020,
         )
         assert not r.success
         assert "start_year" in r.output
@@ -137,21 +137,27 @@ class TestInputValidation:
     def test_invalid_production_indicator(self):
         with patch("httpx.Client") as mock_client:
             r = _tool().execute(
-                mode="production", country="US", indicator="invalid",
+                mode="production",
+                country="US",
+                indicator="invalid",
             )
         assert not r.success
         assert "Invalid production indicator" in r.output
 
     def test_invalid_cereal_indicator(self):
         r = _tool().execute(
-            mode="cereal_yield", country="US", indicator="bad",
+            mode="cereal_yield",
+            country="US",
+            indicator="bad",
         )
         assert not r.success
         assert "Invalid cereal indicator" in r.output
 
     def test_invalid_trade_indicator(self):
         r = _tool().execute(
-            mode="food_trade", country="US", indicator="bad",
+            mode="food_trade",
+            country="US",
+            indicator="bad",
         )
         assert not r.success
         assert "Invalid trade indicator" in r.output
@@ -161,9 +167,7 @@ class TestInputValidation:
         with patch("httpx.Client") as mock_client:
             mock_client.return_value.__enter__ = lambda s: s
             mock_client.return_value.__exit__ = MagicMock(return_value=False)
-            mock_client.return_value.get.return_value = _mock_resp(
-                _wb_response([_wb_record()])
-            )
+            mock_client.return_value.get.return_value = _mock_resp(_wb_response([_wb_record()]))
             r = _tool().execute(mode="production", country="us")
         assert r.success
 
@@ -171,9 +175,7 @@ class TestInputValidation:
         with patch("httpx.Client") as mock_client:
             mock_client.return_value.__enter__ = lambda s: s
             mock_client.return_value.__exit__ = MagicMock(return_value=False)
-            mock_client.return_value.get.return_value = _mock_resp(
-                _wb_response([_wb_record(country_id="WLD")])
-            )
+            mock_client.return_value.get.return_value = _mock_resp(_wb_response([_wb_record(country_id="WLD")]))
             r = _tool().execute(mode="production", country="WLD")
         assert r.success
 
@@ -184,7 +186,9 @@ class TestInputValidation:
             mock_resp = _mock_resp(_wb_response([_wb_record()]))
             mock_client.return_value.get.return_value = mock_resp
             r = _tool().execute(
-                mode="production", country="US", limit=500,
+                mode="production",
+                country="US",
+                limit=500,
             )
         assert r.success
         call_args = mock_client.return_value.get.call_args
@@ -401,10 +405,7 @@ class TestOutputFormatting:
         assert "high" in out
 
     def test_recent_values_shown(self):
-        valid = [
-            {"year": str(y), "value": 100 + y, "indicator_name": "X"}
-            for y in range(2017, 2023)
-        ]
+        valid = [{"year": str(y), "value": 100 + y, "indicator_name": "X"} for y in range(2017, 2023)]
         out = _format_summary(valid, valid, {}, "US", "production:food")
         assert "Recent values:" in out
         # Should show last 6
@@ -417,10 +418,12 @@ class TestOutputFormatting:
 
 class TestProductionMode:
     def test_food_production_success(self):
-        body = _wb_response([
-            _wb_record(year="2021", value=100),
-            _wb_record(year="2022", value=105),
-        ])
+        body = _wb_response(
+            [
+                _wb_record(year="2021", value=100),
+                _wb_record(year="2022", value=105),
+            ]
+        )
         with patch("httpx.Client") as mock_client:
             mock_client.return_value.__enter__ = lambda s: s
             mock_client.return_value.__exit__ = MagicMock(return_value=False)
@@ -437,7 +440,9 @@ class TestProductionMode:
             mock_client.return_value.__exit__ = MagicMock(return_value=False)
             mock_client.return_value.get.return_value = _mock_resp(body)
             r = _tool().execute(
-                mode="production", country="CN", indicator="crop",
+                mode="production",
+                country="CN",
+                indicator="crop",
             )
         assert r.success
 
@@ -448,7 +453,9 @@ class TestProductionMode:
             mock_client.return_value.__exit__ = MagicMock(return_value=False)
             mock_client.return_value.get.return_value = _mock_resp(body)
             r = _tool().execute(
-                mode="production", country="BR", indicator="livestock",
+                mode="production",
+                country="BR",
+                indicator="livestock",
             )
         assert r.success
 
@@ -458,10 +465,12 @@ class TestProductionMode:
 
 class TestCerealYieldMode:
     def test_yield_success(self):
-        body = _wb_response([
-            _wb_record(year="2021", value=6000, indicator_id="AG.YLD.CREL.KG"),
-            _wb_record(year="2022", value=6200, indicator_id="AG.YLD.CREL.KG"),
-        ])
+        body = _wb_response(
+            [
+                _wb_record(year="2021", value=6000, indicator_id="AG.YLD.CREL.KG"),
+                _wb_record(year="2022", value=6200, indicator_id="AG.YLD.CREL.KG"),
+            ]
+        )
         with patch("httpx.Client") as mock_client:
             mock_client.return_value.__enter__ = lambda s: s
             mock_client.return_value.__exit__ = MagicMock(return_value=False)
@@ -476,7 +485,9 @@ class TestCerealYieldMode:
             mock_client.return_value.__exit__ = MagicMock(return_value=False)
             mock_client.return_value.get.return_value = _mock_resp(body)
             r = _tool().execute(
-                mode="cereal_yield", country="US", indicator="area_hectares",
+                mode="cereal_yield",
+                country="US",
+                indicator="area_hectares",
             )
         assert r.success
 
@@ -486,10 +497,12 @@ class TestCerealYieldMode:
 
 class TestFoodTradeMode:
     def test_food_import_success(self):
-        body = _wb_response([
-            _wb_record(year="2021", value=28.5, indicator_id="TM.VAL.FOOD.ZS.UN"),
-            _wb_record(year="2022", value=31.2, indicator_id="TM.VAL.FOOD.ZS.UN"),
-        ])
+        body = _wb_response(
+            [
+                _wb_record(year="2021", value=28.5, indicator_id="TM.VAL.FOOD.ZS.UN"),
+                _wb_record(year="2022", value=31.2, indicator_id="TM.VAL.FOOD.ZS.UN"),
+            ]
+        )
         with patch("httpx.Client") as mock_client:
             mock_client.return_value.__enter__ = lambda s: s
             mock_client.return_value.__exit__ = MagicMock(return_value=False)
@@ -505,7 +518,9 @@ class TestFoodTradeMode:
             mock_client.return_value.__exit__ = MagicMock(return_value=False)
             mock_client.return_value.get.return_value = _mock_resp(body)
             r = _tool().execute(
-                mode="food_trade", country="BR", indicator="food_export_pct",
+                mode="food_trade",
+                country="BR",
+                indicator="food_export_pct",
             )
         assert r.success
 
@@ -590,10 +605,12 @@ class TestEmptyAndNullData:
         assert r.data["valid_count"] == 0
 
     def test_all_null_values(self):
-        body = _wb_response([
-            _wb_record(year="2021", value=None),
-            _wb_record(year="2022", value=None),
-        ])
+        body = _wb_response(
+            [
+                _wb_record(year="2021", value=None),
+                _wb_record(year="2022", value=None),
+            ]
+        )
         with patch("httpx.Client") as mock_client:
             mock_client.return_value.__enter__ = lambda s: s
             mock_client.return_value.__exit__ = MagicMock(return_value=False)
@@ -678,7 +695,7 @@ class TestConstants:
             assert len(cc) == 2
 
     def test_valid_modes(self):
-        assert VALID_MODES == {"production", "cereal_yield", "food_trade"}
+        assert {"production", "cereal_yield", "food_trade"} == VALID_MODES
 
 
 # ── TestRegistryAndBandit ─────────────────────────────────────
@@ -687,17 +704,20 @@ class TestConstants:
 class TestRegistryAndBandit:
     def test_tool_in_cli_registry(self):
         from agent.cli import build_tool_registry
+
         registry = build_tool_registry()
         names = registry.list_names()
         assert "food_security" in names
 
     def test_bandit_arm_exists(self):
         from agent.learning.bandit import DEFAULT_ARMS
+
         arm_names = [a.name for a in DEFAULT_ARMS]
         assert "food_security_monitor" in arm_names
 
     def test_bandit_arm_references_tool(self):
         from agent.learning.bandit import DEFAULT_ARMS
+
         arm = next(a for a in DEFAULT_ARMS if a.name == "food_security_monitor")
         assert "food_security" in arm.tools
 
@@ -707,17 +727,21 @@ class TestRegistryAndBandit:
 
 class TestEdgeCombinations:
     def test_explicit_year_range(self):
-        body = _wb_response([
-            _wb_record(year="2018", value=98),
-            _wb_record(year="2019", value=100),
-        ])
+        body = _wb_response(
+            [
+                _wb_record(year="2018", value=98),
+                _wb_record(year="2019", value=100),
+            ]
+        )
         with patch("httpx.Client") as mock_client:
             mock_client.return_value.__enter__ = lambda s: s
             mock_client.return_value.__exit__ = MagicMock(return_value=False)
             mock_client.return_value.get.return_value = _mock_resp(body)
             r = _tool().execute(
-                mode="production", country="IN",
-                start_year=2018, end_year=2019,
+                mode="production",
+                country="IN",
+                start_year=2018,
+                end_year=2019,
             )
         assert r.success
         call_args = mock_client.return_value.get.call_args
@@ -730,17 +754,21 @@ class TestEdgeCombinations:
             mock_client.return_value.__exit__ = MagicMock(return_value=False)
             mock_client.return_value.get.return_value = _mock_resp(body)
             r = _tool().execute(
-                mode="production", country="US",
-                start_year=2022, end_year=2022,
+                mode="production",
+                country="US",
+                start_year=2022,
+                end_year=2022,
             )
         assert r.success
 
     def test_mixed_null_and_valid_values(self):
-        body = _wb_response([
-            _wb_record(year="2020", value=None),
-            _wb_record(year="2021", value=100),
-            _wb_record(year="2022", value=110),
-        ])
+        body = _wb_response(
+            [
+                _wb_record(year="2020", value=None),
+                _wb_record(year="2021", value=100),
+                _wb_record(year="2022", value=110),
+            ]
+        )
         with patch("httpx.Client") as mock_client:
             mock_client.return_value.__enter__ = lambda s: s
             mock_client.return_value.__exit__ = MagicMock(return_value=False)

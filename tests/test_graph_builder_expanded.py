@@ -15,20 +15,17 @@ import logging
 import time
 
 import pytest
-import torch
 
-from agent.pipeline.entity import entity_id_from_key
-from agent.pipeline.store import PipelineStore
 from agent.models.gnn.graph_builder import (
+    _ENTITY_TYPE_TO_IDX,
+    _OBS_TYPE_TO_IDX,
     ENTITY_TYPES,
     OBSERVATION_TYPES,
     GraphBuilder,
-    IDMap,
-    _ENTITY_TYPE_TO_IDX,
-    _OBS_TYPE_TO_IDX,
     _build_node_features,
 )
-
+from agent.pipeline.entity import entity_id_from_key
+from agent.pipeline.store import PipelineStore
 
 # ── Fixtures ───────────────────────────────────────────────────
 
@@ -69,7 +66,7 @@ class TestExpandedTypeRegistries:
         assert "topic" in ENTITY_TYPES
 
     def test_entity_types_sorted_alphabetically(self):
-        assert ENTITY_TYPES == sorted(ENTITY_TYPES)
+        assert sorted(ENTITY_TYPES) == ENTITY_TYPES
 
     def test_entity_types_count(self):
         assert len(ENTITY_TYPES) == 11
@@ -108,7 +105,7 @@ class TestExpandedTypeRegistries:
             assert obs in OBSERVATION_TYPES, f"{obs} missing from OBSERVATION_TYPES"
 
     def test_observation_types_sorted_alphabetically(self):
-        assert OBSERVATION_TYPES == sorted(OBSERVATION_TYPES)
+        assert sorted(OBSERVATION_TYPES) == OBSERVATION_TYPES
 
     def test_observation_types_count(self):
         assert len(OBSERVATION_TYPES) == 46

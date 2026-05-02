@@ -15,18 +15,19 @@ from __future__ import annotations
 import logging
 import time
 from collections import defaultdict
+from pathlib import Path
 from typing import Any
 
 import numpy as np
-
-from pathlib import Path
-
 import pandas as pd
 
 from agent.features.protocol import EngineeredFeature
 from agent.learning.meta_scheduler import MetaScheduler, compute_refit_reward
-from agent.models.belief import BeliefState
 from agent.models.edge_tracker import EdgeConfidenceTracker
+from agent.models.gnn.alignment import (
+    compute_belief_log_likelihood_delta,
+    store_entity_alignment,
+)
 from agent.models.initial_graph import ALL_NODES, build_initial_graph
 from agent.models.propagator import BeliefPropagator
 from agent.models.state_filter import ContinuousStateFilter, RegimeConfig
@@ -34,17 +35,11 @@ from agent.models.world_model import WorldModel
 from agent.pipeline.dag import DAG
 from agent.pipeline.regime_gate import get_current_regime, world_model_prior_decay
 from agent.pipeline.store import PipelineStore
-from agent.models.gnn.alignment import (
-    compute_belief_log_likelihood_delta,
-    store_entity_alignment,
-)
 
 log = logging.getLogger(__name__)
 
 # Feature names that the world model expects (from initial_graph NodeSpecs).
-_FEATURE_NAMES = [
-    spec.feature_name for spec in ALL_NODES if spec.feature_name is not None
-]
+_FEATURE_NAMES = [spec.feature_name for spec in ALL_NODES if spec.feature_name is not None]
 
 # Kalman filter configuration (initial expert setup)
 _STATE_DIM = 3
@@ -192,9 +187,7 @@ def _build_world_model(
         target_edges = set(learned_edges)
         # Only diff edges where both endpoints exist in the graph
         valid_nodes = set(graph.node_names)
-        target_edges = {
-            (p, c) for p, c in target_edges if p in valid_nodes and c in valid_nodes
-        }
+        target_edges = {(p, c) for p, c in target_edges if p in valid_nodes and c in valid_nodes}
         to_remove = expert_edges - target_edges
         to_add = target_edges - expert_edges
         for parent, child in to_remove:
@@ -249,8 +242,7 @@ def _build_world_model(
 
         active_filter = DifferentiableKalmanFilter.from_numpy_filter(state_filter)
         log.info(
-            "Upgraded to DifferentiableKalmanFilter "
-            "(state_dim=%d, obs_dim=%d, regimes=%s).",
+            "Upgraded to DifferentiableKalmanFilter (state_dim=%d, obs_dim=%d, regimes=%s).",
             active_filter.state_dim,
             active_filter.obs_dim,
             active_filter.regime_names,
@@ -385,8 +377,7 @@ def _apply_prior_decay(wm: WorldModel, decay: float) -> None:
         softened_count += 1
 
     log.debug(
-        "Prior decay: softened %d observed-node CPDs "
-        "(blend=%.0f%% uniform, decay=%.2f).",
+        "Prior decay: softened %d observed-node CPDs (blend=%.0f%% uniform, decay=%.2f).",
         softened_count,
         uniform_weight * 100,
         decay,
@@ -435,9 +426,7 @@ def _build_windowed_dataframes(
     dfs: list[pd.DataFrame] = []
     for window in windows_days:
         cutoff = as_of - window * _DAY_SECONDS
-        windowed = [
-            snap for snap in snapshots if snap and snap[0].effective_at >= cutoff
-        ]
+        windowed = [snap for snap in snapshots if snap and snap[0].effective_at >= cutoff]
         df = _snapshots_to_discretized_df(wm, windowed)
         dfs.append(df)
     return dfs
@@ -662,11 +651,7 @@ def _maybe_fit_params(
 
     # Regime labels from stored beliefs (one per daily snapshot)
     day_keys = [int(s[0].effective_at // _DAY_SECONDS) for s in snapshots if s]
-    default_regime = (
-        list(wm._filter._regime_configs.keys())[0]
-        if wm._filter._regime_configs
-        else "expansion"
-    )
+    default_regime = list(wm._filter._regime_configs.keys())[0] if wm._filter._regime_configs else "expansion"
     regime_labels = _load_regime_labels(
         store,
         day_keys,
@@ -722,10 +707,7 @@ def _maybe_fit_params(
     else:
         kalman_result = {
             "fitted": False,
-            "reason": (
-                f"insufficient data: {len(obs_seq)} obs, "
-                f"{len(regime_labels)} labels (need >=30)"
-            ),
+            "reason": (f"insufficient data: {len(obs_seq)} obs, {len(regime_labels)} labels (need >=30)"),
         }
 
     # ── Store fit marker for periodicity control ──────────────
@@ -778,9 +760,7 @@ def _maybe_refine_structure(
     if not structure_fit_enabled:
         return {"skipped": True, "reason": "structure_fit_enabled=False"}
 
-    should_fit, reason = _should_fit(
-        store, as_of, structure_fit_interval_days, source=_STRUCTURE_FIT_SOURCE
-    )
+    should_fit, reason = _should_fit(store, as_of, structure_fit_interval_days, source=_STRUCTURE_FIT_SOURCE)
     if not should_fit:
         log.debug("Skipping structure refinement: %s", reason)
         return {"skipped": True, "reason": reason}
@@ -790,9 +770,7 @@ def _maybe_refine_structure(
     since = as_of - history_window_days * _DAY_SECONDS
     snapshots = _load_feature_history(store, since=since, until=as_of)
     if len(snapshots) < 50:
-        log.info(
-            "Only %d daily snapshots — skipping structure refinement.", len(snapshots)
-        )
+        log.info("Only %d daily snapshots — skipping structure refinement.", len(snapshots))
         return {"skipped": True, "reason": f"only {len(snapshots)} snapshots"}
 
     result: dict[str, Any] = {"refined": False}
@@ -806,9 +784,7 @@ def _maybe_refine_structure(
     tracker_result: dict[str, Any] = {"tracked": False}
     try:
         tracker = _load_edge_tracker(store, wm)
-        windowed_dfs = _build_windowed_dataframes(
-            wm, snapshots, as_of, tracker.windows_days
-        )
+        windowed_dfs = _build_windowed_dataframes(wm, snapshots, as_of, tracker.windows_days)
 
         current_edges = wm._graph.edges
         edge_confidences = tracker.evaluate(current_edges, windowed_dfs)
@@ -852,12 +828,8 @@ def _maybe_refine_structure(
             # Mark beliefs stale if tracker changed structure (Change 13.6)
             if tracker_edges_added or tracker_edges_removed:
                 result["refined"] = True
-                result.setdefault("edges_added", []).extend(
-                    [[p, c] for p, c in tracker_edges_added]
-                )
-                result.setdefault("edges_removed", []).extend(
-                    [[p, c] for p, c in tracker_edges_removed]
-                )
+                result.setdefault("edges_added", []).extend([[p, c] for p, c in tracker_edges_added])
+                result.setdefault("edges_removed", []).extend([[p, c] for p, c in tracker_edges_removed])
                 try:
                     store.mark_beliefs_stale(
                         reason="structure_change",
@@ -1094,13 +1066,7 @@ def run_world_model_update(params: dict, upstream: dict) -> dict:
                 reward = compute_refit_reward(
                     "history_window",
                     {},
-                    {
-                        "held_out_bic": (
-                            1.0
-                            if fit_result.get("cpd_result", {}).get("fitted")
-                            else 0.0
-                        )
-                    },
+                    {"held_out_bic": (1.0 if fit_result.get("cpd_result", {}).get("fitted") else 0.0)},
                 )
                 scheduler.record_outcome("history_window", window_arm, reward)
             except Exception as exc:
@@ -1153,20 +1119,17 @@ def run_world_model_update(params: dict, upstream: dict) -> dict:
         # as per-entity-type loss weights (see alignment.py for math).
         try:
             beliefs_after_dicts = [b.to_dict() for b in beliefs]
-            variable_deltas = compute_belief_log_likelihood_delta(
-                beliefs_before, beliefs_after_dicts
-            )
+            variable_deltas = compute_belief_log_likelihood_delta(beliefs_before, beliefs_after_dicts)
             if variable_deltas:
                 store_entity_alignment(store, variable_deltas, as_of=as_of)
                 log.debug(
-                    "Phase 49: stored %d alignment deltas " "(mean_delta=%.4f).",
+                    "Phase 49: stored %d alignment deltas (mean_delta=%.4f).",
                     len(variable_deltas),
                     sum(variable_deltas.values()) / len(variable_deltas),
                 )
         except Exception as exc:
             log.warning(
-                "Phase 49: alignment delta computation failed — "
-                "continuing without alignment signal: %s",
+                "Phase 49: alignment delta computation failed — continuing without alignment signal: %s",
                 exc,
             )
 

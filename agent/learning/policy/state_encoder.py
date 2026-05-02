@@ -87,13 +87,7 @@ class LearnedStateEncoder(nn.Module):
         self._surprise_end = E * cfg.surprise_dim
         self._belief_end = self._surprise_end + E * cfg.belief_dim
         self._global_start = self._belief_end
-        self._expected_state_dim = (
-            E * cfg.surprise_dim
-            + E * cfg.belief_dim
-            + cfg.market_dim
-            + 1
-            + cfg.adversarial_dim
-        )
+        self._expected_state_dim = E * cfg.surprise_dim + E * cfg.belief_dim + cfg.market_dim + 1 + cfg.adversarial_dim
 
         # Entity embedding: 9 → entity_embed_dim
         self._entity_embed = nn.Sequential(

@@ -6,7 +6,6 @@ Mirrors the test pattern from test_insider_filings_l2.py / test_form144_l2.py.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -305,10 +304,7 @@ class TestPersistEntitiesDedup:
         assert store.add_entity_alias.call_count == 1
         # Two observations: one out, one in
         assert store.store_entity_observation.call_count == 2
-        dirs = [
-            c.kwargs["value"]["direction"]
-            for c in store.store_entity_observation.call_args_list
-        ]
+        dirs = [c.kwargs["value"]["direction"] for c in store.store_entity_observation.call_args_list]
         assert sorted(dirs) == ["in", "out"]
 
 
@@ -409,12 +405,8 @@ class TestEntityIds:
         parsed = tool._parse_blockchain_txs(raw_txs, confirmed=False)
         assert len(parsed) == 1
         assert "entity_ids" in parsed[0]
-        assert parsed[0]["entity_ids"]["1Sender"] == entity_id_from_key(
-            "wallet", "1Sender"
-        )
-        assert parsed[0]["entity_ids"]["1Receiver"] == entity_id_from_key(
-            "wallet", "1Receiver"
-        )
+        assert parsed[0]["entity_ids"]["1Sender"] == entity_id_from_key("wallet", "1Sender")
+        assert parsed[0]["entity_ids"]["1Receiver"] == entity_id_from_key("wallet", "1Receiver")
 
     def test_entity_ids_all_addresses_mapped(self) -> None:
         tool = WhaleAlertTool()
@@ -473,9 +465,7 @@ class TestEntityIds:
                 "out": [{"addr": "1BR", "value": 10000000000}],
             }
         ]
-        parsed = tool._parse_blockchain_txs(
-            raw_txs, confirmed=True, block_height=900000
-        )
+        parsed = tool._parse_blockchain_txs(raw_txs, confirmed=True, block_height=900000)
         assert parsed[0]["entity_ids"]["1BS"] == entity_id_from_key("wallet", "1BS")
         assert parsed[0]["block_height"] == 900000
 
@@ -499,9 +489,7 @@ class TestExecuteIntegration:
                 {
                     "hash": "whaleabc",
                     "time": 1700000000,
-                    "inputs": [
-                        {"prev_out": {"addr": "1BigSender", "value": 50_00000000}}
-                    ],
+                    "inputs": [{"prev_out": {"addr": "1BigSender", "value": 50_00000000}}],
                     "out": [{"addr": "1BigReceiver", "value": 50_00000000}],
                 }
             ]
@@ -683,16 +671,14 @@ class TestMIMeasurement:
 
         # L2 should have >= MI (and in practice strictly more, since it
         # preserves the entity-level structure that L1 aggregates away)
-        assert (
-            mi_l2 >= mi_l1 * 0.95
-        ), f"Expected MI(L2) >= MI(L1): got MI(L2)={mi_l2:.4f} vs MI(L1)={mi_l1:.4f}"
+        assert mi_l2 >= mi_l1 * 0.95, f"Expected MI(L2) >= MI(L1): got MI(L2)={mi_l2:.4f} vs MI(L1)={mi_l1:.4f}"
 
     def test_l2_mi_with_real_store(self) -> None:
         """End-to-end: store L2 observations, query back, compute MI."""
         import numpy as np
 
         try:
-            from sklearn.feature_selection import mutual_info_regression
+            import sklearn  # noqa: F401  # availability check only
         except ImportError:
             pytest.skip("sklearn not installed")
 
@@ -724,9 +710,7 @@ class TestMIMeasurement:
         per_wallet_values: dict[str, list[float]] = {w: [] for w in wallets}
         for w in wallets:
             eid = entity_id_from_key("wallet", w)
-            obs = store.query_entity_observations(
-                eid, source_tool="whale_alert", limit=100
-            )
+            obs = store.query_entity_observations(eid, source_tool="whale_alert", limit=100)
             # sort by observed_at and extract values
             obs.sort(key=lambda o: o["observed_at"])
             for o in obs:
@@ -739,7 +723,5 @@ class TestMIMeasurement:
 
         # Verify depth_level = 2
         eid_a = entity_id_from_key("wallet", wallets[0])
-        obs_a = store.query_entity_observations(
-            eid_a, source_tool="whale_alert", depth_level=2
-        )
+        obs_a = store.query_entity_observations(eid_a, source_tool="whale_alert", depth_level=2)
         assert len(obs_a) > 0, "No depth_level=2 observations found"

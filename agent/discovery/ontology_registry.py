@@ -14,9 +14,8 @@ from __future__ import annotations
 
 import logging
 import re
-import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from agent.pipeline.store import PipelineStore
@@ -105,9 +104,7 @@ class OntologyRegistry:
         # Discover link types already in the DB
         try:
             conn = self._store._get_conn()  # noqa: SLF001
-            rows = conn.execute(
-                "SELECT DISTINCT link_type FROM entity_links"
-            ).fetchall()
+            rows = conn.execute("SELECT DISTINCT link_type FROM entity_links").fetchall()
             self._link_types = {r[0] for r in rows}
         except Exception:
             pass  # table may be empty
@@ -151,9 +148,7 @@ class OntologyRegistry:
         Raises ``ValueError`` if the name is invalid.
         """
         if not _TYPE_NAME_PATTERN.match(type_name):
-            raise ValueError(
-                f"Invalid entity type name {type_name!r}: must match {_TYPE_NAME_PATTERN.pattern}"
-            )
+            raise ValueError(f"Invalid entity type name {type_name!r}: must match {_TYPE_NAME_PATTERN.pattern}")
         if type_name in self._types:
             return False
 

@@ -28,7 +28,6 @@ from agent.learning.policy.sac import (
     TwinCritic,
 )
 
-
 # ── Fixtures ──────────────────────────────────────────────────
 
 STATE_DIM = 20
@@ -95,9 +94,7 @@ class TestActionBounds:
 
     def test_large_hidden_output_still_bounded(self):
         """Even with extreme network outputs, tanh + leverage clamp keeps bounds."""
-        cfg = SACConfig(
-            hidden_dim=64, num_hidden=3, max_position=0.5, leverage_limit=1.0
-        )
+        cfg = SACConfig(hidden_dim=64, num_hidden=3, max_position=0.5, leverage_limit=1.0)
         actor = GaussianActor(STATE_DIM, ACTION_DIM, cfg)
         # Feed large inputs
         states = torch.randn(50, STATE_DIM) * 100
@@ -115,9 +112,7 @@ class TestLogProbFiniteness:
     def test_log_prob_finite(self, actor: GaussianActor):
         states = torch.randn(200, STATE_DIM)
         _, log_probs = actor.sample(states)
-        assert torch.isfinite(
-            log_probs
-        ).all(), f"non-finite: {log_probs[~torch.isfinite(log_probs)]}"
+        assert torch.isfinite(log_probs).all(), f"non-finite: {log_probs[~torch.isfinite(log_probs)]}"
 
     def test_log_prob_finite_extreme_inputs(self, actor: GaussianActor):
         states = torch.randn(50, STATE_DIM) * 100
@@ -175,9 +170,7 @@ class TestSoftTargetUpdate:
         tau = cfg.tau
 
         # Snapshot target params before update
-        old_target = {
-            name: p.clone() for name, p in trainer._target_critic.named_parameters()
-        }
+        old_target = {name: p.clone() for name, p in trainer._target_critic.named_parameters()}
         # Snapshot critic params before update
         old_critic = {name: p.clone() for name, p in trainer._critic.named_parameters()}
 
@@ -230,8 +223,7 @@ class TestAlphaAutoTuning:
         # α(low_entropy) > α(high_entropy) because the optimizer
         # pushes α up when entropy is below target and down when above
         assert alpha_low_entropy > alpha_high_entropy, (
-            f"Expected α(low_entropy)={alpha_low_entropy:.6f} > "
-            f"α(high_entropy)={alpha_high_entropy:.6f}"
+            f"Expected α(low_entropy)={alpha_low_entropy:.6f} > α(high_entropy)={alpha_high_entropy:.6f}"
         )
 
     def test_alpha_state_dict_roundtrip(self, cfg: SACConfig):
@@ -308,9 +300,7 @@ class TestSaveLoadRoundtrip:
         torch.testing.assert_close(q1_1, q1_2)
         torch.testing.assert_close(q2_1, q2_2)
 
-    def test_save_load_preserves_update_count(
-        self, cfg: SACConfig, filled_buffer: ReplayBuffer
-    ):
+    def test_save_load_preserves_update_count(self, cfg: SACConfig, filled_buffer: ReplayBuffer):
         trainer1 = SACTrainer(STATE_DIM, ACTION_DIM, cfg)
         trainer1.update(filled_buffer)
         trainer1.update(filled_buffer)
@@ -327,24 +317,14 @@ class TestSaveLoadRoundtrip:
 class TestGradientFlow:
     """Proof 8: actor loss backpropagates through the policy."""
 
-    def test_actor_has_gradients_after_update(
-        self, trainer: SACTrainer, filled_buffer: ReplayBuffer
-    ):
+    def test_actor_has_gradients_after_update(self, trainer: SACTrainer, filled_buffer: ReplayBuffer):
         trainer.update(filled_buffer)
-        has_grad = any(
-            p.grad is not None and p.grad.abs().sum() > 0
-            for p in trainer._actor.parameters()
-        )
+        has_grad = any(p.grad is not None and p.grad.abs().sum() > 0 for p in trainer._actor.parameters())
         assert has_grad, "Actor should have non-zero gradients after update"
 
-    def test_critic_has_gradients_after_update(
-        self, trainer: SACTrainer, filled_buffer: ReplayBuffer
-    ):
+    def test_critic_has_gradients_after_update(self, trainer: SACTrainer, filled_buffer: ReplayBuffer):
         trainer.update(filled_buffer)
-        has_grad = any(
-            p.grad is not None and p.grad.abs().sum() > 0
-            for p in trainer._critic.parameters()
-        )
+        has_grad = any(p.grad is not None and p.grad.abs().sum() > 0 for p in trainer._critic.parameters())
         assert has_grad, "Critic should have non-zero gradients after update"
 
 
@@ -365,9 +345,7 @@ class TestCriticConvergence:
         early_avg = np.mean(losses[:5])
         late_avg = np.mean(losses[-5:])
         # Allow for noise but late should be generally lower
-        assert (
-            late_avg < early_avg * 1.5
-        ), f"Critic loss not decreasing: early={early_avg:.4f} late={late_avg:.4f}"
+        assert late_avg < early_avg * 1.5, f"Critic loss not decreasing: early={early_avg:.4f} late={late_avg:.4f}"
 
 
 # ── 10. Leverage Constraint ──────────────────────────────────

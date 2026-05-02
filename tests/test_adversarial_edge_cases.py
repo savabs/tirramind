@@ -15,7 +15,6 @@ import numpy as np
 import pytest
 
 from agent.adversarial.config import (
-    AdversarialConfig,
     CrowdingConfig,
     EdgeDecayConfig,
     VPINConfig,

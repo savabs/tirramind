@@ -144,10 +144,7 @@ class ContinuousStateFilter:
             ValueError: If regime not in configs.
         """
         if regime not in self._regime_configs:
-            raise ValueError(
-                f"Regime '{regime}' not in configs. "
-                f"Available: {list(self._regime_configs.keys())}"
-            )
+            raise ValueError(f"Regime '{regime}' not in configs. Available: {list(self._regime_configs.keys())}")
 
         rc = self._regime_configs[regime]
         self._x = rc.F @ self._x
@@ -177,17 +174,12 @@ class ContinuousStateFilter:
             (updated_state, updated_covariance).
         """
         if observations.shape != (self._obs_dim,):
-            raise ValueError(
-                f"observations shape {observations.shape} != "
-                f"expected ({self._obs_dim},)"
-            )
+            raise ValueError(f"observations shape {observations.shape} != expected ({self._obs_dim},)")
 
         if quality is None:
             quality = np.ones(self._obs_dim)
         elif quality.shape != (self._obs_dim,):
-            raise ValueError(
-                f"quality shape {quality.shape} != " f"expected ({self._obs_dim},)"
-            )
+            raise ValueError(f"quality shape {quality.shape} != expected ({self._obs_dim},)")
 
         # Find valid (non-NaN, non-zero-quality) observations
         valid = ~np.isnan(observations) & (quality > 0.0)
@@ -247,10 +239,7 @@ class ContinuousStateFilter:
             version: World model schema version.
         """
         if len(variable_names) != self._state_dim:
-            raise ValueError(
-                f"variable_names length ({len(variable_names)}) != "
-                f"state_dim ({self._state_dim})"
-            )
+            raise ValueError(f"variable_names length ({len(variable_names)}) != state_dim ({self._state_dim})")
 
         computed_at = time.time()
         beliefs = []
@@ -282,10 +271,7 @@ class ContinuousStateFilter:
         if x0.shape != (self._state_dim,):
             raise ValueError(f"x0 shape {x0.shape} != expected ({self._state_dim},)")
         if P0.shape != (self._state_dim, self._state_dim):
-            raise ValueError(
-                f"P0 shape {P0.shape} != expected "
-                f"({self._state_dim}, {self._state_dim})"
-            )
+            raise ValueError(f"P0 shape {P0.shape} != expected ({self._state_dim}, {self._state_dim})")
         self._x = x0.copy()
         self._P = P0.copy()
 
@@ -324,7 +310,7 @@ class ContinuousStateFilter:
         'log_likelihoods': list[float].
         """
         T = len(observations_seq)
-        if T < min_samples:
+        if min_samples > T:
             log.info(
                 "fit_filter_params: only %d samples (need %d), keeping current params.",
                 T,
@@ -338,9 +324,7 @@ class ContinuousStateFilter:
             }
 
         if len(regime_labels) != T:
-            raise ValueError(
-                f"regime_labels length ({len(regime_labels)}) != observations_seq length ({T})"
-            )
+            raise ValueError(f"regime_labels length ({len(regime_labels)}) != observations_seq length ({T})")
 
         n = self._state_dim
         m = self._obs_dim
@@ -401,9 +385,7 @@ class ContinuousStateFilter:
                     # Log-likelihood contribution
                     sign, logdet = np.linalg.slogdet(S)
                     if sign > 0:
-                        ll += -0.5 * (
-                            logdet + innov @ S_inv @ innov + len(z) * np.log(2 * np.pi)
-                        )
+                        ll += -0.5 * (logdet + innov @ S_inv @ innov + len(z) * np.log(2 * np.pi))
                 else:
                     x_t = x_p
                     P_t = P_p
@@ -425,11 +407,7 @@ class ContinuousStateFilter:
                 P_pred_t1 = P_pred[t + 1]
                 # Regularise for inversion
                 P_pred_reg = P_pred_t1 + np.eye(n) * 1e-8
-                G = (
-                    P_filt[t]
-                    @ F_by_regime.get(regime_labels[t + 1], np.eye(n)).T
-                    @ np.linalg.inv(P_pred_reg)
-                )
+                G = P_filt[t] @ F_by_regime.get(regime_labels[t + 1], np.eye(n)).T @ np.linalg.inv(P_pred_reg)
 
                 x_smooth[t] = x_filt[t] + G @ (x_smooth[t + 1] - x_pred[t + 1])
                 P_smooth[t] = P_filt[t] + G @ (P_smooth[t + 1] - P_pred_t1) @ G.T
@@ -486,9 +464,7 @@ class ContinuousStateFilter:
                 xs_t = x_smooth[t]
                 outer_yx = y_filled.reshape(-1, 1) @ xs_t.reshape(1, -1)
                 outer_xx = P_smooth[t] + xs_t.reshape(-1, 1) @ xs_t.reshape(1, -1)
-                outer_yy = np.diag(valid.astype(float)) @ (
-                    y_filled.reshape(-1, 1) @ y_filled.reshape(1, -1)
-                )
+                outer_yy = np.diag(valid.astype(float)) @ (y_filled.reshape(-1, 1) @ y_filled.reshape(1, -1))
 
                 D += outer_yx
                 E_xx += outer_xx

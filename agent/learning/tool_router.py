@@ -28,7 +28,6 @@ import logging
 import random
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 log = logging.getLogger(__name__)
 
@@ -139,9 +138,7 @@ class ToolRoutingBandit:
             # Minimum exploration: force on with probability min_exploration
             if self._rng.random() < self._min_exploration:
                 decisions[tool] = True
-                log.debug(
-                    "Tool '%s': forced ON by exploration (sample=%.3f)", tool, sample
-                )
+                log.debug("Tool '%s': forced ON by exploration (sample=%.3f)", tool, sample)
             elif sample > self._threshold:
                 decisions[tool] = True
                 log.debug(
@@ -189,9 +186,7 @@ class ToolRoutingBandit:
             If tool_name is not a known optional tool.
         """
         if tool_name not in self._alpha:
-            raise ValueError(
-                f"Unknown tool '{tool_name}'. Known: {sorted(self._alpha)}"
-            )
+            raise ValueError(f"Unknown tool '{tool_name}'. Known: {sorted(self._alpha)}")
 
         reward = max(0.0, min(1.0, signal_contribution))
         self._alpha[tool_name] += reward
@@ -285,9 +280,7 @@ class ToolRoutingBandit:
                     self._alpha[tool] = float(state["alpha"][tool])
                     self._beta[tool] = float(state["beta"][tool])
                     self._pulls[tool] = int(state.get("pulls", {}).get(tool, 0))
-                    self._total_reward[tool] = float(
-                        state.get("total_reward", {}).get(tool, 0.0)
-                    )
+                    self._total_reward[tool] = float(state.get("total_reward", {}).get(tool, 0.0))
             log.info("Loaded tool routing state from %s", self._persist_path)
         except (json.JSONDecodeError, KeyError, TypeError) as exc:
             log.warning("Failed to load tool routing state: %s", exc)

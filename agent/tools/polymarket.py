@@ -18,18 +18,18 @@ from __future__ import annotations
 import json
 import logging
 import time as _time
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 import httpx
 
-from agent.data.dns_bypass import ensure_polymarket_dns
 from agent.data.cache import DataCache
+from agent.data.dns_bypass import ensure_polymarket_dns
 from agent.tools.base import Tool, ToolResult
 
 try:
-    from agent.pipeline.store import PipelineStore
     from agent.pipeline.entity import entity_id_from_key
+    from agent.pipeline.store import PipelineStore
 except ImportError:  # pragma: no cover
     PipelineStore = None  # type: ignore[assignment,misc]
     entity_id_from_key = None  # type: ignore[assignment]
@@ -110,7 +110,6 @@ def _iso_to_ts(s: str) -> float | None:
 
 
 class PolymarketTool(Tool):
-
     name = "polymarket"
 
     description = (
@@ -140,8 +139,7 @@ class PolymarketTool(Tool):
             "search": {
                 "type": "string",
                 "description": (
-                    "Optional search term to filter markets by title. "
-                    "E.g., 'Fed rate cut', 'Bitcoin', 'Trump'."
+                    "Optional search term to filter markets by title. E.g., 'Fed rate cut', 'Bitcoin', 'Trump'."
                 ),
                 "default": "",
             },
@@ -192,9 +190,7 @@ class PolymarketTool(Tool):
             return ToolResult(success=False, output=f"Polymarket API error: {exc}")
 
         if not raw_events:
-            return ToolResult(
-                success=True, output="No active markets found.", data={"markets": []}
-            )
+            return ToolResult(success=True, output="No active markets found.", data={"markets": []})
 
         markets = self._parse_markets(raw_events)
 
@@ -222,9 +218,7 @@ class PolymarketTool(Tool):
         if not markets:
             return ToolResult(
                 success=True,
-                output=f"No markets found for category='{category}'"
-                + (f", search='{search}'" if search else "")
-                + ".",
+                output=f"No markets found for category='{category}'" + (f", search='{search}'" if search else "") + ".",
                 data={"markets": []},
             )
 
@@ -232,9 +226,7 @@ class PolymarketTool(Tool):
         lines = [f"Polymarket — {len(markets)} active markets:\n"]
         for i, m in enumerate(markets, 1):
             price_str = f"YES {m['yes_price']:.0%} / NO {m['no_price']:.0%}"
-            vol_str = (
-                f"${m['volume_24h']:,.0f} (24h)" if m["volume_24h"] else "no volume"
-            )
+            vol_str = f"${m['volume_24h']:,.0f} (24h)" if m["volume_24h"] else "no volume"
             change_parts = []
             if m["price_change_24h"] is not None:
                 sign = "+" if m["price_change_24h"] >= 0 else ""
@@ -265,9 +257,7 @@ class PolymarketTool(Tool):
             raw_events = self._fetch_resolved_events(limit=500)
         except Exception as exc:
             log.exception("Polymarket resolved fetch failed")
-            return ToolResult(
-                success=False, output=f"Polymarket resolved API error: {exc}"
-            )
+            return ToolResult(success=False, output=f"Polymarket resolved API error: {exc}")
 
         if not raw_events:
             return ToolResult(
@@ -350,9 +340,7 @@ class PolymarketTool(Tool):
     # Parsing
     # ------------------------------------------------------------------
 
-    def _parse_resolved_markets(
-        self, markets: list[dict[str, Any]], *, cutoff_ts: float
-    ) -> list[dict[str, Any]]:
+    def _parse_resolved_markets(self, markets: list[dict[str, Any]], *, cutoff_ts: float) -> list[dict[str, Any]]:
         """Parse flat resolved market objects from the /markets endpoint.
 
         Only includes markets whose endDate resolves to a past timestamp >= cutoff_ts.
@@ -433,11 +421,7 @@ class PolymarketTool(Tool):
                 # Spread from best bid/ask
                 best_bid = _safe_float(mkt.get("bestBid"))
                 best_ask = _safe_float(mkt.get("bestAsk"))
-                spread = (
-                    (best_ask - best_bid)
-                    if (best_bid is not None and best_ask is not None)
-                    else None
-                )
+                spread = (best_ask - best_bid) if (best_bid is not None and best_ask is not None) else None
 
                 # Price changes
                 price_change_24h = _safe_float(mkt.get("oneDayPriceChange"))
@@ -468,9 +452,7 @@ class PolymarketTool(Tool):
     # Entity persistence (L2)
     # ------------------------------------------------------------------
 
-    def _persist_entities(
-        self, markets: list[dict[str, Any]], *, use_end_date: bool = False
-    ) -> dict[str, int]:
+    def _persist_entities(self, markets: list[dict[str, Any]], *, use_end_date: bool = False) -> dict[str, int]:
         """Persist Polymarket markets as L2 topic entities with observations.
 
         Each market with a valid slug becomes a topic entity. A
@@ -494,9 +476,7 @@ class PolymarketTool(Tool):
             log.exception("Polymarket entity persistence failed (non-fatal)")
             return {"topics": 0, "observations": 0}
 
-    def _persist_entities_inner(
-        self, markets: list[dict[str, Any]], *, use_end_date: bool = False
-    ) -> dict[str, int]:
+    def _persist_entities_inner(self, markets: list[dict[str, Any]], *, use_end_date: bool = False) -> dict[str, int]:
         """Inner persistence logic separated for testability."""
         assert self._store is not None  # noqa: S101
         store = self._store
@@ -541,11 +521,7 @@ class PolymarketTool(Tool):
             # For resolved markets, use the actual resolution date so that
             # observed_at reflects when the outcome was known, not when we ingested it.
             if use_end_date:
-                obs_ts = (
-                    mkt.get("end_ts")
-                    or _iso_to_ts(mkt.get("end_date", ""))
-                    or _time.time()
-                )
+                obs_ts = mkt.get("end_ts") or _iso_to_ts(mkt.get("end_date", "")) or _time.time()
             else:
                 obs_ts = _time.time()
 
@@ -587,9 +563,7 @@ class PolymarketTool(Tool):
     def _parse_prices(prices_raw: str) -> tuple[float | None, float | None]:
         """Parse outcomePrices JSON string like '["0.42", "0.58"]'."""
         try:
-            prices = (
-                json.loads(prices_raw) if isinstance(prices_raw, str) else prices_raw
-            )
+            prices = json.loads(prices_raw) if isinstance(prices_raw, str) else prices_raw
             if isinstance(prices, list) and len(prices) >= 2:
                 return float(prices[0]), float(prices[1])
         except (json.JSONDecodeError, ValueError, TypeError):

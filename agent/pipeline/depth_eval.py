@@ -78,9 +78,7 @@ def compute_conditional_mi(
 
     n = obs_new.shape[0]
     if tgt.shape[0] != n:
-        raise ValueError(
-            f"observations_new has {n} samples but targets has {tgt.shape[0]}"
-        )
+        raise ValueError(f"observations_new has {n} samples but targets has {tgt.shape[0]}")
     if n < _MIN_SAMPLES:
         log.warning("Insufficient samples for MI: %d < %d", n, _MIN_SAMPLES)
         return float("nan")
@@ -92,10 +90,7 @@ def compute_conditional_mi(
         if obs_ex.ndim == 1:
             obs_ex = obs_ex.reshape(-1, 1)
         if obs_ex.shape[0] != n:
-            raise ValueError(
-                f"observations_existing has {obs_ex.shape[0]} samples "
-                f"but observations_new has {n}"
-            )
+            raise ValueError(f"observations_existing has {obs_ex.shape[0]} samples but observations_new has {n}")
         mask &= np.isfinite(obs_ex).all(axis=1)
         obs_ex = obs_ex[mask]
     else:
@@ -105,9 +100,7 @@ def compute_conditional_mi(
     tgt = tgt[mask]
 
     if len(tgt) < _MIN_SAMPLES:
-        log.warning(
-            "Insufficient finite samples for MI: %d < %d", len(tgt), _MIN_SAMPLES
-        )
+        log.warning("Insufficient finite samples for MI: %d < %d", len(tgt), _MIN_SAMPLES)
         return float("nan")
 
     mi_func = mutual_info_classif if discrete_target else mutual_info_regression
@@ -152,10 +145,7 @@ def compute_kl_divergence(
         ValueError: If distributions have different keys or don't sum to ~1.
     """
     if set(prior_probs.keys()) != set(posterior_probs.keys()):
-        raise ValueError(
-            f"Distribution keys differ: {set(prior_probs.keys())} vs "
-            f"{set(posterior_probs.keys())}"
-        )
+        raise ValueError(f"Distribution keys differ: {set(prior_probs.keys())} vs {set(posterior_probs.keys())}")
 
     keys = sorted(prior_probs.keys())
     p = np.array([posterior_probs[k] for k in keys], dtype=np.float64)
@@ -257,9 +247,7 @@ def run_depth_evaluation(
 
     kl_div: float | None = None
     if belief_before_version is not None and belief_after_version is not None:
-        kl_div = measure_belief_shift(
-            store, target_variable, belief_before_version, belief_after_version
-        )
+        kl_div = measure_belief_shift(store, target_variable, belief_before_version, belief_after_version)
 
     sample_size = len(targets)
     row_id = store.store_depth_evaluation(

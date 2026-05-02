@@ -11,7 +11,6 @@ from agent.convergence.taxonomy import (
     SignalRegistry,
 )
 
-
 # ── Helpers ────────────────────────────────────────────────────
 
 
@@ -55,7 +54,7 @@ class TestCategories:
             "geopolitical",
             "supply_chain",
         }
-        assert CATEGORIES == expected
+        assert expected == CATEGORIES
 
     def test_no_whitespace_in_names(self):
         for cat in CATEGORIES:
@@ -75,7 +74,7 @@ class TestFrequencies:
 
     def test_all_expected_present(self):
         expected = {"intraday", "daily", "weekly", "monthly", "event"}
-        assert VALID_FREQUENCIES == expected
+        assert expected == VALID_FREQUENCIES
 
 
 # ── SignalMeta construction ───────────────────────────────────
@@ -206,26 +205,46 @@ class TestSignalRegistryLookup:
     @pytest.fixture
     def populated_registry(self) -> SignalRegistry:
         reg = SignalRegistry()
-        reg.register(_make_meta(
-            signal_id="cftc.oil.net_long", source="cftc",
-            category="positioning", frequency="weekly",
-        ))
-        reg.register(_make_meta(
-            signal_id="cftc.gas.net_long", source="cftc",
-            category="positioning", frequency="weekly",
-        ))
-        reg.register(_make_meta(
-            signal_id="weather.us.alert_count", source="weather_alerts",
-            category="physical_disruption", frequency="daily",
-        ))
-        reg.register(_make_meta(
-            signal_id="pmi.us.manufacturing", source="global_pmi",
-            category="macro_momentum", frequency="monthly",
-        ))
-        reg.register(_make_meta(
-            signal_id="earthquake.global.mag_max", source="earthquake",
-            category="physical_disruption", frequency="event",
-        ))
+        reg.register(
+            _make_meta(
+                signal_id="cftc.oil.net_long",
+                source="cftc",
+                category="positioning",
+                frequency="weekly",
+            )
+        )
+        reg.register(
+            _make_meta(
+                signal_id="cftc.gas.net_long",
+                source="cftc",
+                category="positioning",
+                frequency="weekly",
+            )
+        )
+        reg.register(
+            _make_meta(
+                signal_id="weather.us.alert_count",
+                source="weather_alerts",
+                category="physical_disruption",
+                frequency="daily",
+            )
+        )
+        reg.register(
+            _make_meta(
+                signal_id="pmi.us.manufacturing",
+                source="global_pmi",
+                category="macro_momentum",
+                frequency="monthly",
+            )
+        )
+        reg.register(
+            _make_meta(
+                signal_id="earthquake.global.mag_max",
+                source="earthquake",
+                category="physical_disruption",
+                frequency="event",
+            )
+        )
         return reg
 
     def test_get_existing(self, populated_registry: SignalRegistry):
@@ -309,12 +328,14 @@ class TestSignalRegistryMisc:
         cats = sorted(CATEGORIES)
         freqs = sorted(VALID_FREQUENCIES)
         for i in range(500):
-            reg.register(_make_meta(
-                signal_id=f"tool_{i}.sig",
-                source=f"tool_{i % 20}",
-                category=cats[i % len(cats)],
-                frequency=freqs[i % len(freqs)],
-            ))
+            reg.register(
+                _make_meta(
+                    signal_id=f"tool_{i}.sig",
+                    source=f"tool_{i % 20}",
+                    category=cats[i % len(cats)],
+                    frequency=freqs[i % len(freqs)],
+                )
+            )
         assert len(reg) == 500
         assert len(reg.all_ids()) == 500
         # Lookup still works

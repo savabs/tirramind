@@ -38,7 +38,7 @@ from __future__ import annotations
 import logging
 import re
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -167,11 +167,7 @@ def _resolve_pathogen(name: str) -> str | None:
     if key_hyphen in _CDC_DATASETS:
         return key_hyphen
     # Try aliases on all forms
-    return (
-        _PATHOGEN_ALIASES.get(key)
-        or _PATHOGEN_ALIASES.get(key_under)
-        or _PATHOGEN_ALIASES.get(key_hyphen)
-    )
+    return _PATHOGEN_ALIASES.get(key) or _PATHOGEN_ALIASES.get(key_under) or _PATHOGEN_ALIASES.get(key_hyphen)
 
 
 def _parse_who_title(title: str) -> dict[str, str]:
@@ -263,10 +259,7 @@ class DiseaseSurveillanceTool(Tool):
             "state": {
                 "type": "string",
                 "default": "",
-                "description": (
-                    "For wastewater: US state code filter (e.g., 'CA', 'NY'). "
-                    "Empty = all states."
-                ),
+                "description": ("For wastewater: US state code filter (e.g., 'CA', 'NY'). Empty = all states."),
             },
             "disease": {
                 "type": "string",
@@ -290,10 +283,7 @@ class DiseaseSurveillanceTool(Tool):
             "country": {
                 "type": "string",
                 "default": "",
-                "description": (
-                    "For eu_surveillance: country code filter (e.g., 'DE', 'FR'). "
-                    "Empty = all EU/EEA."
-                ),
+                "description": ("For eu_surveillance: country code filter (e.g., 'DE', 'FR'). Empty = all EU/EEA."),
             },
             "organism": {
                 "type": "string",
@@ -320,7 +310,7 @@ class DiseaseSurveillanceTool(Tool):
     def __init__(
         self,
         cache: DataCache | None = None,
-        pipeline_store: "PipelineStore | None" = None,
+        pipeline_store: PipelineStore | None = None,
     ) -> None:
         self._cache = cache
         self._store = pipeline_store
@@ -344,10 +334,7 @@ class DiseaseSurveillanceTool(Tool):
         if mode not in ("wastewater", "outbreaks", "eu_surveillance", "genomics"):
             return ToolResult(
                 success=False,
-                output=(
-                    f"Invalid mode '{mode}'. "
-                    "Use 'wastewater', 'outbreaks', 'eu_surveillance', or 'genomics'."
-                ),
+                output=(f"Invalid mode '{mode}'. Use 'wastewater', 'outbreaks', 'eu_surveillance', or 'genomics'."),
             )
 
         if not _backfill:
@@ -437,9 +424,7 @@ class DiseaseSurveillanceTool(Tool):
         limit: int,
     ) -> ToolResult:
         dataset_id = _CDC_DATASETS[pathogen_key]
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=days_back)).strftime(
-            "%Y-%m-%dT00:00:00"
-        )
+        cutoff = (datetime.now(UTC) - timedelta(days=days_back)).strftime("%Y-%m-%dT00:00:00")
 
         where_clauses = [f"sample_collect_date > '{cutoff}'"]
         if state:
@@ -466,9 +451,7 @@ class DiseaseSurveillanceTool(Tool):
             if state:
                 msg += f" for {state}"
             msg += f" in last {days_back} days."
-            return ToolResult(
-                success=True, output=msg, data={"records": [], "count": 0}
-            )
+            return ToolResult(success=True, output=msg, data={"records": [], "count": 0})
 
         # Summarize: group by state, compute stats
         by_state: dict[str, list[dict]] = {}
@@ -479,13 +462,9 @@ class DiseaseSurveillanceTool(Tool):
         summaries = []
         for st, recs in sorted(by_state.items()):
             concentrations = [
-                c
-                for c in (_safe_float(r.get("pcr_target_avg_conc")) for r in recs)
-                if c is not None and c > 0
+                c for c in (_safe_float(r.get("pcr_target_avg_conc")) for r in recs) if c is not None and c > 0
             ]
-            detections = sum(
-                1 for r in recs if str(r.get("pcr_target_detect", "")).lower() == "yes"
-            )
+            detections = sum(1 for r in recs if str(r.get("pcr_target_detect", "")).lower() == "yes")
             pop_served = max(
                 (_safe_int(r.get("population_served")) or 0 for r in recs),
                 default=0,
@@ -497,13 +476,9 @@ class DiseaseSurveillanceTool(Tool):
                     "detections": detections,
                     "detection_rate": round(detections / len(recs), 3) if recs else 0,
                     "mean_concentration": (
-                        round(sum(concentrations) / len(concentrations), 2)
-                        if concentrations
-                        else None
+                        round(sum(concentrations) / len(concentrations), 2) if concentrations else None
                     ),
-                    "max_concentration": (
-                        round(max(concentrations), 2) if concentrations else None
-                    ),
+                    "max_concentration": (round(max(concentrations), 2) if concentrations else None),
                     "population_served": pop_served,
                 }
             )
@@ -513,26 +488,20 @@ class DiseaseSurveillanceTool(Tool):
 
         lines = [
             f"CDC NWSS Wastewater — {pathogen_key.upper()}",
-            f"  Period: last {days_back} days | {len(data)} samples | "
-            f"{len(by_state)} states",
+            f"  Period: last {days_back} days | {len(data)} samples | {len(by_state)} states",
             "",
         ]
         for s in summaries[:25]:
-            conc_str = (
-                f"  mean={s['mean_concentration']}" if s["mean_concentration"] else ""
-            )
+            conc_str = f"  mean={s['mean_concentration']}" if s["mean_concentration"] else ""
             lines.append(
-                f"  {s['state']:2s}  detect={s['detection_rate']:.0%} "
-                f"({s['detections']}/{s['samples']}){conc_str}"
+                f"  {s['state']:2s}  detect={s['detection_rate']:.0%} ({s['detections']}/{s['samples']}){conc_str}"
             )
 
         # Flag high-detection states
         hot_states = [s for s in summaries if s["detection_rate"] > 0.5]
         if len(hot_states) >= 5:
             lines.append("")
-            lines.append(
-                f"  ⚠ MULTI-STATE WAVE: {len(hot_states)} states with >50% detection rate"
-            )
+            lines.append(f"  ⚠ MULTI-STATE WAVE: {len(hot_states)} states with >50% detection rate")
 
         return ToolResult(
             success=True,
@@ -553,9 +522,7 @@ class DiseaseSurveillanceTool(Tool):
         days_back: int,
         limit: int,
     ) -> ToolResult:
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=days_back)).strftime(
-            "%Y-%m-%dT00:00:00"
-        )
+        cutoff = (datetime.now(UTC) - timedelta(days=days_back)).strftime("%Y-%m-%dT00:00:00")
 
         where_clauses = [f"date_end > '{cutoff}'"]
         if state:
@@ -586,9 +553,7 @@ class DiseaseSurveillanceTool(Tool):
             if state:
                 msg += f" for {state}"
             msg += f" in last {days_back} days."
-            return ToolResult(
-                success=True, output=msg, data={"records": [], "count": 0}
-            )
+            return ToolResult(success=True, output=msg, data={"records": [], "count": 0})
 
         # Summarize by jurisdiction: look for surges
         by_jurisdiction: dict[str, list[dict]] = {}
@@ -598,26 +563,12 @@ class DiseaseSurveillanceTool(Tool):
 
         surges = []
         for jur, recs in sorted(by_jurisdiction.items()):
-            ptc_vals = [
-                v
-                for v in (_safe_float(r.get("ptc_15d")) for r in recs)
-                if v is not None
-            ]
-            detect_vals = [
-                v
-                for v in (_safe_float(r.get("detect_prop_15d")) for r in recs)
-                if v is not None
-            ]
-            pct_vals = [
-                v
-                for v in (_safe_float(r.get("percentile")) for r in recs)
-                if v is not None
-            ]
+            ptc_vals = [v for v in (_safe_float(r.get("ptc_15d")) for r in recs) if v is not None]
+            detect_vals = [v for v in (_safe_float(r.get("detect_prop_15d")) for r in recs) if v is not None]
+            pct_vals = [v for v in (_safe_float(r.get("percentile")) for r in recs) if v is not None]
 
             avg_ptc = round(sum(ptc_vals) / len(ptc_vals), 1) if ptc_vals else None
-            avg_detect = (
-                round(sum(detect_vals) / len(detect_vals), 3) if detect_vals else None
-            )
+            avg_detect = round(sum(detect_vals) / len(detect_vals), 3) if detect_vals else None
             avg_pct = round(sum(pct_vals) / len(pct_vals), 1) if pct_vals else None
 
             entry = {
@@ -634,30 +585,19 @@ class DiseaseSurveillanceTool(Tool):
         surges.sort(key=lambda x: -(x.get("avg_ptc_15d") or -999))
 
         lines = [
-            f"CDC NWSS Wastewater — Aggregate Trends",
-            f"  Period: last {days_back} days | {len(data)} records | "
-            f"{len(by_jurisdiction)} jurisdictions",
+            "CDC NWSS Wastewater — Aggregate Trends",
+            f"  Period: last {days_back} days | {len(data)} records | {len(by_jurisdiction)} jurisdictions",
             "",
         ]
 
         surge_count = sum(1 for s in surges if s.get("alert") == "SURGE")
         if surge_count:
-            lines.append(
-                f"  ⚠ {surge_count} jurisdictions with SURGE (>100% 15d change)"
-            )
+            lines.append(f"  ⚠ {surge_count} jurisdictions with SURGE (>100% 15d change)")
             lines.append("")
 
         for s in surges[:25]:
-            ptc_str = (
-                f"ptc_15d={s['avg_ptc_15d']:+.1f}%"
-                if s["avg_ptc_15d"] is not None
-                else "ptc=N/A"
-            )
-            det_str = (
-                f"detect={s['avg_detect_prop_15d']:.0%}"
-                if s["avg_detect_prop_15d"] is not None
-                else ""
-            )
+            ptc_str = f"ptc_15d={s['avg_ptc_15d']:+.1f}%" if s["avg_ptc_15d"] is not None else "ptc=N/A"
+            det_str = f"detect={s['avg_detect_prop_15d']:.0%}" if s["avg_detect_prop_15d"] is not None else ""
             alert_str = " ⚠SURGE" if s.get("alert") == "SURGE" else ""
             lines.append(f"  {s['jurisdiction']:20s}  {ptc_str}  {det_str}{alert_str}")
 
@@ -781,17 +721,13 @@ class DiseaseSurveillanceTool(Tool):
 
         return self._format_who_results(entries, disease)
 
-    def _format_who_results(
-        self, entries: list[dict[str, Any]], disease: str
-    ) -> ToolResult:
+    def _format_who_results(self, entries: list[dict[str, Any]], disease: str) -> ToolResult:
         if not entries:
             msg = "WHO DON: No outbreak entries found"
             if disease:
                 msg += f" matching '{disease}'"
             msg += "."
-            return ToolResult(
-                success=True, output=msg, data={"entries": [], "count": 0}
-            )
+            return ToolResult(success=True, output=msg, data={"entries": [], "count": 0})
 
         results = []
         for entry in entries:
@@ -859,10 +795,7 @@ class DiseaseSurveillanceTool(Tool):
         if dataset_lower not in _ECDC_DATASETS:
             return ToolResult(
                 success=False,
-                output=(
-                    f"Unknown ECDC dataset '{dataset}'. "
-                    "Use 'cases', 'variants', or 'hospital'."
-                ),
+                output=(f"Unknown ECDC dataset '{dataset}'. Use 'cases', 'variants', or 'hospital'."),
             )
 
         ecdc_path = _ECDC_DATASETS[dataset_lower]
@@ -941,9 +874,7 @@ class DiseaseSurveillanceTool(Tool):
             if country_upper:
                 msg += f" for country '{country_upper}'"
             msg += "."
-            return ToolResult(
-                success=True, output=msg, data={"records": [], "count": 0}
-            )
+            return ToolResult(success=True, output=msg, data={"records": [], "count": 0})
 
         # Sort by year_week descending to get most recent first
         data.sort(
@@ -975,8 +906,7 @@ class DiseaseSurveillanceTool(Tool):
         entries = sorted(by_country.values(), key=lambda r: str(r.get("country", "")))
 
         lines = [
-            f"ECDC COVID-19 Cases/Deaths — {len(entries)} countries"
-            + (f" (filtered: {country})" if country else ""),
+            f"ECDC COVID-19 Cases/Deaths — {len(entries)} countries" + (f" (filtered: {country})" if country else ""),
             "",
         ]
         for r in entries[:30]:
@@ -1015,11 +945,7 @@ class DiseaseSurveillanceTool(Tool):
         # Sort variants by number of recent records
         sorted_vars = sorted(by_variant.items(), key=lambda x: -len(x[1]))
         for var, recs in sorted_vars[:15]:
-            shares = [
-                v
-                for v in (_safe_float(r.get("percent_variant")) for r in recs)
-                if v is not None
-            ]
+            shares = [v for v in (_safe_float(r.get("percent_variant")) for r in recs) if v is not None]
             avg_share = round(sum(shares) / len(shares), 1) if shares else None
             share_str = f"avg_share={avg_share}%" if avg_share is not None else ""
             lines.append(f"  {var[:40]:40s}  records={len(recs)}  {share_str}")
@@ -1048,8 +974,7 @@ class DiseaseSurveillanceTool(Tool):
         entries = sorted(by_country.values(), key=lambda r: str(r.get("country", "")))
 
         lines = [
-            f"ECDC Hospital/ICU Admissions — {len(entries)} countries"
-            + (f" (filtered: {country})" if country else ""),
+            f"ECDC Hospital/ICU Admissions — {len(entries)} countries" + (f" (filtered: {country})" if country else ""),
             "",
         ]
         for r in entries[:30]:
@@ -1076,7 +1001,7 @@ class DiseaseSurveillanceTool(Tool):
     def _execute_genomics(self, *, organism: str) -> ToolResult:
         org_name = organism.strip() or "SARS-CoV-2"
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         current_year = now.year
         prior_year = current_year - 1
 
@@ -1141,10 +1066,7 @@ class DiseaseSurveillanceTool(Tool):
             f"  {result['prior_year']}: {result['prior_count']:,} sequences submitted",
         ]
         if "annualized_rate" in result:
-            lines.append(
-                f"  Annualized rate: ~{result['annualized_rate']:,} "
-                f"(YoY ratio: {result['yoy_ratio']}x)"
-            )
+            lines.append(f"  Annualized rate: ~{result['annualized_rate']:,} (YoY ratio: {result['yoy_ratio']}x)")
         signal = result.get("signal", "UNKNOWN")
         if signal == "ACCELERATING":
             lines.append("  ⚠ ACCELERATING — submission rate >2× prior year")
@@ -1270,11 +1192,7 @@ class DiseaseSurveillanceTool(Tool):
                     value={
                         "mode": "outbreaks",
                         "country_name": cc,
-                        "entry_count": sum(
-                            1
-                            for e in entries
-                            if e.get("country_parsed", "").strip() == cc
-                        ),
+                        "entry_count": sum(1 for e in entries if e.get("country_parsed", "").strip() == cc),
                     },
                     depth_level=2,
                 )
@@ -1285,9 +1203,7 @@ class DiseaseSurveillanceTool(Tool):
             records = data.get("records", [])
             countries_seen_eu: set[str] = set()
             for rec in records:
-                cc = (
-                    str(rec.get("country_code", rec.get("country", ""))).strip().upper()
-                )
+                cc = str(rec.get("country_code", rec.get("country", ""))).strip().upper()
                 if cc and len(cc) == 2 and cc not in countries_seen_eu:
                     countries_seen_eu.add(cc)
             for cc in sorted(countries_seen_eu):
@@ -1302,12 +1218,7 @@ class DiseaseSurveillanceTool(Tool):
                         "mode": "eu_surveillance",
                         "dataset": data.get("dataset"),
                         "record_count": sum(
-                            1
-                            for r in records
-                            if str(r.get("country_code", r.get("country", "")))
-                            .strip()
-                            .upper()
-                            == cc
+                            1 for r in records if str(r.get("country_code", r.get("country", ""))).strip().upper() == cc
                         ),
                     },
                     depth_level=2,

@@ -30,6 +30,7 @@ Modes:
 from __future__ import annotations
 
 import logging
+from datetime import UTC
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -50,9 +51,7 @@ log = logging.getLogger(__name__)
 
 _AWARDS_URL = "https://api.usaspending.gov/api/v2/search/spending_by_award/"
 _AUTOCOMPLETE_URL = "https://api.usaspending.gov/api/v2/autocomplete/awarding_agency/"
-_UK_OCDS_URL = (
-    "https://www.contractsfinder.service.gov.uk/Published/Notices/OCDS/Search"
-)
+_UK_OCDS_URL = "https://www.contractsfinder.service.gov.uk/Published/Notices/OCDS/Search"
 _UA = "TirraMind/0.1"
 _TIMEOUT = 20
 
@@ -93,9 +92,7 @@ class GovContractsTool(Tool):
     # Entity persistence (L2)
     # ------------------------------------------------------------------
 
-    def _persist_entities(
-        self, awards: list[dict[str, Any]], country_code: str
-    ) -> None:
+    def _persist_entities(self, awards: list[dict[str, Any]], country_code: str) -> None:
         """Register recipient + agency entities and create links."""
         if self._store is None or entity_id_from_key is None:
             return
@@ -106,9 +103,7 @@ class GovContractsTool(Tool):
         except Exception:
             log.exception("Entity persistence failed (non-fatal)")
 
-    def _persist_entities_inner(
-        self, awards: list[dict[str, Any]], country_code: str
-    ) -> None:
+    def _persist_entities_inner(self, awards: list[dict[str, Any]], country_code: str) -> None:
         assert self._store is not None  # noqa: S101
         store = self._store
 
@@ -131,11 +126,7 @@ class GovContractsTool(Tool):
 
             # ── Company (recipient) ──
             try:
-                company_canon = (
-                    normalize_company_name(recipient)
-                    if normalize_company_name
-                    else recipient
-                )
+                company_canon = normalize_company_name(recipient) if normalize_company_name else recipient
             except (ValueError, TypeError):
                 company_canon = recipient.strip().lower()
 
@@ -151,19 +142,17 @@ class GovContractsTool(Tool):
                 )
 
             # Observation on the company
-            from datetime import datetime, timezone
+            from datetime import datetime
 
             start_date = award.get("start_date") or ""
             try:
                 ts = (
-                    datetime.fromisoformat(
-                        start_date.replace("Z", "+00:00")
-                    ).timestamp()
+                    datetime.fromisoformat(start_date.replace("Z", "+00:00")).timestamp()
                     if start_date
-                    else datetime.now(tz=timezone.utc).timestamp()
+                    else datetime.now(tz=UTC).timestamp()
                 )
             except (ValueError, AttributeError):
-                ts = datetime.now(tz=timezone.utc).timestamp()
+                ts = datetime.now(tz=UTC).timestamp()
 
             store.store_entity_observation(
                 entity_id=company_eid,
@@ -196,9 +185,7 @@ class GovContractsTool(Tool):
                 continue
 
             try:
-                agency_canon = (
-                    normalize_company_name(agency) if normalize_company_name else agency
-                )
+                agency_canon = normalize_company_name(agency) if normalize_company_name else agency
             except (ValueError, TypeError):
                 agency_canon = agency.strip().lower()
 
@@ -256,9 +243,7 @@ class GovContractsTool(Tool):
                 "region": {
                     "type": "string",
                     "enum": sorted(VALID_REGIONS),
-                    "description": (
-                        "Region: us (USASpending.gov, default), uk (UK Contracts Finder)."
-                    ),
+                    "description": ("Region: us (USASpending.gov, default), uk (UK Contracts Finder)."),
                 },
                 "agency": {
                     "type": "string",
@@ -302,13 +287,11 @@ class GovContractsTool(Tool):
         limit = min(max(int(kwargs.get("limit", 20)), 1), 50)
 
         # Date range
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         end_date = (kwargs.get("end_date") or "").strip() or now.strftime("%Y-%m-%d")
-        start_date = (kwargs.get("start_date") or "").strip() or (
-            now - timedelta(days=90)
-        ).strftime("%Y-%m-%d")
+        start_date = (kwargs.get("start_date") or "").strip() or (now - timedelta(days=90)).strftime("%Y-%m-%d")
 
         try:
             if region == "uk":
@@ -492,9 +475,7 @@ class GovContractsTool(Tool):
 
         releases = self._fetch_uk_contracts(start_date, end_date)
         if releases is None:
-            return ToolResult(
-                success=False, output="Failed to fetch UK Contracts Finder data."
-            )
+            return ToolResult(success=False, output="Failed to fetch UK Contracts Finder data.")
 
         # Parse OCDS releases into normalized award records
         awards = self._parse_uk_releases(releases, query=query, buyer=buyer)

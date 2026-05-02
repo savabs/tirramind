@@ -24,7 +24,7 @@ from agent.features.builders import (
     MacroStateFeatureBuilder,
 )
 from agent.features.gnn_builder import GNNFeatureBuilder
-from agent.features.protocol import EngineeredFeature, validate_feature
+from agent.features.protocol import EngineeredFeature
 from agent.pipeline.dag import DAG
 from agent.pipeline.regime_gate import feature_trust_scale, get_current_regime
 from agent.pipeline.store import PipelineStore
@@ -62,11 +62,7 @@ def run_feature_generation(params: dict, upstream: dict) -> dict:
     """
     db_path: str = params.get("db_path", ".tirra_pipeline/pipeline.db")
     as_of: float = params.get("as_of") or time.time()
-    builders: list[FeatureBuilder] = (
-        params.get("builders")
-        if params.get("builders") is not None
-        else DEFAULT_BUILDERS
-    )
+    builders: list[FeatureBuilder] = params.get("builders") if params.get("builders") is not None else DEFAULT_BUILDERS
 
     store = PipelineStore(db_path)
     try:
@@ -132,8 +128,7 @@ def run_feature_generation(params: dict, upstream: dict) -> dict:
                     scaled.append(feat)
             all_features = scaled
             log.info(
-                "Phase 49b: scaled %d GNN feature values by trust=%.2f "
-                "(stability < 3d, regime=%s).",
+                "Phase 49b: scaled %d GNN feature values by trust=%.2f (stability < 3d, regime=%s).",
                 n_scaled,
                 trust,
                 regime_ctx.regime_label,

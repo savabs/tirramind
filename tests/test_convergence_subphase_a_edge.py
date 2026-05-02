@@ -27,7 +27,6 @@ from agent.convergence.taxonomy import (
     SignalRegistry,
 )
 
-
 # ══════════════════════════════════════════════════════════════
 #  HELPERS
 # ══════════════════════════════════════════════════════════════
@@ -663,9 +662,7 @@ class TestExtractorNumericStrings:
     """Values that are numeric strings instead of actual numbers."""
 
     def test_cftc_string_pct_oi(self):
-        data = {
-            "contracts": [{"Market_and_Exchange_Names": "X", "_mm_net_pct_oi": "15.5"}]
-        }
+        data = {"contracts": [{"Market_and_Exchange_Names": "X", "_mm_net_pct_oi": "15.5"}]}
         result = extract_evidence("cftc", data)
         assert isinstance(result, list)
         if result:
@@ -680,9 +677,7 @@ class TestExtractorNumericStrings:
 
     def test_cftc_string_nan_pct_oi(self):
         """String "nan" passed as value."""
-        data = {
-            "contracts": [{"Market_and_Exchange_Names": "X", "_mm_net_pct_oi": "nan"}]
-        }
+        data = {"contracts": [{"Market_and_Exchange_Names": "X", "_mm_net_pct_oi": "nan"}]}
         result = extract_evidence("cftc", data)
         assert isinstance(result, list)
 
@@ -694,11 +689,7 @@ class TestExtractorOutputIntegrity:
         """For every registered tool, feed representative data and check all outputs."""
         # Representative minimal data for several tools
         test_data = {
-            "cftc": {
-                "contracts": [
-                    {"Market_and_Exchange_Names": "OIL", "_mm_net_pct_oi": 10}
-                ]
-            },
+            "cftc": {"contracts": [{"Market_and_Exchange_Names": "OIL", "_mm_net_pct_oi": 10}]},
             "weather_alerts": {"alert_count": 3},
             "finra_short_volume": {
                 "ticker": "A",
@@ -717,19 +708,13 @@ class TestExtractorOutputIntegrity:
                 ]
             },
             "disease_surveillance": {"entries": [{"title": "Bird flu - USA"}]},
-            "global_pmi": {
-                "signals": {"USA": {"latest_value": 52.0, "mom_change": 0.3}}
-            },
+            "global_pmi": {"signals": {"USA": {"latest_value": 52.0, "mom_change": 0.3}}},
             "job_postings": {
                 "jolts_level": 8000,
                 "quits_level": 3500,
                 "layoffs_level": 1700,
             },
-            "gdelt": {
-                "events": [
-                    {"GoldsteinScale": -5.0, "NumMentions": 100, "EventCode": "190"}
-                ]
-            },
+            "gdelt": {"events": [{"GoldsteinScale": -5.0, "NumMentions": 100, "EventCode": "190"}]},
             "sovereign_debt": {
                 "yields": {"2Y": 4.5, "10Y": 4.3},
                 "curve": [{"label": "2s10s", "spread_bps": -20}],
@@ -793,20 +778,12 @@ class TestEvidenceToBusIntegration:
         tools_data = [
             (
                 "cftc",
-                {
-                    "contracts": [
-                        {"Market_and_Exchange_Names": "OIL", "_mm_net_pct_oi": 10}
-                    ]
-                },
+                {"contracts": [{"Market_and_Exchange_Names": "OIL", "_mm_net_pct_oi": 10}]},
             ),
             ("weather_alerts", {"alert_count": 2}),
             (
                 "gdelt",
-                {
-                    "events": [
-                        {"GoldsteinScale": -3, "NumMentions": 50, "EventCode": "170"}
-                    ]
-                },
+                {"events": [{"GoldsteinScale": -3, "NumMentions": 50, "EventCode": "170"}]},
             ),
         ]
         for tool, data in tools_data:

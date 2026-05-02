@@ -8,21 +8,15 @@ empty/malformed responses, caching, output formatting, backward compatibility.
 
 from __future__ import annotations
 
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import httpx
-import pytest
 
 from agent.tools.macro_data import (
-    MacroDataTool,
-    VALID_SOURCES,
     _ECB_ALIASES,
-    _ECB_BASE,
-    _WB_BASE,
+    VALID_SOURCES,
+    MacroDataTool,
 )
-from agent.tools.base import ToolResult
-
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -166,7 +160,7 @@ SAMPLE_WB_SINGLE_COUNTRY = [
 
 class TestSourceParameter:
     def test_valid_sources_constant(self):
-        assert VALID_SOURCES == {"fred", "ecb", "world_bank"}
+        assert {"fred", "ecb", "world_bank"} == VALID_SOURCES
 
     def test_invalid_source_rejected(self):
         r = _tool().execute(series_id="GDP", source="bloomberg")
@@ -369,9 +363,7 @@ class TestECBParsing:
     def test_parse_empty_series(self):
         data = {
             "dataSets": [{"series": {}}],
-            "structure": {
-                "dimensions": {"observation": [{"values": [{"id": "2024-01-01"}]}]}
-            },
+            "structure": {"dimensions": {"observation": [{"values": [{"id": "2024-01-01"}]}]}},
         }
         result = MacroDataTool._parse_ecb_sdmx_json(data)
         assert result == []
@@ -420,9 +412,7 @@ class TestECBParsing:
                     }
                 }
             ],
-            "structure": {
-                "dimensions": {"observation": [{"values": [{"id": "2024-01-01"}]}]}
-            },
+            "structure": {"dimensions": {"observation": [{"values": [{"id": "2024-01-01"}]}]}},
         }
         result = MacroDataTool._parse_ecb_sdmx_json(data)
         assert result == []
@@ -500,9 +490,7 @@ class TestECBExecute:
                 start_date="2024-01-01",
                 end_date="2024-12-31",
             )
-            mock.assert_called_once_with(
-                "EXR/D.USD.EUR.SP00.A", "2024-01-01", "2024-12-31"
-            )
+            mock.assert_called_once_with("EXR/D.USD.EUR.SP00.A", "2024-01-01", "2024-12-31")
 
 
 # ══════════════════════════════════════════════════════════════
@@ -972,8 +960,4 @@ class TestMacroDataMetadata:
 
     def test_series_id_mentions_world_bank(self):
         desc = _tool().parameters["properties"]["series_id"]["description"]
-        assert (
-            "World Bank" in desc
-            or "world_bank" in desc.lower()
-            or "indicator" in desc.lower()
-        )
+        assert "World Bank" in desc or "world_bank" in desc.lower() or "indicator" in desc.lower()

@@ -80,10 +80,6 @@ class AdversarialScanner:
                 pass  # insufficient data or all-zero volumes → skip
 
         # 3. Crowding — cluster-level
-        flags.extend(
-            self._crowding.assess(
-                clusters, position_weights, volume_history, timestamp=timestamp
-            )
-        )
+        flags.extend(self._crowding.assess(clusters, position_weights, volume_history, timestamp=timestamp))
 
         return flags

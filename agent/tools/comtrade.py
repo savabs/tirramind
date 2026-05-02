@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -236,7 +236,7 @@ def _get_api_key() -> str | None:
 
 
 def _get_current_year() -> int:
-    return datetime.now(timezone.utc).year
+    return datetime.now(UTC).year
 
 
 # ---------------------------------------------------------------------------
@@ -294,7 +294,7 @@ class ComtradeTool(Tool):
         self,
         *,
         cache: DataCache | None = None,
-        pipeline_store: "PipelineStore | None" = None,
+        pipeline_store: PipelineStore | None = None,
     ) -> None:
         self._cache = cache
         self._store = pipeline_store
@@ -351,15 +351,11 @@ class ComtradeTool(Tool):
         if flow not in ("X", "M"):
             flow = "X"
 
-        cache_key = (
-            f"ct_flows_{reporter_m49}_{partner_m49}_{flow}_{commodity_code}_{period}"
-        )
+        cache_key = f"ct_flows_{reporter_m49}_{partner_m49}_{flow}_{commodity_code}_{period}"
         if self._cache:
             cached = self._cache.get("comtrade", cache_key)
             if cached is not None:
-                return self._format_flows(
-                    cached, reporter_raw, partner_raw, flow, from_cache=True
-                )
+                return self._format_flows(cached, reporter_raw, partner_raw, flow, from_cache=True)
 
         params: dict[str, str] = {
             "reporterCode": str(reporter_m49),
@@ -397,9 +393,7 @@ class ComtradeTool(Tool):
             "",
         ]
         # Sort by trade value descending
-        sorted_recs = sorted(
-            records, key=lambda r: r.get("trade_value_usd", 0) or 0, reverse=True
-        )
+        sorted_recs = sorted(records, key=lambda r: r.get("trade_value_usd", 0) or 0, reverse=True)
         for r in sorted_recs[:15]:
             val = r.get("trade_value_usd", 0) or 0
             val_str = f"${val:,.0f}" if val else "N/A"
@@ -449,9 +443,7 @@ class ComtradeTool(Tool):
         if self._cache:
             cached = self._cache.get("comtrade", cache_key)
             if cached is not None:
-                return self._format_commodity(
-                    cached, commodity_code, flow, from_cache=True
-                )
+                return self._format_commodity(cached, commodity_code, flow, from_cache=True)
 
         params: dict[str, str] = {
             "cmdCode": commodity_code,
@@ -485,16 +477,11 @@ class ComtradeTool(Tool):
             f"Records: {len(records)}",
             "",
         ]
-        sorted_recs = sorted(
-            records, key=lambda r: r.get("trade_value_usd", 0) or 0, reverse=True
-        )
+        sorted_recs = sorted(records, key=lambda r: r.get("trade_value_usd", 0) or 0, reverse=True)
         for r in sorted_recs[:15]:
             val = r.get("trade_value_usd", 0) or 0
             val_str = f"${val:,.0f}" if val else "N/A"
-            lines.append(
-                f"  [{r.get('period', '?')}] {r.get('reporter', '?')} → "
-                f"{r.get('partner', '?')} — {val_str}"
-            )
+            lines.append(f"  [{r.get('period', '?')}] {r.get('reporter', '?')} → {r.get('partner', '?')} — {val_str}")
         if len(records) > 15:
             lines.append(f"  ... and {len(records) - 15} more")
 
@@ -539,9 +526,7 @@ class ComtradeTool(Tool):
         if self._cache:
             cached = self._cache.get("comtrade", cache_key)
             if cached is not None:
-                return self._format_partners(
-                    cached, reporter_raw, flow, from_cache=True
-                )
+                return self._format_partners(cached, reporter_raw, flow, from_cache=True)
 
         params: dict[str, str] = {
             "reporterCode": str(reporter_m49),
@@ -574,16 +559,11 @@ class ComtradeTool(Tool):
             f"Records: {len(records)}",
             "",
         ]
-        sorted_recs = sorted(
-            records, key=lambda r: r.get("trade_value_usd", 0) or 0, reverse=True
-        )
+        sorted_recs = sorted(records, key=lambda r: r.get("trade_value_usd", 0) or 0, reverse=True)
         for r in sorted_recs[:15]:
             val = r.get("trade_value_usd", 0) or 0
             val_str = f"${val:,.0f}" if val else "N/A"
-            lines.append(
-                f"  {r.get('partner', '?')} — {val_str} "
-                f"({r.get('commodity', 'TOTAL')[:40]})"
-            )
+            lines.append(f"  {r.get('partner', '?')} — {val_str} ({r.get('commodity', 'TOTAL')[:40]})")
         if len(records) > 15:
             lines.append(f"  ... and {len(records) - 15} more")
 

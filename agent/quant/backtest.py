@@ -3,17 +3,17 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
 
 from agent.quant.scoring import score_returns
 
-
 # ---------------------------------------------------------------------------
 # Strategy protocol
 # ---------------------------------------------------------------------------
+
 
 class Strategy(ABC):
     """Abstract base for backtestable strategies.
@@ -25,8 +25,7 @@ class Strategy(ABC):
 
     @property
     @abstractmethod
-    def name(self) -> str:
-        ...
+    def name(self) -> str: ...
 
     @abstractmethod
     def generate_weights(
@@ -57,6 +56,7 @@ class Strategy(ABC):
 # Result containers
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class FoldResult:
     """Metrics for a single walk-forward fold."""
@@ -84,6 +84,7 @@ class BacktestResult:
 # ---------------------------------------------------------------------------
 # Walk-Forward engine
 # ---------------------------------------------------------------------------
+
 
 class WalkForward:
     """Expanding-window walk-forward backtester.
@@ -142,9 +143,7 @@ class WalkForward:
             test_ret = returns[split : split + self.test_size]
 
             train_extra = {k: v[:split] for k, v in extra.items()}
-            test_extra = {
-                k: v[split : split + self.test_size] for k, v in extra.items()
-            }
+            test_extra = {k: v[split : split + self.test_size] for k, v in extra.items()}
 
             weights = strategy.generate_weights(
                 train_ret,
@@ -162,22 +161,23 @@ class WalkForward:
                 periods_per_year=self.periods_per_year,
             )
 
-            folds.append(FoldResult(
-                fold=fold_idx,
-                train_size=len(train_ret),
-                test_size=len(test_ret),
-                metrics=fold_metrics,
-                weights=weights,
-                test_returns=weighted_ret,
-            ))
+            folds.append(
+                FoldResult(
+                    fold=fold_idx,
+                    train_size=len(train_ret),
+                    test_size=len(test_ret),
+                    metrics=fold_metrics,
+                    weights=weights,
+                    test_returns=weighted_ret,
+                )
+            )
 
             fold_idx += 1
             split += self.step_size
 
         if not folds:
             raise ValueError(
-                f"Not enough data for even one fold. "
-                f"T={T}, min_train={self.min_train}, test_size={self.test_size}"
+                f"Not enough data for even one fold. T={T}, min_train={self.min_train}, test_size={self.test_size}"
             )
 
         # Aggregate: chain all test returns
@@ -204,6 +204,7 @@ class WalkForward:
 # ---------------------------------------------------------------------------
 # Regime-conditional analysis
 # ---------------------------------------------------------------------------
+
 
 def regime_conditional_analysis(
     returns: np.ndarray,
@@ -241,6 +242,7 @@ def regime_conditional_analysis(
 # ---------------------------------------------------------------------------
 # Built-in strategies
 # ---------------------------------------------------------------------------
+
 
 class BuyAndHoldStrategy(Strategy):
     """Always fully invested. Baseline reference."""
@@ -338,8 +340,7 @@ class MultiAssetStrategy(ABC):
 
     @property
     @abstractmethod
-    def name(self) -> str:
-        ...
+    def name(self) -> str: ...
 
     @abstractmethod
     def generate_weights(
@@ -449,17 +450,13 @@ class MultiAssetWalkForward:
         """
         returns = np.asarray(returns, dtype=np.float64)
         if returns.ndim != 2:
-            raise ValueError(
-                f"returns must be 2-D (T, N), got shape {returns.shape}"
-            )
+            raise ValueError(f"returns must be 2-D (T, N), got shape {returns.shape}")
         T, N = returns.shape
         names = self.instrument_names
         if not names:
             names = [f"asset_{i}" for i in range(N)]
         if len(names) != N:
-            raise ValueError(
-                f"instrument_names length {len(names)} != returns columns {N}"
-            )
+            raise ValueError(f"instrument_names length {len(names)} != returns columns {N}")
         extra = extra or {}
 
         folds: list[MultiAssetFoldResult] = []
@@ -471,9 +468,7 @@ class MultiAssetWalkForward:
             test_ret = returns[split : split + self.test_size]
 
             train_extra = {k: v[:split] for k, v in extra.items()}
-            test_extra = {
-                k: v[split : split + self.test_size] for k, v in extra.items()
-            }
+            test_extra = {k: v[split : split + self.test_size] for k, v in extra.items()}
 
             weights = strategy.generate_weights(
                 train_ret,
@@ -485,10 +480,7 @@ class MultiAssetWalkForward:
 
             weights = np.asarray(weights, dtype=np.float64)
             if weights.shape != (len(test_ret), N):
-                raise ValueError(
-                    f"Strategy returned weights shape {weights.shape}, "
-                    f"expected ({len(test_ret)}, {N})"
-                )
+                raise ValueError(f"Strategy returned weights shape {weights.shape}, expected ({len(test_ret)}, {N})")
 
             # Per-instrument weighted returns and portfolio P&L
             per_inst_ret = test_ret * weights  # (test_size, N)
@@ -501,35 +493,32 @@ class MultiAssetWalkForward:
             )
             # Add concentration metric
             fold_metrics["max_weight"] = float(np.abs(weights).max())
-            fold_metrics["mean_gross_leverage"] = float(
-                np.abs(weights).sum(axis=1).mean()
-            )
+            fold_metrics["mean_gross_leverage"] = float(np.abs(weights).sum(axis=1).mean())
 
-            folds.append(MultiAssetFoldResult(
-                fold=fold_idx,
-                train_size=split,
-                test_size=len(test_ret),
-                metrics=fold_metrics,
-                weights=weights,
-                portfolio_returns=portfolio_ret,
-                per_instrument_returns=per_inst_ret,
-            ))
+            folds.append(
+                MultiAssetFoldResult(
+                    fold=fold_idx,
+                    train_size=split,
+                    test_size=len(test_ret),
+                    metrics=fold_metrics,
+                    weights=weights,
+                    portfolio_returns=portfolio_ret,
+                    per_instrument_returns=per_inst_ret,
+                )
+            )
 
             fold_idx += 1
             split += self.step_size
 
         if not folds:
             raise ValueError(
-                f"Not enough data for even one fold. "
-                f"T={T}, min_train={self.min_train}, test_size={self.test_size}"
+                f"Not enough data for even one fold. T={T}, min_train={self.min_train}, test_size={self.test_size}"
             )
 
         # Aggregate across folds
         all_portfolio_ret = np.concatenate([f.portfolio_returns for f in folds])
         all_weights = np.concatenate([f.weights for f in folds], axis=0)
-        all_per_inst = np.concatenate(
-            [f.per_instrument_returns for f in folds], axis=0
-        )
+        all_per_inst = np.concatenate([f.per_instrument_returns for f in folds], axis=0)
         equity = np.exp(np.cumsum(all_portfolio_ret))
 
         agg_metrics = score_returns(
@@ -538,9 +527,7 @@ class MultiAssetWalkForward:
             periods_per_year=self.periods_per_year,
         )
         agg_metrics["max_weight"] = float(np.abs(all_weights).max())
-        agg_metrics["mean_gross_leverage"] = float(
-            np.abs(all_weights).sum(axis=1).mean()
-        )
+        agg_metrics["mean_gross_leverage"] = float(np.abs(all_weights).sum(axis=1).mean())
 
         # Per-asset-class attribution: sum of weighted returns per class
         attribution = self._compute_attribution(all_per_inst, names)
@@ -609,9 +596,7 @@ class BuyAndHoldBenchmarkStrategy(MultiAssetStrategy):
 
     @property
     def name(self) -> str:
-        labels = "+".join(
-            f"{t}:{w:.0%}" for t, w in sorted(self._targets.items())
-        )
+        labels = "+".join(f"{t}:{w:.0%}" for t, w in sorted(self._targets.items()))
         return f"buy_hold_{labels}"
 
     def generate_weights(

@@ -243,9 +243,7 @@ class TreasuryReceiptsTool(Tool):
 
     # ── Formatters ───────────────────────────────────────────────────
 
-    def _format_cash_balance(
-        self, records: list[dict[str, Any]]
-    ) -> tuple[str, dict[str, Any]]:
+    def _format_cash_balance(self, records: list[dict[str, Any]]) -> tuple[str, dict[str, Any]]:
         lines = ["## US Treasury Operating Cash Balance (TGA)\n"]
         parsed = []
 
@@ -284,9 +282,7 @@ class TreasuryReceiptsTool(Tool):
                 delta_pct = (latest - prev) / abs(prev) * 100
                 signals["tga_daily_change_pct"] = round(delta_pct, 2)
                 signals["tga_daily_change_abs"] = round(latest - prev, 0)
-                lines.append(
-                    f"\n  Signal: TGA daily Δ = {signals['tga_daily_change_abs']:+,.0f}M ({delta_pct:+.2f}%)"
-                )
+                lines.append(f"\n  Signal: TGA daily Δ = {signals['tga_daily_change_abs']:+,.0f}M ({delta_pct:+.2f}%)")
 
         lines.append(f"\n  Records: {len(records)}")
         return "\n".join(lines), {
@@ -295,9 +291,7 @@ class TreasuryReceiptsTool(Tool):
             "signals": signals,
         }
 
-    def _format_deposits_withdrawals(
-        self, records: list[dict[str, Any]]
-    ) -> tuple[str, dict[str, Any]]:
+    def _format_deposits_withdrawals(self, records: list[dict[str, Any]]) -> tuple[str, dict[str, Any]]:
         lines = ["## US Treasury Deposits & Withdrawals\n"]
         parsed = []
 
@@ -328,19 +322,11 @@ class TreasuryReceiptsTool(Tool):
         if parsed:
             latest_date = parsed[0]["date"]
             latest_records = [p for p in parsed if p["date"] == latest_date]
-            deposits = [
-                p for p in latest_records if "deposit" in (p.get("type") or "").lower()
-            ]
-            withdrawals = [
-                p for p in latest_records if "withdraw" in (p.get("type") or "").lower()
-            ]
+            deposits = [p for p in latest_records if "deposit" in (p.get("type") or "").lower()]
+            withdrawals = [p for p in latest_records if "withdraw" in (p.get("type") or "").lower()]
 
-            total_deposits = sum(
-                p["today_amt"] for p in deposits if p["today_amt"] is not None
-            )
-            total_withdrawals = sum(
-                p["today_amt"] for p in withdrawals if p["today_amt"] is not None
-            )
+            total_deposits = sum(p["today_amt"] for p in deposits if p["today_amt"] is not None)
+            total_withdrawals = sum(p["today_amt"] for p in withdrawals if p["today_amt"] is not None)
             signals["latest_date"] = latest_date
             signals["total_deposits_today"] = round(total_deposits, 0)
             signals["total_withdrawals_today"] = round(total_withdrawals, 0)
@@ -359,9 +345,7 @@ class TreasuryReceiptsTool(Tool):
             "signals": signals,
         }
 
-    def _format_public_debt(
-        self, records: list[dict[str, Any]]
-    ) -> tuple[str, dict[str, Any]]:
+    def _format_public_debt(self, records: list[dict[str, Any]]) -> tuple[str, dict[str, Any]]:
         lines = ["## US Treasury Public Debt Transactions\n"]
         parsed = []
 

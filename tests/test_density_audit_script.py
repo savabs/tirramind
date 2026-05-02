@@ -16,17 +16,13 @@ from __future__ import annotations
 
 import math
 import sqlite3
+import sys
 import time
 from pathlib import Path
 
-import pytest
-
-import sys
-
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 
-from density_audit import _run_audit, _entropy, _is_sparse
-
+from density_audit import _entropy, _is_sparse, _run_audit
 
 # ---------------------------------------------------------------------------
 # Helpers

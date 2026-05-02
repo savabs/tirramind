@@ -13,8 +13,6 @@ from __future__ import annotations
 import math
 
 import numpy as np
-import pytest
-from scipy import stats as sp_stats
 
 from agent.convergence.coincidence import (
     CoincidenceResult,
@@ -84,9 +82,7 @@ def _zscore_series(x: np.ndarray) -> np.ndarray:
 
 class TestCoincidenceResult:
     def test_construction(self):
-        r = CoincidenceResult(
-            method="rolling_corr", score=2.5, p_value=0.01, direction=1
-        )
+        r = CoincidenceResult(method="rolling_corr", score=2.5, p_value=0.01, direction=1)
         assert r.method == "rolling_corr"
         assert r.score == 2.5
         assert r.p_value == 0.01
@@ -562,7 +558,6 @@ class TestCombinedCoincidenceScore:
 
 
 class TestEdgeCases:
-
     # ── Empty arrays ───────────────────────────────────────────
 
     def test_rolling_corr_empty(self):

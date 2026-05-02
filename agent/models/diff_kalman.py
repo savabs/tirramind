@@ -217,15 +217,11 @@ class DifferentiableKalmanFilter(nn.Module):
         """
         # Auto-convert numpy → torch
         if isinstance(observations, np.ndarray):
-            observations = torch.from_numpy(observations.astype(np.float32)).to(
-                self._x.device
-            )
+            observations = torch.from_numpy(observations.astype(np.float32)).to(self._x.device)
         if isinstance(quality, np.ndarray):
             quality = torch.from_numpy(quality.astype(np.float32)).to(self._x.device)
         if observations.shape != (self._obs_dim,):
-            raise ValueError(
-                f"observations shape {observations.shape} != ({self._obs_dim},)"
-            )
+            raise ValueError(f"observations shape {observations.shape} != ({self._obs_dim},)")
 
         if quality is None:
             quality = torch.ones(self._obs_dim, device=observations.device)
@@ -303,10 +299,7 @@ class DifferentiableKalmanFilter(nn.Module):
         Detaches from autograd and converts to Python floats.
         """
         if len(variable_names) != self._state_dim:
-            raise ValueError(
-                f"variable_names length ({len(variable_names)}) != "
-                f"state_dim ({self._state_dim})"
-            )
+            raise ValueError(f"variable_names length ({len(variable_names)}) != state_dim ({self._state_dim})")
 
         computed_at = time.time()
         x = self._x.detach()

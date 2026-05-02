@@ -24,23 +24,19 @@ Coverage:
 
 import sys
 import unittest
-from datetime import datetime, timedelta
-from unittest.mock import MagicMock, patch, call
-from typing import Any
+from datetime import datetime
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, "/home/becmachlean/2024/projects/tirramind_v1")
 
 from agent.tools.finra_short_volume import FinraShortVolumeTool, _safe_float
-
 
 # ──────────────────────────────────────────────────────────────────
 # Mock helpers
 # ──────────────────────────────────────────────────────────────────
 
 
-def _reg_sho_record(
-    ticker: str, total: float, short: float, exempt: float = 0, facility: str = "NQTRF"
-) -> dict:
+def _reg_sho_record(ticker: str, total: float, short: float, exempt: float = 0, facility: str = "NQTRF") -> dict:
     return {
         "securitiesInformationProcessorSymbolIdentifier": ticker,
         "totalParQuantity": total,
@@ -111,9 +107,7 @@ class TestModeValidation(unittest.TestCase):
         self.assertIn("Invalid mode", result.output)
 
     def test_invalid_date_format(self):
-        result = self.tool.execute(
-            mode="short_volume", ticker="AAPL", date="03-25-2026"
-        )
+        result = self.tool.execute(mode="short_volume", ticker="AAPL", date="03-25-2026")
         self.assertFalse(result.success)
         self.assertIn("Invalid date format", result.output)
 
@@ -126,16 +120,12 @@ class TestModeValidation(unittest.TestCase):
         """days_back < 1 should be clamped to 1, not error."""
         with patch.object(self.tool, "_fetch_reg_sho", return_value=[]):
             result = self.tool.execute(mode="short_volume", ticker="AAPL", days_back=0)
-            self.assertTrue(
-                result.success
-            )  # 0 clamped to 1, returns empty but no error
+            self.assertTrue(result.success)  # 0 clamped to 1, returns empty but no error
 
     def test_days_back_clamped_max(self):
         """days_back > 20 should be clamped to 20."""
         with patch.object(self.tool, "_fetch_reg_sho", return_value=[]):
-            result = self.tool.execute(
-                mode="short_volume", ticker="AAPL", days_back=100
-            )
+            result = self.tool.execute(mode="short_volume", ticker="AAPL", days_back=100)
             self.assertTrue(result.success)
 
     def test_limit_clamped_min(self):
@@ -263,9 +253,7 @@ class TestShortVolumeTicker(unittest.TestCase):
                 _reg_sho_record("NVDA", 1_000_000, 500_000),
             ],
         ):
-            result = self.tool.execute(
-                mode="short_volume", ticker="  nvda  ", days_back=1
-            )
+            result = self.tool.execute(mode="short_volume", ticker="  nvda  ", days_back=1)
             self.assertTrue(result.success)
             self.assertEqual(result.data["ticker"], "NVDA")
 
@@ -296,9 +284,7 @@ class TestShortVolumeScan(unittest.TestCase):
 
     def test_scan_empty_weekend(self):
         with patch.object(self.tool, "_fetch_reg_sho", return_value=[]):
-            result = self.tool.execute(
-                mode="short_volume", date="2026-03-22"
-            )  # Saturday
+            result = self.tool.execute(mode="short_volume", date="2026-03-22")  # Saturday
             self.assertTrue(result.success)
             self.assertIn("No Reg SHO data", result.output)
 
@@ -309,9 +295,7 @@ class TestShortVolumeScan(unittest.TestCase):
             _reg_sho_record("TINY", 50_000, 40_000),  # below 100k default
         ]
         with patch.object(self.tool, "_fetch_reg_sho", return_value=records):
-            result = self.tool.execute(
-                mode="short_volume", date="2026-03-24", min_total_volume=100_000
-            )
+            result = self.tool.execute(mode="short_volume", date="2026-03-24", min_total_volume=100_000)
             self.assertTrue(result.success)
             tickers = [r["ticker"] for r in result.data["results"]]
             self.assertIn("AAPL", tickers)
@@ -321,18 +305,14 @@ class TestShortVolumeScan(unittest.TestCase):
         """Only `limit` results should be returned."""
         records = [_reg_sho_record(f"SYM{i}", 1_000_000, 500_000) for i in range(50)]
         with patch.object(self.tool, "_fetch_reg_sho", return_value=records):
-            result = self.tool.execute(
-                mode="short_volume", date="2026-03-24", limit=5, min_total_volume=0
-            )
+            result = self.tool.execute(mode="short_volume", date="2026-03-24", limit=5, min_total_volume=0)
             self.assertTrue(result.success)
             self.assertEqual(len(result.data["results"]), 5)
 
     def test_scan_pagination(self):
         """Multiple pages should be fetched and aggregated."""
         page1 = [_reg_sho_record(f"SYM{i}", 1_000_000, 600_000) for i in range(5000)]
-        page2 = [
-            _reg_sho_record(f"SYM{5000+i}", 1_000_000, 400_000) for i in range(100)
-        ]
+        page2 = [_reg_sho_record(f"SYM{5000 + i}", 1_000_000, 400_000) for i in range(100)]
 
         call_count = [0]
 
@@ -345,9 +325,7 @@ class TestShortVolumeScan(unittest.TestCase):
             return []
 
         with patch.object(self.tool, "_fetch_reg_sho", side_effect=mock_fetch):
-            result = self.tool.execute(
-                mode="short_volume", date="2026-03-24", limit=10, min_total_volume=0
-            )
+            result = self.tool.execute(mode="short_volume", date="2026-03-24", limit=10, min_total_volume=0)
             self.assertTrue(result.success)
             # Should have paginated
             self.assertGreaterEqual(call_count[0], 2)
@@ -370,9 +348,7 @@ class TestShortInterest(unittest.TestCase):
 
     def test_basic_success(self):
         records = [_si_record()]
-        with patch.object(
-            self.tool, "_fetch_short_interest_recent", return_value=records
-        ):
+        with patch.object(self.tool, "_fetch_short_interest_recent", return_value=records):
             result = self.tool.execute(mode="short_interest", ticker="AAPL")
             self.assertTrue(result.success)
             self.assertIn("AAPL", result.output)
@@ -392,9 +368,7 @@ class TestShortInterest(unittest.TestCase):
     def test_squeeze_risk_flag(self):
         """DTC > 5.0 should flag squeeze risk."""
         records = [_si_record(dtc=7.5)]
-        with patch.object(
-            self.tool, "_fetch_short_interest_recent", return_value=records
-        ):
+        with patch.object(self.tool, "_fetch_short_interest_recent", return_value=records):
             result = self.tool.execute(mode="short_interest", ticker="GME")
             self.assertTrue(result.success)
             self.assertTrue(result.data["signals"]["squeeze_risk"])
@@ -403,9 +377,7 @@ class TestShortInterest(unittest.TestCase):
     def test_building_short_flag(self):
         """change_pct > 15 should flag building."""
         records = [_si_record(change_pct=25.0)]
-        with patch.object(
-            self.tool, "_fetch_short_interest_recent", return_value=records
-        ):
+        with patch.object(self.tool, "_fetch_short_interest_recent", return_value=records):
             result = self.tool.execute(mode="short_interest", ticker="TSLA")
             self.assertTrue(result.success)
             self.assertTrue(result.data["signals"]["building_short"])
@@ -414,9 +386,7 @@ class TestShortInterest(unittest.TestCase):
     def test_covering_flag(self):
         """change_pct < -15 should flag covering."""
         records = [_si_record(change_pct=-20.0)]
-        with patch.object(
-            self.tool, "_fetch_short_interest_recent", return_value=records
-        ):
+        with patch.object(self.tool, "_fetch_short_interest_recent", return_value=records):
             result = self.tool.execute(mode="short_interest", ticker="SPY")
             self.assertTrue(result.success)
             self.assertTrue(result.data["signals"]["covering"])
@@ -425,9 +395,7 @@ class TestShortInterest(unittest.TestCase):
     def test_no_flags_moderate_change(self):
         """Moderate change should not trigger any flags."""
         records = [_si_record(dtc=2.0, change_pct=5.0)]
-        with patch.object(
-            self.tool, "_fetch_short_interest_recent", return_value=records
-        ):
+        with patch.object(self.tool, "_fetch_short_interest_recent", return_value=records):
             result = self.tool.execute(mode="short_interest", ticker="AAPL")
             self.assertTrue(result.success)
             self.assertFalse(result.data["signals"]["squeeze_risk"])
@@ -440,16 +408,12 @@ class TestShortInterest(unittest.TestCase):
             _si_record(date="2026-01-31", current_si=120_000_000, change_pct=10.0),
             _si_record(date="2026-01-15", current_si=110_000_000, change_pct=5.0),
         ]
-        with patch.object(
-            self.tool, "_fetch_short_interest_recent", return_value=records
-        ):
+        with patch.object(self.tool, "_fetch_short_interest_recent", return_value=records):
             result = self.tool.execute(mode="short_interest", ticker="AAPL")
             self.assertTrue(result.success)
             self.assertEqual(len(result.data["records"]), 2)
             # Signals based on latest (first) record
-            self.assertEqual(
-                result.data["signals"]["current_short_position"], 120_000_000
-            )
+            self.assertEqual(result.data["signals"]["current_short_position"], 120_000_000)
 
     def test_si_record_normalization(self):
         """_si_record_to_dict should normalize all fields."""
@@ -940,18 +904,14 @@ class TestOutputFormatting(unittest.TestCase):
             self.assertIn("## FINRA Short Volume: NVDA", result.output)
 
     def test_short_interest_output_has_header(self):
-        with patch.object(
-            self.tool, "_fetch_short_interest_recent", return_value=[_si_record()]
-        ):
+        with patch.object(self.tool, "_fetch_short_interest_recent", return_value=[_si_record()]):
             result = self.tool.execute(mode="short_interest", ticker="AAPL")
             self.assertIn("## FINRA Short Interest: AAPL", result.output)
 
     def test_scan_output_has_stats(self):
         records = [_reg_sho_record("SPY", 20_000_000, 10_000_000)]
         with patch.object(self.tool, "_fetch_reg_sho", return_value=records):
-            result = self.tool.execute(
-                mode="short_volume", date="2026-03-24", limit=5, min_total_volume=0
-            )
+            result = self.tool.execute(mode="short_volume", date="2026-03-24", limit=5, min_total_volume=0)
             self.assertIn("Total tickers", result.output)
             self.assertIn("Total records fetched", result.output)
 
@@ -1014,16 +974,10 @@ class TestCLIRegistration(unittest.TestCase):
 
         config = AgentConfig()
         registry = build_tool_registry(config)
-        tool_names = (
-            [t.name for t in registry._tools.values()]
-            if hasattr(registry, "_tools")
-            else []
-        )
+        tool_names = [t.name for t in registry._tools.values()] if hasattr(registry, "_tools") else []
         if not tool_names:
             # Try alternative attribute name
-            tool_names = (
-                list(registry._tools.keys()) if hasattr(registry, "_tools") else []
-            )
+            tool_names = list(registry._tools.keys()) if hasattr(registry, "_tools") else []
         self.assertIn("finra_short_volume", tool_names)
 
     def test_total_tool_count(self):
@@ -1093,9 +1047,7 @@ class TestGracefulFailures(unittest.TestCase):
 
     def test_unexpected_exception_caught(self):
         """Any unexpected exception during execute should be caught."""
-        with patch.object(
-            self.tool, "_fetch_reg_sho", side_effect=RuntimeError("boom")
-        ):
+        with patch.object(self.tool, "_fetch_reg_sho", side_effect=RuntimeError("boom")):
             result = self.tool.execute(mode="short_volume", ticker="AAPL", days_back=1)
             self.assertFalse(result.success)
             self.assertIn("Error", result.output)

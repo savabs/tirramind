@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
 
@@ -141,7 +141,7 @@ def _search_efts(
 
     Returns (entries, total_count).
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     start = (now - timedelta(days=days_back)).strftime("%Y-%m-%d")
     end = now.strftime("%Y-%m-%d")
 
@@ -231,9 +231,7 @@ def _get_ch_charges(company_number: str, client: httpx.Client) -> list[dict[str,
                 "delivered_on": item.get("delivered_on", ""),
                 "satisfied_on": item.get("satisfied_on", ""),
                 "classification": _classify_charge(item),
-                "persons_entitled": [
-                    p.get("name", "") for p in item.get("persons_entitled", [])
-                ],
+                "persons_entitled": [p.get("name", "") for p in item.get("persons_entitled", [])],
                 "particulars": _extract_particulars(item),
             }
         )
@@ -395,11 +393,7 @@ class CreditorFilingsTool(Tool):
             if not name:
                 continue
 
-            canon = (
-                normalize_company_name(name)
-                if normalize_company_name
-                else name.strip().lower()
-            )
+            canon = normalize_company_name(name) if normalize_company_name else name.strip().lower()
             eid = entity_id_from_key("company", canon)
 
             if eid not in seen:
@@ -416,13 +410,9 @@ class CreditorFilingsTool(Tool):
 
             date_str = entry.get("file_date", "")
             try:
-                ts = (
-                    datetime.strptime(date_str, "%Y-%m-%d")
-                    .replace(tzinfo=timezone.utc)
-                    .timestamp()
-                )
+                ts = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=UTC).timestamp()
             except (ValueError, TypeError):
-                ts = datetime.now(tz=timezone.utc).timestamp()
+                ts = datetime.now(tz=UTC).timestamp()
 
             items = entry.get("items", [])
             is_stress = bool(set(items) & _CREDIT_ITEMS)
@@ -450,11 +440,7 @@ class CreditorFilingsTool(Tool):
         if not debtor_name:
             return
 
-        debtor_canon = (
-            normalize_company_name(debtor_name)
-            if normalize_company_name
-            else debtor_name.strip().lower()
-        )
+        debtor_canon = normalize_company_name(debtor_name) if normalize_company_name else debtor_name.strip().lower()
         debtor_eid = entity_id_from_key("company", debtor_canon)
 
         if debtor_eid not in seen:
@@ -472,13 +458,9 @@ class CreditorFilingsTool(Tool):
         for charge in ch_charges:
             date_str = charge.get("created_on", "")
             try:
-                ts = (
-                    datetime.strptime(date_str, "%Y-%m-%d")
-                    .replace(tzinfo=timezone.utc)
-                    .timestamp()
-                )
+                ts = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=UTC).timestamp()
             except (ValueError, TypeError):
-                ts = datetime.now(tz=timezone.utc).timestamp()
+                ts = datetime.now(tz=UTC).timestamp()
 
             is_red = charge.get("status", "") in _CHARGE_RED_FLAGS
 
@@ -504,9 +486,7 @@ class CreditorFilingsTool(Tool):
                 if not creditor_name:
                     continue
                 creditor_canon = (
-                    normalize_company_name(creditor_name)
-                    if normalize_company_name
-                    else creditor_name.strip().lower()
+                    normalize_company_name(creditor_name) if normalize_company_name else creditor_name.strip().lower()
                 )
                 creditor_eid = entity_id_from_key("company", creditor_canon)
 
@@ -591,9 +571,7 @@ class CreditorFilingsTool(Tool):
             headers={"User-Agent": _UA},
             follow_redirects=True,
         ) as client:
-            entries, total = _search_efts(
-                client, query=efts_query, days_back=days_back, limit=limit
-            )
+            entries, total = _search_efts(client, query=efts_query, days_back=days_back, limit=limit)
 
         # UK Companies House (optional — requires key)
         ch_charges: list[dict[str, Any]] | None = None
@@ -604,9 +582,7 @@ class CreditorFilingsTool(Tool):
                     companies = _search_ch_company(query, client)
                     if companies:
                         # Get charges for first match
-                        ch_charges = _get_ch_charges(
-                            companies[0]["company_number"], client
-                        )
+                        ch_charges = _get_ch_charges(companies[0]["company_number"], client)
             except Exception as exc:
                 log.warning("Companies House error: %s", exc)
 
@@ -667,9 +643,7 @@ class CreditorFilingsTool(Tool):
                 lines.append(f"  ... and {len(ch_charges) - 10} more")
         elif _get_ch_key() is None:
             lines.append("")
-            lines.append(
-                "UK data: set TIRRA_COMPANIES_HOUSE_KEY for UK charge monitoring"
-            )
+            lines.append("UK data: set TIRRA_COMPANIES_HOUSE_KEY for UK charge monitoring")
 
         return ToolResult(
             success=True,
@@ -681,9 +655,7 @@ class CreditorFilingsTool(Tool):
                 "sec_total": total,
                 "sec_entries": entries,
                 "ch_charges": ch_charges,
-                "ch_red_flags": (
-                    _count_red_flag_charges(ch_charges) if ch_charges else 0
-                ),
+                "ch_red_flags": (_count_red_flag_charges(ch_charges) if ch_charges else 0),
             },
         )
 
@@ -773,19 +745,14 @@ class CreditorFilingsTool(Tool):
 
         lines = [
             f"UK Companies House Charges: {name}{tag}",
-            f"Total charges: {len(charges)}, Red-flag: {red_flags} "
-            f"(outstanding/part-satisfied)",
+            f"Total charges: {len(charges)}, Red-flag: {red_flags} (outstanding/part-satisfied)",
             "",
         ]
 
         displayed = charges[:limit]
         for c in displayed:
             entitled = ", ".join(c.get("persons_entitled", [])[:2]) or "N/A"
-            sat_info = (
-                f", satisfied {c.get('satisfied_on', '')}"
-                if c.get("satisfied_on")
-                else ""
-            )
+            sat_info = f", satisfied {c.get('satisfied_on', '')}" if c.get("satisfied_on") else ""
             lines.append(
                 f"  [{c.get('status', '?')}] #{c.get('charge_number', '?')} "
                 f"created {c.get('created_on', '?')}{sat_info} — "
@@ -799,9 +766,7 @@ class CreditorFilingsTool(Tool):
         # Stress assessment
         if red_flags >= 3:
             lines.append("")
-            lines.append(
-                f"⚠ HIGH STRESS: {red_flags} unsatisfied/part-satisfied charges"
-            )
+            lines.append(f"⚠ HIGH STRESS: {red_flags} unsatisfied/part-satisfied charges")
         elif red_flags >= 1:
             lines.append("")
             lines.append(f"⚡ MODERATE: {red_flags} outstanding charge(s)")
@@ -841,9 +806,7 @@ class CreditorFilingsTool(Tool):
             headers={"User-Agent": _UA},
             follow_redirects=True,
         ) as client:
-            entries, total = _search_efts(
-                client, query=combined_query, days_back=days_back, limit=limit
-            )
+            entries, total = _search_efts(client, query=combined_query, days_back=days_back, limit=limit)
 
         clusters = _detect_filing_clusters(entries)
 
@@ -879,10 +842,7 @@ class CreditorFilingsTool(Tool):
         if clusters:
             lines.append(f"Entity clusters (2+ filings): {len(clusters)}")
             for cl in clusters[:10]:
-                lines.append(
-                    f"  ⚠ {cl['entity']} — {cl['filing_count']} filings "
-                    f"({cl['date_range']}) CIK {cl['cik']}"
-                )
+                lines.append(f"  ⚠ {cl['entity']} — {cl['filing_count']} filings ({cl['date_range']}) CIK {cl['cik']}")
             if len(clusters) > 10:
                 lines.append(f"  ... and {len(clusters) - 10} more clusters")
             lines.append("")

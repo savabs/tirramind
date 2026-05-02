@@ -16,30 +16,25 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import httpx
-import pytest
 
 from agent.tools.migration_flows import (
-    MigrationFlowsTool,
-    VALID_MODES,
     _UNHCR_BASE,
-    _WB_BASE,
+    VALID_MODES,
     WB_REMITTANCE_INDICATOR,
-    _CACHE_TTL,
-    _fetch_unhcr,
-    _safe_int,
-    _parse_population_records,
-    _parse_asylum_records,
-    _fetch_wb_remittances,
-    _parse_wb_records,
-    _compute_displacement_signals,
+    MigrationFlowsTool,
     _compute_asylum_signals,
+    _compute_displacement_signals,
     _compute_remittance_signals,
-    _format_displacement_summary,
+    _fetch_unhcr,
+    _fetch_wb_remittances,
     _format_asylum_summary,
+    _format_displacement_summary,
     _format_remittance_summary,
+    _parse_asylum_records,
+    _parse_population_records,
+    _parse_wb_records,
+    _safe_int,
 )
-from agent.tools.base import ToolResult
-
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -256,9 +251,22 @@ class TestParsePopulationRecords:
         items = [_population_item()]
         r = _parse_population_records(items)[0]
         expected_keys = {
-            "year", "coo", "coo_name", "coo_iso", "coa", "coa_name",
-            "coa_iso", "refugees", "asylum_seekers", "returned_refugees",
-            "idps", "returned_idps", "stateless", "ooc", "oip", "hst",
+            "year",
+            "coo",
+            "coo_name",
+            "coo_iso",
+            "coa",
+            "coa_name",
+            "coa_iso",
+            "refugees",
+            "asylum_seekers",
+            "returned_refugees",
+            "idps",
+            "returned_idps",
+            "stateless",
+            "ooc",
+            "oip",
+            "hst",
         }
         assert expected_keys == set(r.keys())
 
@@ -316,8 +324,7 @@ class TestDisplacementSignals:
 
     def test_critical_alert(self):
         records = [
-            {"refugees": 8_000_000, "asylum_seekers": 1_000_000,
-             "idps": 2_000_000, "stateless": 100_000},
+            {"refugees": 8_000_000, "asylum_seekers": 1_000_000, "idps": 2_000_000, "stateless": 100_000},
         ]
         s = _compute_displacement_signals(records)
         assert "CRITICAL" in s["alert"]
@@ -325,32 +332,28 @@ class TestDisplacementSignals:
 
     def test_warning_alert(self):
         records = [
-            {"refugees": 500_000, "asylum_seekers": 300_000,
-             "idps": 300_000, "stateless": 0},
+            {"refugees": 500_000, "asylum_seekers": 300_000, "idps": 300_000, "stateless": 0},
         ]
         s = _compute_displacement_signals(records)
         assert "WARNING" in s["alert"]
 
     def test_notice_alert(self):
         records = [
-            {"refugees": 50_000, "asylum_seekers": 30_000,
-             "idps": 30_000, "stateless": 0},
+            {"refugees": 50_000, "asylum_seekers": 30_000, "idps": 30_000, "stateless": 0},
         ]
         s = _compute_displacement_signals(records)
         assert "NOTICE" in s["alert"]
 
     def test_no_alert(self):
         records = [
-            {"refugees": 1_000, "asylum_seekers": 500,
-             "idps": 0, "stateless": 0},
+            {"refugees": 1_000, "asylum_seekers": 500, "idps": 0, "stateless": 0},
         ]
         s = _compute_displacement_signals(records)
         assert s["alert"] is None
 
     def test_composition_pct(self):
         records = [
-            {"refugees": 600, "asylum_seekers": 200,
-             "idps": 200, "stateless": 0},
+            {"refugees": 600, "asylum_seekers": 200, "idps": 200, "stateless": 0},
         ]
         s = _compute_displacement_signals(records)
         assert s["refugee_pct"] == 60.0
@@ -359,8 +362,7 @@ class TestDisplacementSignals:
 
     def test_zero_displaced_no_pct(self):
         records = [
-            {"refugees": 0, "asylum_seekers": 0,
-             "idps": 0, "stateless": 100},
+            {"refugees": 0, "asylum_seekers": 0, "idps": 0, "stateless": 100},
         ]
         s = _compute_displacement_signals(records)
         assert s["total_displaced"] == 0
@@ -377,8 +379,7 @@ class TestAsylumSignals:
 
     def test_restrictive(self):
         records = [
-            {"dec_recognized": 10, "dec_rejected": 90,
-             "dec_closed": 5, "dec_other": 0, "dec_total": 105},
+            {"dec_recognized": 10, "dec_rejected": 90, "dec_closed": 5, "dec_other": 0, "dec_total": 105},
         ]
         s = _compute_asylum_signals(records)
         assert "RESTRICTIVE" in s["alert"]
@@ -386,8 +387,7 @@ class TestAsylumSignals:
 
     def test_liberal(self):
         records = [
-            {"dec_recognized": 90, "dec_rejected": 10,
-             "dec_closed": 5, "dec_other": 0, "dec_total": 105},
+            {"dec_recognized": 90, "dec_rejected": 10, "dec_closed": 5, "dec_other": 0, "dec_total": 105},
         ]
         s = _compute_asylum_signals(records)
         assert "LIBERAL" in s["alert"]
@@ -395,8 +395,7 @@ class TestAsylumSignals:
 
     def test_normal_no_alert(self):
         records = [
-            {"dec_recognized": 50, "dec_rejected": 50,
-             "dec_closed": 10, "dec_other": 5, "dec_total": 115},
+            {"dec_recognized": 50, "dec_rejected": 50, "dec_closed": 10, "dec_other": 5, "dec_total": 115},
         ]
         s = _compute_asylum_signals(records)
         assert s["alert"] is None
@@ -404,8 +403,7 @@ class TestAsylumSignals:
 
     def test_zero_substantive_no_rate(self):
         records = [
-            {"dec_recognized": 0, "dec_rejected": 0,
-             "dec_closed": 10, "dec_other": 0, "dec_total": 10},
+            {"dec_recognized": 0, "dec_rejected": 0, "dec_closed": 10, "dec_other": 0, "dec_total": 10},
         ]
         s = _compute_asylum_signals(records)
         assert s["acceptance_rate"] is None
@@ -413,8 +411,7 @@ class TestAsylumSignals:
 
     def test_closure_rate(self):
         records = [
-            {"dec_recognized": 40, "dec_rejected": 40,
-             "dec_closed": 20, "dec_other": 0, "dec_total": 100},
+            {"dec_recognized": 40, "dec_rejected": 40, "dec_closed": 20, "dec_other": 0, "dec_total": 100},
         ]
         s = _compute_asylum_signals(records)
         assert s["closure_rate"] == 20.0
@@ -763,6 +760,7 @@ class TestEndToEnd:
 class TestRegistryIntegration:
     def test_tool_importable(self):
         from agent.tools.migration_flows import MigrationFlowsTool
+
         assert MigrationFlowsTool is not None
 
     def test_bandit_arm_exists(self):

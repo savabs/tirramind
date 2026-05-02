@@ -21,7 +21,7 @@ import csv
 import io
 import logging
 import zipfile
-from datetime import datetime, timedelta, date
+from datetime import date, datetime
 from typing import Any
 
 import httpx
@@ -38,8 +38,17 @@ _ZIP_TIMEOUT = 60
 
 # All valid NYISO load zones
 NYISO_ZONES = [
-    "CAPITL", "CENTRL", "DUNWOD", "GENESE", "HUD VL",
-    "LONGIL", "MHK VL", "MILLWD", "N.Y.C.", "NORTH", "WEST",
+    "CAPITL",
+    "CENTRL",
+    "DUNWOD",
+    "GENESE",
+    "HUD VL",
+    "LONGIL",
+    "MHK VL",
+    "MILLWD",
+    "N.Y.C.",
+    "NORTH",
+    "WEST",
 ]
 
 # Dataset keys mapping
@@ -88,10 +97,7 @@ class PowerGridTool(Tool):
                 },
                 "zone": {
                     "type": "string",
-                    "description": (
-                        "NYISO zone filter (e.g. 'N.Y.C.', 'CAPITL'). "
-                        "Omit for all zones."
-                    ),
+                    "description": ("NYISO zone filter (e.g. 'N.Y.C.', 'CAPITL'). Omit for all zones."),
                 },
                 "date": {
                     "type": "string",
@@ -201,13 +207,15 @@ class PowerGridTool(Tool):
             trough = min(loads)
             avg = sum(loads) / len(loads)
             total_peak += peak
-            summaries.append({
-                "zone": z,
-                "peak_mw": round(peak, 1),
-                "trough_mw": round(trough, 1),
-                "avg_mw": round(avg, 1),
-                "readings": len(loads),
-            })
+            summaries.append(
+                {
+                    "zone": z,
+                    "peak_mw": round(peak, 1),
+                    "trough_mw": round(trough, 1),
+                    "avg_mw": round(avg, 1),
+                    "readings": len(loads),
+                }
+            )
 
         lines = [f"NYISO Demand — {date_str}", f"Zones: {len(summaries)}, Peak system: {round(total_peak, 0)} MW", ""]
         for s in summaries:
@@ -269,11 +277,13 @@ class PowerGridTool(Tool):
         for fuel_type in sorted(fuel_totals.keys()):
             mw = fuel_totals[fuel_type]
             pct = (mw / total_gen) * 100
-            fuels.append({
-                "fuel_type": fuel_type,
-                "mw": round(mw, 1),
-                "pct": round(pct, 1),
-            })
+            fuels.append(
+                {
+                    "fuel_type": fuel_type,
+                    "mw": round(mw, 1),
+                    "pct": round(pct, 1),
+                }
+            )
 
         # Sort by MW descending
         fuels.sort(key=lambda x: x["mw"], reverse=True)
@@ -359,14 +369,16 @@ class PowerGridTool(Tool):
             spread = None
             if da_price is not None and rt_price is not None:
                 spread = round(rt_price - da_price, 2)
-            pricing.append({
-                "zone": z,
-                "da_lbmp": round(da_price, 2) if da_price is not None else None,
-                "rt_lbmp": round(rt_price, 2) if rt_price is not None else None,
-                "spread": spread,
-                "da_congestion": round(da["congestion"], 2) if da and da["congestion"] is not None else None,
-                "rt_congestion": round(rt["congestion"], 2) if rt and rt["congestion"] is not None else None,
-            })
+            pricing.append(
+                {
+                    "zone": z,
+                    "da_lbmp": round(da_price, 2) if da_price is not None else None,
+                    "rt_lbmp": round(rt_price, 2) if rt_price is not None else None,
+                    "spread": spread,
+                    "da_congestion": round(da["congestion"], 2) if da and da["congestion"] is not None else None,
+                    "rt_congestion": round(rt["congestion"], 2) if rt and rt["congestion"] is not None else None,
+                }
+            )
 
         if not pricing:
             return ToolResult(success=False, output=f"No pricing zones parsed for {date_str}.")
@@ -471,12 +483,14 @@ class PowerGridTool(Tool):
                 dev_pct = None
                 if act_val is not None and isinstance(act_val, (int, float)) and fc_val != 0:
                     dev_pct = round(((act_val - fc_val) / fc_val) * 100, 1)
-                deviations.append({
-                    "hour": ts,
-                    "forecast_mw": round(fc_val, 0),
-                    "actual_mw": round(act_val, 0) if isinstance(act_val, (int, float)) else None,
-                    "deviation_pct": dev_pct,
-                })
+                deviations.append(
+                    {
+                        "hour": ts,
+                        "forecast_mw": round(fc_val, 0),
+                        "actual_mw": round(act_val, 0) if isinstance(act_val, (int, float)) else None,
+                        "deviation_pct": dev_pct,
+                    }
+                )
 
             significant = [d for d in deviations if d["deviation_pct"] is not None and abs(d["deviation_pct"]) > 5.0]
             avg_dev = None
@@ -484,13 +498,15 @@ class PowerGridTool(Tool):
             if dev_vals:
                 avg_dev = round(sum(dev_vals) / len(dev_vals), 1)
 
-            results.append({
-                "zone": z,
-                "hours": len(deviations),
-                "avg_deviation_pct": avg_dev,
-                "significant_deviations": len(significant),
-                "deviations": deviations,
-            })
+            results.append(
+                {
+                    "zone": z,
+                    "hours": len(deviations),
+                    "avg_deviation_pct": avg_dev,
+                    "significant_deviations": len(significant),
+                    "deviations": deviations,
+                }
+            )
 
         if not results:
             # Fall back to just showing forecast
@@ -521,10 +537,7 @@ class PowerGridTool(Tool):
             output="\n".join(lines),
             data={
                 "date": date_str,
-                "zones": [
-                    {k: v for k, v in r.items() if k != "deviations"}
-                    for r in results
-                ],
+                "zones": [{k: v for k, v in r.items() if k != "deviations"} for r in results],
                 "persistent_deviation_zones": [p["zone"] for p in persistent],
             },
         )
@@ -533,7 +546,7 @@ class PowerGridTool(Tool):
 
     def _fetch_csv(self, dataset: str, date_str: str, directory: str | None = None) -> list[dict] | None:
         """Fetch and parse a NYISO CSV. Returns list of row dicts, or None if unavailable.
-        
+
         Args:
             dataset: File name key (e.g. 'pal', 'damlbmp_zone')
             date_str: Date in YYYY-MM-DD format
@@ -648,9 +661,7 @@ class PowerGridTool(Tool):
 
     # ── Helpers ────────────────────────────────────────────────────
 
-    def _filter_by_zone(
-        self, rows: list[dict], zone_col: str, zone: str | None
-    ) -> list[dict]:
+    def _filter_by_zone(self, rows: list[dict], zone_col: str, zone: str | None) -> list[dict]:
         """Filter rows by zone. Returns all rows if zone is None."""
         if zone is None:
             return rows

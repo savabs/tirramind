@@ -11,9 +11,7 @@ Covers:
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import MagicMock, call, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 from agent.pipeline.entity import entity_id_from_key
 from agent.tools.instrument_universe import (
@@ -22,8 +20,7 @@ from agent.tools.instrument_universe import (
     _entity_id,
     _persist_instrument_links,
 )
-from agent.tools.whale_alert import WhaleAlertTool, _BTC_INSTRUMENT_EID
-
+from agent.tools.whale_alert import _BTC_INSTRUMENT_EID, WhaleAlertTool
 
 # ── Helpers ────────────────────────────────────────────────────
 
@@ -88,9 +85,7 @@ class TestInstrumentDefProtocol:
         assert inst.protocol is None
 
     def test_crypto_with_protocol(self) -> None:
-        inst = InstrumentDef(
-            "BTC-USD", "Bitcoin", "crypto", "Global", protocol="bitcoin"
-        )
+        inst = InstrumentDef("BTC-USD", "Bitcoin", "crypto", "Global", protocol="bitcoin")
         assert inst.protocol == "bitcoin"
         assert inst.ticker == "BTC-USD"
 
@@ -157,10 +152,7 @@ class TestTracksProtocolLinks:
         # Check register_entity was called with protocol type for both
         reg_calls = store.register_entity.call_args_list
         protocol_regs = [
-            c
-            for c in reg_calls
-            if c.kwargs.get("entity_type") == "protocol"
-            or (c.args and c.args[0] == "protocol")
+            c for c in reg_calls if c.kwargs.get("entity_type") == "protocol" or (c.args and c.args[0] == "protocol")
         ]
         assert len(protocol_regs) == 2
 
@@ -168,9 +160,7 @@ class TestTracksProtocolLinks:
         store = _mock_store()
         _persist_instrument_links(store)
         link_calls = store.link_entities.call_args_list
-        protocol_links = [
-            c for c in link_calls if c.kwargs.get("link_type") == "tracks_protocol"
-        ]
+        protocol_links = [c for c in link_calls if c.kwargs.get("link_type") == "tracks_protocol"]
         assert len(protocol_links) == 2
 
         btc_eid = _entity_id("BTC-USD")
@@ -178,9 +168,7 @@ class TestTracksProtocolLinks:
         btc_proto_eid = entity_id_from_key("protocol", "bitcoin")
         eth_proto_eid = entity_id_from_key("protocol", "ethereum")
 
-        link_pairs = {
-            (c.kwargs["entity_id_a"], c.kwargs["entity_id_b"]) for c in protocol_links
-        }
+        link_pairs = {(c.kwargs["entity_id_a"], c.kwargs["entity_id_b"]) for c in protocol_links}
         assert (btc_eid, btc_proto_eid) in link_pairs
         assert (eth_eid, eth_proto_eid) in link_pairs
 
@@ -196,12 +184,8 @@ class TestTracksProtocolLinks:
         store = _mock_store()
         _persist_instrument_links(store)
         link_calls = store.link_entities.call_args_list
-        protocol_links = [
-            c for c in link_calls if c.kwargs.get("link_type") == "tracks_protocol"
-        ]
-        protocol_tickers = {
-            c.kwargs.get("metadata", {}).get("ticker") for c in protocol_links
-        }
+        protocol_links = [c for c in link_calls if c.kwargs.get("link_type") == "tracks_protocol"]
+        protocol_tickers = {c.kwargs.get("metadata", {}).get("ticker") for c in protocol_links}
         assert protocol_tickers == {"BTC-USD", "ETH-USD"}
 
 
@@ -228,9 +212,7 @@ class TestProtocolEntityIDConsistency:
         assert entity_id_from_key("protocol", "ethereum") == eid
 
     def test_bitcoin_ne_ethereum(self) -> None:
-        assert entity_id_from_key("protocol", "bitcoin") != entity_id_from_key(
-            "protocol", "ethereum"
-        )
+        assert entity_id_from_key("protocol", "bitcoin") != entity_id_from_key("protocol", "ethereum")
 
     def test_instrument_eid_matches_entity_id_from_key(self) -> None:
         """_entity_id(ticker) uses same hash as entity_id_from_key('instrument', ticker)."""
@@ -248,8 +230,8 @@ class TestWhaleAlertTradesInstrument:
 
     def test_btc_instrument_eid_computed(self) -> None:
         assert _BTC_INSTRUMENT_EID is not None
-        assert _BTC_INSTRUMENT_EID == entity_id_from_key("instrument", "BTC-USD")
-        assert _BTC_INSTRUMENT_EID == _entity_id("BTC-USD")
+        assert entity_id_from_key("instrument", "BTC-USD") == _BTC_INSTRUMENT_EID
+        assert _entity_id("BTC-USD") == _BTC_INSTRUMENT_EID
 
     def test_trades_instrument_link_created(self) -> None:
         store = _mock_store()
@@ -258,9 +240,7 @@ class TestWhaleAlertTradesInstrument:
         tool._persist_entities_inner(txs)
 
         link_calls = store.link_entities.call_args_list
-        ti_links = [
-            c for c in link_calls if c.kwargs.get("link_type") == "trades_instrument"
-        ]
+        ti_links = [c for c in link_calls if c.kwargs.get("link_type") == "trades_instrument"]
         assert len(ti_links) >= 1
 
     def test_trades_instrument_targets_btc(self) -> None:
@@ -270,9 +250,7 @@ class TestWhaleAlertTradesInstrument:
         tool._persist_entities_inner(txs)
 
         link_calls = store.link_entities.call_args_list
-        ti_links = [
-            c for c in link_calls if c.kwargs.get("link_type") == "trades_instrument"
-        ]
+        ti_links = [c for c in link_calls if c.kwargs.get("link_type") == "trades_instrument"]
         for c in ti_links:
             assert c.kwargs["entity_id_b"] == _BTC_INSTRUMENT_EID
 
@@ -288,9 +266,7 @@ class TestWhaleAlertTradesInstrument:
         tool._persist_entities_inner(txs)
 
         link_calls = store.link_entities.call_args_list
-        ti_links = [
-            c for c in link_calls if c.kwargs.get("link_type") == "trades_instrument"
-        ]
+        ti_links = [c for c in link_calls if c.kwargs.get("link_type") == "trades_instrument"]
         linked_wallets = {c.kwargs["entity_id_a"] for c in ti_links}
         assert entity_id_from_key("wallet", "sender1") in linked_wallets
         assert entity_id_from_key("wallet", "receiver1") in linked_wallets
@@ -313,9 +289,7 @@ class TestWhaleAlertTradesInstrument:
         tool._persist_entities_inner(txs)
 
         link_calls = store.link_entities.call_args_list
-        ti_links = [
-            c for c in link_calls if c.kwargs.get("link_type") == "trades_instrument"
-        ]
+        ti_links = [c for c in link_calls if c.kwargs.get("link_type") == "trades_instrument"]
         linked_wallets = {c.kwargs["entity_id_a"] for c in ti_links}
         for addr in ("s1", "s2", "r1", "r2"):
             assert entity_id_from_key("wallet", addr) in linked_wallets
@@ -338,9 +312,7 @@ class TestWhaleAlertTradesInstrument:
         tool._persist_entities_inner(txs)
 
         link_calls = store.link_entities.call_args_list
-        ti_links = [
-            c for c in link_calls if c.kwargs.get("link_type") == "trades_instrument"
-        ]
+        ti_links = [c for c in link_calls if c.kwargs.get("link_type") == "trades_instrument"]
         assert len(ti_links) == 0
 
     def test_idempotent_same_wallet(self) -> None:
@@ -351,9 +323,7 @@ class TestWhaleAlertTradesInstrument:
         tool._persist_entities_inner([tx, tx])
 
         link_calls = store.link_entities.call_args_list
-        ti_links = [
-            c for c in link_calls if c.kwargs.get("link_type") == "trades_instrument"
-        ]
+        ti_links = [c for c in link_calls if c.kwargs.get("link_type") == "trades_instrument"]
         # Called twice (once per tx), but store idempotency handles dedup
         assert len(ti_links) == 2
 
@@ -370,8 +340,6 @@ class TestWhaleAlertTradesInstrument:
         tool._persist_entities_inner(txs)
 
         link_calls = store.link_entities.call_args_list
-        ti_links = [
-            c for c in link_calls if c.kwargs.get("link_type") == "trades_instrument"
-        ]
+        ti_links = [c for c in link_calls if c.kwargs.get("link_type") == "trades_instrument"]
         for c in ti_links:
             assert c.kwargs["metadata"]["tx_hash"] == "deadbeef123"

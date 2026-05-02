@@ -38,7 +38,7 @@ class CompositeClassifier:
         self.llm_floor = float(llm_floor)
 
     @classmethod
-    def from_config(cls, cfg: AWOSConfig) -> "CompositeClassifier":
+    def from_config(cls, cfg: AWOSConfig) -> CompositeClassifier:
         return cls(
             mode=cfg.classifier_mode,
             heuristic=HeuristicClassifier(cfg.heuristic_confidence_ceiling),
@@ -52,9 +52,7 @@ class CompositeClassifier:
         )
 
     # ------------------------------------------------------------------
-    def classify(
-        self, text: str, context: dict | None = None
-    ) -> Classification:
+    def classify(self, text: str, context: dict | None = None) -> Classification:
         if self.mode == "off":
             return Classification(
                 category=TriggerCategory.UNKNOWN,

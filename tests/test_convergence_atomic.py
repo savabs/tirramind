@@ -22,7 +22,6 @@ from agent.convergence.atomic_signals import (
 from agent.convergence.evidence import Evidence
 from agent.convergence.taxonomy import SignalMeta
 
-
 # ── Helpers ────────────────────────────────────────────────────
 
 DAY = 86_400

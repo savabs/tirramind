@@ -12,9 +12,7 @@ Covers cert_transparency, dns_monitor, and wikipedia_pageviews L2 upgrades:
 
 from __future__ import annotations
 
-import time
-from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -23,7 +21,6 @@ from agent.pipeline.store import PipelineStore
 from agent.tools.cert_transparency import CertTransparencyTool
 from agent.tools.dns_monitor import DnsMonitorTool
 from agent.tools.wikipedia_pageviews import WikipediaPageviewsTool
-
 
 # ── Fixtures ───────────────────────────────────────────────────
 
@@ -79,9 +76,7 @@ class TestCertTransparencyL2:
         tool._persist_entities("example.com", certs)
 
         domain_eid = entity_id_from_key("domain", "example.com")
-        obs = store.query_entity_observations(
-            domain_eid, source_tool="cert_transparency"
-        )
+        obs = store.query_entity_observations(domain_eid, source_tool="cert_transparency")
         assert len(obs) == 1
         assert obs[0]["observation_type"] == "cert_issued"
         assert obs[0]["depth_level"] == 2
@@ -99,9 +94,7 @@ class TestCertTransparencyL2:
         tool._persist_entities("example.com", certs)
 
         domain_eid = entity_id_from_key("domain", "example.com")
-        obs = store.query_entity_observations(
-            domain_eid, source_tool="cert_transparency"
-        )
+        obs = store.query_entity_observations(domain_eid, source_tool="cert_transparency")
         assert len(obs) == 3
 
     def test_persist_entities_empty_certs(self, store):
@@ -115,9 +108,7 @@ class TestCertTransparencyL2:
     def test_persist_entities_no_store(self):
         """No store configured — should silently skip."""
         tool = CertTransparencyTool()
-        tool._persist_entities(
-            "example.com", [{"entry_timestamp": "2025-01-01T00:00:00Z"}]
-        )
+        tool._persist_entities("example.com", [{"entry_timestamp": "2025-01-01T00:00:00Z"}])
         # No exception raised
 
     def test_persist_entities_bad_timestamp(self, store):
@@ -127,9 +118,7 @@ class TestCertTransparencyL2:
         tool._persist_entities("test.com", certs)
 
         domain_eid = entity_id_from_key("domain", "test.com")
-        obs = store.query_entity_observations(
-            domain_eid, source_tool="cert_transparency"
-        )
+        obs = store.query_entity_observations(domain_eid, source_tool="cert_transparency")
         assert len(obs) == 1
         # Should have a reasonable timestamp (not crash)
         assert obs[0]["observed_at"] > 0
@@ -144,23 +133,16 @@ class TestCertTransparencyL2:
     def test_persist_entities_error_isolation(self, store):
         """Store error should be caught, not propagated."""
         tool = CertTransparencyTool(pipeline_store=store)
-        with patch.object(
-            store, "register_entity", side_effect=RuntimeError("DB error")
-        ):
+        with patch.object(store, "register_entity", side_effect=RuntimeError("DB error")):
             # Should not raise
-            tool._persist_entities(
-                "example.com", [{"entry_timestamp": "2025-01-01T00:00:00Z"}]
-            )
+            tool._persist_entities("example.com", [{"entry_timestamp": "2025-01-01T00:00:00Z"}])
 
     def test_domain_alias_stored(self, store):
         tool = CertTransparencyTool(pipeline_store=store)
         tool._persist_entities("example.com", [])
         domain_eid = entity_id_from_key("domain", "example.com")
         aliases = store.query_entity_aliases(domain_eid)
-        assert any(
-            a["source"] == "domain_name" and a["external_id"] == "example.com"
-            for a in aliases
-        )
+        assert any(a["source"] == "domain_name" and a["external_id"] == "example.com" for a in aliases)
 
 
 # ── DnsMonitorTool L2 Tests ────────────────────────────────────
@@ -230,9 +212,7 @@ class TestDnsMonitorL2:
 
     def test_persist_entities_error_isolation(self, store):
         tool = DnsMonitorTool(pipeline_store=store)
-        with patch.object(
-            store, "register_entity", side_effect=RuntimeError("DB error")
-        ):
+        with patch.object(store, "register_entity", side_effect=RuntimeError("DB error")):
             tool._persist_entities("example.com", {"record_count": 5})
 
     def test_persist_entities_empty_analysis(self, store):
@@ -251,19 +231,14 @@ class TestDnsMonitorL2:
         tool._persist_entities("example.com", {})
         domain_eid = entity_id_from_key("domain", "example.com")
         aliases = store.query_entity_aliases(domain_eid)
-        assert any(
-            a["source"] == "domain_name" and a["external_id"] == "example.com"
-            for a in aliases
-        )
+        assert any(a["source"] == "domain_name" and a["external_id"] == "example.com" for a in aliases)
 
     def test_same_domain_from_cert_and_dns_same_entity(self, store):
         """Domain registered by cert_transparency and dns_monitor should be the same entity."""
         ct = CertTransparencyTool(pipeline_store=store)
         dns = DnsMonitorTool(pipeline_store=store)
 
-        ct._persist_entities(
-            "example.com", [{"entry_timestamp": "2025-01-01T00:00:00Z"}]
-        )
+        ct._persist_entities("example.com", [{"entry_timestamp": "2025-01-01T00:00:00Z"}])
         dns._persist_entities("example.com", {"record_count": 5})
 
         entities = store.query_all_entities()
@@ -329,9 +304,7 @@ class TestWikipediaPageviewsL2:
         tool._persist_entities(spikes)
 
         topic_eid = entity_id_from_key("topic", "Elon_Musk")
-        obs = store.query_entity_observations(
-            topic_eid, source_tool="wikipedia_pageviews"
-        )
+        obs = store.query_entity_observations(topic_eid, source_tool="wikipedia_pageviews")
         assert len(obs) == 1
         assert obs[0]["observation_type"] == "pageview_spike"
         assert obs[0]["depth_level"] == 2
@@ -382,9 +355,7 @@ class TestWikipediaPageviewsL2:
         assert len(entities) == 1
         # Only first spike creates observation (dedup by seen set)
         topic_eid = entity_id_from_key("topic", "Tesla,_Inc.")
-        obs = store.query_entity_observations(
-            topic_eid, source_tool="wikipedia_pageviews"
-        )
+        obs = store.query_entity_observations(topic_eid, source_tool="wikipedia_pageviews")
         assert len(obs) == 1
 
     def test_persist_entities_empty_spikes(self, store):
@@ -405,9 +376,7 @@ class TestWikipediaPageviewsL2:
         tool._persist_entities(spikes)
 
         topic_eid = entity_id_from_key("topic", "Test_Article")
-        obs = store.query_entity_observations(
-            topic_eid, source_tool="wikipedia_pageviews"
-        )
+        obs = store.query_entity_observations(topic_eid, source_tool="wikipedia_pageviews")
         assert len(obs) == 1
         assert obs[0]["observed_at"] > 0
 
@@ -421,9 +390,7 @@ class TestWikipediaPageviewsL2:
 
     def test_persist_entities_error_isolation(self, store):
         tool = WikipediaPageviewsTool(pipeline_store=store)
-        with patch.object(
-            store, "register_entity", side_effect=RuntimeError("DB error")
-        ):
+        with patch.object(store, "register_entity", side_effect=RuntimeError("DB error")):
             tool._persist_entities([{"article": "Test", "date": "20250101"}])
 
     def test_topic_alias_stored(self, store):
@@ -433,10 +400,7 @@ class TestWikipediaPageviewsL2:
 
         topic_eid = entity_id_from_key("topic", "Tesla,_Inc.")
         aliases = store.query_entity_aliases(topic_eid)
-        assert any(
-            a["source"] == "wikipedia_article" and a["external_id"] == "Tesla,_Inc."
-            for a in aliases
-        )
+        assert any(a["source"] == "wikipedia_article" and a["external_id"] == "Tesla,_Inc." for a in aliases)
 
 
 # ── Cross-Tool Integration ─────────────────────────────────────
@@ -468,9 +432,7 @@ class TestCrossToolEntityDedup:
         )
 
         # Single domain entity
-        domain_entities = [
-            e for e in store.query_all_entities() if e["entity_type"] == "domain"
-        ]
+        domain_entities = [e for e in store.query_all_entities() if e["entity_type"] == "domain"]
         assert len(domain_entities) == 1
 
         # Two observations from different tools

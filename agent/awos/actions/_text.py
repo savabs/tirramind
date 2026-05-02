@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import re
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 SELF_MARKER = "<!-- awos:self -->"
@@ -17,9 +17,7 @@ def atomic_write(path: Path, content: str) -> None:
     Uses a same-directory temp file + ``os.replace``. Preserves encoding.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(
-        prefix=path.name + ".", suffix=".tmp", dir=str(path.parent)
-    )
+    fd, tmp = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=str(path.parent))
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(content)
@@ -67,9 +65,7 @@ def find_section(body: str, title: str) -> tuple[int, int] | None:
     return None
 
 
-def append_to_section(
-    body: str, title: str, content_to_add: str, *, dedup: bool = True
-) -> str:
+def append_to_section(body: str, title: str, content_to_add: str, *, dedup: bool = True) -> str:
     """Append ``content_to_add`` to the given section.
 
     If the section doesn't exist, append a new ``## title`` at the end.
@@ -93,7 +89,7 @@ def append_to_section(
 
 
 def now_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 _LAST_UPDATED_RE = re.compile(
@@ -108,7 +104,7 @@ def bump_last_updated(body: str) -> str:
     Preserves the version suffix (e.g. '— v1.2') if present.
     If the pattern isn't found, inserts a line after the first H1.
     """
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
 
     def _replacer(m: re.Match) -> str:  # type: ignore[type-arg]
         return m.group(1) + now

@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from agent.pipeline.entity import entity_id_from_key, normalize_company_name
-from agent.tools.form144 import Form144Tool, _date_to_timestamp, _normalize_name
+from agent.tools.form144 import Form144Tool, _date_to_timestamp
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -219,9 +219,7 @@ class TestCIKThreading:
             reporter_name="BOB B",
             accession="0000012345-26-000002",
         )
-        filings = self._parse_with_hits(
-            [h1, h2], xml_text=None
-        )  # XML fetch returns None
+        filings = self._parse_with_hits([h1, h2], xml_text=None)  # XML fetch returns None
         # All records should be metadata-only
         for f in filings:
             assert f.get("_metadata_only") is True
@@ -244,7 +242,6 @@ class TestCIKThreading:
 
 
 class TestConstructorPipelineStore:
-
     def test_default_no_store(self):
         tool = Form144Tool()
         assert tool._store is None
@@ -280,7 +277,6 @@ class TestConstructorPipelineStore:
 
 
 class TestPersistEntities:
-
     def _tool_with_store(self):
         store = MagicMock()
         store.register_entity = MagicMock()
@@ -376,11 +372,7 @@ class TestPersistEntities:
         ]
         tool._persist_entities(filings)
         # Company registered once (deduped)
-        company_calls = [
-            c
-            for c in store.register_entity.call_args_list
-            if c.kwargs.get("entity_type") == "company"
-        ]
+        company_calls = [c for c in store.register_entity.call_args_list if c.kwargs.get("entity_type") == "company"]
         assert len(company_calls) == 1
 
     def test_dedup_insiders(self):
@@ -391,11 +383,7 @@ class TestPersistEntities:
         ]
         tool._persist_entities(filings)
         # Insider registered once (deduped), but 2 observations stored
-        insider_calls = [
-            c
-            for c in store.register_entity.call_args_list
-            if c.kwargs.get("entity_type") == "person"
-        ]
+        insider_calls = [c for c in store.register_entity.call_args_list if c.kwargs.get("entity_type") == "person"]
         assert len(insider_calls) == 1
         assert store.store_entity_observation.call_count == 2
 
@@ -403,33 +391,25 @@ class TestPersistEntities:
         tool, store = self._tool_with_store()
         filings = [_make_filing(issuer_cik="", reporter_cik="0000099999")]
         tool._persist_entities(filings)
-        company_calls = [
-            c
-            for c in store.register_entity.call_args_list
-            if c.kwargs.get("entity_type") == "company"
-        ]
+        company_calls = [c for c in store.register_entity.call_args_list if c.kwargs.get("entity_type") == "company"]
         assert len(company_calls) == 0
 
     def test_missing_reporter_cik_skips_insider_and_observation(self):
         tool, store = self._tool_with_store()
         filings = [_make_filing(reporter_cik="", issuer_cik="0000011111")]
         tool._persist_entities(filings)
-        insider_calls = [
-            c
-            for c in store.register_entity.call_args_list
-            if c.kwargs.get("entity_type") == "person"
-        ]
+        insider_calls = [c for c in store.register_entity.call_args_list if c.kwargs.get("entity_type") == "person"]
         assert len(insider_calls) == 0
         store.store_entity_observation.assert_not_called()
 
     def test_persist_failure_does_not_break_execute(self):
         """Persistence error must not prevent ToolResult from returning."""
         tool = Form144Tool(pipeline_store=MagicMock())
-        with patch.object(
-            tool, "_persist_entities", side_effect=RuntimeError("db fail")
+        with (
+            patch.object(tool, "_persist_entities", side_effect=RuntimeError("db fail")),
+            patch.object(tool, "_fetch_recent_144s", return_value=[]),
         ):
-            with patch.object(tool, "_fetch_recent_144s", return_value=[]):
-                result = tool.execute(days_back=7)
+            result = tool.execute(days_back=7)
         assert result.success is True
 
     @patch("agent.tools.form144.entity_id_from_key", None)
@@ -441,16 +421,10 @@ class TestPersistEntities:
     def test_normalization_error_falls_back(self):
         """If normalize_company_name raises, use raw company name."""
         tool, store = self._tool_with_store()
-        with patch(
-            "agent.tools.form144.normalize_company_name", side_effect=ValueError("bad")
-        ):
+        with patch("agent.tools.form144.normalize_company_name", side_effect=ValueError("bad")):
             tool._persist_entities([_make_filing(company="Weird Co!!!")])
         # Should still register with the raw name
-        company_calls = [
-            c
-            for c in store.register_entity.call_args_list
-            if c.kwargs.get("entity_type") == "company"
-        ]
+        company_calls = [c for c in store.register_entity.call_args_list if c.kwargs.get("entity_type") == "company"]
         assert len(company_calls) == 1
         assert company_calls[0].kwargs["canonical_name"] == "Weird Co!!!"
 
@@ -461,7 +435,6 @@ class TestPersistEntities:
 
 
 class TestCIKDedup:
-
     def test_dedup_by_cik_not_name(self):
         """Same reporter_cik with different display names → one insider."""
         filings = [
@@ -484,28 +457,18 @@ class TestCIKDedup:
                 dollar_value=300000,
             ),
         ]
-        cluster = Form144Tool._find_best_sell_cluster(
-            filings, window_days=14, min_size=2
-        )
+        cluster = Form144Tool._find_best_sell_cluster(filings, window_days=14, min_size=2)
         assert cluster is not None
         assert cluster["insider_count"] == 2  # Not 3
 
     def test_name_fallback_when_no_cik(self):
         """Without reporter_cik, falls back to _normalize_name dedup."""
         filings = [
-            _make_filing(
-                insider_name="John Smith", reporter_cik="", filing_date="2026-04-01"
-            ),
-            _make_filing(
-                insider_name="JOHN SMITH", reporter_cik="", filing_date="2026-04-02"
-            ),
-            _make_filing(
-                insider_name="Alice Bob", reporter_cik="", filing_date="2026-04-03"
-            ),
+            _make_filing(insider_name="John Smith", reporter_cik="", filing_date="2026-04-01"),
+            _make_filing(insider_name="JOHN SMITH", reporter_cik="", filing_date="2026-04-02"),
+            _make_filing(insider_name="Alice Bob", reporter_cik="", filing_date="2026-04-03"),
         ]
-        cluster = Form144Tool._find_best_sell_cluster(
-            filings, window_days=14, min_size=2
-        )
+        cluster = Form144Tool._find_best_sell_cluster(filings, window_days=14, min_size=2)
         assert cluster is not None
         assert cluster["insider_count"] == 2  # John Smith deduplicated by name
 
@@ -531,9 +494,7 @@ class TestCIKDedup:
                 dollar_value=150000,
             ),
         ]
-        cluster = Form144Tool._find_best_sell_cluster(
-            filings, window_days=14, min_size=2
-        )
+        cluster = Form144Tool._find_best_sell_cluster(filings, window_days=14, min_size=2)
         assert cluster is not None
         assert cluster["insider_count"] == 2  # Alice Bob deduplicated by name
 
@@ -544,7 +505,6 @@ class TestCIKDedup:
 
 
 class TestEntityIdsInCluster:
-
     def test_entity_ids_present(self):
         filings = [
             _make_filing(
@@ -560,17 +520,11 @@ class TestEntityIdsInCluster:
                 dollar_value=200000,
             ),
         ]
-        cluster = Form144Tool._find_best_sell_cluster(
-            filings, window_days=14, min_size=2
-        )
+        cluster = Form144Tool._find_best_sell_cluster(filings, window_days=14, min_size=2)
         assert cluster is not None
         assert "entity_ids" in cluster
-        assert cluster["entity_ids"]["John Smith"] == entity_id_from_key(
-            "person", "0000099999"
-        )
-        assert cluster["entity_ids"]["Alice Bob"] == entity_id_from_key(
-            "person", "0000088888"
-        )
+        assert cluster["entity_ids"]["John Smith"] == entity_id_from_key("person", "0000099999")
+        assert cluster["entity_ids"]["Alice Bob"] == entity_id_from_key("person", "0000088888")
 
     def test_entity_ids_empty_when_no_cik(self):
         filings = [
@@ -587,9 +541,7 @@ class TestEntityIdsInCluster:
                 dollar_value=200000,
             ),
         ]
-        cluster = Form144Tool._find_best_sell_cluster(
-            filings, window_days=14, min_size=2
-        )
+        cluster = Form144Tool._find_best_sell_cluster(filings, window_days=14, min_size=2)
         assert cluster is not None
         assert cluster["entity_ids"] == {}
 
@@ -609,9 +561,7 @@ class TestEntityIdsInCluster:
                 dollar_value=200000,
             ),
         ]
-        cluster = Form144Tool._find_best_sell_cluster(
-            filings, window_days=14, min_size=2
-        )
+        cluster = Form144Tool._find_best_sell_cluster(filings, window_days=14, min_size=2)
         assert cluster is not None
         assert "John Smith" in cluster["entity_ids"]
         assert "Alice Bob" not in cluster["entity_ids"]
@@ -623,7 +573,6 @@ class TestEntityIdsInCluster:
 
 
 class TestEdgeCases:
-
     def test_date_to_timestamp_valid(self):
         ts = _date_to_timestamp("2026-04-01")
         expected = datetime(2026, 4, 1).timestamp()
@@ -651,9 +600,7 @@ class TestEdgeCases:
                 dollar_value=200000,
             ),
         ]
-        cluster = Form144Tool._find_best_sell_cluster(
-            filings, window_days=14, min_size=2
-        )
+        cluster = Form144Tool._find_best_sell_cluster(filings, window_days=14, min_size=2)
         assert cluster is not None
         assert cluster["insider_count"] == 2
         assert cluster["conviction"] in ("high", "medium-high", "medium", "moderate")
@@ -694,6 +641,7 @@ class TestForm144MIIntegration:
     def test_l2_adds_signal_beyond_l1(self):
         """MI(L2; target | L1) > 0 when L2 observes the signal more cleanly."""
         import numpy as np
+
         from agent.pipeline.depth_eval import compute_conditional_mi
 
         rng = np.random.default_rng(42)
@@ -709,6 +657,7 @@ class TestForm144MIIntegration:
     def test_no_signal_yields_near_zero_mi(self):
         """Independent noise → MI ≈ 0."""
         import numpy as np
+
         from agent.pipeline.depth_eval import compute_conditional_mi
 
         rng = np.random.default_rng(123)

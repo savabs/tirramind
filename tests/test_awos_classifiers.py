@@ -15,14 +15,10 @@ from agent.awos.events.schema import TriggerCategory
 @pytest.mark.parametrize(
     "text,expected",
     [
-        ("we should always write a checkpoint before ending a session",
-         TriggerCategory.WORKFLOW_PATTERN),
-        ("This is an architectural decision about layer separation",
-         TriggerCategory.ARCHITECTURAL),
-        ("Lesson learned: never skip the tests next time",
-         TriggerCategory.LESSON),
-        ("Let's reorder the roadmap and defer phase 9",
-         TriggerCategory.ROADMAP_SHIFT),
+        ("we should always write a checkpoint before ending a session", TriggerCategory.WORKFLOW_PATTERN),
+        ("This is an architectural decision about layer separation", TriggerCategory.ARCHITECTURAL),
+        ("Lesson learned: never skip the tests next time", TriggerCategory.LESSON),
+        ("Let's reorder the roadmap and defer phase 9", TriggerCategory.ROADMAP_SHIFT),
         ("Fix typo in README", TriggerCategory.ROUTINE),
         ("", TriggerCategory.ROUTINE),
     ],
@@ -110,11 +106,7 @@ def test_parse_response_clamps_confidence() -> None:
 
 
 def test_parse_response_unknown_category_coerced() -> None:
-    body = {
-        "content": [
-            {"type": "text", "text": '{"category":"bogus","confidence":0.1}'}
-        ]
-    }
+    body = {"content": [{"type": "text", "text": '{"category":"bogus","confidence":0.1}'}]}
     r = _parse_response(body)
     assert r.category == TriggerCategory.UNKNOWN
 

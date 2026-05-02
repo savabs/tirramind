@@ -29,10 +29,8 @@ from __future__ import annotations
 
 import logging
 import time
-import xml.etree.ElementTree as ET
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
-from urllib.parse import urlencode
 
 import httpx
 
@@ -184,8 +182,8 @@ def _days_until(date_str: str | None) -> int | None:
     if not date_str:
         return None
     try:
-        target = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-        now = datetime.now(timezone.utc)
+        target = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=UTC)
+        now = datetime.now(UTC)
         return (target - now).days
     except (ValueError, TypeError):
         return None
@@ -252,8 +250,7 @@ class RegulatoryGazetteTool(Tool):
             "significant_only": {
                 "type": "boolean",
                 "description": (
-                    "If true, only return economically significant rules "
-                    "(>$100M estimated impact). Default false."
+                    "If true, only return economically significant rules (>$100M estimated impact). Default false."
                 ),
                 "default": False,
             },
@@ -269,7 +266,7 @@ class RegulatoryGazetteTool(Tool):
     def __init__(
         self,
         cache: DataCache | None = None,
-        pipeline_store: "PipelineStore | None" = None,
+        pipeline_store: PipelineStore | None = None,
     ) -> None:
         self._cache = cache
         self._store = pipeline_store
@@ -371,7 +368,7 @@ class RegulatoryGazetteTool(Tool):
         significant_only: bool,
         limit: int,
     ) -> ToolResult:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         date_gte = (now - timedelta(days=days_back)).strftime("%Y-%m-%d")
 
         params = _build_params(
@@ -410,7 +407,7 @@ class RegulatoryGazetteTool(Tool):
         significant_only: bool,
         limit: int,
     ) -> ToolResult:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         date_gte = (now - timedelta(days=days_back)).strftime("%Y-%m-%d")
 
         params = _build_params(
@@ -430,7 +427,7 @@ class RegulatoryGazetteTool(Tool):
         formatted = [_format_doc(d) for d in docs[:limit]]
         return self._make_result(
             formatted,
-            header=f"Federal Register Search: \"{keyword}\" ({', '.join(types)}, last {days_back}d)",
+            header=f'Federal Register Search: "{keyword}" ({", ".join(types)}, last {days_back}d)',
             total=total,
             limit=limit,
         )
@@ -450,7 +447,7 @@ class RegulatoryGazetteTool(Tool):
         limit: int,
     ) -> ToolResult:
         slug = _resolve_agency(agency)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         date_gte = (now - timedelta(days=days_back)).strftime("%Y-%m-%d")
 
         params = _build_params(
@@ -503,7 +500,7 @@ class RegulatoryGazetteTool(Tool):
         limit: int,
     ) -> ToolResult:
         """Documents with comment periods still open (comments_close_on >= today)."""
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
 
         # Fetch proposed rules — they're the ones with comment periods
         params = _build_params(
@@ -563,9 +560,7 @@ class RegulatoryGazetteTool(Tool):
             sig = " [SIGNIFICANT]" if doc.get("significant") else ""
             agencies_str = ", ".join(doc.get("agencies", [])[:2])
             lines.append(f"  [{days_str:>8s}] {doc['title'][:80]}")
-            lines.append(
-                f"           Agency: {agencies_str}  Close: {doc.get('comments_close_on', '?')}{sig}"
-            )
+            lines.append(f"           Agency: {agencies_str}  Close: {doc.get('comments_close_on', '?')}{sig}")
             if doc.get("abstract"):
                 lines.append(f"           {doc['abstract'][:120]}")
             lines.append("")
@@ -607,7 +602,7 @@ class RegulatoryGazetteTool(Tool):
                     return (
                         [],
                         0,
-                        f"Federal Register API: Bad request (check agency slug or parameters)",
+                        "Federal Register API: Bad request (check agency slug or parameters)",
                     )
                 if resp.status_code == 429:
                     return (
@@ -664,10 +659,7 @@ class RegulatoryGazetteTool(Tool):
                 elif days is not None:
                     comment_info = f"  [comments closed {abs(days)}d ago]"
 
-            lines.append(
-                f"  {doc['publication_date']}  {doc['type']:14s}  "
-                f"{doc['title'][:72]}{sig}"
-            )
+            lines.append(f"  {doc['publication_date']}  {doc['type']:14s}  {doc['title'][:72]}{sig}")
             lines.append(f"    Agency: {agencies_str}{comment_info}")
             if doc.get("abstract"):
                 lines.append(f"    {doc['abstract'][:140]}")
@@ -684,9 +676,7 @@ class RegulatoryGazetteTool(Tool):
     # ------------------------------------------------------------------
 
     # Reverse lookup: agency slug → short alias for entity key
-    _SLUG_TO_ALIAS: dict[str, str] = {
-        info["slug"]: alias for alias, info in MARKET_AGENCIES.items()
-    }
+    _SLUG_TO_ALIAS: dict[str, str] = {info["slug"]: alias for alias, info in MARKET_AGENCIES.items()}
 
     def _persist_entities(self, data: dict[str, Any], mode: str) -> dict[str, int]:
         if self._store is None or _entity_id_from_key is None:
@@ -697,9 +687,7 @@ class RegulatoryGazetteTool(Tool):
             log.exception("Regulatory gazette entity persistence failed (non-fatal)")
             return {"regulatory_velocity_obs": 0}
 
-    def _persist_entities_inner(
-        self, data: dict[str, Any], mode: str
-    ) -> dict[str, int]:
+    def _persist_entities_inner(self, data: dict[str, Any], mode: str) -> dict[str, int]:
         assert self._store is not None
         assert _entity_id_from_key is not None
 
@@ -841,6 +829,4 @@ def _encode_fr_params(params: dict[str, Any]) -> str:
 
 def _url_encode_value(s: str) -> str:
     """Minimal URL encoding for query parameter values."""
-    return (
-        s.replace(" ", "+").replace("&", "%26").replace("=", "%3D").replace("#", "%23")
-    )
+    return s.replace(" ", "+").replace("&", "%26").replace("=", "%3D").replace("#", "%23")

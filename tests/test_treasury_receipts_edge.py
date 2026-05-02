@@ -14,7 +14,6 @@ from unittest.mock import MagicMock, patch
 
 import httpx
 
-
 # ──────────────────────────────────────────────────────────────────
 # Synthetic data factories
 # ──────────────────────────────────────────────────────────────────
@@ -102,9 +101,7 @@ def _mock_response(payload, status=200):
     resp.json.return_value = payload
     resp.text = json.dumps(payload)
     if status >= 400:
-        resp.raise_for_status.side_effect = httpx.HTTPStatusError(
-            f"HTTP {status}", request=MagicMock(), response=resp
-        )
+        resp.raise_for_status.side_effect = httpx.HTTPStatusError(f"HTTP {status}", request=MagicMock(), response=resp)
     else:
         resp.raise_for_status.return_value = None
     return resp
@@ -147,9 +144,7 @@ class TestTreasuryReceiptsTool(unittest.TestCase):
 
     def test_start_after_end_returns_error(self):
         tool = self._make_tool()
-        result = tool.execute(
-            mode="cash_balance", start_date="2026-04-01", end_date="2026-03-01"
-        )
+        result = tool.execute(mode="cash_balance", start_date="2026-04-01", end_date="2026-03-01")
         self.assertFalse(result.success)
         self.assertIn("after", result.output)
 
@@ -161,9 +156,7 @@ class TestTreasuryReceiptsTool(unittest.TestCase):
             mock_cls.return_value.__exit__ = MagicMock(return_value=False)
             client.get.return_value = _mock_response(_make_cash_balance_response())
 
-            result = tool.execute(
-                mode="cash_balance", start_date="2026-03-01", end_date="2026-03-28"
-            )
+            result = tool.execute(mode="cash_balance", start_date="2026-03-01", end_date="2026-03-28")
             self.assertTrue(result.success)
 
     def test_leap_day_date(self):
@@ -302,9 +295,7 @@ class TestTreasuryReceiptsTool(unittest.TestCase):
         client.get.return_value = _mock_response(_make_deposits_withdrawals_response())
 
         tool = self._make_tool()
-        result = tool.execute(
-            mode="deposits_withdrawals", category_filter="nonexistent"
-        )
+        result = tool.execute(mode="deposits_withdrawals", category_filter="nonexistent")
 
         self.assertTrue(result.success)
         self.assertIn("Records: 0", result.output)
@@ -416,9 +407,7 @@ class TestTreasuryReceiptsTool(unittest.TestCase):
             }
             for i in range(5)
         ]
-        client.get.return_value = _mock_response(
-            {"data": entries, "meta": {}, "links": {}}
-        )
+        client.get.return_value = _mock_response({"data": entries, "meta": {}, "links": {}})
 
         tool = self._make_tool()
         result = tool.execute(mode="cash_balance", top_n=2)

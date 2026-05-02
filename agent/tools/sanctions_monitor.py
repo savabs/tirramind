@@ -26,10 +26,10 @@ import csv
 import io
 import logging
 import re
-import xml.etree.ElementTree as ET
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
+import defusedxml.ElementTree as ET
 import httpx
 
 from agent.data.cache import DataCache
@@ -179,16 +179,12 @@ def _parse_ofac_csv(text: str) -> list[dict[str, Any]]:
 
         # Extract aliases from remarks if present
         aliases: list[str] = []
-        aka_matches = re.findall(
-            r"a\.k\.a\.\s*['\"]?([^'\";\)]+)['\"]?", remarks, re.IGNORECASE
-        )
+        aka_matches = re.findall(r"a\.k\.a\.\s*['\"]?([^'\";\)]+)['\"]?", remarks, re.IGNORECASE)
         aliases.extend(a.strip() for a in aka_matches if a.strip())
 
         # Extract nationality from remarks
         nationality: str | None = None
-        nat_match = re.search(
-            r"nationality\s+(\w[\w\s]*?)(?:;|$)", remarks, re.IGNORECASE
-        )
+        nat_match = re.search(r"nationality\s+(\w[\w\s]*?)(?:;|$)", remarks, re.IGNORECASE)
         if nat_match:
             nationality = nat_match.group(1).strip()
 
@@ -386,8 +382,7 @@ class SanctionsMonitorTool(Tool):
                 "type": "string",
                 "default": "",
                 "description": (
-                    "Name to search for (search mode). Case-insensitive substring match. "
-                    "Also matches aliases."
+                    "Name to search for (search mode). Case-insensitive substring match. Also matches aliases."
                 ),
             },
             "source": {
@@ -406,8 +401,7 @@ class SanctionsMonitorTool(Tool):
                 "type": "string",
                 "default": "",
                 "description": (
-                    "Filter by sanctions program code (e.g., SDGT, IRAN, CUBA, DRC). "
-                    "Case-insensitive substring match."
+                    "Filter by sanctions program code (e.g., SDGT, IRAN, CUBA, DRC). Case-insensitive substring match."
                 ),
             },
             "days_back": {
@@ -504,14 +498,12 @@ class SanctionsMonitorTool(Tool):
             listed_date = rec.get("listed_date") or rec.get("last_updated")
             try:
                 ts = (
-                    datetime.fromisoformat(
-                        listed_date.replace("Z", "+00:00")
-                    ).timestamp()
+                    datetime.fromisoformat(listed_date.replace("Z", "+00:00")).timestamp()
                     if listed_date
-                    else datetime.now(tz=timezone.utc).timestamp()
+                    else datetime.now(tz=UTC).timestamp()
                 )
             except (ValueError, AttributeError):
-                ts = datetime.now(tz=timezone.utc).timestamp()
+                ts = datetime.now(tz=UTC).timestamp()
 
             store.store_entity_observation(
                 entity_id=eid,
@@ -530,9 +522,7 @@ class SanctionsMonitorTool(Tool):
             # ── Program → country links ──
             for prog in rec.get("programs", []):
                 # Try exact match first, then uppercase
-                country_code = _PROGRAM_COUNTRY.get(prog) or _PROGRAM_COUNTRY.get(
-                    prog.upper()
-                )
+                country_code = _PROGRAM_COUNTRY.get(prog) or _PROGRAM_COUNTRY.get(prog.upper())
                 if not country_code:
                     continue
 
@@ -642,11 +632,7 @@ class SanctionsMonitorTool(Tool):
 
         if program:
             prog_lower = program.lower()
-            matched = [
-                r
-                for r in matched
-                if any(prog_lower in p.lower() for p in r["programs"])
-            ]
+            matched = [r for r in matched if any(prog_lower in p.lower() for p in r["programs"])]
 
         matched = matched[:limit]
 
@@ -694,9 +680,7 @@ class SanctionsMonitorTool(Tool):
         if error:
             return ToolResult(success=False, output=error)
 
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=days_back)).strftime(
-            "%Y-%m-%d"
-        )
+        cutoff = (datetime.now(UTC) - timedelta(days=days_back)).strftime("%Y-%m-%d")
 
         recent: list[dict[str, Any]] = []
         for rec in records:
@@ -714,9 +698,7 @@ class SanctionsMonitorTool(Tool):
 
         if program:
             prog_lower = program.lower()
-            recent = [
-                r for r in recent if any(prog_lower in p.lower() for p in r["programs"])
-            ]
+            recent = [r for r in recent if any(prog_lower in p.lower() for p in r["programs"])]
 
         recent.sort(key=lambda r: r.get("sort_date", ""), reverse=True)
         recent = recent[:limit]
@@ -727,8 +709,7 @@ class SanctionsMonitorTool(Tool):
                 note = " Note: OFAC SDN has no per-entry listing dates."
             return ToolResult(
                 success=True,
-                output=f"Sanctions recent: no entities listed/updated in last {days_back}d."
-                + note,
+                output=f"Sanctions recent: no entities listed/updated in last {days_back}d." + note,
                 data={"results": [], "count": 0, "days_back": days_back},
             )
 
@@ -801,13 +782,9 @@ class SanctionsMonitorTool(Tool):
         ]
         for p in sorted_progs:
             src_str = "/".join(s.upper() for s in p["sources"])
-            type_str = ", ".join(
-                f"{v} {k}" for k, v in sorted(p["types"].items(), key=lambda x: -x[1])
-            )
+            type_str = ", ".join(f"{v} {k}" for k, v in sorted(p["types"].items(), key=lambda x: -x[1]))
             examples = "; ".join(p["examples"][:3])
-            lines.append(
-                f"  {p['program']:30s}  {p['count']:>5d} entries  [{src_str}]  ({type_str})"
-            )
+            lines.append(f"  {p['program']:30s}  {p['count']:>5d} entries  [{src_str}]  ({type_str})")
             lines.append(f"    e.g.: {examples}")
 
         return ToolResult(

@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -217,8 +217,7 @@ class CentralBankBalanceTool(Tool):
             "banks": {
                 "type": "string",
                 "description": (
-                    "Comma-separated CB codes to focus on. "
-                    "Options: fed,ecb,boj,boe,snb,boc,rba. Default: all."
+                    "Comma-separated CB codes to focus on. Options: fed,ecb,boj,boe,snb,boc,rba. Default: all."
                 ),
             },
         },
@@ -299,7 +298,7 @@ class CentralBankBalanceTool(Tool):
         bank_list: list[str],
     ) -> ToolResult:
         """Snapshot of all CB balance sheets with USD normalization."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         days = _PERIOD_DAYS[period]
         start = (now - timedelta(days=days)).strftime("%Y-%m-%d")
         end = now.strftime("%Y-%m-%d")
@@ -316,9 +315,7 @@ class CentralBankBalanceTool(Tool):
                 errors.append(f"{cb['name']}: FRED series unavailable, skipped")
                 continue
 
-            series = self._fetch_fred_observations(
-                cb["bs_series"], start, end, f"bs_{cb_code}", _CACHE_TTL_BS
-            )
+            series = self._fetch_fred_observations(cb["bs_series"], start, end, f"bs_{cb_code}", _CACHE_TTL_BS)
             if not series:
                 errors.append(f"{cb['name']}: no data returned for {cb['bs_series']}")
                 continue
@@ -354,11 +351,7 @@ class CentralBankBalanceTool(Tool):
         for r in rows:
             direction = ""
             if r.get("mom_pct") is not None:
-                direction = (
-                    " ↑"
-                    if r["mom_pct"] > 0.5
-                    else (" ↓" if r["mom_pct"] < -0.5 else " →")
-                )
+                direction = " ↑" if r["mom_pct"] > 0.5 else (" ↓" if r["mom_pct"] < -0.5 else " →")
             usd_str = f"${r['usd_trillions']}T" if r["usd_trillions"] else "N/A"
             lines.append(
                 f"**{r['bank']}** ({r['currency']})\n"
@@ -389,7 +382,7 @@ class CentralBankBalanceTool(Tool):
         bank_list: list[str],
     ) -> ToolResult:
         """Global net liquidity = sum(CB assets in USD) - RRP - TGA."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         days = _PERIOD_DAYS[period]
         start = (now - timedelta(days=days)).strftime("%Y-%m-%d")
         end = now.strftime("%Y-%m-%d")
@@ -405,9 +398,7 @@ class CentralBankBalanceTool(Tool):
             cb = CB_REGISTRY[cb_code]
             if cb.get("_skip_bs") == "true":
                 continue
-            series = self._fetch_fred_observations(
-                cb["bs_series"], start, end, f"bs_{cb_code}", _CACHE_TTL_BS
-            )
+            series = self._fetch_fred_observations(cb["bs_series"], start, end, f"bs_{cb_code}", _CACHE_TTL_BS)
             if not series:
                 errors.append(f"{cb['name']}: no data")
                 continue
@@ -429,16 +420,12 @@ class CentralBankBalanceTool(Tool):
         rrp_val = 0.0
         tga_val = 0.0
 
-        rrp_series = self._fetch_fred_observations(
-            _FED_RRP_SERIES, start, end, "drain_rrp", _CACHE_TTL_BS
-        )
+        rrp_series = self._fetch_fred_observations(_FED_RRP_SERIES, start, end, "drain_rrp", _CACHE_TTL_BS)
         if rrp_series:
             # RRPONTSYD is in billions USD
             rrp_val = float(rrp_series[-1]["value"]) * 1e9
 
-        tga_series = self._fetch_fred_observations(
-            _FED_TGA_SERIES, start, end, "drain_tga", _CACHE_TTL_BS
-        )
+        tga_series = self._fetch_fred_observations(_FED_TGA_SERIES, start, end, "drain_tga", _CACHE_TTL_BS)
         if tga_series:
             # WDTGAL is in millions USD
             tga_val = float(tga_series[-1]["value"]) * 1e6
@@ -485,7 +472,7 @@ class CentralBankBalanceTool(Tool):
         bank_list: list[str],
     ) -> ToolResult:
         """Who's expanding vs contracting + rate differentials."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         days = _PERIOD_DAYS[period]
         start = (now - timedelta(days=days)).strftime("%Y-%m-%d")
         end = now.strftime("%Y-%m-%d")
@@ -503,9 +490,7 @@ class CentralBankBalanceTool(Tool):
                 continue
 
             # Fetch full period for growth rate calculation
-            series = self._fetch_fred_observations(
-                cb["bs_series"], start_12m, end, f"bs_{cb_code}", _CACHE_TTL_BS
-            )
+            series = self._fetch_fred_observations(cb["bs_series"], start_12m, end, f"bs_{cb_code}", _CACHE_TTL_BS)
             if not series or len(series) < 2:
                 errors.append(f"{cb['name']}: insufficient data")
                 continue
@@ -548,9 +533,7 @@ class CentralBankBalanceTool(Tool):
         contracting = [a for a in assessments if a["stance"] == "contracting"]
         for exp in expanding:
             for con in contracting:
-                divergences.append(
-                    f"{exp['bank']} EXPANDING vs {con['bank']} CONTRACTING"
-                )
+                divergences.append(f"{exp['bank']} EXPANDING vs {con['bank']} CONTRACTING")
 
         # Synchronized?
         all_stances = {a["stance"] for a in assessments}
@@ -617,7 +600,7 @@ class CentralBankBalanceTool(Tool):
         bank_list: list[str],
     ) -> ToolResult:
         """Current policy rates + last change detection."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         days = _PERIOD_DAYS[period]
         start = (now - timedelta(days=days)).strftime("%Y-%m-%d")
         end = now.strftime("%Y-%m-%d")
@@ -647,9 +630,7 @@ class CentralBankBalanceTool(Tool):
                 continue
 
             # FRED rate series
-            series = self._fetch_fred_observations(
-                rate_series_id, start, end, f"rate_{cb_code}", _CACHE_TTL_RATES
-            )
+            series = self._fetch_fred_observations(rate_series_id, start, end, f"rate_{cb_code}", _CACHE_TTL_RATES)
             if not series:
                 errors.append(f"{cb['name']}: no rate data for {rate_series_id}")
                 continue
@@ -680,18 +661,12 @@ class CentralBankBalanceTool(Tool):
             recent_flag = ""
             if r.get("days_since_change") is not None and r["days_since_change"] < 30:
                 recent_flag = " **[RECENT CHANGE]**"
-            lines.append(
-                f"**{r['bank']}**: {r['current_rate']:.2f}%{recent_flag}\n"
-                f"  As of: {r['rate_date']}"
-            )
+            lines.append(f"**{r['bank']}**: {r['current_rate']:.2f}%{recent_flag}\n  As of: {r['rate_date']}")
             if r.get("last_change_date"):
                 direction = r.get("last_change_direction", "")
                 bps = r.get("last_change_bps", 0)
                 days = r.get("days_since_change", "?")
-                lines.append(
-                    f"  Last change: {r['last_change_date']} "
-                    f"({direction} {abs(bps):.0f}bp, {days} days ago)"
-                )
+                lines.append(f"  Last change: {r['last_change_date']} ({direction} {abs(bps):.0f}bp, {days} days ago)")
             lines.append("")
 
         if errors:
@@ -760,7 +735,7 @@ class CentralBankBalanceTool(Tool):
 
     def _fetch_fx_rates(self) -> dict[str, float]:
         """Fetch latest FX rates from FRED. Returns {series_id: rate}."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         start = (now - timedelta(days=30)).strftime("%Y-%m-%d")
         end = now.strftime("%Y-%m-%d")
 
@@ -771,9 +746,7 @@ class CentralBankBalanceTool(Tool):
 
         rates: dict[str, float] = {}
         for series_id in fx_series:
-            obs = self._fetch_fred_observations(
-                series_id, start, end, f"fx_{series_id}", _CACHE_TTL_FX
-            )
+            obs = self._fetch_fred_observations(series_id, start, end, f"fx_{series_id}", _CACHE_TTL_FX)
             if obs:
                 rates[series_id] = float(obs[-1]["value"])
 
@@ -825,9 +798,7 @@ class CentralBankBalanceTool(Tool):
             info = self._fetch_ecb_rate(start, end)
             return info.get("current_rate") if info else None
 
-        series = self._fetch_fred_observations(
-            rate_series, start, end, f"rate_{cb_code}", _CACHE_TTL_RATES
-        )
+        series = self._fetch_fred_observations(rate_series, start, end, f"rate_{cb_code}", _CACHE_TTL_RATES)
         if series:
             return float(series[-1]["value"])
         return None
@@ -899,7 +870,7 @@ class CentralBankBalanceTool(Tool):
         if len(observations) < 2:
             return {}
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         # Walk backwards to find the last change
         for i in range(len(observations) - 1, 0, -1):
             curr = observations[i]["value"]
@@ -909,9 +880,7 @@ class CentralBankBalanceTool(Tool):
                 direction = "hike" if change_bps > 0 else "cut"
                 change_date = observations[i]["date"]
                 try:
-                    dt = datetime.strptime(change_date, "%Y-%m-%d").replace(
-                        tzinfo=timezone.utc
-                    )
+                    dt = datetime.strptime(change_date, "%Y-%m-%d").replace(tzinfo=UTC)
                     days_since = (now - dt).days
                 except (ValueError, TypeError):
                     days_since = None

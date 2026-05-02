@@ -15,7 +15,7 @@ import hashlib
 import json
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -63,7 +63,7 @@ class DataCache:
         path = self._path_for(source, params)
         entry = {
             "fetched_at": time.time(),
-            "fetched_at_human": datetime.now(timezone.utc).isoformat(),
+            "fetched_at_human": datetime.now(UTC).isoformat(),
             "source": source,
             "params": params,
             "data": data,

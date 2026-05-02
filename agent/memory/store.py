@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -57,9 +57,7 @@ class EpisodicMemory:
     def all(self) -> list[Episode]:
         return list(self._episodes)
 
-    def decay(
-        self, max_age_days: int = 30, archive_dir: Path | None = None
-    ) -> int:
+    def decay(self, max_age_days: int = 30, archive_dir: Path | None = None) -> int:
         """Remove episodes older than *max_age_days*.
 
         If *archive_dir* is provided, the removed episodes are written there
@@ -159,9 +157,7 @@ class SemanticMemory:
         self._facts: dict[str, Fact] = {}
         self._learnings: list[LearningEntry] = []
         self._persist_path = persist_path
-        self._learning_path = (
-            persist_path.parent / "learnings.jsonl" if persist_path else None
-        )
+        self._learning_path = persist_path.parent / "learnings.jsonl" if persist_path else None
         if persist_path and persist_path.exists():
             self._load()
         if self._learning_path and self._learning_path.exists():
@@ -190,10 +186,7 @@ class SemanticMemory:
     def summary(self) -> str:
         if not self._facts:
             return "(no facts stored)"
-        lines = [
-            f"  [{f.key}] {f.content[:80]} (conf={f.confidence:.1f})"
-            for f in self._facts.values()
-        ]
+        lines = [f"  [{f.key}] {f.content[:80]} (conf={f.confidence:.1f})" for f in self._facts.values()]
         return "\n".join(lines[-10:])
 
     # ------------------------------------------------------------------

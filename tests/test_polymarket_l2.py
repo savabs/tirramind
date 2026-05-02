@@ -9,15 +9,11 @@ Tests cover:
 
 from __future__ import annotations
 
-import time
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from agent.tools.polymarket import PolymarketTool
 from agent.tools.polymarket_whales import PolymarketWhalesTool
-
 
 # ── Helpers ───────────────────────────────────────────────────
 
@@ -107,11 +103,7 @@ class TestPolymarketPersistEntitiesBasic:
         tool = PolymarketTool(cache=None, pipeline_store=store)
         tool._persist_entities([_make_market(slug="btc-100k")])
 
-        topic_calls = [
-            c
-            for c in store.register_entity.call_args_list
-            if c.kwargs.get("entity_type") == "topic"
-        ]
+        topic_calls = [c for c in store.register_entity.call_args_list if c.kwargs.get("entity_type") == "topic"]
         assert len(topic_calls) == 1
         kw = topic_calls[0].kwargs
         assert kw["metadata"]["slug"] == "btc-100k"
@@ -226,20 +218,14 @@ class TestWhalePersistBasic:
         tool = PolymarketWhalesTool()
         result = tool._persist_wallet_entities([_make_wallet(wallet="0xabc123")], store)
         assert result["wallets"] == 1
-        wallet_calls = [
-            c
-            for c in store.register_entity.call_args_list
-            if c.kwargs.get("entity_type") == "wallet"
-        ]
+        wallet_calls = [c for c in store.register_entity.call_args_list if c.kwargs.get("entity_type") == "wallet"]
         assert len(wallet_calls) == 1
         assert wallet_calls[0].kwargs["canonical_name"] == "0xabc123"
 
     def test_stores_whale_trade_observation(self):
         store = _make_store()
         tool = PolymarketWhalesTool()
-        tool._persist_wallet_entities(
-            [_make_wallet(composite=0.9, accuracy=0.8)], store
-        )
+        tool._persist_wallet_entities([_make_wallet(composite=0.9, accuracy=0.8)], store)
         assert store.store_entity_observation.call_count == 1
         kw = store.store_entity_observation.call_args.kwargs
         assert kw["observation_type"] == "whale_trade"
@@ -282,9 +268,7 @@ class TestWhalePersistEdgeCases:
     def test_non_0x_wallet_skipped(self):
         store = _make_store()
         tool = PolymarketWhalesTool()
-        result = tool._persist_wallet_entities(
-            [_make_wallet(wallet="not-a-wallet")], store
-        )
+        result = tool._persist_wallet_entities([_make_wallet(wallet="not-a-wallet")], store)
         assert result["wallets"] == 0
 
     def test_empty_list(self):

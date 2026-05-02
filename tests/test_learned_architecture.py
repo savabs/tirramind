@@ -11,10 +11,7 @@ Covers:
 
 from __future__ import annotations
 
-import json
 import math
-import sqlite3
-import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -73,9 +70,7 @@ class TestQueryAllLatestBeliefs:
 
         by_name = {r["variable_name"]: r for r in results}
         assert by_name["latent.stress"]["mean"] == pytest.approx(0.8)
-        assert by_name["latent.stress"]["effective_at"] == pytest.approx(
-            self._BASE_TS + 2000.0
-        )
+        assert by_name["latent.stress"]["effective_at"] == pytest.approx(self._BASE_TS + 2000.0)
         assert by_name["regime.macro"]["mean"] == pytest.approx(0.6)
 
     def test_single_belief_per_variable(self, tmp_path):
@@ -88,9 +83,7 @@ class TestQueryAllLatestBeliefs:
     def test_many_variables(self, tmp_path):
         store = self._make_store(tmp_path)
         for i in range(20):
-            store.store_belief(
-                self._make_belief(f"obs.feature_{i}", 1000.0 + i, float(i))
-            )
+            store.store_belief(self._make_belief(f"obs.feature_{i}", 1000.0 + i, float(i)))
         results = store.query_all_latest_beliefs()
         assert len(results) == 20
 
@@ -225,6 +218,7 @@ class TestGNNLossAutoTuning:
     def test_log_vars_created_when_auto_tune(self, tmp_path):
         """When auto_tune_loss_weights=True, build_model creates log-var params."""
         import torch
+
         from agent.models.gnn.trainer import Trainer, TrainerConfig
 
         store = self._make_mock_store(tmp_path)
@@ -235,9 +229,7 @@ class TestGNNLossAutoTuning:
             mock_gb.build.return_value = self._make_dummy_graph_data()
             with patch("agent.models.gnn.trainer.HetTGN") as MockHetTGN:
                 mock_model = MagicMock()
-                mock_model.parameters.return_value = [
-                    torch.nn.Parameter(torch.zeros(1))
-                ]
+                mock_model.parameters.return_value = [torch.nn.Parameter(torch.zeros(1))]
                 MockHetTGN.return_value = mock_model
                 trainer.build_model()
 
@@ -255,6 +247,7 @@ class TestGNNLossAutoTuning:
     def test_log_vars_none_when_auto_tune_off(self, tmp_path):
         """When auto_tune_loss_weights=False, log_vars is None."""
         import torch
+
         from agent.models.gnn.trainer import Trainer, TrainerConfig
 
         store = self._make_mock_store(tmp_path)
@@ -265,9 +258,7 @@ class TestGNNLossAutoTuning:
             mock_gb.build.return_value = self._make_dummy_graph_data()
             with patch("agent.models.gnn.trainer.HetTGN") as MockHetTGN:
                 mock_model = MagicMock()
-                mock_model.parameters.return_value = [
-                    torch.nn.Parameter(torch.zeros(1))
-                ]
+                mock_model.parameters.return_value = [torch.nn.Parameter(torch.zeros(1))]
                 mock_model.to.return_value = mock_model  # .to(device) must return self
                 MockHetTGN.return_value = mock_model
                 trainer.build_model()
@@ -294,6 +285,7 @@ class TestGNNLossAutoTuning:
     def test_effective_loss_weights_auto_tuned(self, tmp_path):
         """When auto_tune on, effective_loss_weights reflects log-vars."""
         import torch
+
         from agent.models.gnn.trainer import Trainer, TrainerConfig
 
         store = self._make_mock_store(tmp_path)
@@ -301,12 +293,8 @@ class TestGNNLossAutoTuning:
         # Manually set log_vars to known values
         trainer._log_vars = {
             "obs_type": torch.nn.Parameter(torch.tensor(0.0)),  # exp(-0) = 1.0
-            "time_delta": torch.nn.Parameter(
-                torch.tensor(math.log(2.0))
-            ),  # exp(-ln2) ≈ 0.5
-            "contrastive": torch.nn.Parameter(
-                torch.tensor(-math.log(2.0))
-            ),  # exp(ln2) = 2.0
+            "time_delta": torch.nn.Parameter(torch.tensor(math.log(2.0))),  # exp(-ln2) ≈ 0.5
+            "contrastive": torch.nn.Parameter(torch.tensor(-math.log(2.0))),  # exp(ln2) = 2.0
             "value": torch.nn.Parameter(torch.tensor(0.0)),
         }
         w = trainer.effective_loss_weights()
@@ -358,9 +346,7 @@ class TestCPDLearning:
         graph = build_initial_graph()
         propagator = BeliefPropagator(graph)
         configs = {
-            "expansion": RegimeConfig(
-                name="expansion", F=np.diag([0.99]), Q=np.diag([0.01])
-            ),
+            "expansion": RegimeConfig(name="expansion", F=np.diag([0.99]), Q=np.diag([0.01])),
         }
         H = np.array([[1.0]])
         R = np.array([[0.1]])
@@ -440,25 +426,19 @@ class TestCPDLearning:
     def test_discretize_basic(self):
         from agent.models.world_model import WorldModel
 
-        result = WorldModel._discretize(
-            0.7, (-float("inf"), -0.5, 0.5, float("inf")), ("low", "neutral", "high")
-        )
+        result = WorldModel._discretize(0.7, (-float("inf"), -0.5, 0.5, float("inf")), ("low", "neutral", "high"))
         assert result == "high"
 
     def test_discretize_boundary(self):
         from agent.models.world_model import WorldModel
 
-        result = WorldModel._discretize(
-            -0.5, (-float("inf"), -0.5, 0.5, float("inf")), ("low", "neutral", "high")
-        )
+        result = WorldModel._discretize(-0.5, (-float("inf"), -0.5, 0.5, float("inf")), ("low", "neutral", "high"))
         assert result == "neutral"
 
     def test_discretize_low(self):
         from agent.models.world_model import WorldModel
 
-        result = WorldModel._discretize(
-            -2.0, (-float("inf"), -0.5, 0.5, float("inf")), ("low", "neutral", "high")
-        )
+        result = WorldModel._discretize(-2.0, (-float("inf"), -0.5, 0.5, float("inf")), ("low", "neutral", "high"))
         assert result == "low"
 
     def test_discretize_none_states(self):
@@ -496,9 +476,7 @@ class TestKalmanEM:
             R=R,
         )
 
-    def _generate_synthetic_data(
-        self, T=200, state_dim=2, obs_dim=2, F_true=None, H_true=None, seed=42
-    ):
+    def _generate_synthetic_data(self, T=200, state_dim=2, obs_dim=2, F_true=None, H_true=None, seed=42):
         """Generate synthetic linear Gaussian state-space data."""
         rng = np.random.default_rng(seed)
         if F_true is None:
@@ -548,9 +526,7 @@ class TestKalmanEM:
         assert len(lls) >= 2
         # EM should generally increase log-likelihood (allow small tolerance)
         for i in range(1, len(lls)):
-            assert (
-                lls[i] >= lls[i - 1] - 1e-3
-            ), f"LL decreased at iteration {i}: {lls[i-1]:.2f} → {lls[i]:.2f}"
+            assert lls[i] >= lls[i - 1] - 1e-3, f"LL decreased at iteration {i}: {lls[i - 1]:.2f} → {lls[i]:.2f}"
 
     def test_em_recovers_approximate_params(self):
         """EM-fitted F should be closer to true F than the initial guess."""
@@ -570,9 +546,7 @@ class TestKalmanEM:
         # Fitted F should be closer to true F than initial
         err_init = np.linalg.norm(F_init - F_true)
         err_fitted = np.linalg.norm(F_fitted - F_true)
-        assert (
-            err_fitted < err_init
-        ), f"EM did not improve: init err={err_init:.4f}, fitted err={err_fitted:.4f}"
+        assert err_fitted < err_init, f"EM did not improve: init err={err_init:.4f}, fitted err={err_fitted:.4f}"
 
     def test_em_with_missing_observations(self):
         """EM should handle NaN observations without crashing."""

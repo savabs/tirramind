@@ -12,24 +12,20 @@ Covers:
 
 from __future__ import annotations
 
-import math
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
-import torch
 
+from agent.learning.policy.state_assembler import InstrumentStateAssembler
 from agent.quant.backtest import (
     BuyAndHoldBenchmarkStrategy,
     EqualWeightStrategy,
     MultiAssetBacktestResult,
-    MultiAssetFoldResult,
     MultiAssetStrategy,
     MultiAssetWalkForward,
 )
-from agent.learning.policy.state_assembler import InstrumentStateAssembler
-
 
 # ── Helpers ───────────────────────────────────────────────────
 
@@ -93,18 +89,14 @@ class TestEqualWeightStrategy:
     def test_weights_shape(self):
         s = EqualWeightStrategy()
         ret = _synthetic_returns(T=100, N=5)
-        w = s.generate_weights(
-            ret, test_length=20, instrument_names=_instrument_names()
-        )
+        w = s.generate_weights(ret, test_length=20, instrument_names=_instrument_names())
         assert w.shape == (20, 5)
 
     def test_weights_are_1_over_N(self):
         s = EqualWeightStrategy()
         N = 4
         ret = _synthetic_returns(T=100, N=N)
-        w = s.generate_weights(
-            ret, test_length=10, instrument_names=["A", "B", "C", "D"]
-        )
+        w = s.generate_weights(ret, test_length=10, instrument_names=["A", "B", "C", "D"])
         np.testing.assert_allclose(w, 1.0 / N)
 
     def test_single_instrument(self):
@@ -117,9 +109,7 @@ class TestEqualWeightStrategy:
     def test_weights_sum_to_one(self):
         s = EqualWeightStrategy()
         ret = _synthetic_returns(T=100, N=7)
-        w = s.generate_weights(
-            ret, test_length=15, instrument_names=[f"A{i}" for i in range(7)]
-        )
+        w = s.generate_weights(ret, test_length=15, instrument_names=[f"A{i}" for i in range(7)])
         np.testing.assert_allclose(w.sum(axis=1), 1.0)
 
 
@@ -235,9 +225,7 @@ class TestMultiAssetWalkForward:
         fold = result.folds[0]
         test_ret = ret[200:250]
         expected_portfolio = (test_ret * fold.weights).sum(axis=1)
-        np.testing.assert_allclose(
-            fold.portfolio_returns, expected_portfolio, atol=1e-12
-        )
+        np.testing.assert_allclose(fold.portfolio_returns, expected_portfolio, atol=1e-12)
 
     def test_equity_curve_is_cumulative(self):
         ret = _synthetic_returns(T=400, N=3)
@@ -574,9 +562,7 @@ class TestMultiAssetSACStrategy:
     def test_generate_weights_shape(self):
         strat, _ = self._make_mocked_strategy(N=5)
         ret = _synthetic_returns(T=100, N=5)
-        w = strat.generate_weights(
-            ret, test_length=10, instrument_names=_instrument_names(5)
-        )
+        w = strat.generate_weights(ret, test_length=10, instrument_names=_instrument_names(5))
         assert w.shape == (10, 5)
 
     def test_no_extra_returns_zeros(self):

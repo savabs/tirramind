@@ -18,10 +18,9 @@ Graceful degradation:
 
 from __future__ import annotations
 
-import json
 import logging
 import math
-from datetime import date, timedelta
+from datetime import UTC, date, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -81,9 +80,7 @@ def _load_models(params: dict[str, Any], upstream: dict[str, Any]) -> dict[str, 
         if checkpoint is not None:
             result["has_sac"] = True
             result["sac_config"] = checkpoint.get("config", {})
-            log.info(
-                "SAC checkpoint found (saved_at=%.0f)", checkpoint.get("saved_at", 0)
-            )
+            log.info("SAC checkpoint found (saved_at=%.0f)", checkpoint.get("saved_at", 0))
         else:
             log.info("No SAC checkpoint found — will skip SAC inference.")
     finally:
@@ -236,11 +233,12 @@ def _sac_inference(params: dict[str, Any], upstream: dict[str, Any]) -> dict[str
 
     try:
         import torch  # noqa: F401
+
+        from agent.fusion.alert import EntityAlert
         from agent.learning.policy.sac import SACTrainer
         from agent.learning.policy.state_assembler import InstrumentStateAssembler
-        from agent.tools.instrument_universe import tradeable_instruments
-        from agent.fusion.alert import EntityAlert
         from agent.models.belief import BeliefState
+        from agent.tools.instrument_universe import tradeable_instruments
     except ImportError as exc:
         log.warning("Required imports not available: %s", exc)
         return {"status": "skipped", "reason": "import_error", "weights": {}}
@@ -408,9 +406,7 @@ def _emit_portfolio(params: dict[str, Any], upstream: dict[str, Any]) -> dict[st
                 timestamp=_time.time(),
                 state=state_vector,
                 action=action_vector,
-                metadata={
-                    "instrument_tickers": sac_result.get("instrument_tickers", [])
-                },
+                metadata={"instrument_tickers": sac_result.get("instrument_tickers", [])},
             )
             transition_stored = True
             log.info("Stored pending RL transition for %s", today)
@@ -546,10 +542,7 @@ def _check_concentration(weights: dict[str, float]) -> list[dict[str, Any]]:
     alerts: list[dict[str, Any]] = []
     for ticker, w in weights.items():
         if abs(w) > _CONCENTRATION_THRESHOLD:
-            msg = (
-                f"Concentration alert: {ticker} weight={w:.4f} "
-                f"exceeds {_CONCENTRATION_THRESHOLD:.0%} threshold"
-            )
+            msg = f"Concentration alert: {ticker} weight={w:.4f} exceeds {_CONCENTRATION_THRESHOLD:.0%} threshold"
             log.warning(msg)
             alerts.append(
                 {
@@ -759,9 +752,9 @@ def _compute_daily_returns(store: PipelineStore, as_of: str) -> dict[str, float]
 
 def _date_to_timestamp(d: date) -> float:
     """Convert a date to midnight UTC unix timestamp."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    return datetime(d.year, d.month, d.day, tzinfo=timezone.utc).timestamp()
+    return datetime(d.year, d.month, d.day, tzinfo=UTC).timestamp()
 
 
 # ── DAG builder ──────────────────────────────────────────────

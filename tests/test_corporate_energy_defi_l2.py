@@ -11,20 +11,16 @@ Covers lobbying, patent_filings, defi_flows, and interconnection_queue L2 upgrad
 
 from __future__ import annotations
 
-import time
-from datetime import datetime, timezone
-from typing import Any
 from unittest.mock import patch
 
 import pytest
 
 from agent.pipeline.entity import entity_id_from_key, normalize_company_name
 from agent.pipeline.store import PipelineStore
-from agent.tools.lobbying import LobbyingTool
-from agent.tools.patent_filings import PatentFilingsTool
 from agent.tools.defi_flows import DefiFlowsTool
 from agent.tools.interconnection_queue import InterconnectionQueueTool
-
+from agent.tools.lobbying import LobbyingTool
+from agent.tools.patent_filings import PatentFilingsTool
 
 # ── Fixtures ───────────────────────────────────────────────────
 
@@ -128,12 +124,8 @@ class TestLobbyingL2:
 
     def test_persist_entities_error_isolation(self, store):
         tool = LobbyingTool(pipeline_store=store)
-        with patch.object(
-            store, "register_entity", side_effect=RuntimeError("DB error")
-        ):
-            tool._persist_entities(
-                [{"registrant_name": "Test", "dt_posted": "2025-01-01"}]
-            )
+        with patch.object(store, "register_entity", side_effect=RuntimeError("DB error")):
+            tool._persist_entities([{"registrant_name": "Test", "dt_posted": "2025-01-01"}])
 
     def test_persist_entities_missing_registrant(self, store):
         """Filing without registrant_name should be skipped."""
@@ -239,9 +231,7 @@ class TestPatentFilingsL2:
             },
         ]
         tool._persist_entities(patents)
-        company_entities = [
-            e for e in store.query_all_entities() if e["entity_type"] == "company"
-        ]
+        company_entities = [e for e in store.query_all_entities() if e["entity_type"] == "company"]
         assert len(company_entities) == 1
 
     def test_persist_entities_empty(self, store):
@@ -256,9 +246,7 @@ class TestPatentFilingsL2:
     def test_persist_entities_error_isolation(self, store):
         tool = PatentFilingsTool(pipeline_store=store)
         with patch.object(store, "register_entity", side_effect=RuntimeError):
-            tool._persist_entities(
-                [{"assignee_organization": "X", "patent_date": "2025-01-01"}]
-            )
+            tool._persist_entities([{"assignee_organization": "X", "patent_date": "2025-01-01"}])
 
     def test_persist_entities_missing_assignee(self, store):
         tool = PatentFilingsTool(pipeline_store=store)
@@ -379,10 +367,7 @@ class TestDefiFlowsL2:
         tool._persist_entities([{"name": "MakerDAO"}])
         eid = entity_id_from_key("protocol", "makerdao")
         aliases = store.query_entity_aliases(eid)
-        assert any(
-            a["source"] == "protocol_name" and a["external_id"] == "MakerDAO"
-            for a in aliases
-        )
+        assert any(a["source"] == "protocol_name" and a["external_id"] == "MakerDAO" for a in aliases)
 
 
 # ── InterconnectionQueueTool L2 Tests ──────────────────────────
@@ -461,9 +446,7 @@ class TestInterconnectionQueueL2:
         ]
         tool._persist_entities(records)
 
-        company_entities = [
-            e for e in store.query_all_entities() if e["entity_type"] == "company"
-        ]
+        company_entities = [e for e in store.query_all_entities() if e["entity_type"] == "company"]
         assert len(company_entities) == 1
 
     def test_persist_entities_dedup_companies(self, store):
@@ -473,9 +456,7 @@ class TestInterconnectionQueueL2:
             {"entityName": "NextEra Energy", "plantName": "Plant B", "status": "U"},
         ]
         tool._persist_entities(records)
-        company_entities = [
-            e for e in store.query_all_entities() if e["entity_type"] == "company"
-        ]
+        company_entities = [e for e in store.query_all_entities() if e["entity_type"] == "company"]
         assert len(company_entities) == 1
 
     def test_persist_entities_empty(self, store):
@@ -534,9 +515,7 @@ class TestCrossToolCompanyDedup:
             ]
         )
 
-        company_entities = [
-            e for e in store.query_all_entities() if e["entity_type"] == "company"
-        ]
+        company_entities = [e for e in store.query_all_entities() if e["entity_type"] == "company"]
         assert len(company_entities) == 1
 
         canon = normalize_company_name("Google LLC")
@@ -569,7 +548,5 @@ class TestCrossToolCompanyDedup:
             ]
         )
 
-        company_entities = [
-            e for e in store.query_all_entities() if e["entity_type"] == "company"
-        ]
+        company_entities = [e for e in store.query_all_entities() if e["entity_type"] == "company"]
         assert len(company_entities) == 1

@@ -103,9 +103,7 @@ class HawkesIntensity:
 
         last_t, a_last = self._entity_state[entity_id]
         if query_time < last_t:
-            raise ValueError(
-                f"Query time {query_time} < last event {last_t} for {entity_id}."
-            )
+            raise ValueError(f"Query time {query_time} < last event {last_t} for {entity_id}.")
         dt = query_time - last_t
         decay = math.exp(-self._beta * dt) if dt < 700 / self._beta else 0.0
         # At query time, the last event's self-excitation is (A_last + 1) decayed

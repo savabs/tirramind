@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import numpy as np
 
@@ -182,9 +183,7 @@ def score_returns(
         result["turnover"] = turnover(weights)
 
     if benchmark is not None:
-        result["information_ratio"] = information_ratio(
-            returns, benchmark, periods_per_year
-        )
+        result["information_ratio"] = information_ratio(returns, benchmark, periods_per_year)
 
     return result
 
@@ -229,9 +228,7 @@ def block_bootstrap_ci(
     for b in range(n_bootstrap):
         # Circular block bootstrap: pick random start indices
         starts = rng.integers(0, T, size=n_blocks)
-        indices = np.concatenate(
-            [np.arange(s, s + block_length) % T for s in starts]
-        )[:T]
+        indices = np.concatenate([np.arange(s, s + block_length) % T for s in starts])[:T]
         boot_stats[b] = metric_fn(returns[indices])
 
     alpha = 1 - confidence

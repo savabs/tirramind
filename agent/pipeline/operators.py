@@ -14,7 +14,8 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from agent.tools.base import ToolRegistry, ToolResult
 
@@ -76,12 +77,9 @@ class ToolOperator(Operator):
         resolved = {}
         for k, v in params.items():
             if isinstance(v, str) and v.startswith("$upstream."):
-                ref_id = v[len("$upstream."):]
+                ref_id = v[len("$upstream.") :]
                 if ref_id not in upstream:
-                    raise ValueError(
-                        f"Upstream reference '{v}' not found. "
-                        f"Available: {list(upstream.keys())}"
-                    )
+                    raise ValueError(f"Upstream reference '{v}' not found. Available: {list(upstream.keys())}")
                 resolved[k] = upstream[ref_id]
             else:
                 resolved[k] = v
@@ -118,8 +116,6 @@ def resolve_operator(
         return FunctionOperator(node_operator)
     if isinstance(node_operator, str):
         if tool_registry is None:
-            raise ValueError(
-                "ToolRegistry required for string operator (tool name)"
-            )
+            raise ValueError("ToolRegistry required for string operator (tool name)")
         return ToolOperator(tool_registry)
     raise TypeError(f"Unsupported operator type: {type(node_operator)}")

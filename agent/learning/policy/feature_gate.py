@@ -25,7 +25,6 @@ Trained end-to-end with the SAC actor loss via the state encoder.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from typing import Any
 
@@ -93,10 +92,7 @@ class FeatureGate(nn.Module):
         self._cfg = cfg
 
         if len(cfg.group_dims) != cfg.n_feature_groups:
-            raise ValueError(
-                f"len(group_dims)={len(cfg.group_dims)} != "
-                f"n_feature_groups={cfg.n_feature_groups}"
-            )
+            raise ValueError(f"len(group_dims)={len(cfg.group_dims)} != n_feature_groups={cfg.n_feature_groups}")
 
         self._group_dims = cfg.group_dims
         self._total_dim = sum(cfg.group_dims)

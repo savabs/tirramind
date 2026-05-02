@@ -95,8 +95,7 @@ def diagnose_graph(store: PipelineStore) -> dict[str, Any]:
     }
 
     log.info(
-        "Graph diagnostics: %d entities (%d types), %d observations (%d types), "
-        "%d links (%d types), %d orphans",
+        "Graph diagnostics: %d entities (%d types), %d observations (%d types), %d links (%d types), %d orphans",
         result["total_entities"],
         len(entity_type_counter),
         result["total_observations"],

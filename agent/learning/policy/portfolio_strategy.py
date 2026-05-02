@@ -26,7 +26,6 @@ import logging
 from typing import Any
 
 import numpy as np
-import torch
 
 from agent.learning.policy.asset_mapper import AssetMapper
 from agent.learning.policy.sac import SACTrainer

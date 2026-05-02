@@ -33,10 +33,10 @@ import io
 import logging
 import re
 import time
-import xml.etree.ElementTree as ET
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
+import defusedxml.ElementTree as ET
 import httpx
 
 from agent.data.cache import DataCache
@@ -60,13 +60,9 @@ _US_TREASURY_URL = (
     "&field_tdr_date_value_month={yyyymm}"
 )
 _ECB_IRS_URL = (
-    "https://data-api.ecb.europa.eu/service/data/IRS/"
-    "M.{cc}.L.L40.CI.0000.EUR.N.Z"
-    "?startPeriod={start}&format=csvdata"
+    "https://data-api.ecb.europa.eu/service/data/IRS/M.{cc}.L.L40.CI.0000.EUR.N.Z?startPeriod={start}&format=csvdata"
 )
-_JP_MOF_CURRENT_URL = (
-    "https://www.mof.go.jp/english/policy/jgbs/reference/" "interest_rate/jgbcme.csv"
-)
+_JP_MOF_CURRENT_URL = "https://www.mof.go.jp/english/policy/jgbs/reference/interest_rate/jgbcme.csv"
 _UK_DMO_URL = "https://www.dmo.gov.uk/data/XmlDataReport?reportCode=D2.1E"
 
 _UA = "TirraMind/0.1"
@@ -207,9 +203,7 @@ def _parse_us_treasury_xml(text: str) -> list[dict[str, Any]]:
         y10 = yields.get("10y")
         y3m = yields.get("3m")
         curve_2s10s = round(y10 - y2, 4) if y10 is not None and y2 is not None else None
-        curve_3m10y = (
-            round(y10 - y3m, 4) if y10 is not None and y3m is not None else None
-        )
+        curve_3m10y = round(y10 - y3m, 4) if y10 is not None and y3m is not None else None
 
         records.append(
             {
@@ -338,7 +332,7 @@ class SovereignDebtTool(Tool):
     def __init__(
         self,
         cache: DataCache | None = None,
-        pipeline_store: "PipelineStore | None" = None,
+        pipeline_store: PipelineStore | None = None,
     ) -> None:
         self._cache = cache
         self._store = pipeline_store
@@ -427,15 +421,11 @@ class SovereignDebtTool(Tool):
                 output=f"US Treasury API error: HTTP {exc.response.status_code}",
             )
         except httpx.RequestError as exc:
-            return ToolResult(
-                success=False, output=f"US Treasury request failed: {exc}"
-            )
+            return ToolResult(success=False, output=f"US Treasury request failed: {exc}")
 
         records = _parse_us_treasury_xml(r.text)
         if not records:
-            return ToolResult(
-                success=False, output=f"No US Treasury data found for {month}"
-            )
+            return ToolResult(success=False, output=f"No US Treasury data found for {month}")
 
         result = {"month": month, "entries": len(records), "records": records}
         if self._cache:
@@ -455,9 +445,7 @@ class SovereignDebtTool(Tool):
     def _fetch_eu_yields(self, countries: list[str], month: str) -> ToolResult:
         """Fetch ECB per-country government bond yields."""
         # Validate country codes
-        valid_countries = [
-            c.upper() for c in countries if c.upper() in _EU_COUNTRIES_ALL
-        ]
+        valid_countries = [c.upper() for c in countries if c.upper() in _EU_COUNTRIES_ALL]
         if not valid_countries:
             return ToolResult(
                 success=False,
@@ -526,9 +514,7 @@ class SovereignDebtTool(Tool):
             self._cache.put("sovereign_debt", {"key": cache_key}, result)
 
         country_summary = ", ".join(
-            f"{cc}={recs[-1]['yield_pct']:.2f}%"
-            for cc, recs in sorted(country_data.items())
-            if recs
+            f"{cc}={recs[-1]['yield_pct']:.2f}%" for cc, recs in sorted(country_data.items()) if recs
         )
         return ToolResult(
             success=True,
@@ -542,9 +528,7 @@ class SovereignDebtTool(Tool):
         if self._cache:
             cached = self._cache.get("sovereign_debt", {"key": cache_key})
             if cached is not None:
-                return ToolResult(
-                    success=True, output="Japan JGB yields (cached)", data=cached
-                )
+                return ToolResult(success=True, output="Japan JGB yields (cached)", data=cached)
 
         try:
             r = httpx.get(
@@ -588,9 +572,7 @@ class SovereignDebtTool(Tool):
                 # Apply limit to cached data
                 limited = cached.copy()
                 limited["records"] = limited["records"][:limit]
-                return ToolResult(
-                    success=True, output="UK gilt auctions (cached)", data=limited
-                )
+                return ToolResult(success=True, output="UK gilt auctions (cached)", data=limited)
 
         try:
             r = httpx.get(
@@ -669,7 +651,7 @@ class SovereignDebtTool(Tool):
         spreads.sort(key=lambda x: x["spread_vs_de"], reverse=True)
 
         # Also fetch US 2s10s if available
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         us_month = month or f"{now.year}-{now.month:02d}"
         us_result = self._fetch_us_yields(us_month)
         us_curve: dict[str, Any] | None = None
@@ -689,9 +671,7 @@ class SovereignDebtTool(Tool):
             "us_curve": us_curve,
         }
 
-        spread_summary = ", ".join(
-            f"{s['country']}={s['spread_vs_de']:+.2f}%" for s in spreads[:5]
-        )
+        spread_summary = ", ".join(f"{s['country']}={s['spread_vs_de']:+.2f}%" for s in spreads[:5])
         return ToolResult(
             success=True,
             output=f"Sovereign spreads vs DE ({de_latest:.2f}%): {spread_summary}",
@@ -709,7 +689,7 @@ class SovereignDebtTool(Tool):
             )
 
         # Parse common params
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         month = (kwargs.get("month") or "").strip()
         if month:
             if not _MONTH_RE.match(month):
@@ -721,9 +701,7 @@ class SovereignDebtTool(Tool):
             month = f"{now.year}-{now.month:02d}"
 
         countries_raw = kwargs.get("countries") or _EU_COUNTRIES_DEFAULT
-        countries = [
-            c.strip().upper() for c in countries_raw if isinstance(c, str) and c.strip()
-        ]
+        countries = [c.strip().upper() for c in countries_raw if isinstance(c, str) and c.strip()]
 
         limit = min(max(int(kwargs.get("limit", 20)), 1), 100)
 

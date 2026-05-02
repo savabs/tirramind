@@ -306,18 +306,14 @@ def score_wallets(params: dict, upstream: dict) -> dict:
                 oidx = t.get("outcome_index")
                 winning_idx = res_map[cid]
 
-                is_correct = (side == "BUY" and oidx == winning_idx) or (
-                    side == "SELL" and oidx != winning_idx
-                )
+                is_correct = (side == "BUY" and oidx == winning_idx) or (side == "SELL" and oidx != winning_idx)
 
                 price = _to_float(t.get("price"))
                 size = _to_float(t.get("size"))
 
                 if is_correct:
                     correct += 1
-                    winning_pnl += size * (
-                        1.0 - price
-                    )  # bought at price, settled at 1.0
+                    winning_pnl += size * (1.0 - price)  # bought at price, settled at 1.0
                 else:
                     losing_pnl += size * price  # bought at price, settled at 0.0
 
@@ -336,9 +332,7 @@ def score_wallets(params: dict, upstream: dict) -> dict:
 
             # Composite score
             n_markets = len(markets_seen)
-            composite = (
-                accuracy * math.log(1 + total_volume) * recency * math.sqrt(n_markets)
-            )
+            composite = accuracy * math.log(1 + total_volume) * recency * math.sqrt(n_markets)
 
             scores.append(
                 {
@@ -505,9 +499,7 @@ def detect_signals(params: dict, upstream: dict) -> dict:
             price = _to_float(t.get("price"))
             side = t.get("side", "")
             # Contrarian: buying YES on underdog or NO on favorite
-            is_contrarian = (side == "BUY" and price < _CONTRARIAN_LOW) or (
-                side == "SELL" and price > _CONTRARIAN_HIGH
-            )
+            is_contrarian = (side == "BUY" and price < _CONTRARIAN_LOW) or (side == "SELL" and price > _CONTRARIAN_HIGH)
             if not is_contrarian:
                 continue
 
@@ -528,9 +520,7 @@ def detect_signals(params: dict, upstream: dict) -> dict:
                 metadata=signal,
             )
 
-        total_signals = (
-            len(whale_alerts) + len(consensus_signals) + len(contrarian_signals)
-        )
+        total_signals = len(whale_alerts) + len(consensus_signals) + len(contrarian_signals)
         return {
             "signals_emitted": total_signals,
             "whale_alerts": whale_alerts,

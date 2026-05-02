@@ -29,7 +29,6 @@ from agent.models.gnn.trainer import (
 from agent.pipeline.entity import entity_id_from_key
 from agent.pipeline.store import PipelineStore
 
-
 # ─── Fixtures ─────────────────────────────────────────────────
 
 
@@ -147,21 +146,14 @@ class TestPatternExtractor:
     def test_empty_store(self, store):
         cfg = TrainerConfig(hidden_dim=8, memory_dim=8, message_dim=8)
         # Need a minimal model for an empty store
-        from torch_geometric.data import HeteroData
-        from agent.models.gnn.graph_builder import GraphBuilder, IDMap
+        from agent.models.gnn.graph_builder import GraphBuilder
 
         # Register 1 entity so we get valid metadata
-        eid = store.register_entity(
-            "company", "c0", entity_id_from_key("company", "c0")
-        )
+        eid = store.register_entity("company", "c0", entity_id_from_key("company", "c0"))
         builder = GraphBuilder(store)
         data, id_map, _ = builder.build()
         metadata = data.metadata()
-        in_channels = {
-            nt: data[nt].x.size(1)
-            for nt in metadata[0]
-            if nt in data.node_types and hasattr(data[nt], "x")
-        }
+        in_channels = {nt: data[nt].x.size(1) for nt in metadata[0] if nt in data.node_types and hasattr(data[nt], "x")}
         model = HetTGN(
             metadata=metadata,
             in_channels=in_channels or {"company": 9},

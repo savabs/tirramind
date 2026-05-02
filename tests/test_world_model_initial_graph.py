@@ -22,7 +22,6 @@ import pytest
 from agent.models.graph import WorldModelGraph
 from agent.models.initial_graph import (
     ALL_EDGES,
-    ALL_NODES,
     build_initial_graph,
 )
 
@@ -92,9 +91,7 @@ class TestNodeStructure:
 
     def test_all_nodes_have_cardinality_3(self, graph: WorldModelGraph) -> None:
         for spec in graph.node_specs.values():
-            assert (
-                spec.cardinality == 3
-            ), f"{spec.name} has cardinality {spec.cardinality}"
+            assert spec.cardinality == 3, f"{spec.name} has cardinality {spec.cardinality}"
 
     def test_all_nodes_have_states(self, graph: WorldModelGraph) -> None:
         for spec in graph.node_specs.values():
@@ -328,16 +325,12 @@ class TestFeatureMapping:
         }
         for node_name, feat_name in expected_mapping.items():
             spec = graph.get_node(node_name)
-            assert (
-                spec.feature_name == feat_name
-            ), f"{node_name}: expected {feat_name}, got {spec.feature_name}"
+            assert spec.feature_name == feat_name, f"{node_name}: expected {feat_name}, got {spec.feature_name}"
 
     def test_non_observed_nodes_have_no_feature(self, graph: WorldModelGraph) -> None:
         for spec in graph.node_specs.values():
             if spec.node_type != "observed":
-                assert (
-                    spec.feature_name is None
-                ), f"{spec.name} is {spec.node_type} but has feature_name"
+                assert spec.feature_name is None, f"{spec.name} is {spec.node_type} but has feature_name"
 
 
 class TestBinEdges:
@@ -354,35 +347,26 @@ class TestBinEdges:
     def test_bin_edges_length(self, graph: WorldModelGraph) -> None:
         for spec in graph.get_observed_nodes():
             assert len(spec.bin_edges) == spec.cardinality + 1, (
-                f"{spec.name}: expected {spec.cardinality + 1} bin_edges, "
-                f"got {len(spec.bin_edges)}"
+                f"{spec.name}: expected {spec.cardinality + 1} bin_edges, got {len(spec.bin_edges)}"
             )
 
     def test_bin_edges_start_neg_inf(self, graph: WorldModelGraph) -> None:
         for spec in graph.get_observed_nodes():
-            assert (
-                spec.bin_edges[0] == -math.inf
-            ), f"{spec.name}: first bin edge should be -inf"
+            assert spec.bin_edges[0] == -math.inf, f"{spec.name}: first bin edge should be -inf"
 
     def test_bin_edges_end_pos_inf(self, graph: WorldModelGraph) -> None:
         for spec in graph.get_observed_nodes():
-            assert (
-                spec.bin_edges[-1] == math.inf
-            ), f"{spec.name}: last bin edge should be +inf"
+            assert spec.bin_edges[-1] == math.inf, f"{spec.name}: last bin edge should be +inf"
 
     def test_bin_edges_monotonic(self, graph: WorldModelGraph) -> None:
         for spec in graph.get_observed_nodes():
             for i in range(len(spec.bin_edges) - 1):
-                assert (
-                    spec.bin_edges[i] < spec.bin_edges[i + 1]
-                ), f"{spec.name}: bin_edges not monotonic at index {i}"
+                assert spec.bin_edges[i] < spec.bin_edges[i + 1], f"{spec.name}: bin_edges not monotonic at index {i}"
 
     def test_non_observed_have_no_bin_edges(self, graph: WorldModelGraph) -> None:
         for spec in graph.node_specs.values():
             if spec.node_type != "observed":
-                assert (
-                    spec.bin_edges is None
-                ), f"{spec.name} is {spec.node_type} but has bin_edges"
+                assert spec.bin_edges is None, f"{spec.name} is {spec.node_type} but has bin_edges"
 
 
 class TestHashAndSerialization:

@@ -12,13 +12,10 @@ from __future__ import annotations
 
 import math
 
-import numpy as np
 import pytest
-from scipy import stats as sp_stats
 
 from agent.convergence.coincidence import CoincidenceResult
 from agent.convergence.fdr import (
-    _P_FLOOR,
     apply_all_controls,
     apply_bh_correction,
     cross_category_filter,
@@ -26,7 +23,6 @@ from agent.convergence.fdr import (
     persistence_filter,
 )
 from agent.convergence.graph import ConvergenceClique
-
 
 # ── Helpers ────────────────────────────────────────────────────
 
@@ -493,9 +489,7 @@ class TestApplyAllControls:
 
         # Two cycles to pass persistence.
         apply_all_controls(p_vals, scores, cats, history, q=0.05, min_persist=2)
-        result = apply_all_controls(
-            p_vals, scores, cats, history, q=0.05, min_persist=2
-        )
+        result = apply_all_controls(p_vals, scores, cats, history, q=0.05, min_persist=2)
 
         assert len(result) == 1
         assert hasattr(result[0], "p_values_combined")

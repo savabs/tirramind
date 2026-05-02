@@ -7,7 +7,6 @@ what worked, what failed, what open questions remain, and what to try next.
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass, field
 
@@ -55,6 +54,7 @@ Rules:
 @dataclass
 class ReflectionResult:
     """Structured output from a reflection pass."""
+
     what_worked: list[str] = field(default_factory=list)
     what_failed: list[str] = field(default_factory=list)
     open_questions: list[str] = field(default_factory=list)
@@ -131,8 +131,7 @@ class Reflector:
         for ep in episodes[-20:]:  # Cap at 20 most recent
             status = "SUCCESS" if ep.success else "FAILED"
             lines.append(
-                f"- [{status}] Step {ep.step}: {ep.action}({ep.input_summary[:80]}) "
-                f"→ {ep.output_summary[:120]}"
+                f"- [{status}] Step {ep.step}: {ep.action}({ep.input_summary[:80]}) → {ep.output_summary[:120]}"
             )
         return "\n".join(lines)
 

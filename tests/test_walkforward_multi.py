@@ -13,7 +13,6 @@ Tests use fully synthetic data to verify:
 from __future__ import annotations
 
 import math
-import time
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -72,9 +71,7 @@ def _run_basic_backtest(
     test_size: int = 21,
     step_size: int = 21,
     seed: int = 42,
-) -> tuple[
-    dict[str, MultiAssetBacktestResult], list[str], dict[str, str], dict[str, str]
-]:
+) -> tuple[dict[str, MultiAssetBacktestResult], list[str], dict[str, str], dict[str, str]]:
     """Run a basic backtest and return results + instrument metadata."""
     returns = _make_synthetic_returns(T=T, N=N, seed=seed)
     names, classes, regions = _make_instruments(N)
@@ -115,9 +112,7 @@ class TestWalkForwardExecution:
             step_size=step_size,
         )
         for name, result in results.items():
-            assert (
-                len(result.folds) == actual_folds
-            ), f"{name}: expected {actual_folds} folds, got {len(result.folds)}"
+            assert len(result.folds) == actual_folds, f"{name}: expected {actual_folds} folds, got {len(result.folds)}"
 
     def test_multiple_strategies(self) -> None:
         """All configured strategies produce results."""
@@ -230,9 +225,7 @@ class TestAttribution:
             attr = per_group_attribution(result, classes)
             attr_sum = sum(attr.values())
             total = float(result.all_portfolio_returns.sum())
-            assert (
-                abs(attr_sum - total) < 1e-10
-            ), f"{name}: attr sum={attr_sum}, total={total}"
+            assert abs(attr_sum - total) < 1e-10, f"{name}: attr sum={attr_sum}, total={total}"
 
     def test_region_attribution_sums_to_total(self) -> None:
         """Per-region attribution values must sum to total return."""
@@ -241,9 +234,7 @@ class TestAttribution:
             attr = per_group_attribution(result, regions)
             attr_sum = sum(attr.values())
             total = float(result.all_portfolio_returns.sum())
-            assert (
-                abs(attr_sum - total) < 1e-10
-            ), f"{name}: region attr sum={attr_sum}, total={total}"
+            assert abs(attr_sum - total) < 1e-10, f"{name}: region attr sum={attr_sum}, total={total}"
 
     def test_instrument_attribution_sums_to_total(self) -> None:
         """Per-instrument attribution must sum to total return."""
@@ -590,9 +581,7 @@ class TestMultiAssetWeightedSurprise:
         # Build per-timestep surprise data
         surprises = []
         for t in range(T):
-            surprises.append(
-                {f"INST_{i}": tuple(rng.standard_normal(5).tolist()) for i in range(N)}
-            )
+            surprises.append({f"INST_{i}": tuple(rng.standard_normal(5).tolist()) for i in range(N)})
 
         s = MultiAssetWeightedSurpriseStrategy(
             surprise_weights=(1.0, 1.0, 1.0, 1.0, 1.0),

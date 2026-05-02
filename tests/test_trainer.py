@@ -26,7 +26,6 @@ from agent.models.gnn.trainer import (
 from agent.pipeline.entity import entity_id_from_key
 from agent.pipeline.store import PipelineStore
 
-
 # ─── Fixtures ─────────────────────────────────────────────────
 
 
@@ -167,18 +166,14 @@ class TestTrainerConfig:
 class TestTrainerBuildModel:
     def test_build_returns_model(self, populated_store):
         store, _ = populated_store
-        trainer = Trainer(
-            store, TrainerConfig(hidden_dim=16, memory_dim=16, message_dim=16)
-        )
+        trainer = Trainer(store, TrainerConfig(hidden_dim=16, memory_dim=16, message_dim=16))
         model = trainer.build_model()
         assert model is not None
         assert hasattr(model, "forward")
 
     def test_model_has_correct_hidden_dim(self, populated_store):
         store, _ = populated_store
-        trainer = Trainer(
-            store, TrainerConfig(hidden_dim=32, memory_dim=32, message_dim=32)
-        )
+        trainer = Trainer(store, TrainerConfig(hidden_dim=32, memory_dim=32, message_dim=32))
         model = trainer.build_model()
         assert model.hidden_dim == 32
 
@@ -198,13 +193,9 @@ class TestTrainerSplitAndWindow:
         trainer = Trainer(store)
         train, val, test = trainer._split_observations()
         if train and val:
-            assert max(o["observed_at"] for o in train) <= min(
-                o["observed_at"] for o in val
-            )
+            assert max(o["observed_at"] for o in train) <= min(o["observed_at"] for o in val)
         if val and test:
-            assert max(o["observed_at"] for o in val) <= min(
-                o["observed_at"] for o in test
-            )
+            assert max(o["observed_at"] for o in val) <= min(o["observed_at"] for o in test)
 
     def test_windows_non_empty(self, populated_store):
         store, _ = populated_store
@@ -279,9 +270,7 @@ class TestTrainerTraining:
 class TestTrainerEdgeCases:
     def test_very_small_dataset(self, store):
         """Single entity, single observation."""
-        eid = store.register_entity(
-            "company", "solo", entity_id_from_key("company", "solo")
-        )
+        eid = store.register_entity("company", "solo", entity_id_from_key("company", "solo"))
         store.store_entity_observation(eid, "test", 100.0, "insider_trade", {"v": 1})
         cfg = TrainerConfig(
             hidden_dim=8,
@@ -299,9 +288,7 @@ class TestTrainerEdgeCases:
 
     def test_no_links_contrastive_zero(self, store):
         """Entities but no links → contrastive loss = 0."""
-        eid = store.register_entity(
-            "company", "alone", entity_id_from_key("company", "alone")
-        )
+        eid = store.register_entity("company", "alone", entity_id_from_key("company", "alone"))
         store.store_entity_observation(eid, "test", 100.0, "insider_trade", {"v": 1})
         store.store_entity_observation(eid, "test", 200.0, "insider_trade", {"v": 2})
         cfg = TrainerConfig(
@@ -455,9 +442,7 @@ class TestLogVarClamp:
         # Drive every log-variance far outside the clamp window.
         with torch.no_grad():
             trainer._log_vars["obs_type"].fill_(-50.0)  # would give exp(50) unclamped
-            trainer._log_vars["time_delta"].fill_(
-                +50.0
-            )  # would give exp(-50) unclamped
+            trainer._log_vars["time_delta"].fill_(+50.0)  # would give exp(-50) unclamped
             trainer._log_vars["contrastive"].fill_(-100.0)
             trainer._log_vars["value"].fill_(+100.0)
 
@@ -467,9 +452,7 @@ class TestLogVarClamp:
         hi = math.exp(-cfg.log_var_min)
         lo = math.exp(-cfg.log_var_max)
         for k, w in eff.items():
-            assert (
-                lo - 1e-9 <= w <= hi + 1e-9
-            ), f"{k} weight {w} outside clamp window [{lo}, {hi}]"
+            assert lo - 1e-9 <= w <= hi + 1e-9, f"{k} weight {w} outside clamp window [{lo}, {hi}]"
 
     def test_total_loss_finite_on_zero_components(self, populated_store):
         """Replay the Phase 40 failure mode: component losses are all

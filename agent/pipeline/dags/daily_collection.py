@@ -28,14 +28,13 @@ disable the source.
 from __future__ import annotations
 
 import logging
-import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from agent.pipeline.dag import DAG
 
 if TYPE_CHECKING:
-    from agent.learning.tool_router import ToolRoutingBandit, ToolContext
+    from agent.learning.tool_router import ToolContext, ToolRoutingBandit
     from agent.pipeline.store import PipelineStore
 
 log = logging.getLogger(__name__)
@@ -403,7 +402,7 @@ def build_daily_collection_dag(
         "fetch_lobbying",
         operator="lobbying",
         table_name="lobbying",
-        params={"mode": "search", "year": datetime.now(timezone.utc).year},
+        params={"mode": "search", "year": datetime.now(UTC).year},
         timeout=120,
         retries=2,
     )

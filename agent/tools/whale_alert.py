@@ -181,9 +181,7 @@ class WhaleAlertTool(Tool):
         block_height = block.get("height", 0)
         block_time = block.get("time", 0)
 
-        parsed = self._parse_blockchain_txs(
-            raw_txs, confirmed=True, block_height=block_height, block_time=block_time
-        )
+        parsed = self._parse_blockchain_txs(raw_txs, confirmed=True, block_height=block_height, block_time=block_time)
 
         if self._cache and parsed:
             self._cache.put("whale_alert", cache_key, parsed)
@@ -249,9 +247,7 @@ class WhaleAlertTool(Tool):
 
         return parsed
 
-    def _filter_txs(
-        self, txs: list[dict[str, Any]], min_btc: float
-    ) -> list[dict[str, Any]]:
+    def _filter_txs(self, txs: list[dict[str, Any]], min_btc: float) -> list[dict[str, Any]]:
         filtered = [t for t in txs if t.get("value_btc", 0) >= min_btc]
         filtered.sort(key=lambda t: t.get("value_btc", 0), reverse=True)
         return filtered
@@ -293,9 +289,7 @@ class WhaleAlertTool(Tool):
             lines.append(f"BTC Whale Transactions (mempool) — {summary['count']} found")
         else:
             bh = txs[0].get("block_height", "?") if txs else "?"
-            lines.append(
-                f"BTC Whale Transactions (block #{bh}) — {summary['count']} found"
-            )
+            lines.append(f"BTC Whale Transactions (block #{bh}) — {summary['count']} found")
 
         lines.append(
             f"Total: {summary['total_value']:,.2f} BTC  "

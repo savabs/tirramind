@@ -19,21 +19,20 @@ Categories:
 from __future__ import annotations
 
 import io
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
 import torch
 
-from agent.models.diff_kalman import DifferentiableKalmanFilter
+from agent.fusion.alert import EntityAlert
+from agent.learning.policy.config import PolicyConfig
+from agent.learning.policy.sac import GaussianActor, SACConfig, SACTrainer
 from agent.learning.policy.state_assembler import (
     DifferentiableStateAssembler,
     InstrumentStateAssembler,
 )
-from agent.learning.policy.sac import GaussianActor, SACConfig, SACTrainer
-from agent.learning.policy.config import PolicyConfig
-from agent.fusion.alert import EntityAlert
-
+from agent.models.diff_kalman import DifferentiableKalmanFilter
 
 # ── Helpers ─────────────────────────────────────────────────
 
@@ -41,9 +40,7 @@ from agent.fusion.alert import EntityAlert
 def _make_kalman(state_dim=3, obs_dim=5, regimes=None):
     """Build a small DifferentiableKalmanFilter for testing."""
     regimes = regimes or ["expansion"]
-    return DifferentiableKalmanFilter(
-        state_dim=state_dim, obs_dim=obs_dim, regime_names=regimes
-    )
+    return DifferentiableKalmanFilter(state_dim=state_dim, obs_dim=obs_dim, regime_names=regimes)
 
 
 def _make_tickers(n=5):
@@ -99,13 +96,10 @@ class TestGetBeliefsDifferentiable:
         _forward_kalman(k, obs_dim=5)
         means, variances = k.get_beliefs_differentiable()
         # Create a scalar loss and check gradients flow
-        loss = (means.sum() + variances.sum())
+        loss = means.sum() + variances.sum()
         loss.backward()
         # At least one Kalman parameter should have non-None grad
-        has_grad = any(
-            p.grad is not None and p.grad.abs().sum() > 0
-            for p in k.parameters()
-        )
+        has_grad = any(p.grad is not None and p.grad.abs().sum() > 0 for p in k.parameters())
         assert has_grad, "No gradients flowed through get_beliefs_differentiable"
 
     def test_get_beliefs_still_detaches(self):
@@ -277,8 +271,7 @@ class TestEndToEndGradient:
                 params_with_grad.append(name)
 
         assert len(params_with_grad) > 0, (
-            f"No Kalman params got gradients. All params: "
-            f"{[n for n, _ in kalman.named_parameters()]}"
+            f"No Kalman params got gradients. All params: {[n for n, _ in kalman.named_parameters()]}"
         )
 
     def test_F_gets_gradient(self):
@@ -293,8 +286,10 @@ class TestEndToEndGradient:
         k.update(obs)
         means, variances = k.get_beliefs_differentiable()
         state, _ = diff_asm.assemble(
-            instrument_surprises={}, entity_alerts=[],
-            belief_means=means, belief_variances=variances,
+            instrument_surprises={},
+            entity_alerts=[],
+            belief_means=means,
+            belief_variances=variances,
             market_features={},
         )
         _, log_prob = actor.sample(state.unsqueeze(0))
@@ -316,8 +311,10 @@ class TestEndToEndGradient:
         k.update(obs)
         means, variances = k.get_beliefs_differentiable()
         state, _ = diff_asm.assemble(
-            instrument_surprises={}, entity_alerts=[],
-            belief_means=means, belief_variances=variances,
+            instrument_surprises={},
+            entity_alerts=[],
+            belief_means=means,
+            belief_variances=variances,
             market_features={},
         )
         _, log_prob = actor.sample(state.unsqueeze(0))
@@ -338,8 +335,10 @@ class TestEndToEndGradient:
         k.update(obs)
         means, variances = k.get_beliefs_differentiable()
         state, _ = diff_asm.assemble(
-            instrument_surprises={}, entity_alerts=[],
-            belief_means=means, belief_variances=variances,
+            instrument_surprises={},
+            entity_alerts=[],
+            belief_means=means,
+            belief_variances=variances,
             market_features={},
         )
         _, log_prob = actor.sample(state.unsqueeze(0))
@@ -360,8 +359,10 @@ class TestEndToEndGradient:
         k.update(obs)
         means, variances = k.get_beliefs_differentiable()
         state, _ = diff_asm.assemble(
-            instrument_surprises={}, entity_alerts=[],
-            belief_means=means, belief_variances=variances,
+            instrument_surprises={},
+            entity_alerts=[],
+            belief_means=means,
+            belief_variances=variances,
             market_features={},
         )
         _, log_prob = actor.sample(state.unsqueeze(0))
@@ -385,8 +386,10 @@ class TestGradientMagnitude:
         k.update(obs)
         means, variances = k.get_beliefs_differentiable()
         state, _ = diff_asm.assemble(
-            instrument_surprises={}, entity_alerts=[],
-            belief_means=means, belief_variances=variances,
+            instrument_surprises={},
+            entity_alerts=[],
+            belief_means=means,
+            belief_variances=variances,
             market_features={},
         )
         _, log_prob = actor.sample(state.unsqueeze(0))
@@ -427,12 +430,8 @@ class TestLayoutConsistency:
     @pytest.mark.parametrize("max_e", [10, 50, 100])
     def test_state_dim_matches_varying_entities(self, max_e):
         tickers = _make_tickers(5)
-        diff = DifferentiableStateAssembler(
-            instrument_tickers=tickers, max_entities=max_e
-        )
-        inst = InstrumentStateAssembler(
-            instrument_tickers=tickers, max_entities=max_e
-        )
+        diff = DifferentiableStateAssembler(instrument_tickers=tickers, max_entities=max_e)
+        inst = InstrumentStateAssembler(instrument_tickers=tickers, max_entities=max_e)
         assert diff.state_dim == inst.state_dim
 
     def test_block_ordering_identical(self):
@@ -450,10 +449,18 @@ class TestLayoutConsistency:
 
         beliefs = [
             BeliefState(
-                variable_name="v0", version=1, effective_at=0.0,
-                computed_at=0.0, dist_type="gaussian", mean=0.5,
-                variance=0.1, evidence_count=1, model_graph_hash="t",
-                confidence=1.0, stale=False, entity_id="E0",
+                variable_name="v0",
+                version=1,
+                effective_at=0.0,
+                computed_at=0.0,
+                dist_type="gaussian",
+                mean=0.5,
+                variance=0.1,
+                evidence_count=1,
+                model_graph_hash="t",
+                confidence=1.0,
+                stale=False,
+                entity_id="E0",
             )
         ]
 
@@ -475,8 +482,8 @@ class TestLayoutConsistency:
         # Instrument block (first N*5) should be identical
         N = 3
         np.testing.assert_allclose(
-            inst_state[:N * 5].numpy(),
-            diff_state[:N * 5].detach().numpy(),
+            inst_state[: N * 5].numpy(),
+            diff_state[: N * 5].detach().numpy(),
             atol=1e-6,
         )
 
@@ -497,17 +504,17 @@ class TestDetachIsolation:
         actor = GaussianActor(diff_asm.state_dim, len(tickers), cfg)
 
         # Record actor param snapshot
-        actor_params_before = {
-            n: p.data.clone() for n, p in actor.named_parameters()
-        }
+        actor_params_before = {n: p.data.clone() for n, p in actor.named_parameters()}
 
         # Forward through Kalman → assemble → actor
         kalman.predict("expansion")
         kalman.update(torch.randn(obs_dim))
         means, variances = kalman.get_beliefs_differentiable()
         state, _ = diff_asm.assemble(
-            instrument_surprises={}, entity_alerts=[],
-            belief_means=means, belief_variances=variances,
+            instrument_surprises={},
+            entity_alerts=[],
+            belief_means=means,
+            belief_variances=variances,
             market_features={},
         )
 
@@ -523,7 +530,8 @@ class TestDetachIsolation:
         # Actor params should be unchanged (no optimizer stepped them)
         for n, p in actor.named_parameters():
             torch.testing.assert_close(
-                p.data, actor_params_before[n],
+                p.data,
+                actor_params_before[n],
                 msg=f"Actor param {n} was modified by Kalman aux backward",
             )
 
@@ -540,8 +548,10 @@ class TestDetachIsolation:
         kalman.update(torch.randn(5))
         means, variances = kalman.get_beliefs_differentiable()
         state, _ = diff_asm.assemble(
-            instrument_surprises={}, entity_alerts=[],
-            belief_means=means, belief_variances=variances,
+            instrument_surprises={},
+            entity_alerts=[],
+            belief_means=means,
+            belief_variances=variances,
             market_features={},
         )
         _, log_prob = actor.sample(state.unsqueeze(0))
@@ -553,9 +563,9 @@ class TestDetachIsolation:
         optim.step()
 
         # F should have changed
-        assert not torch.allclose(
-            kalman._F["expansion"].data, F_before, atol=1e-10
-        ), "F did not change after optimizer step"
+        assert not torch.allclose(kalman._F["expansion"].data, F_before, atol=1e-10), (
+            "F did not change after optimizer step"
+        )
 
 
 # ── 7. NaN / zero robustness ────────────────────────────────
@@ -574,8 +584,10 @@ class TestNaNZeroRobustness:
         means, variances = k.get_beliefs_differentiable()
 
         state, _ = diff_asm.assemble(
-            instrument_surprises={}, entity_alerts=[],
-            belief_means=means, belief_variances=variances,
+            instrument_surprises={},
+            entity_alerts=[],
+            belief_means=means,
+            belief_variances=variances,
             market_features={},
         )
         _, log_prob = actor.sample(state.unsqueeze(0))
@@ -583,9 +595,7 @@ class TestNaNZeroRobustness:
 
         for p in k.parameters():
             if p.grad is not None:
-                assert torch.isfinite(p.grad).all(), (
-                    f"NaN in gradient for param shape {p.shape}"
-                )
+                assert torch.isfinite(p.grad).all(), f"NaN in gradient for param shape {p.shape}"
 
     def test_all_nan_observations(self):
         """All NaN observations → update is no-op, predict-only gradient path."""
@@ -600,8 +610,10 @@ class TestNaNZeroRobustness:
         means, variances = k.get_beliefs_differentiable()
 
         state, _ = diff_asm.assemble(
-            instrument_surprises={}, entity_alerts=[],
-            belief_means=means, belief_variances=variances,
+            instrument_surprises={},
+            entity_alerts=[],
+            belief_means=means,
+            belief_variances=variances,
             market_features={},
         )
         _, log_prob = actor.sample(state.unsqueeze(0))
@@ -621,8 +633,10 @@ class TestNaNZeroRobustness:
         means, variances = k.get_beliefs_differentiable()
 
         state, _ = diff_asm.assemble(
-            instrument_surprises={}, entity_alerts=[],
-            belief_means=means, belief_variances=variances,
+            instrument_surprises={},
+            entity_alerts=[],
+            belief_means=means,
+            belief_variances=variances,
             market_features={},
         )
         _, log_prob = actor.sample(state.unsqueeze(0))
@@ -639,8 +653,10 @@ class TestNaNZeroRobustness:
         means = torch.zeros(0)  # empty
         variances = torch.zeros(0)
         state, _ = diff_asm.assemble(
-            instrument_surprises={}, entity_alerts=[],
-            belief_means=means, belief_variances=variances,
+            instrument_surprises={},
+            entity_alerts=[],
+            belief_means=means,
+            belief_variances=variances,
             market_features={},
         )
         assert state.shape == (diff_asm.state_dim,)
@@ -654,7 +670,8 @@ class TestMultiRegime:
     def test_correct_regime_gets_gradient(self):
         """Only the F/Q for the predicted regime should get gradients."""
         k = _make_kalman(
-            state_dim=3, obs_dim=5,
+            state_dim=3,
+            obs_dim=5,
             regimes=["expansion", "contraction"],
         )
         tickers = _make_tickers(2)
@@ -666,8 +683,10 @@ class TestMultiRegime:
         k.update(torch.randn(5))
         means, variances = k.get_beliefs_differentiable()
         state, _ = diff_asm.assemble(
-            instrument_surprises={}, entity_alerts=[],
-            belief_means=means, belief_variances=variances,
+            instrument_surprises={},
+            entity_alerts=[],
+            belief_means=means,
+            belief_variances=variances,
             market_features={},
         )
         _, log_prob = actor.sample(state.unsqueeze(0))
@@ -686,7 +705,8 @@ class TestMultiRegime:
     def test_switching_regime_shifts_gradients(self):
         """After switching to contraction, that regime should get gradients."""
         k = _make_kalman(
-            state_dim=3, obs_dim=5,
+            state_dim=3,
+            obs_dim=5,
             regimes=["expansion", "contraction"],
         )
         tickers = _make_tickers(2)
@@ -700,8 +720,10 @@ class TestMultiRegime:
         k.update(torch.randn(5))
         means, variances = k.get_beliefs_differentiable()
         state, _ = diff_asm.assemble(
-            instrument_surprises={}, entity_alerts=[],
-            belief_means=means, belief_variances=variances,
+            instrument_surprises={},
+            entity_alerts=[],
+            belief_means=means,
+            belief_variances=variances,
             market_features={},
         )
         _, log_prob = actor.sample(state.unsqueeze(0))
@@ -755,9 +777,14 @@ class TestKalmanAugmentationIntegration:
         from agent.pipeline.dags.rl_training import _build_observation_batch
 
         alerts = [
-            {"obs_type_surprise": 1.0, "temporal_surprise": 0.5,
-             "value_surprise": 0.3, "neighborhood_surprise": 0.2,
-             "memory_drift": 0.1, "timestamp": float(i)}
+            {
+                "obs_type_surprise": 1.0,
+                "temporal_surprise": 0.5,
+                "value_surprise": 0.3,
+                "neighborhood_surprise": 0.2,
+                "memory_drift": 0.1,
+                "timestamp": float(i),
+            }
             for i in range(20)
         ]
         batch = _build_observation_batch(alerts, obs_dim=17, max_steps=10)
@@ -776,9 +803,14 @@ class TestKalmanAugmentationIntegration:
         from agent.pipeline.dags.rl_training import _build_observation_batch
 
         alerts = [
-            {"obs_type_surprise": 3.14, "temporal_surprise": 2.71,
-             "value_surprise": 1.41, "neighborhood_surprise": 1.73,
-             "memory_drift": 0.57, "timestamp": 100.0}
+            {
+                "obs_type_surprise": 3.14,
+                "temporal_surprise": 2.71,
+                "value_surprise": 1.41,
+                "neighborhood_surprise": 1.73,
+                "memory_drift": 0.57,
+                "timestamp": 100.0,
+            }
         ]
         batch = _build_observation_batch(alerts, obs_dim=10, max_steps=5)
         assert len(batch) == 1
@@ -821,9 +853,14 @@ class TestKalmanAugmentationIntegration:
         trainer = SACTrainer(assembler.state_dim, action_dim, cfg.sac)
 
         alerts = [
-            {"obs_type_surprise": float(i), "temporal_surprise": 0.5,
-             "value_surprise": 0.3, "neighborhood_surprise": 0.2,
-             "memory_drift": 0.1, "timestamp": float(i)}
+            {
+                "obs_type_surprise": float(i),
+                "temporal_surprise": 0.5,
+                "value_surprise": 0.3,
+                "neighborhood_surprise": 0.2,
+                "memory_drift": 0.1,
+                "timestamp": float(i),
+            }
             for i in range(5)
         ]
 

@@ -211,11 +211,7 @@ class DefiFlowsTool(Tool):
 
         if chain_filter:
             cf_lower = chain_filter.lower()
-            data = [
-                p
-                for p in data
-                if cf_lower in [c.lower() for c in (p.get("chains") or [])]
-            ]
+            data = [p for p in data if cf_lower in [c.lower() for c in (p.get("chains") or [])]]
         if category_filter:
             cat_lower = category_filter.lower()
             data = [p for p in data if (p.get("category") or "").lower() == cat_lower]
@@ -236,12 +232,8 @@ class DefiFlowsTool(Tool):
                     "category": p.get("category"),
                     "chain": p.get("chain"),
                     "chains": p.get("chains", []),
-                    "change_1d_pct": (
-                        round(change_1d, 2) if change_1d is not None else None
-                    ),
-                    "change_7d_pct": (
-                        round(change_7d, 2) if change_7d is not None else None
-                    ),
+                    "change_1d_pct": (round(change_1d, 2) if change_1d is not None else None),
+                    "change_7d_pct": (round(change_7d, 2) if change_7d is not None else None),
                 }
             )
 
@@ -291,13 +283,8 @@ class DefiFlowsTool(Tool):
                 }
             )
 
-        total_supply = sum(
-            (c.get("circulating") or {}).get("peggedUSD") or 0 for c in coins
-        )
-        summary = (
-            f"Top {len(results)} stablecoins by circulating supply. "
-            f"Total stablecoin supply: ${total_supply:,.0f}"
-        )
+        total_supply = sum((c.get("circulating") or {}).get("peggedUSD") or 0 for c in coins)
+        summary = f"Top {len(results)} stablecoins by circulating supply. Total stablecoin supply: ${total_supply:,.0f}"
         return ToolResult(
             success=True,
             output=summary,
@@ -316,11 +303,7 @@ class DefiFlowsTool(Tool):
         protocols = raw.get("protocols", [])
         if chain_filter:
             cf_lower = chain_filter.lower()
-            protocols = [
-                p
-                for p in protocols
-                if cf_lower in [c.lower() for c in (p.get("chains") or [])]
-            ]
+            protocols = [p for p in protocols if cf_lower in [c.lower() for c in (p.get("chains") or [])]]
 
         # Sort by 24h volume descending
         protocols.sort(key=lambda p: p.get("totalVolume24h") or 0, reverse=True)
@@ -387,10 +370,7 @@ class DefiFlowsTool(Tool):
             )
 
         grand_total = sum(v for _, v in sorted_chains)
-        summary = (
-            f"Top {len(results)} chains by TVL. "
-            f"Grand total across all chains: ${grand_total:,.0f}"
-        )
+        summary = f"Top {len(results)} chains by TVL. Grand total across all chains: ${grand_total:,.0f}"
         return ToolResult(
             success=True,
             output=summary,

@@ -8,7 +8,6 @@ Scoped to allowed directories for safety.
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
 from typing import Any
 
@@ -88,9 +87,7 @@ class FileWriteTool(Tool):
         try:
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(content)
-            return ToolResult(
-                success=True, output=f"Written {len(content)} chars to {p}"
-            )
+            return ToolResult(success=True, output=f"Written {len(content)} chars to {p}")
         except Exception as exc:
             return ToolResult(success=False, output=f"Write error: {exc}")
 

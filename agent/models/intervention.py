@@ -145,10 +145,7 @@ class InterventionEngine:
                     evidence=evidence if evidence else None,
                     show_progress=False,
                 )
-                probs = {
-                    state: float(result.values[i])
-                    for i, state in enumerate(spec.states)
-                }
+                probs = {state: float(result.values[i]) for i, state in enumerate(spec.states)}
             except Exception:
                 # Fallback to uniform
                 n = len(spec.states)
@@ -226,10 +223,7 @@ class InterventionEngine:
                     evidence=obs_evidence,
                     show_progress=False,
                 )
-                obs_probs = {
-                    state: float(obs_result.values[i])
-                    for i, state in enumerate(spec.states)
-                }
+                obs_probs = {state: float(obs_result.values[i]) for i, state in enumerate(spec.states)}
             except Exception:
                 n = len(spec.states)
                 obs_probs = {s: 1.0 / n for s in spec.states}
@@ -271,15 +265,9 @@ class InterventionEngine:
     ) -> None:
         """Check do_variable and do_value are valid."""
         if do_variable not in self._graph.node_specs:
-            raise ValueError(
-                f"do_variable '{do_variable}' not in graph. "
-                f"Available: {self._graph.node_names}"
-            )
+            raise ValueError(f"do_variable '{do_variable}' not in graph. Available: {self._graph.node_names}")
         spec = self._graph.node_specs[do_variable]
         if spec.states is None:
             raise ValueError(f"Node '{do_variable}' has no states — cannot intervene")
         if do_value not in spec.states:
-            raise ValueError(
-                f"do_value '{do_value}' not in states for '{do_variable}': "
-                f"{spec.states}"
-            )
+            raise ValueError(f"do_value '{do_value}' not in states for '{do_variable}': {spec.states}")

@@ -122,9 +122,7 @@ def _fetch_fred_series(
 
     observations = data.get("observations", [])
     return [
-        {"date": obs["date"], "value": obs["value"]}
-        for obs in observations
-        if obs.get("value") not in (".", "", None)
+        {"date": obs["date"], "value": obs["value"]} for obs in observations if obs.get("value") not in (".", "", None)
     ]
 
 
@@ -165,10 +163,12 @@ def _fetch_bls_series(
             value = obs.get("value", "")
             if value and period.startswith("M"):
                 month = period[1:].zfill(2)
-                observations.append({
-                    "date": f"{year}-{month}-01",
-                    "value": value,
-                })
+                observations.append(
+                    {
+                        "date": f"{year}-{month}-01",
+                        "value": value,
+                    }
+                )
         result[sid] = observations
     return result
 
@@ -187,7 +187,7 @@ def _latest_value(series: list[dict[str, str]]) -> tuple[str, float | None]:
 def _compute_trend(series: list[dict[str, str]], n: int = 3) -> str:
     """Compute simple trend from last n observations."""
     vals = []
-    for obs in series[:n + 1]:
+    for obs in series[: n + 1]:
         try:
             vals.append(float(obs["value"]))
         except (ValueError, KeyError):
@@ -288,7 +288,8 @@ class JobPostingsTool(Tool):
     def _jolts_via_bls(self, *, months: int, cache_key: str) -> ToolResult:
         """JOLTS via BLS Public API (no key needed)."""
         import datetime
-        now = datetime.datetime.now(datetime.timezone.utc)
+
+        now = datetime.datetime.now(datetime.UTC)
         end_year = now.year
         start_year = max(end_year - (months // 12) - 1, end_year - 10)
 
@@ -314,9 +315,7 @@ class JobPostingsTool(Tool):
 
         return self._format_jolts(results)
 
-    def _format_jolts(
-        self, results: dict[str, list[dict[str, str]]], *, from_cache: bool = False
-    ) -> ToolResult:
+    def _format_jolts(self, results: dict[str, list[dict[str, str]]], *, from_cache: bool = False) -> ToolResult:
         tag = " (cached)" if from_cache else ""
         lines = [f"JOLTS Labor Market Summary{tag}", ""]
 
@@ -362,7 +361,8 @@ class JobPostingsTool(Tool):
                 return self._format_sector(cached, from_cache=True)
 
         import datetime
-        now = datetime.datetime.now(datetime.timezone.utc)
+
+        now = datetime.datetime.now(datetime.UTC)
         end_year = now.year
         start_year = max(end_year - (months // 12) - 1, end_year - 3)
 
@@ -379,9 +379,7 @@ class JobPostingsTool(Tool):
 
         return self._format_sector(results)
 
-    def _format_sector(
-        self, results: dict[str, list[dict[str, str]]], *, from_cache: bool = False
-    ) -> ToolResult:
+    def _format_sector(self, results: dict[str, list[dict[str, str]]], *, from_cache: bool = False) -> ToolResult:
         tag = " (cached)" if from_cache else ""
         lines = [f"JOLTS Sector-Level Job Openings{tag}", ""]
 
@@ -399,10 +397,7 @@ class JobPostingsTool(Tool):
             }
 
         # Identify strongest/weakest sectors
-        ranked = [
-            (sid, s) for sid, s in summary.items()
-            if s.get("latest_value") is not None
-        ]
+        ranked = [(sid, s) for sid, s in summary.items() if s.get("latest_value") is not None]
         ranked.sort(key=lambda x: x[1]["latest_value"] or 0, reverse=True)
 
         if len(ranked) >= 2:
@@ -451,9 +446,7 @@ class JobPostingsTool(Tool):
 
         return self._format_labor_market(results)
 
-    def _format_labor_market(
-        self, results: dict[str, list[dict[str, str]]], *, from_cache: bool = False
-    ) -> ToolResult:
+    def _format_labor_market(self, results: dict[str, list[dict[str, str]]], *, from_cache: bool = False) -> ToolResult:
         tag = " (cached)" if from_cache else ""
         lines = [f"Composite Labor Market Overview{tag}", ""]
 
@@ -485,10 +478,7 @@ class JobPostingsTool(Tool):
             unemployed = payrolls * (unrate / 100)
             tightness = openings / unemployed if unemployed > 0 else 0
             lines.append("")
-            lines.append(
-                f"  Market tightness (openings/unemployed): {tightness:.2f} "
-                f"(>1.5 = very tight, <0.8 = loose)"
-            )
+            lines.append(f"  Market tightness (openings/unemployed): {tightness:.2f} (>1.5 = very tight, <0.8 = loose)")
 
         return ToolResult(
             success=True,

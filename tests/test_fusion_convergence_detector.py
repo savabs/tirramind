@@ -18,7 +18,6 @@ import pytest
 from agent.fusion.convergence import ConvergenceDetector, _cosine_similarity
 from agent.fusion.surprise import EntitySurprise
 
-
 # ── Helpers ────────────────────────────────────────────────────
 
 
@@ -94,12 +93,8 @@ class TestCosineSimilarity:
 
 class TestMeanPairwiseCosine:
     def test_two_identical_surprises(self):
-        s1 = _make_surprise(
-            "c0", obs_type=1.0, temporal=1.0, value=1.0, neighborhood=1.0, memory=1.0
-        )
-        s2 = _make_surprise(
-            "c1", obs_type=1.0, temporal=1.0, value=1.0, neighborhood=1.0, memory=1.0
-        )
+        s1 = _make_surprise("c0", obs_type=1.0, temporal=1.0, value=1.0, neighborhood=1.0, memory=1.0)
+        s2 = _make_surprise("c1", obs_type=1.0, temporal=1.0, value=1.0, neighborhood=1.0, memory=1.0)
         d = ConvergenceDetector()
         score = d._mean_pairwise_cosine([s1, s2])
         assert score == pytest.approx(1.0)
@@ -342,9 +337,7 @@ class TestConvergenceDetectorEdgeCases:
         """10 fully connected surprised entities → one cluster."""
         n = 10
         surprises = {f"c{i}": _make_surprise(f"c{i}", composite=5.0) for i in range(n)}
-        links = [
-            _make_link(f"c{i}", f"c{j}") for i in range(n) for j in range(i + 1, n)
-        ]
+        links = [_make_link(f"c{i}", f"c{j}") for i in range(n) for j in range(i + 1, n)]
         d = ConvergenceDetector()
         clusters = d.detect(surprises, links, surprise_threshold=2.0)
         assert len(clusters) == 1

@@ -25,14 +25,14 @@ import pytest
 from agent.features.protocol import EngineeredFeature
 from agent.models.belief import BeliefState
 from agent.pipeline.dags.world_model_update import (
-    _build_observation_sequence,
     _DAY_SECONDS,
     _FEATURE_TO_OBS_INDEX,
     _FIT_SOURCE,
+    _OBS_DIM,
+    _build_observation_sequence,
     _load_feature_history,
     _load_regime_labels,
     _maybe_fit_params,
-    _OBS_DIM,
     _should_fit,
 )
 from agent.pipeline.store import PipelineStore
@@ -709,9 +709,7 @@ class TestRunWorldModelUpdateWithFitting:
         mock_fit.side_effect = fake_fit
 
         mock_wm = MagicMock()
-        mock_wm.update.side_effect = lambda *a, **kw: (
-            call_order.append("update") or []
-        )
+        mock_wm.update.side_effect = lambda *a, **kw: call_order.append("update") or []
         mock_wm.get_graph_hash.return_value = "h" * 64
         mock_build.return_value = mock_wm
 

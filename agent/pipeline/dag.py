@@ -19,8 +19,9 @@ Usage:
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 
 @dataclass
@@ -87,9 +88,7 @@ class DAG:
         for nid, node in self.nodes.items():
             for dep in node.depends_on:
                 if dep not in self.nodes:
-                    errors.append(
-                        f"Node {nid!r} depends on {dep!r} which does not exist"
-                    )
+                    errors.append(f"Node {nid!r} depends on {dep!r} which does not exist")
                 if dep == nid:
                     errors.append(f"Node {nid!r} has self-dependency")
 

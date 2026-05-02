@@ -766,9 +766,7 @@ def _format_changes(changes: list[dict[str, Any]]) -> list[str]:
             lines.append(f"  - {rtype:6s}  {ch['value']}  (was TTL={ch['old_ttl']})")
         elif action == "ttl_changed":
             direction = "↓" if ch["new_ttl"] < ch["old_ttl"] else "↑"
-            lines.append(
-                f"  ~ {rtype:6s}  {ch['value']}  TTL {ch['old_ttl']}→{ch['new_ttl']} {direction}"
-            )
+            lines.append(f"  ~ {rtype:6s}  {ch['value']}  TTL {ch['old_ttl']}→{ch['new_ttl']} {direction}")
     return lines
 
 
@@ -798,10 +796,7 @@ class DnsMonitorTool(Tool):
             },
             "domain": {
                 "type": "string",
-                "description": (
-                    "Domain to query (e.g., 'stripe.com'). "
-                    "Required for resolve and diff modes."
-                ),
+                "description": ("Domain to query (e.g., 'stripe.com'). Required for resolve and diff modes."),
             },
             "domains": {
                 "type": "array",
@@ -812,10 +807,7 @@ class DnsMonitorTool(Tool):
                 "type": "array",
                 "items": {"type": "string"},
                 "default": ["A", "AAAA", "MX", "NS", "TXT", "CNAME"],
-                "description": (
-                    "DNS record types to query. "
-                    "Default: A, AAAA, MX, NS, TXT, CNAME."
-                ),
+                "description": ("DNS record types to query. Default: A, AAAA, MX, NS, TXT, CNAME."),
             },
         },
         "required": ["mode"],
@@ -854,8 +846,7 @@ class DnsMonitorTool(Tool):
                 return ToolResult(
                     success=False,
                     output=(
-                        f"Invalid record type(s): {', '.join(invalid)}. "
-                        f"Valid: {', '.join(sorted(ALL_RECORD_TYPES))}."
+                        f"Invalid record type(s): {', '.join(invalid)}. Valid: {', '.join(sorted(ALL_RECORD_TYPES))}."
                     ),
                 )
         else:
@@ -984,9 +975,7 @@ class DnsMonitorTool(Tool):
         )
 
     @staticmethod
-    def _link_domain_to_company(
-        store: Any, domain: str, domain_eid: str
-    ) -> None:
+    def _link_domain_to_company(store: Any, domain: str, domain_eid: str) -> None:
         """Attempt to link a domain entity to a company entity (Phase 36).
 
         Extracts the base name from the domain (e.g. ``stripe`` from
@@ -1112,9 +1101,7 @@ class DnsMonitorTool(Tool):
     # bulk_resolve mode
     # ------------------------------------------------------------------
 
-    def _execute_bulk_resolve(
-        self, *, domains: list[str], record_types: list[str]
-    ) -> ToolResult:
+    def _execute_bulk_resolve(self, *, domains: list[str], record_types: list[str]) -> ToolResult:
         if not domains:
             return ToolResult(
                 success=False,
@@ -1163,9 +1150,7 @@ class DnsMonitorTool(Tool):
             providers = ", ".join(a.get("cloud_providers", [])) or "unknown"
             mx = a.get("mx_provider", "—")
             ttl_warn = " ⚠ LOW TTL" if a.get("low_ttl_warning") else ""
-            lines.append(
-                f"  {d:40s}  {count:>3d} records  cloud={providers}  mx={mx}{ttl_warn}"
-            )
+            lines.append(f"  {d:40s}  {count:>3d} records  cloud={providers}  mx={mx}{ttl_warn}")
 
         if errors:
             lines.append("")

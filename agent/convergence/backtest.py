@@ -22,9 +22,8 @@ import bisect
 import json
 import logging
 import os
-import time
-from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -33,13 +32,12 @@ import numpy as np
 from agent.convergence.detector import (
     ConvergenceDetector,
     ConvergenceDetectorConfig,
-    DetectionResult,
 )
 from agent.convergence.evidence import Evidence
 from agent.convergence.taxonomy import SignalMeta, SignalRegistry
 from agent.pipeline.store import PipelineStore
 from agent.quant.backtest import BacktestResult, Strategy, WalkForward
-from agent.quant.scoring import block_bootstrap_ci, score_returns
+from agent.quant.scoring import block_bootstrap_ci
 
 log = logging.getLogger(__name__)
 
@@ -57,9 +55,7 @@ def _get_fred_api_key() -> str:
     Prefers the repo-standard ``TIRRA_FRED_API_KEY`` but also accepts
     ``FRED_API_KEY`` for direct CLI use.
     """
-    return os.environ.get("TIRRA_FRED_API_KEY", "") or os.environ.get(
-        "FRED_API_KEY", ""
-    )
+    return os.environ.get("TIRRA_FRED_API_KEY", "") or os.environ.get("FRED_API_KEY", "")
 
 
 def _is_placeholder_api_key(api_key: str) -> bool:
@@ -105,9 +101,7 @@ class FredSeriesConfig:
 
 # The 13 FRED series from the spec.
 FRED_SERIES: list[FredSeriesConfig] = [
-    FredSeriesConfig(
-        "WALCL", "central_bank.fed.assets", "monetary_policy", "delta_pos_up", "weekly"
-    ),
+    FredSeriesConfig("WALCL", "central_bank.fed.assets", "monetary_policy", "delta_pos_up", "weekly"),
     FredSeriesConfig(
         "RRPONTSYD",
         "central_bank.fed.rrp",
@@ -115,12 +109,8 @@ FRED_SERIES: list[FredSeriesConfig] = [
         "delta_pos_down",
         "daily",
     ),
-    FredSeriesConfig(
-        "DFF", "rate_monitor.fed.rate", "monetary_policy", "delta_pos_down", "daily"
-    ),
-    FredSeriesConfig(
-        "DGS10", "sovereign_debt.us.10y", "financial_stress", "delta_pos_up", "daily"
-    ),
+    FredSeriesConfig("DFF", "rate_monitor.fed.rate", "monetary_policy", "delta_pos_down", "daily"),
+    FredSeriesConfig("DGS10", "sovereign_debt.us.10y", "financial_stress", "delta_pos_up", "daily"),
     FredSeriesConfig(
         "T10Y2Y",
         "sovereign_debt.us.curve",
@@ -135,30 +125,16 @@ FRED_SERIES: list[FredSeriesConfig] = [
         "delta_pos_up",
         "daily",
     ),
-    FredSeriesConfig(
-        "UNRATE", "jobs.us.unemployment", "macro_momentum", "delta_pos_up", "monthly"
-    ),
-    FredSeriesConfig(
-        "ICSA", "jobs.us.claims", "macro_momentum", "delta_pos_up", "weekly"
-    ),
+    FredSeriesConfig("UNRATE", "jobs.us.unemployment", "macro_momentum", "delta_pos_up", "monthly"),
+    FredSeriesConfig("ICSA", "jobs.us.claims", "macro_momentum", "delta_pos_up", "weekly"),
     # NAPM/ISM is not a durable free programmatic input. Keep the legacy
     # macro-momentum slot stable for template compatibility, but source it from
     # the maintained US leading index series instead.
-    FredSeriesConfig(
-        "USSLIND", "pmi.us.manufacturing", "macro_momentum", "level_below_0", "monthly"
-    ),
-    FredSeriesConfig(
-        "UMCSENT", "consumer.us.sentiment", "macro_momentum", "delta_neg_up", "monthly"
-    ),
-    FredSeriesConfig(
-        "PERMIT", "building.us.permits", "macro_momentum", "delta_neg_up", "monthly"
-    ),
-    FredSeriesConfig(
-        "CPIAUCSL", "cpi.us.headline", "macro_momentum", "delta_pos_up", "monthly"
-    ),
-    FredSeriesConfig(
-        "M2SL", "monetary.us.m2", "monetary_policy", "delta_pos_up", "monthly"
-    ),
+    FredSeriesConfig("USSLIND", "pmi.us.manufacturing", "macro_momentum", "level_below_0", "monthly"),
+    FredSeriesConfig("UMCSENT", "consumer.us.sentiment", "macro_momentum", "delta_neg_up", "monthly"),
+    FredSeriesConfig("PERMIT", "building.us.permits", "macro_momentum", "delta_neg_up", "monthly"),
+    FredSeriesConfig("CPIAUCSL", "cpi.us.headline", "macro_momentum", "delta_pos_up", "monthly"),
+    FredSeriesConfig("M2SL", "monetary.us.m2", "monetary_policy", "delta_pos_up", "monthly"),
 ]
 
 
@@ -353,7 +329,7 @@ def _parse_fred_response(
             val = float(val_str)
         except (ValueError, TypeError):
             continue
-        dt = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        dt = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=UTC)
         points.append((dt.timestamp(), val))
     return sorted(points, key=lambda p: p[0])
 
@@ -387,7 +363,7 @@ def fetch_fred_history(
     dict mapping fred_id → [(unix_ts, value)].
     """
     ids = series_ids or [c.fred_id for c in FRED_SERIES]
-    end_date = end_date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    end_date = end_date or datetime.now(UTC).strftime("%Y-%m-%d")
     cache_path = Path(cache_dir)
     cache_path.mkdir(parents=True, exist_ok=True)
 
@@ -644,9 +620,7 @@ class ConvergenceDirectionalStrategy(Strategy):
 class ConvergenceTemplateStrategy(Strategy):
     """Only act when template match confidence is high (>0.5)."""
 
-    def __init__(
-        self, match_threshold: float = 0.5, score_threshold: float = 0.3
-    ) -> None:
+    def __init__(self, match_threshold: float = 0.5, score_threshold: float = 0.3) -> None:
         self._match_threshold = match_threshold
         self._score_threshold = score_threshold
 
@@ -675,11 +649,7 @@ class ConvergenceTemplateStrategy(Strategy):
         for i in range(test_length):
             if i >= len(scores):
                 break
-            if (
-                scores[i] > self._score_threshold
-                and directions[i] >= 1
-                and matches[i] > self._match_threshold
-            ):
+            if scores[i] > self._score_threshold and directions[i] >= 1 and matches[i] > self._match_threshold:
                 weights[i] = 0.0
 
         return weights
@@ -723,9 +693,7 @@ def _fetch_target_returns(
         import pandas as pd
         import yfinance as yf
     except ImportError as e:
-        raise ImportError(
-            "yfinance required for macro backtest: pip install yfinance"
-        ) from e
+        raise ImportError("yfinance required for macro backtest: pip install yfinance") from e
 
     def _extract_close_series(frame: pd.DataFrame) -> pd.Series:
         if isinstance(frame.columns, pd.MultiIndex):
@@ -735,9 +703,7 @@ def _fetch_target_returns(
         else:
             price_col = "Adj Close" if "Adj Close" in frame.columns else "Close"
             if price_col not in frame.columns:
-                raise ValueError(
-                    f"No close column available for {ticker}; columns={list(frame.columns)}"
-                )
+                raise ValueError(f"No close column available for {ticker}; columns={list(frame.columns)}")
             series_or_frame = frame[price_col]
 
         if isinstance(series_or_frame, pd.DataFrame):
@@ -812,9 +778,7 @@ def run_macro_backtest(
         fred_data = fetch_fred_history(start_date=start_date, end_date=end_date)
 
     if not fred_data:
-        raise ValueError(
-            "No FRED data available. Set FRED_API_KEY or provide fred_data."
-        )
+        raise ValueError("No FRED data available. Set FRED_API_KEY or provide fred_data.")
 
     results: dict[str, MacroBacktestResult] = {}
     shared_step_score_cache: dict[float, StepScore] = {}
@@ -824,9 +788,7 @@ def run_macro_backtest(
 
         # Step 2: Fetch target returns.
         try:
-            timestamps, log_returns = _fetch_target_returns(
-                ticker, start_date, end_date
-            )
+            timestamps, log_returns = _fetch_target_returns(ticker, start_date, end_date)
         except (ImportError, ValueError) as e:
             log.error("Cannot fetch %s: %s", ticker, e)
             continue
@@ -849,9 +811,7 @@ def run_macro_backtest(
 
         n_detected = int(np.sum(conv_score_arr > 0))
         detection_rate = n_detected / max(n_weeks, 1)
-        log.info(
-            "Detection rate: %d/%d (%.1f%%)", n_detected, n_weeks, detection_rate * 100
-        )
+        log.info("Detection rate: %d/%d (%.1f%%)", n_detected, n_weeks, detection_rate * 100)
 
         # Step 4: Build extra arrays for WalkForward.
         extra = {
@@ -902,9 +862,7 @@ def run_macro_backtest(
                 # Bootstrap the strategy Sharpe to get a CI.
                 from agent.quant.scoring import sharpe_ratio
 
-                _sharpe_fn = lambda r: sharpe_ratio(
-                    r, periods_per_year=52
-                )  # noqa: E731
+                _sharpe_fn = lambda r: sharpe_ratio(r, periods_per_year=52)  # noqa: E731
                 point_est, ci_lo, ci_hi = block_bootstrap_ci(
                     sresult.all_test_returns,
                     _sharpe_fn,
@@ -957,9 +915,7 @@ def _resolve_macro_runtime(
     resolved_start_year = start_year
     resolved_end_year = end_year
     resolved_targets = list(targets)
-    resolved_bootstrap = (
-        bootstrap_count if bootstrap_count is not None else _DEFAULT_BOOTSTRAP_COUNT
-    )
+    resolved_bootstrap = bootstrap_count if bootstrap_count is not None else _DEFAULT_BOOTSTRAP_COUNT
 
     if not fast_mode:
         return (
@@ -995,7 +951,7 @@ def save_baseline(
     Path(path).parent.mkdir(parents=True, exist_ok=True)
 
     baseline: dict[str, Any] = {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
     }
     for ticker, res in results.items():
         ticker_data: dict[str, Any] = {
@@ -1010,10 +966,7 @@ def save_baseline(
             }
         if res.sharpe_diffs:
             ticker_data["sharpe_diffs"] = {
-                k: {
-                    kk: float(vv) if isinstance(vv, (float, np.floating)) else vv
-                    for kk, vv in v.items()
-                }
+                k: {kk: float(vv) if isinstance(vv, (float, np.floating)) else vv for kk, vv in v.items()}
                 for k, v in res.sharpe_diffs.items()
             }
         baseline[ticker] = ticker_data
@@ -1054,24 +1007,18 @@ def validate_against_baseline(
                     continue
                 # For max_drawdown, higher (less negative) is better.
                 if metric == "max_drawdown":
-                    if (
-                        bl_val != 0
-                        and (current - bl_val) / abs(bl_val) > max_degradation
-                    ):
+                    if bl_val != 0 and (current - bl_val) / abs(bl_val) > max_degradation:
                         failures.append(
                             f"{ticker}/{sname}/{metric}: "
                             f"{bl_val:.4f} → {current:.4f} "
-                            f"(degraded > {max_degradation*100:.0f}%)"
+                            f"(degraded > {max_degradation * 100:.0f}%)"
                         )
                 else:
-                    if (
-                        bl_val != 0
-                        and (bl_val - current) / abs(bl_val) > max_degradation
-                    ):
+                    if bl_val != 0 and (bl_val - current) / abs(bl_val) > max_degradation:
                         failures.append(
                             f"{ticker}/{sname}/{metric}: "
                             f"{bl_val:.4f} → {current:.4f} "
-                            f"(degraded > {max_degradation*100:.0f}%)"
+                            f"(degraded > {max_degradation * 100:.0f}%)"
                         )
 
     passed = len(failures) == 0
@@ -1096,16 +1043,10 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
     parser = argparse.ArgumentParser(description="Convergence Engine Backtest")
-    parser.add_argument(
-        "--synthetic", action="store_true", help="Run synthetic validation only"
-    )
+    parser.add_argument("--synthetic", action="store_true", help="Run synthetic validation only")
     parser.add_argument("--macro", action="store_true", help="Run macro backtest only")
-    parser.add_argument(
-        "--validate", action="store_true", help="Compare against saved baseline"
-    )
-    parser.add_argument(
-        "--save-baseline", action="store_true", help="Save results as new baseline"
-    )
+    parser.add_argument("--validate", action="store_true", help="Compare against saved baseline")
+    parser.add_argument("--save-baseline", action="store_true", help="Save results as new baseline")
     parser.add_argument("--start-year", type=int, default=2010)
     parser.add_argument("--end-year", type=int, default=2025)
     parser.add_argument("--targets", nargs="+", default=list(_DEFAULT_TARGETS))
@@ -1131,13 +1072,11 @@ def main() -> None:
         log.info("Running synthetic validation (100 scenarios)...")
         scenarios = generate_scenarios(n=100, seed=42)
         result = run_synthetic_validation(scenarios)
-        print(f"\n{'='*60}")
-        print(f"Synthetic Validation Results")
-        print(f"{'='*60}")
+        print(f"\n{'=' * 60}")
+        print("Synthetic Validation Results")
+        print(f"{'=' * 60}")
         print(f"  Scenarios: {result.n_scenarios}")
-        print(
-            f"  TP={result.true_positives}  FN={result.false_negatives}  FP={result.false_positives}"
-        )
+        print(f"  TP={result.true_positives}  FN={result.false_negatives}  FP={result.false_positives}")
         print(f"  Precision: {result.precision:.4f}")
         print(f"  Recall:    {result.recall:.4f}")
         print(f"  F1:        {result.f1:.4f}")
@@ -1161,14 +1100,11 @@ def main() -> None:
         )
 
         for ticker, res in results.items():
-            print(f"\n{'='*60}")
+            print(f"\n{'=' * 60}")
             print(f"  {ticker} — Detection rate: {res.detection_rate:.1%}")
             for sname, bt in res.strategies.items():
                 m = bt.aggregate_metrics
-                print(
-                    f"  {sname}: Sharpe={m.get('sharpe', 'N/A'):.3f}  "
-                    f"MDD={m.get('max_drawdown', 'N/A'):.3f}"
-                )
+                print(f"  {sname}: Sharpe={m.get('sharpe', 'N/A'):.3f}  MDD={m.get('max_drawdown', 'N/A'):.3f}")
 
         if args.save_baseline:
             save_baseline(results)

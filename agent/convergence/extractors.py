@@ -12,7 +12,8 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from agent.convergence.evidence import Evidence
 
@@ -122,11 +123,7 @@ def _extract_cftc(tool_name: str, data: Any) -> list[Evidence]:
             continue
 
         # Derive a clean commodity slug from the market name
-        slug = (
-            market.split("-")[0].strip().lower().replace(" ", "_")[:30]
-            if market
-            else "unknown"
-        )
+        slug = market.split("-")[0].strip().lower().replace(" ", "_")[:30] if market else "unknown"
         val = _safe_float(mm_net_pct)
 
         # Direction: positive net = speculative longs dominate (+1 stress/risk-on)
@@ -213,14 +210,8 @@ def _extract_weather_alerts(tool_name: str, data: Any) -> list[Evidence]:
     # Alerts mode — aggregate by severity
     alerts = data.get("alerts")
     if alerts and isinstance(alerts, list):
-        market_relevant_count = sum(
-            1 for a in alerts if isinstance(a, dict) and a.get("market_relevant")
-        )
-        severe_count = sum(
-            1
-            for a in alerts
-            if isinstance(a, dict) and a.get("severity") in ("Extreme", "Severe")
-        )
+        market_relevant_count = sum(1 for a in alerts if isinstance(a, dict) and a.get("market_relevant"))
+        severe_count = sum(1 for a in alerts if isinstance(a, dict) and a.get("severity") in ("Extreme", "Severe"))
         results.append(
             Evidence(
                 source=tool_name,
@@ -257,9 +248,7 @@ def _extract_weather_alerts(tool_name: str, data: Any) -> list[Evidence]:
                 source=tool_name,
                 signal_id="weather.global.infra_fire_zones",
                 timestamp=ts,
-                value=float(
-                    len(zones_affected) if isinstance(zones_affected, list) else 0
-                ),
+                value=float(len(zones_affected) if isinstance(zones_affected, list) else 0),
                 direction=1 if zones_affected else 0,
                 confidence=0.65,
                 category="physical_disruption",
@@ -312,9 +301,7 @@ def _extract_sanctions_monitor(tool_name: str, data: Any) -> list[Evidence]:
     # Programs mode
     programs = data.get("programs")
     if programs and isinstance(programs, list) and days_back is None:
-        total_entries = sum(
-            _safe_int(p.get("count")) for p in programs if isinstance(p, dict)
-        )
+        total_entries = sum(_safe_int(p.get("count")) for p in programs if isinstance(p, dict))
         results.append(
             Evidence(
                 source=tool_name,
@@ -471,11 +458,9 @@ def _extract_finra_short_volume(tool_name: str, data: Any) -> list[Evidence]:
     if isinstance(scan_results, list) and "ticker" not in data:
         total_tickers = _safe_int(data.get("total_tickers"))
         if total_tickers > 0:
-            avg_ratio = sum(
-                _safe_float(r.get("short_ratio"))
-                for r in scan_results
-                if isinstance(r, dict)
-            ) / max(len(scan_results), 1)
+            avg_ratio = sum(_safe_float(r.get("short_ratio")) for r in scan_results if isinstance(r, dict)) / max(
+                len(scan_results), 1
+            )
             results.append(
                 Evidence(
                     source=tool_name,
@@ -539,9 +524,7 @@ def _extract_disease_surveillance(tool_name: str, data: Any) -> list[Evidence]:
 
         if total_samples > 0:
             # Aggregate national detection rate
-            total_detect = sum(
-                _safe_int(s.get("detections")) for s in summaries if isinstance(s, dict)
-            )
+            total_detect = sum(_safe_int(s.get("detections")) for s in summaries if isinstance(s, dict))
             rate = total_detect / total_samples if total_samples > 0 else 0
 
             results.append(
@@ -913,11 +896,7 @@ def _extract_job_postings(tool_name: str, data: Any) -> list[Evidence]:
                 value=val,
                 direction=direction,
                 confidence=conf,
-                category=(
-                    "behavioral_intent"
-                    if suffix in ("openings", "quits", "hires")
-                    else "macro_momentum"
-                ),
+                category=("behavioral_intent" if suffix in ("openings", "quits", "hires") else "macro_momentum"),
                 tags=("labor", "us", suffix),
                 ttl=2_592_000,  # Monthly data
             )
@@ -1000,9 +979,7 @@ def _extract_transport_throughput(tool_name: str, data: Any) -> list[Evidence]:
                     signal_id="transport.us.volume_change",
                     timestamp=ts,
                     value=pct_change,
-                    direction=(
-                        -1 if pct_change < -0.05 else (1 if pct_change > 0.05 else 0)
-                    ),
+                    direction=(-1 if pct_change < -0.05 else (1 if pct_change > 0.05 else 0)),
                     confidence=0.65,
                     category="physical_flow",
                     tags=("transport", "momentum"),
@@ -1351,9 +1328,7 @@ def _extract_bankruptcy_court(tool_name: str, data: Any) -> list[Evidence]:
     # Chapter breakdown — highlight Chapter 11
     chapter_breakdown = data.get("chapter_breakdown")
     if isinstance(chapter_breakdown, dict):
-        ch11 = _safe_int(
-            chapter_breakdown.get("11") or chapter_breakdown.get("Chapter 11")
-        )
+        ch11 = _safe_int(chapter_breakdown.get("11") or chapter_breakdown.get("Chapter 11"))
         if ch11 > 0:
             results.append(
                 Evidence(
@@ -1638,11 +1613,7 @@ def _extract_drug_regulatory(tool_name: str, data: Any) -> list[Evidence]:
     # Labels — boxed warning presence (batch over results)
     results_list = data.get("results")
     if mode == "labels" and isinstance(results_list, list):
-        boxed = sum(
-            1
-            for r in results_list
-            if isinstance(r, dict) and r.get("has_boxed_warning")
-        )
+        boxed = sum(1 for r in results_list if isinstance(r, dict) and r.get("has_boxed_warning"))
         if boxed > 0:
             results.append(
                 Evidence(
@@ -1683,9 +1654,7 @@ def _extract_regulatory_gazette(tool_name: str, data: Any) -> list[Evidence]:
         return []
 
     count = data.get("count", len(documents))
-    significant_count = sum(
-        1 for d in documents if isinstance(d, dict) and d.get("significant")
-    )
+    significant_count = sum(1 for d in documents if isinstance(d, dict) and d.get("significant"))
 
     results.append(
         Evidence(
@@ -2237,9 +2206,7 @@ def _extract_polymarket_whales(tool_name: str, data: Any) -> list[Evidence]:
     wallets = data.get("wallets")
     if isinstance(wallets, list) and wallets:
         # Average composite score of top whales
-        composites = [
-            _safe_float(w.get("composite")) for w in wallets if isinstance(w, dict)
-        ]
+        composites = [_safe_float(w.get("composite")) for w in wallets if isinstance(w, dict)]
         composites = [c for c in composites if c > 0]
         if composites:
             avg_composite = sum(composites) / len(composites)
@@ -2260,9 +2227,7 @@ def _extract_polymarket_whales(tool_name: str, data: Any) -> list[Evidence]:
     # Market whales mode — concentration
     whales = data.get("whales")
     if isinstance(whales, list) and whales:
-        total_usdc = sum(
-            _safe_float(w.get("total_usdc")) for w in whales if isinstance(w, dict)
-        )
+        total_usdc = sum(_safe_float(w.get("total_usdc")) for w in whales if isinstance(w, dict))
         results.append(
             Evidence(
                 source=tool_name,
@@ -2336,9 +2301,7 @@ def _extract_insider_filings(tool_name: str, data: Any) -> list[Evidence]:
                     timestamp=ts,
                     value=total_val,
                     direction=-1,  # Insider cluster buying = bullish conviction
-                    confidence=(
-                        min(0.5 + conviction * 0.4, 0.95) if conviction > 0 else 0.7
-                    ),
+                    confidence=(min(0.5 + conviction * 0.4, 0.95) if conviction > 0 else 0.7),
                     category="positioning",
                     tags=("insider", slug, "cluster"),
                     ttl=604_800,
@@ -2452,9 +2415,7 @@ def _extract_gdelt(tool_name: str, data: Any) -> list[Evidence]:
 
     # Aggregate Goldstein scores — negative = conflict, positive = cooperation
     goldsteins = [
-        _safe_float(e.get("goldstein"))
-        for e in events
-        if isinstance(e, dict) and e.get("goldstein") is not None
+        _safe_float(e.get("goldstein")) for e in events if isinstance(e, dict) and e.get("goldstein") is not None
     ]
     if goldsteins:
         avg_goldstein = sum(goldsteins) / len(goldsteins)
@@ -2516,9 +2477,7 @@ def _extract_gdelt(tool_name: str, data: Any) -> list[Evidence]:
     # Summary stats if available
     summary = data.get("summary")
     if isinstance(summary, dict):
-        mentions = _safe_float(
-            summary.get("total_mentions") or summary.get("num_mentions")
-        )
+        mentions = _safe_float(summary.get("total_mentions") or summary.get("num_mentions"))
         if mentions > 0:
             results.append(
                 Evidence(
@@ -2619,17 +2578,13 @@ def _extract_comtrade(tool_name: str, data: Any) -> list[Evidence]:
         return []
 
     # Aggregate trade value
-    total_value = sum(
-        _safe_float(r.get("trade_value_usd")) for r in records if isinstance(r, dict)
-    )
+    total_value = sum(_safe_float(r.get("trade_value_usd")) for r in records if isinstance(r, dict))
     record_count = data.get("record_count", len(records))
     flow = data.get("flow", "trade")
 
     reporter = data.get("reporter", "")
     partner = data.get("partner", "")
-    slug = (
-        f"{reporter}_{partner}".lower().replace(" ", "_")[:30] if reporter else "global"
-    )
+    slug = f"{reporter}_{partner}".lower().replace(" ", "_")[:30] if reporter else "global"
 
     results.append(
         Evidence(
@@ -3154,7 +3109,8 @@ def _extract_satellite_vegetation(tool_name: str, data: dict) -> list[Evidence]:
     # Health classification as ordinal (0=water/barren .. 5=dense)
     health_str = data.get("latest_health", "")
     health_ordinal = _NDVI_HEALTH_ORDINAL.get(
-        str(health_str).lower(), 1.0  # default to bare_soil if unknown
+        str(health_str).lower(),
+        1.0,  # default to bare_soil if unknown
     )
     results.append(
         Evidence(
@@ -3279,11 +3235,7 @@ def _extract_internet_infrastructure(tool_name: str, data: Any) -> list[Evidence
         events = data.get("events")
 
         if isinstance(alerts, list):
-            critical = [
-                a
-                for a in alerts
-                if isinstance(a, dict) and a.get("level") == "critical"
-            ]
+            critical = [a for a in alerts if isinstance(a, dict) and a.get("level") == "critical"]
             critical_countries = {a.get("country", "??") for a in critical}
             results.append(
                 Evidence(
@@ -3300,12 +3252,8 @@ def _extract_internet_infrastructure(tool_name: str, data: Any) -> list[Evidence
             )
 
         if isinstance(events, list):
-            scores = [
-                _safe_float(e.get("score")) for e in events if isinstance(e, dict)
-            ]
-            event_countries = {
-                e.get("country", "??") for e in events if isinstance(e, dict)
-            }
+            scores = [_safe_float(e.get("score")) for e in events if isinstance(e, dict)]
+            event_countries = {e.get("country", "??") for e in events if isinstance(e, dict)}
             if scores:
                 max_score = max(scores)
                 results.append(
@@ -3369,9 +3317,7 @@ def _extract_internet_infrastructure(tool_name: str, data: Any) -> list[Evidence
         )
         # Total confirmed blocks across all rows
         if isinstance(rows, list):
-            confirmed_total = sum(
-                r.get("confirmed", 0) for r in rows if isinstance(r, dict)
-            )
+            confirmed_total = sum(r.get("confirmed", 0) for r in rows if isinstance(r, dict))
             results.append(
                 Evidence(
                     source=tool_name,
@@ -3398,11 +3344,7 @@ def _extract_internet_infrastructure(tool_name: str, data: Any) -> list[Evidence
                 signal_id="internet.signals.connectivity_level",
                 timestamp=ts,
                 value=current,
-                direction=(
-                    -1
-                    if severity == "critical"
-                    else (-1 if severity == "warning" else 0)
-                ),
+                direction=(-1 if severity == "critical" else (-1 if severity == "warning" else 0)),
                 confidence=0.85,
                 category="physical_disruption",
                 tags=("internet", "connectivity", severity),
@@ -3578,11 +3520,7 @@ def _extract_consumer_sentiment(tool_name: str, data: Any) -> list[Evidence]:
         signals = data.get("signals") or {}
         cpi_mom = signals.get("cpi_mom_change")
         if cpi_mom is not None:
-            direction = (
-                1
-                if _safe_float(cpi_mom) > 0
-                else (-1 if _safe_float(cpi_mom) < 0 else 0)
-            )
+            direction = 1 if _safe_float(cpi_mom) > 0 else (-1 if _safe_float(cpi_mom) < 0 else 0)
             results.append(
                 Evidence(
                     source=tool_name,
@@ -3924,8 +3862,7 @@ def _extract_power_grid(tool_name: str, data: Any) -> list[Evidence]:
             renewable_mw = sum(
                 _safe_float(f.get("mw"))
                 for f in fuels
-                if isinstance(f, dict)
-                and str(f.get("fuel_type", "")).lower() in _RENEWABLE_FUELS
+                if isinstance(f, dict) and str(f.get("fuel_type", "")).lower() in _RENEWABLE_FUELS
             )
             gas_pct = (gas_mw / total_mw) * 100
             renewable_pct = (renewable_mw / total_mw) * 100
@@ -3978,14 +3915,10 @@ def _extract_power_grid(tool_name: str, data: Any) -> list[Evidence]:
 
         if isinstance(zones, list):
             spreads = [
-                abs(_safe_float(z.get("spread")))
-                for z in zones
-                if isinstance(z, dict) and z.get("spread") is not None
+                abs(_safe_float(z.get("spread"))) for z in zones if isinstance(z, dict) and z.get("spread") is not None
             ]
             da_prices = [
-                _safe_float(z.get("da_lbmp"))
-                for z in zones
-                if isinstance(z, dict) and z.get("da_lbmp") is not None
+                _safe_float(z.get("da_lbmp")) for z in zones if isinstance(z, dict) and z.get("da_lbmp") is not None
             ]
             if spreads:
                 max_spread = max(spreads)
@@ -4038,9 +3971,7 @@ def _extract_power_grid(tool_name: str, data: Any) -> list[Evidence]:
         )
 
         if isinstance(zones, list):
-            sig_devs = [
-                z.get("significant_deviations", 0) for z in zones if isinstance(z, dict)
-            ]
+            sig_devs = [z.get("significant_deviations", 0) for z in zones if isinstance(z, dict)]
             if sig_devs:
                 max_sig = max(sig_devs)
                 results.append(
@@ -4136,9 +4067,7 @@ def _extract_defi_flows(tool_name: str, data: Any) -> list[Evidence]:
             )
             # Top concentration
             if protocols and total_tvl > 0:
-                top_tvl = _safe_float(
-                    protocols[0].get("tvl_usd") if isinstance(protocols[0], dict) else 0
-                )
+                top_tvl = _safe_float(protocols[0].get("tvl_usd") if isinstance(protocols[0], dict) else 0)
                 top_pct = (top_tvl / total_tvl) * 100
                 results.append(
                     Evidence(
@@ -4426,10 +4355,20 @@ register_extractor("labor_disruptions", _extract_labor_disruptions)
 # ── 48. Government Contracts ──────────────────────────────────
 
 
-_GOV_DEFENSE_KEYWORDS = frozenset((
-    "defense", "defence", "dod", "mod", "military", "army", "navy",
-    "air force", "pentagon", "armed forces",
-))
+_GOV_DEFENSE_KEYWORDS = frozenset(
+    (
+        "defense",
+        "defence",
+        "dod",
+        "mod",
+        "military",
+        "army",
+        "navy",
+        "air force",
+        "pentagon",
+        "armed forces",
+    )
+)
 
 
 def _extract_gov_contracts(tool_name: str, data: Any) -> list[Evidence]:
@@ -4530,12 +4469,14 @@ register_extractor("gov_contracts", _extract_gov_contracts)
 
 # ── 49. Academic Preprints ────────────────────────────────────
 
-_TRIAL_ACTIVE_STATUSES = frozenset((
-    "Recruiting",
-    "Active, not recruiting",
-    "Not yet recruiting",
-    "Enrolling by invitation",
-))
+_TRIAL_ACTIVE_STATUSES = frozenset(
+    (
+        "Recruiting",
+        "Active, not recruiting",
+        "Not yet recruiting",
+        "Enrolling by invitation",
+    )
+)
 
 
 def _extract_academic_preprints(tool_name: str, data: Any) -> list[Evidence]:

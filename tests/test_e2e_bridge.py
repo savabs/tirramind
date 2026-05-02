@@ -34,7 +34,6 @@ from agent.pipeline.dags.world_model_update import (
 from agent.quant.backtest import BacktestResult, WalkForward
 from agent.quant.regime_strategy import RegimeStrategy
 
-
 # ── Helpers ────────────────────────────────────────────────────
 
 # All 17 feature names the world model expects
@@ -342,9 +341,7 @@ class TestWalkForwardE2E:
     def test_backtest_has_metrics(self, synthetic_data):
         returns, weekly_beliefs = synthetic_data
         wf = WalkForward(min_train=20, test_size=10, step_size=10, periods_per_year=52)
-        result = wf.run(
-            RegimeStrategy(), returns, extra=_beliefs_to_extra(weekly_beliefs)
-        )
+        result = wf.run(RegimeStrategy(), returns, extra=_beliefs_to_extra(weekly_beliefs))
 
         assert "sharpe" in result.aggregate_metrics
         assert "sortino" in result.aggregate_metrics
@@ -354,9 +351,7 @@ class TestWalkForwardE2E:
     def test_equity_curve_shape(self, synthetic_data):
         returns, weekly_beliefs = synthetic_data
         wf = WalkForward(min_train=20, test_size=10, step_size=10, periods_per_year=52)
-        result = wf.run(
-            RegimeStrategy(), returns, extra=_beliefs_to_extra(weekly_beliefs)
-        )
+        result = wf.run(RegimeStrategy(), returns, extra=_beliefs_to_extra(weekly_beliefs))
 
         total_test = sum(f.test_size for f in result.folds)
         assert result.equity_curve.shape == (total_test,)
@@ -365,9 +360,7 @@ class TestWalkForwardE2E:
     def test_all_weights_bounded(self, synthetic_data):
         returns, weekly_beliefs = synthetic_data
         wf = WalkForward(min_train=20, test_size=10, step_size=10, periods_per_year=52)
-        result = wf.run(
-            RegimeStrategy(), returns, extra=_beliefs_to_extra(weekly_beliefs)
-        )
+        result = wf.run(RegimeStrategy(), returns, extra=_beliefs_to_extra(weekly_beliefs))
 
         assert np.all(result.all_weights >= -1.0)
         assert np.all(result.all_weights <= 1.0)
@@ -375,9 +368,7 @@ class TestWalkForwardE2E:
     def test_multiple_folds(self, synthetic_data):
         returns, weekly_beliefs = synthetic_data
         wf = WalkForward(min_train=20, test_size=10, step_size=10, periods_per_year=52)
-        result = wf.run(
-            RegimeStrategy(), returns, extra=_beliefs_to_extra(weekly_beliefs)
-        )
+        result = wf.run(RegimeStrategy(), returns, extra=_beliefs_to_extra(weekly_beliefs))
 
         # With 60 weeks, min_train=20, test=10, step=10: folds at 20,30,40,50
         assert len(result.folds) == 4
@@ -385,9 +376,7 @@ class TestWalkForwardE2E:
     def test_expanding_window_train_sizes(self, synthetic_data):
         returns, weekly_beliefs = synthetic_data
         wf = WalkForward(min_train=20, test_size=10, step_size=10, periods_per_year=52)
-        result = wf.run(
-            RegimeStrategy(), returns, extra=_beliefs_to_extra(weekly_beliefs)
-        )
+        result = wf.run(RegimeStrategy(), returns, extra=_beliefs_to_extra(weekly_beliefs))
 
         # Expanding window: each fold has more training data
         for i in range(1, len(result.folds)):
@@ -430,16 +419,13 @@ class TestRegimeTransition:
         returns = rng.normal(0.001, 0.02, n)
 
         wf = WalkForward(min_train=20, test_size=10, step_size=10, periods_per_year=52)
-        result = wf.run(
-            RegimeStrategy(), returns, extra=_beliefs_to_extra(weekly_beliefs)
-        )
+        result = wf.run(RegimeStrategy(), returns, extra=_beliefs_to_extra(weekly_beliefs))
 
         assert len(result.folds) >= 2
         first_mean = np.mean(result.folds[0].weights)
         last_mean = np.mean(result.folds[-1].weights)
         assert last_mean < first_mean, (
-            f"Expected regime transition to lower weights: "
-            f"first={first_mean:.3f}, last={last_mean:.3f}"
+            f"Expected regime transition to lower weights: first={first_mean:.3f}, last={last_mean:.3f}"
         )
 
     def test_persistent_expansion_monotone_weights(self):
@@ -456,15 +442,12 @@ class TestRegimeTransition:
         returns = rng.normal(0.002, 0.02, n)
 
         wf = WalkForward(min_train=15, test_size=10, step_size=10, periods_per_year=52)
-        result = wf.run(
-            RegimeStrategy(), returns, extra=_beliefs_to_extra(weekly_beliefs)
-        )
+        result = wf.run(RegimeStrategy(), returns, extra=_beliefs_to_extra(weekly_beliefs))
 
         # All fold weights should be positive on average
         for fold in result.folds:
             assert np.mean(fold.weights) > 0, (
-                f"Fold {fold.fold}: expected positive mean weight, "
-                f"got {np.mean(fold.weights):.3f}"
+                f"Fold {fold.fold}: expected positive mean weight, got {np.mean(fold.weights):.3f}"
             )
 
 
@@ -540,9 +523,7 @@ class TestEdgeCases:
             weekly_beliefs.append(beliefs)
 
         wf = WalkForward(min_train=20, test_size=10, step_size=10, periods_per_year=52)
-        result = wf.run(
-            RegimeStrategy(), returns, extra=_beliefs_to_extra(weekly_beliefs)
-        )
+        result = wf.run(RegimeStrategy(), returns, extra=_beliefs_to_extra(weekly_beliefs))
         assert isinstance(result, BacktestResult)
         assert np.isfinite(result.aggregate_metrics["sharpe"])
 
@@ -559,9 +540,7 @@ class TestEdgeCases:
             weekly_beliefs.append(beliefs)
 
         wf = WalkForward(min_train=20, test_size=10, periods_per_year=52)
-        result = wf.run(
-            RegimeStrategy(), returns, extra=_beliefs_to_extra(weekly_beliefs)
-        )
+        result = wf.run(RegimeStrategy(), returns, extra=_beliefs_to_extra(weekly_beliefs))
         assert len(result.folds) == 1
 
     def test_insufficient_data_raises(self):
@@ -593,9 +572,7 @@ class TestMetricConsistency:
             weekly_beliefs.append(beliefs)
 
         wf = WalkForward(min_train=20, test_size=10, step_size=10, periods_per_year=52)
-        result = wf.run(
-            RegimeStrategy(), returns, extra=_beliefs_to_extra(weekly_beliefs)
-        )
+        result = wf.run(RegimeStrategy(), returns, extra=_beliefs_to_extra(weekly_beliefs))
         assert result.aggregate_metrics["max_drawdown"] <= 0
 
     def test_equity_starts_positive(self):
@@ -611,9 +588,7 @@ class TestMetricConsistency:
             weekly_beliefs.append(beliefs)
 
         wf = WalkForward(min_train=20, test_size=10, step_size=10, periods_per_year=52)
-        result = wf.run(
-            RegimeStrategy(), returns, extra=_beliefs_to_extra(weekly_beliefs)
-        )
+        result = wf.run(RegimeStrategy(), returns, extra=_beliefs_to_extra(weekly_beliefs))
         assert result.equity_curve[0] > 0
 
     def test_all_test_returns_not_all_zero(self):
@@ -629,9 +604,7 @@ class TestMetricConsistency:
             weekly_beliefs.append(beliefs)
 
         wf = WalkForward(min_train=20, test_size=10, step_size=10, periods_per_year=52)
-        result = wf.run(
-            RegimeStrategy(), returns, extra=_beliefs_to_extra(weekly_beliefs)
-        )
+        result = wf.run(RegimeStrategy(), returns, extra=_beliefs_to_extra(weekly_beliefs))
         # With expansion beliefs → non-zero weights → non-zero test returns
         assert not np.allclose(result.all_test_returns, 0)
 
@@ -648,9 +621,7 @@ class TestMetricConsistency:
             weekly_beliefs.append(beliefs)
 
         wf = WalkForward(min_train=20, test_size=10, step_size=10, periods_per_year=52)
-        result = wf.run(
-            RegimeStrategy(), returns, extra=_beliefs_to_extra(weekly_beliefs)
-        )
+        result = wf.run(RegimeStrategy(), returns, extra=_beliefs_to_extra(weekly_beliefs))
 
         concated = np.concatenate([f.test_returns for f in result.folds])
         np.testing.assert_array_almost_equal(concated, result.all_test_returns)

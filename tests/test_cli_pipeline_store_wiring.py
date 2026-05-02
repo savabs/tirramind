@@ -5,10 +5,7 @@ from __future__ import annotations
 import inspect
 from unittest.mock import patch
 
-import pytest
-
 from agent.cli import build_tool_registry
-
 
 # Tools that do NOT accept pipeline_store in __init__
 EXCLUDED_TOOLS = {
@@ -49,9 +46,7 @@ def test_all_tools_with_pipeline_store_param_receive_it(mock_init):
         # Check if the tool class __init__ accepts pipeline_store
         sig = inspect.signature(type(tool).__init__)
         if "pipeline_store" in sig.parameters:
-            store_attr = getattr(tool, "_store", None) or getattr(
-                tool, "pipeline_store", None
-            )
+            store_attr = getattr(tool, "_store", None) or getattr(tool, "pipeline_store", None)
             assert store_attr is not None, (
                 f"Tool '{name}' ({type(tool).__name__}) accepts pipeline_store "
                 f"but received None — wiring bug in build_tool_registry()"
@@ -69,13 +64,10 @@ def test_all_tools_share_same_pipeline_store(mock_init):
             continue
         sig = inspect.signature(type(tool).__init__)
         if "pipeline_store" in sig.parameters:
-            store = getattr(tool, "_store", None) or getattr(
-                tool, "pipeline_store", None
-            )
+            store = getattr(tool, "_store", None) or getattr(tool, "pipeline_store", None)
             if store is not None:
                 stores.add(id(store))
 
     assert len(stores) == 1, (
-        f"Expected all tools to share one PipelineStore, "
-        f"but found {len(stores)} distinct instances"
+        f"Expected all tools to share one PipelineStore, but found {len(stores)} distinct instances"
     )

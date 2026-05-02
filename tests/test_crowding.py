@@ -64,9 +64,7 @@ def estimator() -> CrowdingEstimator:
 class TestCrowdingBasic:
     """Core crowding risk tests."""
 
-    def test_large_cluster_high_position_produces_flag(
-        self, estimator: CrowdingEstimator
-    ):
+    def test_large_cluster_high_position_produces_flag(self, estimator: CrowdingEstimator):
         cluster = _make_cluster(["a", "b", "c", "d", "e"], corr=0.9)
         weights = {"a": 0.3, "b": 0.2, "c": 0.1, "d": 0.05, "e": 0.05}
         # Volume scale must be comparable to weight scale for meaningful unwind risk
@@ -117,9 +115,7 @@ class TestClusterCrowdingScore:
         assert abs(score - 0.8) < 1e-6
 
     def test_larger_than_mean(self, estimator: CrowdingEstimator):
-        cluster = _make_cluster(
-            ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"], corr=0.9
-        )
+        cluster = _make_cluster(["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"], corr=0.9)
         score = estimator.cluster_crowding_score(cluster, mean_cluster_size=5.0)
         # (10 / 5.0) * 0.9 = 1.8
         assert abs(score - 1.8) < 1e-6

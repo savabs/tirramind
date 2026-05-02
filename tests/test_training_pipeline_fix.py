@@ -11,17 +11,12 @@ Proofs:
 
 from __future__ import annotations
 
-import json
-import math
 import time
-from datetime import date, timedelta
-from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
 
 from agent.pipeline.store import PipelineStore
-
 
 # ── Helpers ───────────────────────────────────────────────────
 
@@ -261,12 +256,8 @@ class TestCheckpointKwargs:
 
     def test_latest_checkpoint_by_type(self, store):
         """load_latest returns most recent for given policy_type."""
-        store.store_rl_checkpoint(
-            policy_type="sac", config={"ver": 1}, state_dict_bytes=b"v1"
-        )
-        store.store_rl_checkpoint(
-            policy_type="sac", config={"ver": 2}, state_dict_bytes=b"v2"
-        )
+        store.store_rl_checkpoint(policy_type="sac", config={"ver": 1}, state_dict_bytes=b"v1")
+        store.store_rl_checkpoint(policy_type="sac", config={"ver": 2}, state_dict_bytes=b"v2")
         cp = store.load_latest_rl_checkpoint("sac")
         assert cp["config"]["ver"] == 2
 
@@ -302,9 +293,8 @@ class TestAssemblerAlignment:
 
     def test_training_uses_instrument_assembler(self):
         """rl_training.py imports InstrumentStateAssembler, not StateAssembler."""
-        from agent.pipeline.dags.rl_training import InstrumentStateAssembler as Imported
-
         from agent.learning.policy.state_assembler import InstrumentStateAssembler
+        from agent.pipeline.dags.rl_training import InstrumentStateAssembler as Imported
 
         assert Imported is InstrumentStateAssembler
 
@@ -439,12 +429,8 @@ class TestPendingTransitionLifecycle:
 
     def test_idempotent_pending_store(self, store):
         """Re-storing same date replaces (INSERT OR REPLACE)."""
-        store.store_pending_transition(
-            date="2026-04-14", timestamp=1000.0, state=[1.0], action=[0.1]
-        )
-        store.store_pending_transition(
-            date="2026-04-14", timestamp=2000.0, state=[9.0], action=[0.9]
-        )
+        store.store_pending_transition(date="2026-04-14", timestamp=1000.0, state=[1.0], action=[0.1])
+        store.store_pending_transition(date="2026-04-14", timestamp=2000.0, state=[9.0], action=[0.9])
         row = store.query_pending_transition("2026-04-14")
         # Should have the latest values
         assert row["state"] == [9.0]
@@ -463,27 +449,19 @@ class TestPendingTransitionLifecycle:
         assert row["metadata"]["instrument_tickers"] == ["SPY", "QQQ"]
 
     def test_complete_with_done_true(self, store):
-        store.store_pending_transition(
-            date="2026-04-14", timestamp=1000.0, state=[1.0], action=[0.5]
-        )
-        store.complete_pending_transition(
-            date="2026-04-14", reward=0.0, next_state=[0.0], done=True
-        )
+        store.store_pending_transition(date="2026-04-14", timestamp=1000.0, state=[1.0], action=[0.5])
+        store.complete_pending_transition(date="2026-04-14", reward=0.0, next_state=[0.0], done=True)
         t = store.query_rl_transitions()[0]
         assert t["done"] is True
 
     def test_zero_reward_is_valid(self, store):
-        store.store_pending_transition(
-            date="2026-04-14", timestamp=1000.0, state=[1.0], action=[0.5]
-        )
+        store.store_pending_transition(date="2026-04-14", timestamp=1000.0, state=[1.0], action=[0.5])
         assert store.complete_pending_transition("2026-04-14", 0.0, [2.0]) is True
         t = store.query_rl_transitions()[0]
         assert t["reward"] == 0.0
 
     def test_negative_reward_is_valid(self, store):
-        store.store_pending_transition(
-            date="2026-04-14", timestamp=1000.0, state=[1.0], action=[0.5]
-        )
+        store.store_pending_transition(date="2026-04-14", timestamp=1000.0, state=[1.0], action=[0.5])
         assert store.complete_pending_transition("2026-04-14", -0.05, [2.0]) is True
         t = store.query_rl_transitions()[0]
         assert t["reward"] == pytest.approx(-0.05)
@@ -501,9 +479,7 @@ class TestPendingTransitionLifecycle:
         assert store.query_rl_transitions() == []
 
     def test_nan_next_state_rejected(self, store):
-        store.store_pending_transition(
-            date="2026-04-14", timestamp=1000.0, state=[1.0], action=[0.5]
-        )
+        store.store_pending_transition(date="2026-04-14", timestamp=1000.0, state=[1.0], action=[0.5])
         result = store.complete_pending_transition("2026-04-14", 0.0, [float("nan")])
         assert result is False
         assert store.query_rl_transitions() == []
@@ -519,9 +495,7 @@ class TestPendingTransitionLifecycle:
         assert result is False
 
     def test_inf_next_state_rejected(self, store):
-        store.store_pending_transition(
-            date="2026-04-14", timestamp=1000.0, state=[1.0], action=[0.5]
-        )
+        store.store_pending_transition(date="2026-04-14", timestamp=1000.0, state=[1.0], action=[0.5])
         result = store.complete_pending_transition("2026-04-14", 0.0, [float("-inf")])
         assert result is False
 
@@ -644,9 +618,7 @@ class TestEdgeCases:
 
     def test_empty_state_vector(self, store):
         """Empty state/action vectors are stored but can be completed."""
-        store.store_pending_transition(
-            date="2026-04-14", timestamp=1000.0, state=[], action=[]
-        )
+        store.store_pending_transition(date="2026-04-14", timestamp=1000.0, state=[], action=[])
         assert store.complete_pending_transition("2026-04-14", 0.0, []) is True
         t = store.query_rl_transitions()[0]
         assert t["state"] == []
@@ -658,9 +630,7 @@ class TestEdgeCases:
         action = list(np.random.randn(30).astype(float))
         next_state = list(np.random.randn(500).astype(float))
 
-        store.store_pending_transition(
-            date="2026-04-14", timestamp=1000.0, state=state, action=action
-        )
+        store.store_pending_transition(date="2026-04-14", timestamp=1000.0, state=state, action=action)
         assert store.complete_pending_transition("2026-04-14", 0.01, next_state) is True
 
         t = store.query_rl_transitions()[0]
@@ -704,9 +674,7 @@ class TestEdgeCases:
 
     def test_transition_with_extreme_reward(self, store):
         """Extreme but finite rewards are stored correctly."""
-        store.store_pending_transition(
-            date="2026-04-14", timestamp=1000.0, state=[1.0], action=[0.5]
-        )
+        store.store_pending_transition(date="2026-04-14", timestamp=1000.0, state=[1.0], action=[0.5])
         assert store.complete_pending_transition("2026-04-14", -999.99, [2.0]) is True
         t = store.query_rl_transitions()[0]
         assert t["reward"] == pytest.approx(-999.99)
@@ -725,12 +693,8 @@ class TestEdgeCases:
 
     def test_concurrent_dates_independent(self, store):
         """Pending transitions for different dates don't interfere."""
-        store.store_pending_transition(
-            date="2026-04-14", timestamp=1000.0, state=[1.0], action=[0.1]
-        )
-        store.store_pending_transition(
-            date="2026-04-15", timestamp=2000.0, state=[2.0], action=[0.2]
-        )
+        store.store_pending_transition(date="2026-04-14", timestamp=1000.0, state=[1.0], action=[0.1])
+        store.store_pending_transition(date="2026-04-15", timestamp=2000.0, state=[2.0], action=[0.2])
         # Complete only day 14
         store.complete_pending_transition("2026-04-14", 0.01, [1.5])
         # Day 15 still pending

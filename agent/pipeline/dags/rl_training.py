@@ -12,29 +12,24 @@ Schedule: weekdays at 19:30 UTC (45 min after entity_scoring at 18:45).
 
 from __future__ import annotations
 
-import json
 import logging
-import time
 from typing import Any
 
 import numpy as np
 import torch
 
 from agent.learning.policy.config import PolicyConfig
-from agent.learning.policy.feature_gate import FeatureGate, FeatureGateConfig
+from agent.learning.policy.feature_gate import FeatureGate
 from agent.learning.policy.replay_buffer import ReplayBuffer
-from agent.learning.policy.reward_fn import RewardFunction
 from agent.learning.policy.sac import SACTrainer
-from agent.learning.policy.state_assembler import InstrumentStateAssembler
-from agent.learning.policy.state_assembler import DifferentiableStateAssembler
-from agent.learning.policy.state_encoder import LearnedStateEncoder, StateEncoderConfig
-from agent.learning.policy.asset_mapper import AssetMapper
+from agent.learning.policy.state_assembler import DifferentiableStateAssembler, InstrumentStateAssembler
+from agent.learning.policy.state_encoder import LearnedStateEncoder
 from agent.learning.policy.weight_learner import SurpriseWeightLearner
 from agent.models.diff_kalman import DifferentiableKalmanFilter
-from agent.tools.instrument_universe import tradeable_instruments
 from agent.pipeline.dag import DAG
 from agent.pipeline.regime_gate import get_current_regime, sac_entropy_scale
 from agent.pipeline.store import PipelineStore
+from agent.tools.instrument_universe import tradeable_instruments
 
 log = logging.getLogger(__name__)
 
@@ -83,10 +78,7 @@ def run_rl_training(params: dict, upstream: dict) -> dict:
     # ── Phase 21a: Surprise weight learning ───────────────────
     surprise_matrix, returns = _build_surprise_returns(alerts, store)
 
-    if (
-        surprise_matrix is not None
-        and len(surprise_matrix) >= config.weight_learner.min_train_periods
-    ):
+    if surprise_matrix is not None and len(surprise_matrix) >= config.weight_learner.min_train_periods:
         try:
             learner = SurpriseWeightLearner(config.weight_learner)
             learner.fit(surprise_matrix, returns)
@@ -95,11 +87,7 @@ def run_rl_training(params: dict, upstream: dict) -> dict:
             result["weight_learner_trained"] = True
             result["metrics"]["weight_learner"] = {
                 "weights": list(weights),
-                "oos_sharpe": (
-                    float(learner.oos_sharpe)
-                    if hasattr(learner, "oos_sharpe")
-                    else None
-                ),
+                "oos_sharpe": (float(learner.oos_sharpe) if hasattr(learner, "oos_sharpe") else None),
             }
             log.info("Weight learner trained: %s", weights)
         except Exception as e:
@@ -133,9 +121,7 @@ def _load_alert_history(store: PipelineStore) -> list[dict]:
         return []
 
 
-def _build_surprise_returns(
-    alerts: list[dict], store: PipelineStore
-) -> tuple[np.ndarray | None, np.ndarray | None]:
+def _build_surprise_returns(alerts: list[dict], store: PipelineStore) -> tuple[np.ndarray | None, np.ndarray | None]:
     """Build aligned surprise matrix and returns array from alert history.
 
     Returns (surprise_matrix, returns) or (None, None) if insufficient.
@@ -249,8 +235,7 @@ def _train_sac(
         entropy_scale = sac_entropy_scale(regime_state)
         trainer.set_regime_entropy_scale(entropy_scale)
         log.info(
-            "Phase 49b: SAC entropy scale set to %.2f "
-            "(regime=%s, changepoint_posterior=%.3f)",
+            "Phase 49b: SAC entropy scale set to %.2f (regime=%s, changepoint_posterior=%.3f)",
             entropy_scale,
             regime_state.regime_label,
             regime_state.changepoint_posterior,
@@ -476,9 +461,7 @@ def _load_diff_kalman(store: PipelineStore) -> DifferentiableKalmanFilter | None
         state_dim = first_F.shape[0]
         obs_dim = state_dict["_H"].shape[0]
 
-        kalman = DifferentiableKalmanFilter(
-            state_dim=state_dim, obs_dim=obs_dim, regime_names=regime_names
-        )
+        kalman = DifferentiableKalmanFilter(state_dim=state_dim, obs_dim=obs_dim, regime_names=regime_names)
         kalman.load_state_dict(state_dict)
         return kalman
     except Exception as e:

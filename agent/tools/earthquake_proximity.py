@@ -26,7 +26,7 @@ Signal theory:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -255,9 +255,7 @@ def _format_quake(feat: dict[str, Any]) -> dict[str, Any]:
     time_str = ""
     if time_ms:
         try:
-            time_str = datetime.fromtimestamp(time_ms / 1000, tz=timezone.utc).strftime(
-                "%Y-%m-%d %H:%M UTC"
-            )
+            time_str = datetime.fromtimestamp(time_ms / 1000, tz=UTC).strftime("%Y-%m-%d %H:%M UTC")
         except (ValueError, OSError):
             pass
 
@@ -422,26 +420,18 @@ class EarthquakeProximityTool(Tool):
             )
 
         lines = [
-            f"USGS Earthquakes: {len(formatted)} events "
-            f"(M{min_magnitude}+, last {days_back}d):",
+            f"USGS Earthquakes: {len(formatted)} events (M{min_magnitude}+, last {days_back}d):",
             "",
         ]
         for q in formatted:
             alert_str = f" ALERT={q['alert'].upper()}" if q["alert"] else ""
             tsunami_str = " TSUNAMI" if q["tsunami"] else ""
-            lines.append(
-                f"  M{q['magnitude']} [{q['mag_label']:8s}] {q['place']}"
-                f"{alert_str}{tsunami_str}"
-            )
-            lines.append(
-                f"    {q['time']}  depth={q['depth_km']}km  "
-                f"({q['lat']}, {q['lon']})"
-            )
+            lines.append(f"  M{q['magnitude']} [{q['mag_label']:8s}] {q['place']}{alert_str}{tsunami_str}")
+            lines.append(f"    {q['time']}  depth={q['depth_km']}km  ({q['lat']}, {q['lon']})")
             if q["nearby_infrastructure"]:
                 for infra in q["nearby_infrastructure"][:3]:
                     lines.append(
-                        f"    ⚠ {infra['distance_km']}km from {infra['name']} "
-                        f"({infra['sector']}) — {infra['detail']}"
+                        f"    ⚠ {infra['distance_km']}km from {infra['name']} ({infra['sector']}) — {infra['detail']}"
                     )
             lines.append("")
 
@@ -476,8 +466,7 @@ class EarthquakeProximityTool(Tool):
         if not matched:
             return ToolResult(
                 success=False,
-                output=f"No infrastructure zone matching '{zone}'. "
-                "Use mode='infrastructure' to see all zones.",
+                output=f"No infrastructure zone matching '{zone}'. Use mode='infrastructure' to see all zones.",
             )
 
         target = matched[0]
@@ -508,7 +497,7 @@ class EarthquakeProximityTool(Tool):
             return ToolResult(
                 success=True,
                 output=(
-                    f"USGS Monitor: No earthquakes M{max(min_magnitude-1,1)}+ "
+                    f"USGS Monitor: No earthquakes M{max(min_magnitude - 1, 1)}+ "
                     f"within {target['radius_km']}km of {target['name']} "
                     f"in last {days_back}d. Zone is quiet."
                 ),
@@ -518,14 +507,12 @@ class EarthquakeProximityTool(Tool):
         lines = [
             f"USGS Monitor: {target['name']} ({target['sector']})",
             f"  {target['detail']}",
-            f"  Radius: {target['radius_km']}km, {len(nearby_quakes)} quakes "
-            f"in last {days_back}d:",
+            f"  Radius: {target['radius_km']}km, {len(nearby_quakes)} quakes in last {days_back}d:",
             "",
         ]
         for q in nearby_quakes:
             lines.append(
-                f"  M{q['magnitude']} [{q['mag_label']:8s}] "
-                f"{q.get('distance_to_zone_km', '?')}km away — {q['place']}"
+                f"  M{q['magnitude']} [{q['mag_label']:8s}] {q.get('distance_to_zone_km', '?')}km away — {q['place']}"
             )
             lines.append(f"    {q['time']}  depth={q['depth_km']}km")
         lines.append("")
@@ -557,8 +544,7 @@ class EarthquakeProximityTool(Tool):
             lines.append(f"  {sector.upper()}:")
             for z in zones:
                 lines.append(
-                    f"    {z['name']:30s}  ({z['lat']:.1f}, {z['lon']:.1f})  "
-                    f"r={z['radius_km']}km — {z['detail']}"
+                    f"    {z['name']:30s}  ({z['lat']:.1f}, {z['lon']:.1f})  r={z['radius_km']}km — {z['detail']}"
                 )
             lines.append("")
 
@@ -579,7 +565,7 @@ class EarthquakeProximityTool(Tool):
         days_back: int,
     ) -> tuple[list[dict[str, Any]], str | None]:
         """Fetch from USGS earthquake API. Returns (features, error)."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         start = (now - timedelta(days=days_back)).strftime("%Y-%m-%d")
         end = now.strftime("%Y-%m-%d")
 
@@ -620,8 +606,6 @@ class EarthquakeProximityTool(Tool):
         features = data.get("features", [])
 
         if self._cache and features:
-            self._cache.put(
-                "earthquake_proximity", cache_key, {"features": features}, ttl=1800
-            )
+            self._cache.put("earthquake_proximity", cache_key, {"features": features}, ttl=1800)
 
         return features, None

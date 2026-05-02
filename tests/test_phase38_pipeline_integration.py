@@ -10,16 +10,12 @@ Validates:
 
 from __future__ import annotations
 
-import json
 import time
-from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agent.pipeline.dag import DAG
-from agent.pipeline.dags.daily_collection import build_daily_collection_dag
 from agent.convergence.extractors import registered_tools
-
+from agent.pipeline.dags.daily_collection import build_daily_collection_dag
 
 # ═══════════════════════════════════════════════════════════════
 #  38.1 — Source Name Alignment
@@ -78,8 +74,7 @@ class TestSourceNameAlignment:
         for node_id, expected_source in checks.items():
             node = dag.nodes[node_id]
             assert node.table_name == expected_source, (
-                f"Node {node_id!r}: expected table_name={expected_source!r}, "
-                f"got {node.table_name!r}"
+                f"Node {node_id!r}: expected table_name={expected_source!r}, got {node.table_name!r}"
             )
 
 
@@ -204,10 +199,10 @@ class TestConvergenceEvidenceLoading:
 
     def test_evidence_zero_with_wrong_sources(self, tmp_path):
         """When pipeline_data has fetch_* source names, extractors find nothing."""
-        from agent.pipeline.store import PipelineStore
         from agent.pipeline.dags.convergence_detection import (
             _load_evidence_from_store,
         )
+        from agent.pipeline.store import PipelineStore
 
         db_path = str(tmp_path / "test.db")
         store = PipelineStore(db_path)
@@ -314,8 +309,8 @@ class TestMacroFeatureBuilderIntegration:
 
     def test_macro_builder_missing_when_no_data(self, tmp_path):
         """MacroStateFeatureBuilder returns 3 missing features with no data."""
-        from agent.pipeline.store import PipelineStore
         from agent.features.builders import MacroStateFeatureBuilder
+        from agent.pipeline.store import PipelineStore
 
         db_path = str(tmp_path / "test.db")
         store = PipelineStore(db_path)
@@ -339,15 +334,15 @@ class TestPipelineSmokeTest:
 
     def test_convergence_then_features(self, tmp_path):
         """Full downstream pipeline produces non-empty results."""
-        from agent.pipeline.store import PipelineStore
-        from agent.pipeline.dags.convergence_detection import (
-            run_convergence_detection,
-        )
-        from agent.pipeline.dags.feature_generation import run_feature_generation
         from agent.features.builders import (
             ConvergenceFeatureBuilder,
             MacroStateFeatureBuilder,
         )
+        from agent.pipeline.dags.convergence_detection import (
+            run_convergence_detection,
+        )
+        from agent.pipeline.dags.feature_generation import run_feature_generation
+        from agent.pipeline.store import PipelineStore
 
         db_path = str(tmp_path / "test.db")
         store = PipelineStore(db_path)
@@ -446,16 +441,10 @@ class TestPipelineSmokeTest:
 
         assert feat_result["produced"] == 6  # 3 convergence + 3 macro
         # Macro features should have values
-        macro_summary = next(
-            b
-            for b in feat_result["builders"]
-            if b["builder"] == "MacroStateFeatureBuilder"
-        )
+        macro_summary = next(b for b in feat_result["builders"] if b["builder"] == "MacroStateFeatureBuilder")
         assert macro_summary["features_produced"] == 3
         # At least yield curve slope should be non-missing
-        assert (
-            macro_summary["missing"] < 3
-        ), "All macro features missing — data not found"
+        assert macro_summary["missing"] < 3, "All macro features missing — data not found"
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -549,8 +538,6 @@ class TestDagStructureUpdated:
     def test_tool_nodes_have_string_operators(self, dag):
         """Tool-backed nodes have string operators; callable nodes are allowed."""
         tool_nodes = [n for n in dag.nodes.values() if isinstance(n.operator, str)]
-        assert (
-            len(tool_nodes) == 50
-        )  # all except fetch_instruments + fetch_cert_domains
+        assert len(tool_nodes) == 50  # all except fetch_instruments + fetch_cert_domains
         callable_nodes = [n for n in dag.nodes.values() if callable(n.operator)]
         assert len(callable_nodes) == 2  # fetch_instruments + fetch_cert_domains

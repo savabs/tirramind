@@ -117,9 +117,7 @@ def _fetch_fred(
 
     observations = data.get("observations", [])
     return [
-        {"date": obs["date"], "value": obs["value"]}
-        for obs in observations
-        if obs.get("value") not in (".", "", None)
+        {"date": obs["date"], "value": obs["value"]} for obs in observations if obs.get("value") not in (".", "", None)
     ]
 
 
@@ -150,7 +148,7 @@ def _pct_change(series: list[dict[str, str]], offset: int) -> float | None:
 def _trend_direction(series: list[dict[str, str]], n: int = 3) -> str:
     """Simple trend from last n observations (desc order)."""
     vals = []
-    for obs in series[:n + 1]:
+    for obs in series[: n + 1]:
         try:
             vals.append(float(obs["value"]))
         except (ValueError, KeyError):
@@ -235,10 +233,7 @@ class BuildingPermitsTool(Tool):
         if not self._api_key:
             return ToolResult(
                 success=False,
-                output=(
-                    "FRED API key required for building_permits. "
-                    "Set TIRRA_FRED_API_KEY in .env."
-                ),
+                output=("FRED API key required for building_permits. Set TIRRA_FRED_API_KEY in .env."),
             )
 
         months = min(max(int(kwargs.get("months", 24)), 1), 120)
@@ -313,9 +308,7 @@ class BuildingPermitsTool(Tool):
             sf_share = (sf_val / total_val) * 100
             mf_share = 100 - sf_share
             lines.append("")
-            lines.append(
-                f"  Single-family share: {sf_share:.0f}% | Multi-family: {mf_share:.0f}%"
-            )
+            lines.append(f"  Single-family share: {sf_share:.0f}% | Multi-family: {mf_share:.0f}%")
 
         return ToolResult(
             success=True,
@@ -451,17 +444,12 @@ class BuildingPermitsTool(Tool):
         if starts_val and permits_val and permits_val > 0:
             ratio = starts_val / permits_val
             lines.append("")
-            lines.append(
-                f"  Starts/Permits ratio: {ratio:.2f} "
-                f"(>0.95 = confident builders, <0.80 = cautious)"
-            )
+            lines.append(f"  Starts/Permits ratio: {ratio:.2f} (>0.95 = confident builders, <0.80 = cautious)")
             summary["starts_permits_ratio"] = ratio
 
         if sf_starts and sf_permits and sf_permits > 0:
             sf_ratio = sf_starts / sf_permits
-            lines.append(
-                f"  SF Starts/Permits: {sf_ratio:.2f}"
-            )
+            lines.append(f"  SF Starts/Permits: {sf_ratio:.2f}")
             summary["sf_starts_permits_ratio"] = sf_ratio
 
         return ToolResult(

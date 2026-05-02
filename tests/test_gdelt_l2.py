@@ -276,11 +276,7 @@ class TestPersistEntitiesInner:
 
         # Find the IR registration call
         reg_calls = store.register_entity.call_args_list
-        ir_call = [
-            c
-            for c in reg_calls
-            if c.kwargs["entity_id"] == entity_id_from_key("country", "IR")
-        ]
+        ir_call = [c for c in reg_calls if c.kwargs["entity_id"] == entity_id_from_key("country", "IR")]
         assert len(ir_call) == 1
         assert ir_call[0].kwargs["canonical_name"] == "IR"
 
@@ -291,11 +287,7 @@ class TestPersistEntitiesInner:
         tool._persist_entities_inner([ev])
 
         reg_calls = store.register_entity.call_args_list
-        us_call = [
-            c
-            for c in reg_calls
-            if c.kwargs["entity_id"] == entity_id_from_key("country", "US")
-        ]
+        us_call = [c for c in reg_calls if c.kwargs["entity_id"] == entity_id_from_key("country", "US")]
         assert us_call[0].kwargs["metadata"]["actor_type"] == "MIL"
         assert us_call[0].kwargs["metadata"]["fips_code"] == "US"
 
@@ -553,12 +545,8 @@ class TestMIMeasurement:
 
         # After L2 enrichment
         if entity_id_from_key is not None:
-            ev["actor1"]["entity_id"] = entity_id_from_key(
-                "country", ev["actor1"]["country"]
-            )
-            ev["actor2"]["entity_id"] = entity_id_from_key(
-                "country", ev["actor2"]["country"]
-            )
+            ev["actor1"]["entity_id"] = entity_id_from_key("country", ev["actor1"]["country"])
+            ev["actor2"]["entity_id"] = entity_id_from_key("country", ev["actor2"]["country"])
             assert "entity_id" in ev["actor1"]
             assert "entity_id" in ev["actor2"]
 

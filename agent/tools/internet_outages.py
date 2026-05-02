@@ -36,7 +36,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -85,7 +85,7 @@ class InternetOutagesTool(Tool):
     def __init__(
         self,
         cache: DataCache | None = None,
-        pipeline_store: "PipelineStore | None" = None,
+        pipeline_store: PipelineStore | None = None,
     ) -> None:
         self._cache = cache
         self._store = pipeline_store
@@ -120,10 +120,7 @@ class InternetOutagesTool(Tool):
                 },
                 "country": {
                     "type": "string",
-                    "description": (
-                        "ISO 3166-1 alpha-2 country code "
-                        "(e.g. 'US', 'IR', 'CN', 'RU')."
-                    ),
+                    "description": ("ISO 3166-1 alpha-2 country code (e.g. 'US', 'IR', 'CN', 'RU')."),
                 },
                 "test_name": {
                     "type": "string",
@@ -154,18 +151,14 @@ class InternetOutagesTool(Tool):
         if mode not in VALID_MODES:
             return ToolResult(
                 success=False,
-                output=(
-                    f"Invalid mode '{mode}'. " f"Must be one of: {sorted(VALID_MODES)}"
-                ),
+                output=(f"Invalid mode '{mode}'. Must be one of: {sorted(VALID_MODES)}"),
             )
 
         country = (kwargs.get("country") or "").strip().upper()
         if country and len(country) != 2:
             return ToolResult(
                 success=False,
-                output=(
-                    f"Invalid country code '{country}'. " f"Must be 2-letter ISO code."
-                ),
+                output=(f"Invalid country code '{country}'. Must be 2-letter ISO code."),
             )
 
         limit = min(kwargs.get("limit") or 50, 200)
@@ -194,9 +187,7 @@ class InternetOutagesTool(Tool):
         if test_name not in VALID_TESTS:
             return ToolResult(
                 success=False,
-                output=(
-                    f"Invalid test_name '{test_name}'. " f"Valid: {sorted(VALID_TESTS)}"
-                ),
+                output=(f"Invalid test_name '{test_name}'. Valid: {sorted(VALID_TESTS)}"),
             )
 
         since, until, err = _resolve_dates(kwargs)
@@ -247,9 +238,7 @@ class InternetOutagesTool(Tool):
         if test_name not in VALID_TESTS:
             return ToolResult(
                 success=False,
-                output=(
-                    f"Invalid test_name '{test_name}'. " f"Valid: {sorted(VALID_TESTS)}"
-                ),
+                output=(f"Invalid test_name '{test_name}'. Valid: {sorted(VALID_TESTS)}"),
             )
 
         since, until, err = _resolve_dates(kwargs)
@@ -405,9 +394,7 @@ class InternetOutagesTool(Tool):
 
         cc = country or "ALL"
         parts = [f"Internet Outage Detection — {cc} — {test_name}"]
-        parts.append(
-            f"Period: {params.get('since', '?')} to {params.get('until', '?')}"
-        )
+        parts.append(f"Period: {params.get('since', '?')} to {params.get('until', '?')}")
         total = agg.get("total", 0)
         parts.append(f"Total measurements: {total:,}")
         parts.append(
@@ -584,7 +571,7 @@ class InternetOutagesTool(Tool):
 
 def _resolve_dates(kwargs: dict) -> tuple[str, str, str | None]:
     """Parse since/until dates with defaults. Returns (since, until, error)."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     since = kwargs.get("since") or (now - timedelta(days=7)).strftime("%Y-%m-%d")
     until = kwargs.get("until") or now.strftime("%Y-%m-%d")
 
@@ -683,9 +670,7 @@ def _format_censorship(
     if blocked:
         parts.append("\nConfirmed blocked:")
         for b in blocked[:10]:
-            parts.append(
-                f"  {b.get('input', 'N/A')} " f"(ASN: {b.get('probe_asn', '?')})"
-            )
+            parts.append(f"  {b.get('input', 'N/A')} (ASN: {b.get('probe_asn', '?')})")
 
     anomalies = [r for r in records if r.get("anomaly") and not r.get("confirmed")]
     if anomalies:
@@ -829,13 +814,9 @@ def _network_health_signals(
     }
 
     if disconnect_rate > 50:
-        signals["alert"] = (
-            "CRITICAL: >50% probes disconnected — possible national outage"
-        )
+        signals["alert"] = "CRITICAL: >50% probes disconnected — possible national outage"
     elif disconnect_rate > 20:
-        signals["alert"] = (
-            "WARNING: >20% probes disconnected — " "significant connectivity issues"
-        )
+        signals["alert"] = "WARNING: >20% probes disconnected — significant connectivity issues"
     elif disconnected > 10:
         signals["alert"] = f"NOTICE: {disconnected} probes disconnected in {country}"
 

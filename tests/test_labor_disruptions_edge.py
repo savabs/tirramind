@@ -15,25 +15,21 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import httpx
-import pytest
 
 from agent.tools.labor_disruptions import (
-    LaborDisruptionsTool,
-    VALID_MODES,
-    SERIES_WORKERS,
-    SERIES_IDLE,
     _BLS_BASE,
-    _CACHE_TTL,
+    SERIES_IDLE,
+    SERIES_WORKERS,
+    VALID_MODES,
+    LaborDisruptionsTool,
+    _compute_overview_signals,
+    _compute_single_signals,
     _fetch_bls_series,
+    _format_overview_summary,
+    _format_single_summary,
     _parse_bls_records,
     _safe_float,
-    _compute_single_signals,
-    _compute_overview_signals,
-    _format_single_summary,
-    _format_overview_summary,
 )
-from agent.tools.base import ToolResult
-
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -580,10 +576,24 @@ class TestEndToEnd:
     @patch("agent.tools.labor_disruptions._fetch_bls_series")
     def test_work_stoppages_success(self, mock_fetch):
         records = [
-            {"year": "2024", "period": "M01", "value": 50.0, "preliminary": False,
-             "series_id": "WSU001", "period_name": "January", "footnotes": []},
-            {"year": "2024", "period": "M02", "value": 75.0, "preliminary": True,
-             "series_id": "WSU001", "period_name": "February", "footnotes": []},
+            {
+                "year": "2024",
+                "period": "M01",
+                "value": 50.0,
+                "preliminary": False,
+                "series_id": "WSU001",
+                "period_name": "January",
+                "footnotes": [],
+            },
+            {
+                "year": "2024",
+                "period": "M02",
+                "value": 75.0,
+                "preliminary": True,
+                "series_id": "WSU001",
+                "period_name": "February",
+                "footnotes": [],
+            },
         ]
         mock_fetch.return_value = (records, None)
         result = _tool().execute(mode="work_stoppages")
@@ -593,12 +603,26 @@ class TestEndToEnd:
     @patch("agent.tools.labor_disruptions._fetch_bls_series")
     def test_overview_success(self, mock_fetch):
         workers = [
-            {"year": "2024", "period": "M01", "value": 50.0, "preliminary": False,
-             "series_id": "WSU001", "period_name": "January", "footnotes": []},
+            {
+                "year": "2024",
+                "period": "M01",
+                "value": 50.0,
+                "preliminary": False,
+                "series_id": "WSU001",
+                "period_name": "January",
+                "footnotes": [],
+            },
         ]
         idle = [
-            {"year": "2024", "period": "M01", "value": 200.0, "preliminary": False,
-             "series_id": "WSU002", "period_name": "January", "footnotes": []},
+            {
+                "year": "2024",
+                "period": "M01",
+                "value": 200.0,
+                "preliminary": False,
+                "series_id": "WSU002",
+                "period_name": "January",
+                "footnotes": [],
+            },
         ]
         mock_fetch.side_effect = [(workers, None), (idle, None)]
         result = _tool().execute(mode="overview")
@@ -608,8 +632,15 @@ class TestEndToEnd:
     @patch("agent.tools.labor_disruptions._fetch_bls_series")
     def test_idle_days_success(self, mock_fetch):
         records = [
-            {"year": "2024", "period": "M05", "value": 1500.0, "preliminary": False,
-             "series_id": "WSU002", "period_name": "May", "footnotes": []},
+            {
+                "year": "2024",
+                "period": "M05",
+                "value": 1500.0,
+                "preliminary": False,
+                "series_id": "WSU002",
+                "period_name": "May",
+                "footnotes": [],
+            },
         ]
         mock_fetch.return_value = (records, None)
         result = _tool().execute(mode="idle_days")
@@ -637,6 +668,7 @@ class TestEndToEnd:
 class TestRegistryIntegration:
     def test_tool_name_in_imports(self):
         from agent.tools.labor_disruptions import LaborDisruptionsTool
+
         assert LaborDisruptionsTool is not None
 
     def test_bandit_arm_exists(self):

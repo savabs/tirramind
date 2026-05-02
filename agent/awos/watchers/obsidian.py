@@ -11,7 +11,6 @@ from pathlib import Path
 from agent.awos.events.schema import Event, TriggerCategory
 from agent.awos.watchers.base import Watcher, run_subprocess
 
-
 _HARD_CODES = {"FM01", "FM02", "LK01"}
 
 

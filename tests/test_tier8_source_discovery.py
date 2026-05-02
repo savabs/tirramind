@@ -8,7 +8,6 @@ and quarantine cycle logic.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import pathlib
 import tempfile
@@ -18,14 +17,13 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from agent.pipeline.store import PipelineStore
+from agent.discovery.signal_evaluator import SignalEvaluator, SignalReport
 from agent.discovery.source_scout import (
     DataSourceCandidate,
     SourceScout,
     _make_source_id,
     _tfidf_relevance,
 )
-from agent.discovery.signal_evaluator import SignalEvaluator, SignalReport
 from agent.discovery.tool_factory import (
     DiscoveredCsvFeedTool,
     DiscoveredJsonApiTool,
@@ -33,10 +31,10 @@ from agent.discovery.tool_factory import (
 )
 from agent.learning.tool_router import ToolRoutingBandit
 from agent.pipeline.dags.daily_collection import (
-    run_quarantine_cycle,
-    _QUARANTINE_CYCLES_TO_PROMOTE,
     _MAX_CONSECUTIVE_FAILURES,
+    run_quarantine_cycle,
 )
+from agent.pipeline.store import PipelineStore
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -189,9 +187,7 @@ class TestUnresolvedEntitiesCRUD:
         )
         # Assign to a cluster first, then resolve by cluster
         store.update_unresolved_cluster([rid], cluster_id=99)
-        count = store.resolve_unresolved_entities(
-            cluster_id=99, resolved_type="facility"
-        )
+        count = store.resolve_unresolved_entities(cluster_id=99, resolved_type="facility")
         assert count >= 1
         rows = store.query_unresolved_entities(resolved=True)
         assert any(r["id"] == rid for r in rows)
@@ -371,9 +367,7 @@ class TestSignalEvaluator:
             store.store_feature(feat)
 
         # Create a candidate with correlated probe data
-        probe_data = [
-            {"date": f"2024-{i:04d}", "metric": float(rng.randn())} for i in range(100)
-        ]
+        probe_data = [{"date": f"2024-{i:04d}", "metric": float(rng.randn())} for i in range(100)]
         candidate = DataSourceCandidate(
             source_id="corr",
             name="Correlated",
@@ -551,9 +545,7 @@ class TestDiscoveryOrchestration:
         ).encode()
 
         # Mock probe response
-        probe_resp = json.dumps(
-            {"data": [{"date": "2024-01-01", "price": 100.5, "volume": 1e6}]}
-        ).encode()
+        probe_resp = json.dumps({"data": [{"date": "2024-01-01", "price": 100.5, "volume": 1e6}]}).encode()
 
         call_count = [0]
 

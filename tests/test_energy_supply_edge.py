@@ -16,27 +16,20 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import httpx
-import pytest
 
 from agent.tools.energy_supply import (
-    EnergySupplyTool,
-    VALID_MODES,
     STOCK_SERIES,
-    SUPPLY_SERIES,
-    _EIA_BASE,
-    _CACHE_TTL,
-    _CACHE_TTL_RIG,
-    _get_api_key,
-    _fetch_eia,
-    _parse_eia_records,
-    _safe_float,
-    _compute_stock_signals,
+    VALID_MODES,
+    EnergySupplyTool,
     _compute_rig_signals,
+    _compute_stock_signals,
+    _fetch_eia,
     _format_petroleum_summary,
     _format_rig_summary,
+    _get_api_key,
+    _parse_eia_records,
+    _safe_float,
 )
-from agent.tools.base import ToolResult
-
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -271,8 +264,7 @@ class TestParseEIARecords:
     def test_fields_extracted(self):
         raw = [_stock_record()]
         r = _parse_eia_records(raw)[0]
-        expected = {"period", "area", "product", "process", "series",
-                    "series_description", "value", "units"}
+        expected = {"period", "area", "product", "process", "series", "series_description", "value", "units"}
         assert expected == set(r.keys())
 
 
@@ -427,16 +419,24 @@ class TestRigSignals:
 
     def test_trend_expanding(self):
         records = [
-            {"value": 500.0}, {"value": 510.0}, {"value": 520.0},
-            {"value": 570.0}, {"value": 580.0}, {"value": 590.0},
+            {"value": 500.0},
+            {"value": 510.0},
+            {"value": 520.0},
+            {"value": 570.0},
+            {"value": 580.0},
+            {"value": 590.0},
         ]
         s = _compute_rig_signals(records)
         assert s["trend"] == "EXPANDING"
 
     def test_trend_contracting(self):
         records = [
-            {"value": 600.0}, {"value": 590.0}, {"value": 580.0},
-            {"value": 520.0}, {"value": 510.0}, {"value": 500.0},
+            {"value": 600.0},
+            {"value": 590.0},
+            {"value": 580.0},
+            {"value": 520.0},
+            {"value": 510.0},
+            {"value": 500.0},
         ]
         s = _compute_rig_signals(records)
         assert s["trend"] == "CONTRACTING"
@@ -583,8 +583,10 @@ class TestFetchEIA:
 class TestFormatting:
     def test_petroleum_empty(self):
         text = _format_petroleum_summary(
-            {"crude": []}, {"crude": {"status": "NO_DATA"}},
-            "petroleum_stocks", 12,
+            {"crude": []},
+            {"crude": {"status": "NO_DATA"}},
+            "petroleum_stocks",
+            12,
         )
         assert "No data" in text
 
@@ -592,16 +594,20 @@ class TestFormatting:
         records = _parse_eia_records([_stock_record()])
         signals = _compute_stock_signals(records, "crude")
         text = _format_petroleum_summary(
-            {"crude": records}, {"crude": signals},
-            "petroleum_stocks", 12,
+            {"crude": records},
+            {"crude": signals},
+            "petroleum_stocks",
+            12,
         )
         assert "Petroleum Stocks" in text
         assert "Latest" in text
 
     def test_petroleum_supply_title(self):
         text = _format_petroleum_summary(
-            {"crude": []}, {"crude": {"status": "NO_DATA"}},
-            "petroleum_supply", 12,
+            {"crude": []},
+            {"crude": {"status": "NO_DATA"}},
+            "petroleum_supply",
+            12,
         )
         assert "Petroleum Supply" in text
 
@@ -741,6 +747,7 @@ class TestEndToEnd:
 class TestRegistryIntegration:
     def test_tool_importable(self):
         from agent.tools.energy_supply import EnergySupplyTool
+
         assert EnergySupplyTool is not None
 
     def test_bandit_arm_exists(self):

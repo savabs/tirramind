@@ -21,7 +21,6 @@ from agent.fusion.alert import EntityAlert
 from agent.learning.policy.state_assembler import StateAssembler
 from agent.models.belief import BeliefState
 
-
 # ── Helpers ───────────────────────────────────────────────────
 
 
@@ -214,9 +213,7 @@ class TestBeliefMatching:
 
         belief_start = 2 * 5
         # All belief values should be 0 for e1 (no belief provided)
-        np.testing.assert_array_equal(
-            state[belief_start : belief_start + 4].numpy(), [0, 0, 0, 0]
-        )
+        np.testing.assert_array_equal(state[belief_start : belief_start + 4].numpy(), [0, 0, 0, 0])
 
 
 class TestZeroPadding:
@@ -283,9 +280,7 @@ class TestMarketFeatures:
         state, _ = sa.assemble([], [], mf, {})
         # Only first 2 sorted keys used: a, b
         market_start = 1 + 1
-        np.testing.assert_allclose(
-            state[market_start : market_start + 2].numpy(), [1.0, 2.0], rtol=1e-5
-        )
+        np.testing.assert_allclose(state[market_start : market_start + 2].numpy(), [1.0, 2.0], rtol=1e-5)
 
 
 class TestSurpriseValues:
@@ -306,9 +301,7 @@ class TestSurpriseValues:
         ]
         asset_map = {"e1": "T1"}
         state, _ = sa.assemble(alerts, [], {}, asset_map)
-        np.testing.assert_allclose(
-            state[:5].numpy(), [0.1, 0.2, 0.3, 0.4, 0.5], rtol=1e-5
-        )
+        np.testing.assert_allclose(state[:5].numpy(), [0.1, 0.2, 0.3, 0.4, 0.5], rtol=1e-5)
 
 
 class TestMetadata:

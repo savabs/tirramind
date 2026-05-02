@@ -12,13 +12,11 @@ Validates:
 from __future__ import annotations
 
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-import pytest
 import torch
 
 from agent.models.gnn.het_tgn import HeteroMemory
-
 
 # ═══════════════════════════════════════════════════════════════
 #  39.1 — HeteroMemory.resize()
@@ -155,7 +153,7 @@ class TestTrainerInferResize:
         original_num = mem.num_nodes
 
         # Simulate: graph has same count
-        if 100 > mem.num_nodes:
+        if mem.num_nodes < 100:
             mem.resize(100)
 
         assert mem.num_nodes == original_num

@@ -15,11 +15,10 @@ import math
 import numpy as np
 import pytest
 
-from agent.convergence.evidence import Evidence
 from agent.convergence.detector import ConvergenceDetectorConfig
+from agent.convergence.evidence import Evidence
 from agent.convergence.synthetic import (
     SyntheticScenario,
-    SyntheticValidationResult,
     _build_registry_from_evidence,
     _generate_correlated_series,
     _pick_signal_for_step,
@@ -31,10 +30,8 @@ from agent.convergence.synthetic import (
 from agent.convergence.taxonomy import CATEGORIES
 from agent.convergence.templates import (
     TEMPLATE_LIBRARY,
-    CausalTemplate,
     TemplateStep,
 )
-
 
 # ── Helpers ────────────────────────────────────────────────────
 
@@ -138,9 +135,7 @@ class TestGeneratePlantedChain:
     def test_anomaly_present(self):
         """Values in the tail should be much larger than baseline."""
         tmpl = TEMPLATE_LIBRARY[0]
-        ev, _, _ = generate_planted_chain(
-            tmpl, 1_600_000_000, anomaly_magnitude=5.0, seed=42
-        )
+        ev, _, _ = generate_planted_chain(tmpl, 1_600_000_000, anomaly_magnitude=5.0, seed=42)
         # Group by signal_id
         by_sig: dict[str, list[float]] = {}
         for e in ev:
@@ -149,9 +144,7 @@ class TestGeneratePlantedChain:
         for sig_id, vals in by_sig.items():
             last_10 = vals[-10:]
             first_10 = vals[:10]
-            assert np.mean(last_10) > np.mean(
-                first_10
-            ), f"Anomaly not visible in {sig_id}"
+            assert np.mean(last_10) > np.mean(first_10), f"Anomaly not visible in {sig_id}"
 
     def test_shared_time_window(self):
         """All signals should share the same timestamp range."""
@@ -231,10 +224,7 @@ class TestGenerateScenarios:
         scenarios = generate_scenarios(n=n, seed=42)
         assert len(scenarios) == n
         # First and (len+1)th should use the same template
-        assert (
-            scenarios[0].expected_template
-            == scenarios[len(TEMPLATE_LIBRARY)].expected_template
-        )
+        assert scenarios[0].expected_template == scenarios[len(TEMPLATE_LIBRARY)].expected_template
 
     def test_no_templates_raises(self):
         with pytest.raises(ValueError, match="No templates"):
@@ -316,9 +306,7 @@ class TestRunSyntheticValidation:
         assert result.recall >= 0.60, f"Recall too low: {result.recall}"
         assert result.precision >= 0.80, f"Precision too low: {result.precision}"
         assert result.f1 >= 0.65, f"F1 too low: {result.f1}"
-        assert (
-            result.direction_accuracy >= 0.60
-        ), f"Direction accuracy too low: {result.direction_accuracy}"
+        assert result.direction_accuracy >= 0.60, f"Direction accuracy too low: {result.direction_accuracy}"
 
 
 class TestSinglePlantedOnlyScenario:
@@ -364,9 +352,7 @@ class TestNumericalStability:
 
     def test_high_anomaly_magnitude(self):
         tmpl = TEMPLATE_LIBRARY[0]
-        ev, _, _ = generate_planted_chain(
-            tmpl, 1_600_000_000, anomaly_magnitude=100.0, seed=42
-        )
+        ev, _, _ = generate_planted_chain(tmpl, 1_600_000_000, anomaly_magnitude=100.0, seed=42)
         assert all(math.isfinite(e.value) for e in ev)
 
     def test_zero_correlation(self):

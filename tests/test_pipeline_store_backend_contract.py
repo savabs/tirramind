@@ -8,7 +8,6 @@ SQLite runs first; PostgreSQL runs when ``TIRRA_TEST_PG_DSN`` is set and
 from __future__ import annotations
 
 import os
-import re
 import uuid
 from collections.abc import Callable
 from pathlib import Path
@@ -16,7 +15,6 @@ from pathlib import Path
 import pytest
 
 from agent.pipeline.store import PipelineStore
-
 
 StoreFactory = Callable[[Path], PipelineStore]
 

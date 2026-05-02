@@ -41,9 +41,7 @@ log = logging.getLogger(__name__)
 _DEFAULT_DB_PATH = ".tirra_pipeline/pipeline.db"
 _PIPELINE_SCHEMA_NAME = "pipeline_store"
 _PIPELINE_SCHEMA_VERSION = 1
-_PIPELINE_SCHEMA_DESCRIPTION = (
-    "Baseline portable schema: epoch timestamps, integer booleans, JSON text payloads"
-)
+_PIPELINE_SCHEMA_DESCRIPTION = "Baseline portable schema: epoch timestamps, integer booleans, JSON text payloads"
 
 _SCHEMA_MIGRATIONS_SQL = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -434,9 +432,7 @@ class PipelineStore:
         ).fetchone()
         if existing is None:
             conn.execute(
-                "INSERT INTO schema_migrations "
-                "(schema_name, version, applied_at, description) "
-                "VALUES (?, ?, ?, ?)",
+                "INSERT INTO schema_migrations (schema_name, version, applied_at, description) VALUES (?, ?, ?, ?)",
                 (
                     _PIPELINE_SCHEMA_NAME,
                     _PIPELINE_SCHEMA_VERSION,
@@ -447,21 +443,29 @@ class PipelineStore:
             conn.commit()
 
     def get_schema_version(self) -> int:
-        row = self._get_conn().execute(
-            "SELECT MAX(version) AS version FROM schema_migrations WHERE schema_name=?",
-            (_PIPELINE_SCHEMA_NAME,),
-        ).fetchone()
+        row = (
+            self._get_conn()
+            .execute(
+                "SELECT MAX(version) AS version FROM schema_migrations WHERE schema_name=?",
+                (_PIPELINE_SCHEMA_NAME,),
+            )
+            .fetchone()
+        )
         if row is None or row["version"] is None:
             return 0
         return int(row["version"])
 
     def query_schema_migrations(self) -> list[dict[str, Any]]:
-        rows = self._get_conn().execute(
-            "SELECT schema_name, version, applied_at, description "
-            "FROM schema_migrations WHERE schema_name=? "
-            "ORDER BY version ASC",
-            (_PIPELINE_SCHEMA_NAME,),
-        ).fetchall()
+        rows = (
+            self._get_conn()
+            .execute(
+                "SELECT schema_name, version, applied_at, description "
+                "FROM schema_migrations WHERE schema_name=? "
+                "ORDER BY version ASC",
+                (_PIPELINE_SCHEMA_NAME,),
+            )
+            .fetchall()
+        )
         return [dict(row) for row in rows]
 
     def close(self) -> None:
@@ -486,8 +490,7 @@ class PipelineStore:
             run_id = uuid.uuid4().hex[:12]
         conn = self._get_conn()
         conn.execute(
-            "INSERT INTO dag_runs (run_id, dag_name, started_at, status, trigger) "
-            "VALUES (?, ?, ?, 'running', ?)",
+            "INSERT INTO dag_runs (run_id, dag_name, started_at, status, trigger) VALUES (?, ?, ?, 'running', ?)",
             (run_id, dag_name, time.time(), trigger),
         )
         conn.commit()
@@ -504,8 +507,7 @@ class PipelineStore:
         conn = self._get_conn()
         node_json = json.dumps(node_results, default=str) if node_results else None
         conn.execute(
-            "UPDATE dag_runs SET finished_at=?, status=?, node_results_json=? "
-            "WHERE run_id=?",
+            "UPDATE dag_runs SET finished_at=?, status=?, node_results_json=? WHERE run_id=?",
             (time.time(), status, node_json, run_id),
         )
         conn.commit()
@@ -514,9 +516,7 @@ class PipelineStore:
     def get_run(self, run_id: str) -> dict[str, Any] | None:
         """Get a specific run by ID."""
         conn = self._get_conn()
-        row = conn.execute(
-            "SELECT * FROM dag_runs WHERE run_id=?", (run_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM dag_runs WHERE run_id=?", (run_id,)).fetchone()
         if row is None:
             return None
         return self._row_to_dict(row)
@@ -530,8 +530,7 @@ class PipelineStore:
         conn = self._get_conn()
         if dag_name:
             rows = conn.execute(
-                "SELECT * FROM dag_runs WHERE dag_name=? "
-                "ORDER BY started_at DESC LIMIT ?",
+                "SELECT * FROM dag_runs WHERE dag_name=? ORDER BY started_at DESC LIMIT ?",
                 (dag_name, limit),
             ).fetchall()
         else:
@@ -552,8 +551,7 @@ class PipelineStore:
         """Insert a tool result row. Returns the row ID."""
         conn = self._get_conn()
         cursor = conn.execute(
-            "INSERT INTO pipeline_data (source, fetched_at, params_json, data_json) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT INTO pipeline_data (source, fetched_at, params_json, data_json) VALUES (?, ?, ?, ?)",
             (
                 source,
                 time.time(),
@@ -605,8 +603,7 @@ class PipelineStore:
         """Insert a computed signal value. Returns the row ID."""
         conn = self._get_conn()
         cursor = conn.execute(
-            "INSERT INTO signals (signal_name, computed_at, value, metadata_json) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT INTO signals (signal_name, computed_at, value, metadata_json) VALUES (?, ?, ?, ?)",
             (
                 signal_name,
                 time.time(),
@@ -663,10 +660,7 @@ class PipelineStore:
         """
         errors = validate_feature(feature)
         if errors:
-            raise ValueError(
-                f"Feature '{feature.feature_name}' failed validation: "
-                + "; ".join(errors)
-            )
+            raise ValueError(f"Feature '{feature.feature_name}' failed validation: " + "; ".join(errors))
         conn = self._get_conn()
         cursor = conn.execute(
             "INSERT OR REPLACE INTO features "
@@ -716,10 +710,7 @@ class PipelineStore:
             if errs:
                 all_errors.append(f"[{idx}] {feat.feature_name}: {'; '.join(errs)}")
         if all_errors:
-            raise ValueError(
-                f"Batch validation failed ({len(all_errors)} feature(s)): "
-                + " | ".join(all_errors)
-            )
+            raise ValueError(f"Batch validation failed ({len(all_errors)} feature(s)): " + " | ".join(all_errors))
 
         conn = self._get_conn()
         row_ids: list[int] = []
@@ -743,11 +734,7 @@ class PipelineStore:
                         json.dumps(list(feat.source_signals)),
                         feat.builder,
                         feat.unit,
-                        (
-                            json.dumps(feat.metadata, default=str)
-                            if feat.metadata
-                            else None
-                        ),
+                        (json.dumps(feat.metadata, default=str) if feat.metadata else None),
                     ),
                 )
                 row_ids.append(cursor.lastrowid)  # type: ignore[arg-type]
@@ -816,10 +803,7 @@ class PipelineStore:
         """
         errors = validate_belief(belief)
         if errors:
-            raise ValueError(
-                f"Belief '{belief.variable_name}' failed validation: "
-                + "; ".join(errors)
-            )
+            raise ValueError(f"Belief '{belief.variable_name}' failed validation: " + "; ".join(errors))
         conn = self._get_conn()
         cursor = conn.execute(
             "INSERT OR REPLACE INTO beliefs "
@@ -835,11 +819,7 @@ class PipelineStore:
                 belief.dist_type,
                 belief.mean,
                 belief.variance,
-                (
-                    json.dumps(belief.probabilities)
-                    if belief.probabilities is not None
-                    else None
-                ),
+                (json.dumps(belief.probabilities) if belief.probabilities is not None else None),
                 belief.evidence_count,
                 belief.model_graph_hash,
                 belief.confidence,
@@ -872,10 +852,7 @@ class PipelineStore:
             if errs:
                 all_errors.append(f"[{idx}] {b.variable_name}: {'; '.join(errs)}")
         if all_errors:
-            raise ValueError(
-                f"Batch validation failed ({len(all_errors)} belief(s)): "
-                + " | ".join(all_errors)
-            )
+            raise ValueError(f"Batch validation failed ({len(all_errors)} belief(s)): " + " | ".join(all_errors))
 
         conn = self._get_conn()
         row_ids: list[int] = []
@@ -895,11 +872,7 @@ class PipelineStore:
                         b.dist_type,
                         b.mean,
                         b.variance,
-                        (
-                            json.dumps(b.probabilities)
-                            if b.probabilities is not None
-                            else None
-                        ),
+                        (json.dumps(b.probabilities) if b.probabilities is not None else None),
                         b.evidence_count,
                         b.model_graph_hash,
                         b.confidence,
@@ -1110,7 +1083,7 @@ class PipelineStore:
         """
         conn = self._get_conn()
         row = conn.execute(
-            "SELECT entity_id FROM entity_aliases " "WHERE source=? AND external_id=?",
+            "SELECT entity_id FROM entity_aliases WHERE source=? AND external_id=?",
             (source, external_id),
         ).fetchone()
         return row["entity_id"] if row else None
@@ -1137,9 +1110,7 @@ class PipelineStore:
     def get_entity(self, entity_id: str) -> dict[str, Any] | None:
         """Get a single entity record by ID."""
         conn = self._get_conn()
-        row = conn.execute(
-            "SELECT * FROM entities WHERE entity_id=?", (entity_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM entities WHERE entity_id=?", (entity_id,)).fetchone()
         if row is None:
             return None
         return self._entity_row_to_dict(row)
@@ -1305,9 +1276,7 @@ class PipelineStore:
         ``"both"`` (default) — either side.
         """
         if direction not in ("outgoing", "incoming", "both"):
-            raise ValueError(
-                f"direction must be outgoing/incoming/both, got {direction!r}"
-            )
+            raise ValueError(f"direction must be outgoing/incoming/both, got {direction!r}")
 
         conn = self._get_conn()
         parts: list[str] = []
@@ -1319,7 +1288,7 @@ class PipelineStore:
             if link_type is not None:
                 clauses.append("link_type=?")
                 p.append(link_type)
-            parts.append(f"SELECT * FROM entity_links WHERE {' AND '.join(clauses)}")
+            parts.append(f"SELECT * FROM entity_links WHERE {' AND '.join(clauses)}")  # noqa: S608
             params.extend(p)
 
         if direction in ("incoming", "both"):
@@ -1328,7 +1297,7 @@ class PipelineStore:
             if link_type is not None:
                 clauses.append("link_type=?")
                 p.append(link_type)
-            parts.append(f"SELECT * FROM entity_links WHERE {' AND '.join(clauses)}")
+            parts.append(f"SELECT * FROM entity_links WHERE {' AND '.join(clauses)}")  # noqa: S608
             params.extend(p)
 
         sql = " UNION ".join(parts) + " ORDER BY created_at DESC LIMIT ?"
@@ -1397,7 +1366,7 @@ class PipelineStore:
             "  b.value_json AS b_value_json, b.metadata_json AS b_metadata_json "
             "FROM entity_observations a "
             "INNER JOIN entity_observations b "
-            f"ON ({where_a}) AND ({where_b}) "
+            f"ON ({where_a}) AND ({where_b}) "  # noqa: S608
             "   AND ABS(a.observed_at - b.observed_at) <= ? "
             "ORDER BY ABS(a.observed_at - b.observed_at) ASC "
             "LIMIT ?"
@@ -1452,7 +1421,7 @@ class PipelineStore:
         conn = self._get_conn()
         if entity_type is not None:
             rows = conn.execute(
-                "SELECT * FROM entities WHERE entity_type=? " "ORDER BY created_at",
+                "SELECT * FROM entities WHERE entity_type=? ORDER BY created_at",
                 (entity_type,),
             ).fetchall()
         else:
@@ -1849,9 +1818,7 @@ class PipelineStore:
     def _entity_alert_row_to_dict(row: Any) -> dict[str, Any]:
         d = dict(row)
         try:
-            d["evidence_sources"] = tuple(
-                json.loads(d.pop("evidence_sources_json", "[]"))
-            )
+            d["evidence_sources"] = tuple(json.loads(d.pop("evidence_sources_json", "[]")))
         except (json.JSONDecodeError, TypeError):
             d["evidence_sources"] = ()
         try:
@@ -1868,15 +1835,11 @@ class PipelineStore:
         except (json.JSONDecodeError, TypeError):
             d["member_entity_ids"] = []
         try:
-            d["contributing_domains"] = tuple(
-                json.loads(d.pop("contributing_domains_json", "[]"))
-            )
+            d["contributing_domains"] = tuple(json.loads(d.pop("contributing_domains_json", "[]")))
         except (json.JSONDecodeError, TypeError):
             d["contributing_domains"] = ()
         try:
-            d["contributing_tools"] = tuple(
-                json.loads(d.pop("contributing_tools_json", "[]"))
-            )
+            d["contributing_tools"] = tuple(json.loads(d.pop("contributing_tools_json", "[]")))
         except (json.JSONDecodeError, TypeError):
             d["contributing_tools"] = ()
         try:
@@ -1938,7 +1901,7 @@ class PipelineStore:
             clauses.append("timestamp <= ?")
             params.append(end_time)
         where = " WHERE " + " AND ".join(clauses) if clauses else ""
-        sql = f"SELECT * FROM rl_transitions{where} ORDER BY timestamp"
+        sql = f"SELECT * FROM rl_transitions{where} ORDER BY timestamp"  # noqa: S608
         if limit is not None:
             sql += " LIMIT ?"
             params.append(limit)
@@ -2029,15 +1992,11 @@ class PipelineStore:
 
         for val in pending["state"]:
             if not math.isfinite(val):
-                log.warning(
-                    "Pending state for %s contains non-finite value, skipping", date
-                )
+                log.warning("Pending state for %s contains non-finite value, skipping", date)
                 return False
         for val in next_state:
             if not math.isfinite(val):
-                log.warning(
-                    "next_state for %s contains non-finite value, skipping", date
-                )
+                log.warning("next_state for %s contains non-finite value, skipping", date)
                 return False
 
         # Store the completed transition
@@ -2092,9 +2051,7 @@ class PipelineStore:
         """Load the best checkpoint for a policy type, or None."""
         conn = self._get_conn()
         row = conn.execute(
-            "SELECT * FROM rl_policy_checkpoints "
-            "WHERE policy_type=? AND is_best=1 "
-            "ORDER BY saved_at DESC LIMIT 1",
+            "SELECT * FROM rl_policy_checkpoints WHERE policy_type=? AND is_best=1 ORDER BY saved_at DESC LIMIT 1",
             (policy_type,),
         ).fetchone()
         if row is None:
@@ -2105,9 +2062,7 @@ class PipelineStore:
         """Load the most recent checkpoint for a policy type, or None."""
         conn = self._get_conn()
         row = conn.execute(
-            "SELECT * FROM rl_policy_checkpoints "
-            "WHERE policy_type=? "
-            "ORDER BY saved_at DESC LIMIT 1",
+            "SELECT * FROM rl_policy_checkpoints WHERE policy_type=? ORDER BY saved_at DESC LIMIT 1",
             (policy_type,),
         ).fetchone()
         if row is None:
@@ -2346,8 +2301,7 @@ class PipelineStore:
         """Increment consecutive_failures and return new count."""
         conn = self._get_conn()
         conn.execute(
-            "UPDATE discovered_sources SET consecutive_failures = consecutive_failures + 1 "
-            "WHERE source_id=?",
+            "UPDATE discovered_sources SET consecutive_failures = consecutive_failures + 1 WHERE source_id=?",
             (source_id,),
         )
         conn.commit()
@@ -2378,9 +2332,7 @@ class PipelineStore:
                 (status,),
             ).fetchall()
         else:
-            rows = conn.execute(
-                "SELECT * FROM discovered_sources ORDER BY discovered_at"
-            ).fetchall()
+            rows = conn.execute("SELECT * FROM discovered_sources ORDER BY discovered_at").fetchall()
         return [self._source_row_to_dict(r) for r in rows]
 
     @staticmethod
@@ -2406,9 +2358,7 @@ class PipelineStore:
         """Store an unresolved entity mention. Returns row id."""
         conn = self._get_conn()
         cur = conn.execute(
-            "INSERT INTO unresolved_entities "
-            "(raw_text, source_tool, context_snippet, observed_at) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT INTO unresolved_entities (raw_text, source_tool, context_snippet, observed_at) VALUES (?, ?, ?, ?)",
             (raw_text, source_tool, context_snippet, observed_at or time.time()),
         )
         conn.commit()
@@ -2504,13 +2454,9 @@ class PipelineStore:
         """Query registered entity types."""
         conn = self._get_conn()
         if active_only:
-            rows = conn.execute(
-                "SELECT * FROM entity_type_registry WHERE active=1 ORDER BY type_name"
-            ).fetchall()
+            rows = conn.execute("SELECT * FROM entity_type_registry WHERE active=1 ORDER BY type_name").fetchall()
         else:
-            rows = conn.execute(
-                "SELECT * FROM entity_type_registry ORDER BY type_name"
-            ).fetchall()
+            rows = conn.execute("SELECT * FROM entity_type_registry ORDER BY type_name").fetchall()
         result = []
         for r in rows:
             d = dict(r)

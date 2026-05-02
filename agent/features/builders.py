@@ -19,7 +19,6 @@ References:
 from __future__ import annotations
 
 import abc
-import json
 import logging
 import math
 from typing import Any
@@ -501,10 +500,7 @@ class MacroStateFeatureBuilder(FeatureBuilder):
                         continue
                     by_series[series_id][str(date)] = val
 
-        return {
-            sid: sorted(vals.items(), key=lambda x: x[0])
-            for sid, vals in by_series.items()
-        }
+        return {sid: sorted(vals.items(), key=lambda x: x[0]) for sid, vals in by_series.items()}
 
     @staticmethod
     def _date_offset(date_str: str, days: int) -> str:

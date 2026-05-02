@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -89,7 +89,7 @@ class FoodSecurityTool(Tool):
     def __init__(
         self,
         cache: DataCache | None = None,
-        pipeline_store: "PipelineStore | None" = None,
+        pipeline_store: PipelineStore | None = None,
     ) -> None:
         self._cache = cache
         self._store = pipeline_store
@@ -174,7 +174,7 @@ class FoodSecurityTool(Tool):
                 output=f"Invalid country code '{country}'. Must be 2-3 characters.",
             )
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         end_year = kwargs.get("end_year") or now.year
         start_year = kwargs.get("start_year") or (end_year - 5)
         limit = min(kwargs.get("limit") or 50, 100)
@@ -230,8 +230,7 @@ class FoodSecurityTool(Tool):
             return ToolResult(
                 success=False,
                 output=(
-                    f"Invalid production indicator '{indicator}'. "
-                    f"Must be one of: {sorted(_PRODUCTION_INDICATORS)}"
+                    f"Invalid production indicator '{indicator}'. Must be one of: {sorted(_PRODUCTION_INDICATORS)}"
                 ),
             )
         return self._fetch_indicator(
@@ -255,10 +254,7 @@ class FoodSecurityTool(Tool):
         if not ind_code:
             return ToolResult(
                 success=False,
-                output=(
-                    f"Invalid cereal indicator '{indicator}'. "
-                    f"Must be one of: {sorted(_CEREAL_INDICATORS)}"
-                ),
+                output=(f"Invalid cereal indicator '{indicator}'. Must be one of: {sorted(_CEREAL_INDICATORS)}"),
             )
         return self._fetch_indicator(
             country,
@@ -281,10 +277,7 @@ class FoodSecurityTool(Tool):
         if not ind_code:
             return ToolResult(
                 success=False,
-                output=(
-                    f"Invalid trade indicator '{indicator}'. "
-                    f"Must be one of: {sorted(_TRADE_INDICATORS)}"
-                ),
+                output=(f"Invalid trade indicator '{indicator}'. Must be one of: {sorted(_TRADE_INDICATORS)}"),
             )
         return self._fetch_indicator(
             country,
@@ -360,10 +353,7 @@ class FoodSecurityTool(Tool):
         if not isinstance(body, list) or len(body) < 2 or body[1] is None:
             return ToolResult(
                 success=True,
-                output=(
-                    f"No data for {country} / {indicator_code} "
-                    f"({start_year}-{end_year})."
-                ),
+                output=(f"No data for {country} / {indicator_code} ({start_year}-{end_year})."),
                 data={
                     "records": [],
                     "country": country,
@@ -527,23 +517,15 @@ def _compute_signals(valid: list[dict], label: str) -> dict[str, Any]:
 
     # Stress alerts
     if "production" in label:
-        if (
-            signals.get("trend_direction") == "down"
-            and signals.get("consecutive_years", 0) >= 2
-        ):
+        if signals.get("trend_direction") == "down" and signals.get("consecutive_years", 0) >= 2:
             signals["stress_alert"] = "Production declining 2+ consecutive years"
         elif signals.get("deviation_from_avg_pct", 0) < -10:
-            signals["stress_alert"] = (
-                f"Production {signals['deviation_from_avg_pct']:.1f}% "
-                f"below period average"
-            )
+            signals["stress_alert"] = f"Production {signals['deviation_from_avg_pct']:.1f}% below period average"
 
     if "food_import" in label:
         if latest is not None and latest > 30:
             signals["vulnerability"] = "high"
-            signals["vulnerability_note"] = (
-                f"Food imports = {latest:.1f}% of merchandise imports"
-            )
+            signals["vulnerability_note"] = f"Food imports = {latest:.1f}% of merchandise imports"
         elif latest is not None and latest > 20:
             signals["vulnerability"] = "moderate"
 
@@ -572,14 +554,9 @@ def _format_summary(
             arrow = "↑" if signals["yoy_change_pct"] > 0 else "↓"
             parts.append(f"YoY change: {arrow} {signals['yoy_change_pct']}%")
         if "deviation_from_avg_pct" in signals:
-            parts.append(
-                f"Deviation from period avg: {signals['deviation_from_avg_pct']}%"
-            )
+            parts.append(f"Deviation from period avg: {signals['deviation_from_avg_pct']}%")
         if "trend_direction" in signals:
-            parts.append(
-                f"Trend: {signals['trend_direction']} "
-                f"for {signals['consecutive_years']} year(s)"
-            )
+            parts.append(f"Trend: {signals['trend_direction']} for {signals['consecutive_years']} year(s)")
         if "stress_alert" in signals:
             parts.append(f"⚠ STRESS: {signals['stress_alert']}")
         if "vulnerability" in signals:

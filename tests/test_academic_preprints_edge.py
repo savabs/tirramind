@@ -9,23 +9,19 @@ constants, registry + bandit.
 
 from __future__ import annotations
 
-import json
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
 
 from agent.tools.academic_preprints import (
-    AcademicPreprintsTool,
-    VALID_MODES,
-    _MARKET_CATEGORIES,
     _ARXIV_URL,
     _CT_URL,
+    _MARKET_CATEGORIES,
     _NS,
+    VALID_MODES,
+    AcademicPreprintsTool,
 )
-from agent.tools.base import ToolResult
-
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -200,9 +196,7 @@ class TestInputValidation:
         assert not r.success
 
     def test_extra_kwargs_ignored(self):
-        with patch.object(
-            AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML
-        ):
+        with patch.object(AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML):
             r = _tool().execute(mode="papers", query="quantum", bogus="thing")
             assert r.success
 
@@ -212,9 +206,7 @@ class TestInputValidation:
 
 class TestPapersMode:
     def test_basic_papers(self):
-        with patch.object(
-            AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML
-        ):
+        with patch.object(AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML):
             r = _tool().execute(mode="papers", query="quantum")
             assert r.success
             assert "papers" in r.data
@@ -222,9 +214,7 @@ class TestPapersMode:
             assert r.data["source"] == "arxiv"
 
     def test_papers_fields(self):
-        with patch.object(
-            AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML
-        ):
+        with patch.object(AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML):
             r = _tool().execute(mode="papers", query="quantum")
             p = r.data["papers"][0]
             assert p["id"] == "http://arxiv.org/abs/2401.00001v1"
@@ -235,16 +225,12 @@ class TestPapersMode:
             assert p["published"] == "2024-01-15T12:00:00Z"
 
     def test_papers_total(self):
-        with patch.object(
-            AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML
-        ):
+        with patch.object(AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML):
             r = _tool().execute(mode="papers", query="quantum")
             assert r.data["total"] == 42
 
     def test_papers_with_category(self):
-        with patch.object(
-            AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML
-        ) as mock:
+        with patch.object(AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML) as mock:
             r = _tool().execute(mode="papers", query="quantum", category="cs.AI")
             assert r.success
             # Check search_query includes category
@@ -252,18 +238,14 @@ class TestPapersMode:
             assert "cat:cs.AI" in call_params["search_query"]
 
     def test_papers_without_category(self):
-        with patch.object(
-            AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML
-        ) as mock:
+        with patch.object(AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML) as mock:
             r = _tool().execute(mode="papers", query="quantum")
             call_params = mock.call_args[0][1]
             assert "all:quantum" in call_params["search_query"]
             assert "cat:" not in call_params["search_query"]
 
     def test_papers_limit(self):
-        with patch.object(
-            AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML
-        ) as mock:
+        with patch.object(AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML) as mock:
             r = _tool().execute(mode="papers", query="test", limit=5)
             call_params = mock.call_args[0][1]
             assert call_params["max_results"] == "5"
@@ -275,18 +257,14 @@ class TestPapersMode:
             assert "Failed" in r.output
 
     def test_papers_summary_truncated(self):
-        with patch.object(
-            AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML
-        ):
+        with patch.object(AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML):
             r = _tool().execute(mode="papers", query="quantum")
             for p in r.data["papers"]:
                 if p["summary"]:
                     assert len(p["summary"]) <= 300
 
     def test_papers_authors_capped(self):
-        with patch.object(
-            AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML
-        ):
+        with patch.object(AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML):
             r = _tool().execute(mode="papers", query="quantum")
             for p in r.data["papers"]:
                 assert len(p["authors"]) <= 5
@@ -297,25 +275,19 @@ class TestPapersMode:
 
 class TestTrendingMode:
     def test_basic_trending(self):
-        with patch.object(
-            AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML
-        ):
+        with patch.object(AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML):
             r = _tool().execute(mode="trending")
             assert r.success
             assert r.data["source"] == "arxiv"
 
     def test_trending_with_category(self):
-        with patch.object(
-            AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML
-        ) as mock:
+        with patch.object(AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML) as mock:
             r = _tool().execute(mode="trending", category="cs.AI")
             call_params = mock.call_args[0][1]
             assert "cat:cs.AI" in call_params["search_query"]
 
     def test_trending_no_category_uses_market(self):
-        with patch.object(
-            AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML
-        ) as mock:
+        with patch.object(AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML) as mock:
             r = _tool().execute(mode="trending")
             call_params = mock.call_args[0][1]
             # Should include market categories
@@ -333,9 +305,7 @@ class TestTrendingMode:
 
 class TestTrialsMode:
     def test_basic_trials_by_condition(self):
-        with patch.object(
-            AcademicPreprintsTool, "_fetch_json", return_value=SAMPLE_CT_RESPONSE
-        ):
+        with patch.object(AcademicPreprintsTool, "_fetch_json", return_value=SAMPLE_CT_RESPONSE):
             r = _tool().execute(mode="trials", query="cancer")
             assert r.success
             assert "trials" in r.data
@@ -343,9 +313,7 @@ class TestTrialsMode:
             assert r.data["source"] == "clinicaltrials"
 
     def test_trials_fields(self):
-        with patch.object(
-            AcademicPreprintsTool, "_fetch_json", return_value=SAMPLE_CT_RESPONSE
-        ):
+        with patch.object(AcademicPreprintsTool, "_fetch_json", return_value=SAMPLE_CT_RESPONSE):
             r = _tool().execute(mode="trials", query="cancer")
             t = r.data["trials"][0]
             assert t["nct_id"] == "NCT12345678"
@@ -357,26 +325,20 @@ class TestTrialsMode:
             assert "Drug X 100mg" in t["interventions"]
 
     def test_trials_by_sponsor(self):
-        with patch.object(
-            AcademicPreprintsTool, "_fetch_json", return_value=SAMPLE_CT_RESPONSE
-        ) as mock:
+        with patch.object(AcademicPreprintsTool, "_fetch_json", return_value=SAMPLE_CT_RESPONSE) as mock:
             r = _tool().execute(mode="trials", sponsor="Pfizer")
             assert r.success
             call_params = mock.call_args[0][1]
             assert call_params["query.spons"] == "Pfizer"
 
     def test_trials_by_status(self):
-        with patch.object(
-            AcademicPreprintsTool, "_fetch_json", return_value=SAMPLE_CT_RESPONSE
-        ) as mock:
+        with patch.object(AcademicPreprintsTool, "_fetch_json", return_value=SAMPLE_CT_RESPONSE) as mock:
             r = _tool().execute(mode="trials", query="cancer", status="COMPLETED")
             call_params = mock.call_args[0][1]
             assert call_params["filter.overallStatus"] == "COMPLETED"
 
     def test_trials_total_count(self):
-        with patch.object(
-            AcademicPreprintsTool, "_fetch_json", return_value=SAMPLE_CT_RESPONSE
-        ):
+        with patch.object(AcademicPreprintsTool, "_fetch_json", return_value=SAMPLE_CT_RESPONSE):
             r = _tool().execute(mode="trials", query="cancer")
             assert r.data["total"] == 150
 
@@ -398,9 +360,7 @@ class TestTrialsMode:
     def test_trials_missing_modules(self):
         data = {
             "totalCount": 1,
-            "studies": [
-                {"protocolSection": {"identificationModule": {"nctId": "NCT000"}}}
-            ],
+            "studies": [{"protocolSection": {"identificationModule": {"nctId": "NCT000"}}}],
         }
         with patch.object(AcademicPreprintsTool, "_fetch_json", return_value=data):
             r = _tool().execute(mode="trials", query="test")
@@ -412,9 +372,7 @@ class TestTrialsMode:
             assert t["interventions"] == []
 
     def test_trials_interventions_capped(self):
-        many_interventions = {
-            "interventions": [{"name": f"Drug{i}"} for i in range(20)]
-        }
+        many_interventions = {"interventions": [{"name": f"Drug{i}"} for i in range(20)]}
         data = {
             "totalCount": 1,
             "studies": [
@@ -525,16 +483,12 @@ class TestHTTPErrors:
             assert not r.success
 
     def test_connection_error(self):
-        with patch.object(
-            AcademicPreprintsTool, "_fetch_text", side_effect=httpx.ConnectError("fail")
-        ):
+        with patch.object(AcademicPreprintsTool, "_fetch_text", side_effect=httpx.ConnectError("fail")):
             r = _tool().execute(mode="papers", query="test")
             assert not r.success
 
     def test_generic_exception(self):
-        with patch.object(
-            AcademicPreprintsTool, "_fetch_text", side_effect=RuntimeError("boom")
-        ):
+        with patch.object(AcademicPreprintsTool, "_fetch_text", side_effect=RuntimeError("boom")):
             r = _tool().execute(mode="papers", query="test")
             assert not r.success
             assert "Unexpected" in r.output
@@ -545,25 +499,19 @@ class TestHTTPErrors:
 
 class TestLimitClamping:
     def test_limit_low(self):
-        with patch.object(
-            AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML
-        ) as mock:
+        with patch.object(AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML) as mock:
             r = _tool().execute(mode="papers", query="test", limit=0)
             call_params = mock.call_args[0][1]
             assert call_params["max_results"] == "1"
 
     def test_limit_high(self):
-        with patch.object(
-            AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML
-        ) as mock:
+        with patch.object(AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML) as mock:
             r = _tool().execute(mode="papers", query="test", limit=999)
             call_params = mock.call_args[0][1]
             assert call_params["max_results"] == "50"
 
     def test_limit_string_coerced(self):
-        with patch.object(
-            AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML
-        ):
+        with patch.object(AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML):
             r = _tool().execute(mode="papers", query="test", limit="10")
             assert r.success
 
@@ -573,31 +521,23 @@ class TestLimitClamping:
 
 class TestOutputFormatting:
     def test_papers_output(self):
-        with patch.object(
-            AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML
-        ):
+        with patch.object(AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML):
             r = _tool().execute(mode="papers", query="quantum")
             assert "quantum" in r.output
             assert "arXiv" in r.output
 
     def test_trending_output(self):
-        with patch.object(
-            AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML
-        ):
+        with patch.object(AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML):
             r = _tool().execute(mode="trending")
             assert "Trending" in r.output or "trending" in r.output.lower()
 
     def test_trials_output(self):
-        with patch.object(
-            AcademicPreprintsTool, "_fetch_json", return_value=SAMPLE_CT_RESPONSE
-        ):
+        with patch.object(AcademicPreprintsTool, "_fetch_json", return_value=SAMPLE_CT_RESPONSE):
             r = _tool().execute(mode="trials", query="cancer")
             assert "clinical trial" in r.output.lower()
 
     def test_trials_output_mentions_sponsor(self):
-        with patch.object(
-            AcademicPreprintsTool, "_fetch_json", return_value=SAMPLE_CT_RESPONSE
-        ):
+        with patch.object(AcademicPreprintsTool, "_fetch_json", return_value=SAMPLE_CT_RESPONSE):
             r = _tool().execute(mode="trials", sponsor="Pfizer")
             assert "Pfizer" in r.output
 
@@ -607,7 +547,7 @@ class TestOutputFormatting:
 
 class TestConstants:
     def test_valid_modes(self):
-        assert VALID_MODES == {"papers", "trials", "trending"}
+        assert {"papers", "trials", "trending"} == VALID_MODES
 
     def test_market_categories(self):
         assert "q-fin" in _MARKET_CATEGORIES
@@ -689,9 +629,7 @@ class TestL2PersistenceNoStore(unittest.TestCase):
     def test_no_store_returns_zeros(self):
         tool = AcademicPreprintsTool()
         tool._store = None
-        counts = tool._persist_entities(
-            {"papers": [{"categories": ["cs.AI"], "title": "test"}]}, "papers"
-        )
+        counts = tool._persist_entities({"papers": [{"categories": ["cs.AI"], "title": "test"}]}, "papers")
         assert counts == {"research_velocity_obs": 0}
 
     def test_no_entity_id_fn_returns_zeros(self):
@@ -702,9 +640,7 @@ class TestL2PersistenceNoStore(unittest.TestCase):
         original = ap_mod._entity_id_from_key
         try:
             ap_mod._entity_id_from_key = None
-            counts = tool._persist_entities(
-                {"papers": [{"categories": ["cs.AI"]}]}, "papers"
-            )
+            counts = tool._persist_entities({"papers": [{"categories": ["cs.AI"]}]}, "papers")
             assert counts == {"research_velocity_obs": 0}
         finally:
             ap_mod._entity_id_from_key = original
@@ -936,9 +872,7 @@ class TestL2PersistenceExceptionHandling(unittest.TestCase):
         store = _make_store_mock()
         store.register_entity.side_effect = RuntimeError("DB failure")
         tool._store = store
-        counts = tool._persist_entities(
-            {"trials": [{"sponsor": "TestCo", "nct_id": "X"}]}, "trials"
-        )
+        counts = tool._persist_entities({"trials": [{"sponsor": "TestCo", "nct_id": "X"}]}, "trials")
         assert counts == {"research_velocity_obs": 0}
 
     def test_exception_does_not_propagate(self):
@@ -947,9 +881,7 @@ class TestL2PersistenceExceptionHandling(unittest.TestCase):
         store.store_entity_observation.side_effect = ValueError("bad value")
         tool._store = store
         # Should not raise
-        counts = tool._persist_entities(
-            {"papers": [{"categories": ["cs.AI"], "id": "err"}]}, "papers"
-        )
+        counts = tool._persist_entities({"papers": [{"categories": ["cs.AI"], "id": "err"}]}, "papers")
         assert counts == {"research_velocity_obs": 0}
 
 
@@ -977,9 +909,7 @@ class TestL2PersistenceEmptyData(unittest.TestCase):
     def test_unknown_mode_returns_zeros(self):
         tool = AcademicPreprintsTool()
         tool._store = _make_store_mock()
-        counts = tool._persist_entities(
-            {"papers": [{"categories": ["cs.AI"]}]}, "unknown_mode"
-        )
+        counts = tool._persist_entities({"papers": [{"categories": ["cs.AI"]}]}, "unknown_mode")
         assert counts["research_velocity_obs"] == 0
 
 

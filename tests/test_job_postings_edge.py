@@ -24,18 +24,17 @@ import httpx
 import pytest
 
 from agent.tools.job_postings import (
-    VALID_MODES,
-    JobPostingsTool,
     _CACHE_TTL,
     _JOLTS_SERIES,
     _LABOR_SERIES,
     _SECTOR_SERIES,
+    VALID_MODES,
+    JobPostingsTool,
     _compute_trend,
     _fetch_bls_series,
     _fetch_fred_series,
     _latest_value,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -113,7 +112,7 @@ def _mock_response(data: dict, status: int = 200) -> httpx.Response:
 
 class TestModeValidation:
     def test_valid_modes(self, tool):
-        assert VALID_MODES == {"jolts", "sector", "labor_market"}
+        assert {"jolts", "sector", "labor_market"} == VALID_MODES
 
     def test_empty_mode(self, tool):
         r = tool.execute(mode="")
@@ -150,9 +149,7 @@ class TestJoltsMode:
         mock_client = MagicMock()
         mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
-        mock_client.get.return_value = _mock_response(
-            _fred_response([_fred_obs("2025-01-01", "8000")])
-        )
+        mock_client.get.return_value = _mock_response(_fred_response([_fred_obs("2025-01-01", "8000")]))
 
         r = tool.execute(mode="jolts")
         assert r.success
@@ -242,12 +239,14 @@ class TestJoltsBLSFallback:
         mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
 
-        bls_data = _bls_response([
-            _bls_series("JTS000000000000000JOL", [_bls_obs()]),
-            _bls_series("JTS000000000000000QUL", [_bls_obs()]),
-            _bls_series("JTS000000000000000HIL", [_bls_obs()]),
-            _bls_series("JTS000000000000000LDL", [_bls_obs()]),
-        ])
+        bls_data = _bls_response(
+            [
+                _bls_series("JTS000000000000000JOL", [_bls_obs()]),
+                _bls_series("JTS000000000000000QUL", [_bls_obs()]),
+                _bls_series("JTS000000000000000HIL", [_bls_obs()]),
+                _bls_series("JTS000000000000000LDL", [_bls_obs()]),
+            ]
+        )
         mock_client.post.return_value = _mock_response(bls_data)
 
         r = tool_no_key.execute(mode="jolts")
@@ -258,9 +257,7 @@ class TestJoltsBLSFallback:
         mock_client = MagicMock()
         mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
-        mock_client.post.return_value = _mock_response(
-            _bls_response(status="REQUEST_FAILED")
-        )
+        mock_client.post.return_value = _mock_response(_bls_response(status="REQUEST_FAILED"))
 
         r = tool_no_key.execute(mode="jolts")
         assert r.success  # Returns with N/A values
@@ -298,10 +295,7 @@ class TestSectorMode:
         mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
 
-        series_data = [
-            _bls_series(sid, [_bls_obs(value=str(i * 100))])
-            for i, sid in enumerate(_SECTOR_SERIES.keys())
-        ]
+        series_data = [_bls_series(sid, [_bls_obs(value=str(i * 100))]) for i, sid in enumerate(_SECTOR_SERIES.keys())]
         mock_client.post.return_value = _mock_response(_bls_response(series_data))
 
         r = tool.execute(mode="sector")
@@ -331,8 +325,7 @@ class TestSectorMode:
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
 
         series_data = [
-            _bls_series(sid, [_bls_obs(value=str((i + 1) * 500))])
-            for i, sid in enumerate(_SECTOR_SERIES.keys())
+            _bls_series(sid, [_bls_obs(value=str((i + 1) * 500))]) for i, sid in enumerate(_SECTOR_SERIES.keys())
         ]
         mock_client.post.return_value = _mock_response(_bls_response(series_data))
 
@@ -468,9 +461,7 @@ class TestFetchFredSeries:
         mock_client = MagicMock()
         mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
-        mock_client.get.return_value = _mock_response(
-            _fred_response([_fred_obs("2025-01-01", "100")])
-        )
+        mock_client.get.return_value = _mock_response(_fred_response([_fred_obs("2025-01-01", "100")]))
 
         result = _fetch_fred_series("JTSJOL", "key")
         assert len(result) == 1
@@ -482,12 +473,14 @@ class TestFetchFredSeries:
         mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
         mock_client.get.return_value = _mock_response(
-            _fred_response([
-                _fred_obs("2025-01-01", "100"),
-                {"date": "2024-12-01", "value": "."},
-                {"date": "2024-11-01", "value": ""},
-                {"date": "2024-10-01", "value": "95"},
-            ])
+            _fred_response(
+                [
+                    _fred_obs("2025-01-01", "100"),
+                    {"date": "2024-12-01", "value": "."},
+                    {"date": "2024-11-01", "value": ""},
+                    {"date": "2024-10-01", "value": "95"},
+                ]
+            )
         )
 
         result = _fetch_fred_series("JTSJOL", "key")
@@ -528,9 +521,11 @@ class TestFetchBLSSeries:
         mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
 
-        bls_data = _bls_response([
-            _bls_series("SER1", [_bls_obs("2025", "M01", "100")]),
-        ])
+        bls_data = _bls_response(
+            [
+                _bls_series("SER1", [_bls_obs("2025", "M01", "100")]),
+            ]
+        )
         mock_client.post.return_value = _mock_response(bls_data)
 
         result = _fetch_bls_series(["SER1"], start_year=2024, end_year=2025)
@@ -544,13 +539,18 @@ class TestFetchBLSSeries:
         mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
 
-        bls_data = _bls_response([
-            _bls_series("SER1", [
-                _bls_obs("2025", "M01", "100"),
-                {"year": "2025", "period": "Q01", "value": "300"},  # quarterly
-                {"year": "2025", "period": "A01", "value": "1200"},  # annual
-            ]),
-        ])
+        bls_data = _bls_response(
+            [
+                _bls_series(
+                    "SER1",
+                    [
+                        _bls_obs("2025", "M01", "100"),
+                        {"year": "2025", "period": "Q01", "value": "300"},  # quarterly
+                        {"year": "2025", "period": "A01", "value": "1200"},  # annual
+                    ],
+                ),
+            ]
+        )
         mock_client.post.return_value = _mock_response(bls_data)
 
         result = _fetch_bls_series(["SER1"], start_year=2024, end_year=2025)
@@ -561,9 +561,7 @@ class TestFetchBLSSeries:
         mock_client = MagicMock()
         mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
-        mock_client.post.return_value = _mock_response(
-            _bls_response(status="REQUEST_FAILED")
-        )
+        mock_client.post.return_value = _mock_response(_bls_response(status="REQUEST_FAILED"))
 
         result = _fetch_bls_series(["SER1"], start_year=2024, end_year=2025)
         assert result == {}
@@ -645,15 +643,18 @@ class TestConstants:
 class TestIntegration:
     def test_tool_count(self):
         from agent.cli import build_tool_registry
+
         reg = build_tool_registry()
         assert len(reg.list_names()) == 60
 
     def test_arm_count(self):
         from agent.learning.bandit import DEFAULT_ARMS
+
         assert len(DEFAULT_ARMS) == 48
 
     def test_tool_registered(self):
         from agent.cli import build_tool_registry
+
         reg = build_tool_registry()
         names = reg.list_names()
         assert "job_postings" in names

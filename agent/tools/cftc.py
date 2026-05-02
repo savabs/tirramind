@@ -25,8 +25,8 @@ from agent.data.cache import DataCache
 from agent.tools.base import Tool, ToolResult
 
 try:
-    from agent.pipeline.store import PipelineStore
     from agent.pipeline.entity import entity_id_from_key
+    from agent.pipeline.store import PipelineStore
 except ImportError:  # pragma: no cover — optional dependency
     PipelineStore = None  # type: ignore[assignment,misc]
     entity_id_from_key = None  # type: ignore[assignment]
@@ -521,19 +521,11 @@ class CFTCTool(Tool):
 
         if contract_filter:
             filt = contract_filter.lower()
-            result = [
-                r
-                for r in result
-                if filt in r.get("Market_and_Exchange_Names", "").lower()
-            ]
+            result = [r for r in result if filt in r.get("Market_and_Exchange_Names", "").lower()]
 
         if code_filter:
             code = code_filter.strip()
-            result = [
-                r
-                for r in result
-                if r.get("CFTC_Contract_Market_Code", "").strip() == code
-            ]
+            result = [r for r in result if r.get("CFTC_Contract_Market_Code", "").strip() == code]
 
         # Sort by open interest descending
         result.sort(key=lambda r: r.get("Open_Interest_All") or 0, reverse=True)
@@ -555,9 +547,7 @@ class CFTCTool(Tool):
             row["_mm_net"] = mm_long - mm_short
             row["_pm_net"] = pm_long - pm_short
             row["_swap_net"] = swap_long - swap_short
-            row["_mm_net_pct_oi"] = (
-                round((mm_long - mm_short) / oi * 100, 2) if oi > 0 else 0.0
-            )
+            row["_mm_net_pct_oi"] = round((mm_long - mm_short) / oi * 100, 2) if oi > 0 else 0.0
 
             # Weekly changes
             chg_mm_long = row.get("Change_in_M_Money_Long_All") or 0
@@ -598,7 +588,7 @@ class CFTCTool(Tool):
 
     def _persist_entities_inner(self, rows: list[dict[str, Any]]) -> dict[str, int]:
         """Inner persistence logic separated for testability."""
-        from agent.tools.instrument_universe import cftc_code_to_ticker, _entity_id
+        from agent.tools.instrument_universe import _entity_id, cftc_code_to_ticker
 
         assert self._store is not None  # noqa: S101 — guarded by caller
         store = self._store
@@ -703,10 +693,7 @@ class CFTCTool(Tool):
 
             lines.append(f"  {name}")
             lines.append(f"    OI: {oi:>12,}  ΔOI: {oi_chg:>+10,}  {units}")
-            lines.append(
-                f"    MM net: {mm_net:>+10,} ({mm_pct:>+.1f}% OI)  "
-                f"ΔMM: {mm_flow:>+10,}"
-            )
+            lines.append(f"    MM net: {mm_net:>+10,} ({mm_pct:>+.1f}% OI)  ΔMM: {mm_flow:>+10,}")
             lines.append(f"    PM net: {pm_net:>+10,}  Swap net: {swap_net:>+10,}")
             if c4l is not None or c4s is not None:
                 c4l_s = f"{c4l:.1f}%" if c4l is not None else "n/a"

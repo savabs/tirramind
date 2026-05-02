@@ -23,7 +23,7 @@ from __future__ import annotations
 import logging
 import math
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
 
@@ -168,9 +168,7 @@ class WikipediaPageviewsTool(Tool):
             },
             "date": {
                 "type": "string",
-                "description": (
-                    "Date for 'top' mode (YYYY-MM-DD). Defaults to yesterday."
-                ),
+                "description": ("Date for 'top' mode (YYYY-MM-DD). Defaults to yesterday."),
                 "default": "",
             },
             "z_threshold": {
@@ -253,7 +251,7 @@ class WikipediaPageviewsTool(Tool):
     ) -> ToolResult:
         watchlist = self._parse_articles(articles) or list(_DEFAULT_WATCHLIST)
 
-        yesterday = datetime.now(timezone.utc) - timedelta(days=1)
+        yesterday = datetime.now(UTC) - timedelta(days=1)
         start = yesterday - timedelta(days=days_back)
         start_str = start.strftime("%Y%m%d")
         end_str = yesterday.strftime("%Y%m%d")
@@ -379,11 +377,7 @@ class WikipediaPageviewsTool(Tool):
             # Parse date string (YYYYMMDD) to timestamp
             date_str = spike.get("date", "")
             try:
-                ts = (
-                    datetime.strptime(date_str, "%Y%m%d")
-                    .replace(tzinfo=timezone.utc)
-                    .timestamp()
-                )
+                ts = datetime.strptime(date_str, "%Y%m%d").replace(tzinfo=UTC).timestamp()
             except (ValueError, AttributeError):
                 ts = time.time()
 
@@ -422,7 +416,7 @@ class WikipediaPageviewsTool(Tool):
                     output=f"Invalid date '{date}'. Use YYYY-MM-DD format.",
                 )
         else:
-            dt = datetime.now(timezone.utc) - timedelta(days=1)
+            dt = datetime.now(UTC) - timedelta(days=1)
 
         year, month, day = dt.strftime("%Y"), dt.strftime("%m"), dt.strftime("%d")
         url = f"{_BASE}/metrics/pageviews/top/{project}/all-access/{year}/{month}/{day}"
@@ -511,7 +505,7 @@ class WikipediaPageviewsTool(Tool):
             )
         title = parsed[0]
 
-        yesterday = datetime.now(timezone.utc) - timedelta(days=1)
+        yesterday = datetime.now(UTC) - timedelta(days=1)
         start = yesterday - timedelta(days=days_back)
         start_str = start.strftime("%Y%m%d")
         end_str = yesterday.strftime("%Y%m%d")
@@ -546,10 +540,8 @@ class WikipediaPageviewsTool(Tool):
 
         lines = [
             f"Wikipedia Pageviews: {title.replace('_', ' ')} ({project})",
-            f"Period: {items[0]['timestamp'][:8]} — {items[-1]['timestamp'][:8]} "
-            f"({len(items)} days)",
-            f"Mean: {mean:,.0f}/day  Std: {std:,.0f}  "
-            f"Min: {min(views):,}  Max: {max(views):,}",
+            f"Period: {items[0]['timestamp'][:8]} — {items[-1]['timestamp'][:8]} ({len(items)} days)",
+            f"Mean: {mean:,.0f}/day  Std: {std:,.0f}  Min: {min(views):,}  Max: {max(views):,}",
             "",
         ]
         for it in items:
@@ -559,9 +551,7 @@ class WikipediaPageviewsTool(Tool):
             flag = " <<<" if z > 2.0 else ""
             lines.append(f"  {it['timestamp'][:8]}  {v:>8,}  {bar}{flag}")
 
-        series_data = [
-            {"date": it["timestamp"][:8], "views": it["views"]} for it in items
-        ]
+        series_data = [{"date": it["timestamp"][:8], "views": it["views"]} for it in items]
 
         return ToolResult(
             success=True,
@@ -600,10 +590,7 @@ class WikipediaPageviewsTool(Tool):
                 return cached
 
         encoded = quote(title, safe="")
-        url = (
-            f"{_BASE}/metrics/pageviews/per-article/"
-            f"{project}/all-access/user/{encoded}/daily/{start}/{end}"
-        )
+        url = f"{_BASE}/metrics/pageviews/per-article/{project}/all-access/user/{encoded}/daily/{start}/{end}"
         resp = client.get(url)
         if resp.status_code == 404:
             # Article doesn't exist in this project

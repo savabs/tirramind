@@ -9,7 +9,6 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-
 WORKFLOW_PREFIXES = (
     "docs/research/",
     "docs/specs/",
@@ -29,11 +28,7 @@ class TaskMetadata:
 
 def _normalize_repo_path(path: str | Path, repo_root: Path) -> str:
     raw_path = Path(path)
-    candidate_path = (
-        raw_path.resolve()
-        if raw_path.is_absolute()
-        else (repo_root / raw_path).resolve()
-    )
+    candidate_path = raw_path.resolve() if raw_path.is_absolute() else (repo_root / raw_path).resolve()
     try:
         relative_path = candidate_path.relative_to(repo_root.resolve())
     except ValueError as exc:
@@ -72,9 +67,7 @@ def parse_task_metadata(repo_root: Path, task_file: str | Path) -> TaskMetadata:
     """Parse task metadata from a task tracking file."""
     task_relative = _normalize_repo_path(task_file, repo_root)
     if not task_relative.startswith("tasks/active/"):
-        raise ValueError(
-            "Task file must live under tasks/active/ for workflow enforcement"
-        )
+        raise ValueError("Task file must live under tasks/active/ for workflow enforcement")
 
     task_path = repo_root / task_relative
     if not task_path.exists():
@@ -112,11 +105,7 @@ def parse_task_metadata(repo_root: Path, task_file: str | Path) -> TaskMetadata:
 def infer_task_from_changed_files(changed_files: list[str]) -> str | None:
     """Infer the task when exactly one task file is part of the change set."""
     task_candidates = sorted(
-        {
-            path
-            for path in changed_files
-            if path.startswith("tasks/active/") and path.endswith(".md")
-        }
+        {path for path in changed_files if path.startswith("tasks/active/") and path.endswith(".md")}
     )
     if len(task_candidates) == 1:
         return task_candidates[0]
@@ -167,9 +156,7 @@ def validate_preflight(
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the CLI parser for the workflow guard."""
-    parser = argparse.ArgumentParser(
-        description="Validate TirraMind workflow preflight before implementation commits"
-    )
+    parser = argparse.ArgumentParser(description="Validate TirraMind workflow preflight before implementation commits")
     parser.add_argument(
         "paths",
         nargs="*",

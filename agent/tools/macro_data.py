@@ -160,9 +160,7 @@ class MacroDataTool(Tool):
                 "start_date": start_date,
                 "end_date": end_date,
             }
-            cached = (
-                self._cache.get("macro_data", cache_params) if self._cache else None
-            )
+            cached = self._cache.get("macro_data", cache_params) if self._cache else None
 
             if cached is not None:
                 log.debug("Cache hit for %s", sid)
@@ -199,9 +197,7 @@ class MacroDataTool(Tool):
             results.append(f"[{sid}] {summary}")
 
             if self._cache:
-                self._cache.put(
-                    "macro_data", cache_params, {"summary": summary, "data": clean}
-                )
+                self._cache.put("macro_data", cache_params, {"summary": summary, "data": clean})
 
         output = "\n\n".join(results) if results else "No data returned for any series."
         return ToolResult(success=bool(all_data), output=output, data=all_data)
@@ -232,9 +228,7 @@ class MacroDataTool(Tool):
             error_msg = data.get("error_message", "Unknown FRED API error")
             raise ValueError(error_msg)
 
-        return [
-            {"date": obs["date"], "value": obs["value"]} for obs in data["observations"]
-        ]
+        return [{"date": obs["date"], "value": obs["value"]} for obs in data["observations"]]
 
     # ── ECB ─────────────────────────────────────────────────────
 
@@ -264,9 +258,7 @@ class MacroDataTool(Tool):
                 continue
 
             cache_params = {"ecb": sdmx_key, "start": start_date, "end": end_date}
-            cached = (
-                self._cache.get("macro_data", cache_params) if self._cache else None
-            )
+            cached = self._cache.get("macro_data", cache_params) if self._cache else None
             if cached is not None:
                 log.debug("Cache hit for ECB %s", sdmx_key)
                 results.append(f"[{sid}] (cached) {cached['summary']}")
@@ -302,9 +294,7 @@ class MacroDataTool(Tool):
                     {"summary": summary, "data": observations},
                 )
 
-        output = (
-            "\n\n".join(results) if results else "No data returned for any ECB series."
-        )
+        output = "\n\n".join(results) if results else "No data returned for any ECB series."
         return ToolResult(success=bool(all_data), output=output, data=all_data)
 
     def _fetch_ecb(
@@ -321,9 +311,7 @@ class MacroDataTool(Tool):
         if end_date:
             params["endPeriod"] = end_date[:10]
 
-        with httpx.Client(
-            timeout=_TIMEOUT, headers={"User-Agent": "TirraMind/0.1"}
-        ) as client:
+        with httpx.Client(timeout=_TIMEOUT, headers={"User-Agent": "TirraMind/0.1"}) as client:
             resp = client.get(url, params=params)
             resp.raise_for_status()
 
@@ -344,9 +332,7 @@ class MacroDataTool(Tool):
 
         # Time dimension values
         time_values = obs_dims[0].get("values", [])
-        time_index = {
-            str(i): v.get("id", v.get("name", "")) for i, v in enumerate(time_values)
-        }
+        time_index = {str(i): v.get("id", v.get("name", "")) for i, v in enumerate(time_values)}
 
         # Collect observations from all series
         observations: list[dict[str, str]] = []
@@ -392,9 +378,7 @@ class MacroDataTool(Tool):
             )
 
         try:
-            observations = self._fetch_world_bank(
-                indicator, country, start_date, end_date
-            )
+            observations = self._fetch_world_bank(indicator, country, start_date, end_date)
         except Exception as exc:
             log.exception("World Bank fetch failed for %s", indicator)
             return ToolResult(success=False, output=f"World Bank API error: {exc}")
@@ -415,9 +399,7 @@ class MacroDataTool(Tool):
         for cc in sorted(by_country.keys()):
             cdata = by_country[cc]
             last = cdata[-1]
-            lines.append(
-                f"  {cc}: {len(cdata)} obs, latest {last['date']} → {last['value']}"
-            )
+            lines.append(f"  {cc}: {len(cdata)} obs, latest {last['date']} → {last['value']}")
 
         summary = f"{len(observations)} observations across {len(by_country)} countries"
         output = f"[{indicator}] {summary}\n" + "\n".join(lines[:20])
@@ -425,9 +407,7 @@ class MacroDataTool(Tool):
             output += f"\n  ... and {len(lines) - 20} more countries"
 
         if self._cache:
-            self._cache.put(
-                "macro_data", cache_params, {"summary": summary, "data": by_country}
-            )
+            self._cache.put("macro_data", cache_params, {"summary": summary, "data": by_country})
 
         return ToolResult(success=True, output=output, data=by_country)
 
@@ -443,15 +423,11 @@ class MacroDataTool(Tool):
         url = f"{_WB_BASE}/country/{country_path}/indicator/{indicator}"
         params: dict[str, str] = {"format": "json", "per_page": "300"}
         if start_date:
-            params["date"] = (
-                f"{start_date[:4]}:{end_date[:4]}" if end_date else start_date[:4]
-            )
+            params["date"] = f"{start_date[:4]}:{end_date[:4]}" if end_date else start_date[:4]
         elif end_date:
             params["date"] = end_date[:4]
 
-        with httpx.Client(
-            timeout=_TIMEOUT, headers={"User-Agent": "TirraMind/0.1"}
-        ) as client:
+        with httpx.Client(timeout=_TIMEOUT, headers={"User-Agent": "TirraMind/0.1"}) as client:
             resp = client.get(url, params=params)
             resp.raise_for_status()
 
@@ -471,9 +447,7 @@ class MacroDataTool(Tool):
                 continue
             observations.append(
                 {
-                    "country_code": rec.get(
-                        "countryiso3code", rec.get("country", {}).get("id", "")
-                    ),
+                    "country_code": rec.get("countryiso3code", rec.get("country", {}).get("id", "")),
                     "country": rec.get("country", {}).get("value", ""),
                     "date": str(rec.get("date", "")),
                     "value": str(value),

@@ -9,7 +9,6 @@ malformed data, monitor mode, output formatting, registry + bandit.
 
 from __future__ import annotations
 
-import math
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -17,15 +16,13 @@ import httpx
 import pytest
 
 from agent.tools.earthquake_proximity import (
-    EarthquakeProximityTool,
     CRITICAL_INFRA,
+    EarthquakeProximityTool,
     _find_nearby_infra,
     _format_quake,
     _haversine_km,
     _mag_label,
 )
-from agent.tools.base import ToolResult
-
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -256,9 +253,7 @@ class TestFindNearbyInfra:
         for infra in CRITICAL_INFRA:
             result = _find_nearby_infra(infra["lat"], infra["lon"])
             names = [r["name"] for r in result]
-            assert (
-                infra["name"] in names
-            ), f"{infra['name']} not findable at its own center"
+            assert infra["name"] in names, f"{infra['name']} not findable at its own center"
 
 
 class TestFormatQuake:

@@ -80,9 +80,7 @@ class EntityBaseline:
             return 0.0  # constant baseline → no abnormality measurable
         return (current_value - mu) / sigma
 
-    def cumulative_abnormal_score(
-        self, entity_id: str, values: list[float]
-    ) -> float | None:
+    def cumulative_abnormal_score(self, entity_id: str, values: list[float]) -> float | None:
         """Compute CAR (cumulative abnormal score) over an event window.
 
         Returns None if insufficient history for baseline.
@@ -124,8 +122,6 @@ class EntityBaseline:
         if n < self._min_obs:
             return None
         mu = sum(est_values) / n
-        variance = sum((x - mu) ** 2 for x in est_values) / (
-            n - 1
-        )  # Bessel's correction
+        variance = sum((x - mu) ** 2 for x in est_values) / (n - 1)  # Bessel's correction
         sigma = math.sqrt(variance)
         return mu, sigma

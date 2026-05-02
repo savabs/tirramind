@@ -20,8 +20,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from agent.tools.interconnection_queue import (
-    ENERGY_SOURCES,
-    STATUS_MAP,
     VALID_MODES,
     InterconnectionQueueTool,
     _fetch_generators,
@@ -30,8 +28,6 @@ from agent.tools.interconnection_queue import (
     _status_to_eia,
     _summarize_pipeline,
 )
-from agent.tools.base import ToolResult
-
 
 # ── FIXTURES ──
 
@@ -105,7 +101,7 @@ class TestModeValidation:
         assert not r.success
 
     def test_valid_modes_constant(self):
-        assert VALID_MODES == {"queue", "summary", "datacenter"}
+        assert {"queue", "summary", "datacenter"} == VALID_MODES
 
     def test_no_api_key(self, tool_no_key):
         r = tool_no_key.execute(mode="queue")
@@ -472,9 +468,7 @@ class TestHelpers:
 class TestFetchGenerators:
     @patch("agent.tools.interconnection_queue.httpx.get")
     def test_success(self, mock_get):
-        mock_get.return_value = _mock_response(
-            200, json_data={"response": {"data": [{"value": 42}]}}
-        )
+        mock_get.return_value = _mock_response(200, json_data={"response": {"data": [{"value": 42}]}})
         result = _fetch_generators({"status": ["PL"]}, "key")
         assert result is not None
         assert len(result) == 1

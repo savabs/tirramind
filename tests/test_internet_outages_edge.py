@@ -16,27 +16,24 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import httpx
-import pytest
 
 from agent.tools.internet_outages import (
-    InternetOutagesTool,
-    VALID_MODES,
-    VALID_TESTS,
+    _CACHE_TTL,
     _OONI_BASE,
     _RIPE_BASE,
-    _CACHE_TTL,
-    _resolve_dates,
-    _parse_ooni_measurements,
-    _censorship_signals,
-    _format_censorship,
-    _extract_aggregation,
+    VALID_MODES,
+    VALID_TESTS,
+    InternetOutagesTool,
     _aggregation_signals,
-    _parse_ripe_probes,
-    _network_health_signals,
+    _censorship_signals,
+    _extract_aggregation,
+    _format_censorship,
     _format_network_health,
+    _network_health_signals,
+    _parse_ooni_measurements,
+    _parse_ripe_probes,
+    _resolve_dates,
 )
-from agent.tools.base import ToolResult
-
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -840,7 +837,7 @@ class TestCache:
 
 class TestConstants:
     def test_valid_modes(self):
-        assert VALID_MODES == {"censorship", "network_health", "outage_detection"}
+        assert {"censorship", "network_health", "outage_detection"} == VALID_MODES
 
     def test_valid_tests_include_key_protocols(self):
         assert "web_connectivity" in VALID_TESTS
@@ -875,9 +872,7 @@ class TestRegistryAndBandit:
     def test_bandit_arm_references_tool(self):
         from agent.learning.bandit import DEFAULT_ARMS
 
-        arm = next(
-            a for a in DEFAULT_ARMS if a.name == "internet_infrastructure_monitor"
-        )
+        arm = next(a for a in DEFAULT_ARMS if a.name == "internet_infrastructure_monitor")
         assert "internet_outages" in arm.tools
 
 
@@ -917,9 +912,7 @@ class TestEdgeCombinations:
         assert r.data["signals"]["total_probes"] == 0
 
     def test_high_anomaly_count(self):
-        measurements = [_ooni_measurement(anomaly=True) for _ in range(80)] + [
-            _ooni_measurement() for _ in range(20)
-        ]
+        measurements = [_ooni_measurement(anomaly=True) for _ in range(80)] + [_ooni_measurement() for _ in range(20)]
         with patch("httpx.Client") as mc:
             mc.return_value.__enter__ = lambda s: s
             mc.return_value.__exit__ = MagicMock(return_value=False)

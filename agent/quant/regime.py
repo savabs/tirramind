@@ -13,9 +13,9 @@ from hmmlearn.hmm import GaussianHMM
 class RegimeResult:
     """Result of HMM regime fitting."""
 
-    states: np.ndarray           # (T,) — state labels per timestep
-    means: np.ndarray            # (K,) — state means (sorted ascending)
-    variances: np.ndarray        # (K,) — state variances
+    states: np.ndarray  # (T,) — state labels per timestep
+    means: np.ndarray  # (K,) — state means (sorted ascending)
+    variances: np.ndarray  # (K,) — state variances
     transition_matrix: np.ndarray  # (K, K) — row-stochastic
     log_likelihood: float
 
@@ -125,9 +125,7 @@ class RegimeHMM:
             label_map[old_label] = new_label
         return label_map[raw_states]
 
-    def _build_result(
-        self, model: GaussianHMM, raw_states: np.ndarray, ll: float
-    ) -> RegimeResult:
+    def _build_result(self, model: GaussianHMM, raw_states: np.ndarray, ll: float) -> RegimeResult:
         """Relabel states by ascending mean and build result."""
         raw_means = model.means_.ravel()
         raw_vars = model.covars_.reshape(self.n_states, -1)[:, 0]  # diagonal elements

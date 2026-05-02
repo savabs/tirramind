@@ -23,7 +23,7 @@ import logging
 import time
 import zipfile
 from collections import Counter
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -112,7 +112,6 @@ _COL = {
 
 
 class GDELTTool(Tool):
-
     name = "gdelt"
 
     description = (
@@ -261,9 +260,7 @@ class GDELTTool(Tool):
         entities with the correct historical observed_at timestamp from the
         event's own date field.  Cached batches are not re-fetched.
         """
-        timestamps = self._compute_historical_sample_timestamps(
-            days_back, sample_every_days
-        )
+        timestamps = self._compute_historical_sample_timestamps(days_back, sample_every_days)
         if not timestamps:
             return ToolResult(
                 success=True,
@@ -286,9 +283,7 @@ class GDELTTool(Tool):
                     try:
                         resp = client.get(url)
                         if resp.status_code == 404:
-                            log.debug(
-                                "GDELT historical batch %s not found — skipping", ts
-                            )
+                            log.debug("GDELT historical batch %s not found — skipping", ts)
                             continue
                         resp.raise_for_status()
                         with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
@@ -315,9 +310,7 @@ class GDELTTool(Tool):
                 try:
                     self._persist_entities(events)
                 except Exception:
-                    log.exception(
-                        "GDELT backfill persist failed for ts %s (non-fatal)", ts
-                    )
+                    log.exception("GDELT backfill persist failed for ts %s (non-fatal)", ts)
 
         num_samples = len(timestamps)
         return ToolResult(
@@ -331,14 +324,12 @@ class GDELTTool(Tool):
         )
 
     @staticmethod
-    def _compute_historical_sample_timestamps(
-        days_back: int, sample_every_days: int
-    ) -> list[str]:
+    def _compute_historical_sample_timestamps(days_back: int, sample_every_days: int) -> list[str]:
         """Return GDELT batch timestamps sampled every sample_every_days going back days_back.
 
         Uses noon UTC per sample so batches are almost certainly already archived.
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         samples: list[str] = []
         offset = days_back
         while offset > 0:
@@ -376,10 +367,7 @@ class GDELTTool(Tool):
         if not raw_batches:
             return ToolResult(
                 success=True,
-                output=(
-                    "No GDELT event batches available. "
-                    "The most recent batches may not be published yet."
-                ),
+                output=("No GDELT event batches available. The most recent batches may not be published yet."),
                 data={"events": [], "summary": {}},
             )
 
@@ -393,16 +381,10 @@ class GDELTTool(Tool):
             events = [e for e in events if e["quad_class"] in (1, 2)]
 
         if country_filter:
-            events = [
-                e for e in events if e["location"]["country"].upper() == country_filter
-            ]
+            events = [e for e in events if e["location"]["country"].upper() == country_filter]
 
         if min_goldstein is not None:
-            events = [
-                e
-                for e in events
-                if e["goldstein"] is not None and e["goldstein"] <= min_goldstein
-            ]
+            events = [e for e in events if e["goldstein"] is not None and e["goldstein"] <= min_goldstein]
 
         if event_codes:
             codes_set = {c.strip() for c in event_codes.split(",")}
@@ -420,9 +402,7 @@ class GDELTTool(Tool):
         events = events[:limit]
 
         # ── Summary stats ────────────────────────────────────────────
-        country_counts = Counter(
-            e["location"]["country"] for e in events if e["location"]["country"]
-        )
+        country_counts = Counter(e["location"]["country"] for e in events if e["location"]["country"])
         top_countries = country_counts.most_common(10)
 
         summary = {
@@ -443,8 +423,7 @@ class GDELTTool(Tool):
             return ToolResult(
                 success=True,
                 output=(
-                    f"GDELT: {total_raw} events fetched from "
-                    f"{len(raw_batches)} batches, but none matched filters."
+                    f"GDELT: {total_raw} events fetched from {len(raw_batches)} batches, but none matched filters."
                 ),
                 data={"events": [], "summary": summary},
             )
@@ -456,10 +435,7 @@ class GDELTTool(Tool):
                 f"(from {total_raw} total, {len(raw_batches)} batches, "
                 f"{hours_back}h lookback):"
             ),
-            (
-                f"Top countries: "
-                f"{', '.join(f'{c} ({n})' for c, n in top_countries[:5])}"
-            ),
+            (f"Top countries: {', '.join(f'{c} ({n})' for c, n in top_countries[:5])}"),
             "",
         ]
         for i, e in enumerate(events[:30], 1):
@@ -475,10 +451,7 @@ class GDELTTool(Tool):
             )
 
         if len(events) > 30:
-            lines.append(
-                f"\n  ... and {len(events) - 30} more events "
-                f"(see data for full list)"
-            )
+            lines.append(f"\n  ... and {len(events) - 30} more events (see data for full list)")
 
         # L2: entity persistence
         try:
@@ -559,7 +532,7 @@ class GDELTTool(Tool):
         Returns list of 'YYYYMMDDHHMMSS' strings. Starts one batch
         behind current time to avoid fetching a batch not yet published.
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         # Round down to nearest 15-min boundary
         minute = (now.minute // 15) * 15
         current = now.replace(minute=minute, second=0, microsecond=0)
@@ -608,9 +581,7 @@ class GDELTTool(Tool):
                         },
                         "event_code": cols[_COL["event_code"]].strip(),
                         "event_root": event_root,
-                        "event_description": CAMEO_ROOT_CODES.get(
-                            event_root, f"Code {event_root}"
-                        ),
+                        "event_description": CAMEO_ROOT_CODES.get(event_root, f"Code {event_root}"),
                         "quad_class": quad,
                         "quad_label": QUAD_LABELS.get(quad, "Unknown"),
                         "goldstein": goldstein,
@@ -664,10 +635,7 @@ class GDELTTool(Tool):
         for i, art in enumerate(articles[:30], 1):
             tone = art.get("tone")
             tone_str = f"tone={tone:+.1f}" if tone is not None else ""
-            lines.append(
-                f"  {i}. {art['title']}\n"
-                f"     {art['domain']} | {art['seendate'][:10]} | {tone_str}"
-            )
+            lines.append(f"  {i}. {art['title']}\n     {art['domain']} | {art['seendate'][:10]} | {tone_str}")
 
         if len(articles) > 30:
             lines.append(f"\n  ... and {len(articles) - 30} more articles")
@@ -735,7 +703,7 @@ class GDELTTool(Tool):
 
     def _persist_entities_inner(self, events: list[dict[str, Any]]) -> None:
         seen: set[str] = set()
-        now_ts = datetime.now(timezone.utc).timestamp()
+        now_ts = datetime.now(UTC).timestamp()
         for ev in events:
             event_id = ev.get("id", "")
             raw_date = ev.get("date", "")
@@ -751,7 +719,7 @@ class GDELTTool(Tool):
                         12,
                         0,
                         0,
-                        tzinfo=timezone.utc,
+                        tzinfo=UTC,
                     )
                     observed_ts = dt.timestamp()
                 except ValueError:

@@ -19,7 +19,6 @@ from agent.models.gnn.graph_builder import (
 from agent.pipeline.entity import entity_id_from_key
 from agent.pipeline.store import PipelineStore
 
-
 # ── Fixtures ──────────────────────────────────────────────────────
 
 

@@ -24,7 +24,7 @@ References:
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -110,17 +110,12 @@ class CausalStructureDiscovery:
         if data.ndim != 2:
             raise ValueError(f"data must be 2D, got {data.ndim}D")
         T, N = data.shape
-        if T < self._min_samples:
-            raise ValueError(
-                f"Insufficient samples: {T} < min_samples={self._min_samples}"
-            )
+        if self._min_samples > T:
+            raise ValueError(f"Insufficient samples: {T} < min_samples={self._min_samples}")
         if N < 2:
             raise ValueError(f"Need at least 2 variables, got {N}")
         if len(variable_names) != N:
-            raise ValueError(
-                f"variable_names length ({len(variable_names)}) != "
-                f"number of columns ({N})"
-            )
+            raise ValueError(f"variable_names length ({len(variable_names)}) != number of columns ({N})")
         # Check for all-NaN columns
         nan_cols = np.all(np.isnan(data), axis=0)
         if np.any(nan_cols):
@@ -214,11 +209,7 @@ class CausalStructureDiscovery:
         expert_edges = set(expert.edges)
 
         # Contemporaneous directed edges from discovery
-        disc_directed = {
-            (e.source, e.target)
-            for e in discovered.edges
-            if e.lag == 0 and "-->" in e.link_type
-        }
+        disc_directed = {(e.source, e.target) for e in discovered.edges if e.lag == 0 and "-->" in e.link_type}
 
         confirmed = [e for e in expert_edges if e in disc_directed]
 
@@ -239,9 +230,7 @@ class CausalStructureDiscovery:
         novel = [
             e
             for e in discovered.edges
-            if e.lag == 0
-            and "-->" in e.link_type
-            and (e.source, e.target) not in expert_edges
+            if e.lag == 0 and "-->" in e.link_type and (e.source, e.target) not in expert_edges
         ]
 
         summary = {

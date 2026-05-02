@@ -6,7 +6,6 @@ import math
 
 import numpy as np
 import pytest
-from scipy.stats import entropy as scipy_entropy
 
 from agent.pipeline.depth_eval import (
     compute_conditional_mi,
@@ -15,7 +14,6 @@ from agent.pipeline.depth_eval import (
     run_depth_evaluation,
 )
 from agent.pipeline.store import PipelineStore
-
 
 # ── Fixtures ───────────────────────────────────────────────────
 

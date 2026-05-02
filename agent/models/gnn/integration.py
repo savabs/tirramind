@@ -30,9 +30,6 @@ References:
 from __future__ import annotations
 
 import logging
-import os
-import time as _time
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -137,11 +134,7 @@ class AutoPatternDetector:
             if src_type != pattern.source_type:
                 continue
 
-            src_obs = [
-                o
-                for o in obs_by_entity.get(eid_a, [])
-                if o.get("observation_type") == pattern.obs_type_a
-            ]
+            src_obs = [o for o in obs_by_entity.get(eid_a, []) if o.get("observation_type") == pattern.obs_type_a]
             if not src_obs:
                 continue
 
@@ -150,11 +143,7 @@ class AutoPatternDetector:
                 if dst_type != pattern.target_type:
                     continue
 
-                dst_obs = [
-                    o
-                    for o in obs_by_entity.get(eid_b, [])
-                    if o.get("observation_type") == pattern.obs_type_b
-                ]
+                dst_obs = [o for o in obs_by_entity.get(eid_b, []) if o.get("observation_type") == pattern.obs_type_b]
                 if not dst_obs:
                     continue
 
@@ -338,9 +327,7 @@ def compute_diagnostics(
         if data.node_types:
             attn_weights = model.get_attention_weights(data, id_map)
             edge_type_attention = {
-                ("→".join(k) if isinstance(k, tuple) else str(k)): (
-                    v.item() if hasattr(v, "item") else float(v)
-                )
+                ("→".join(k) if isinstance(k, tuple) else str(k)): (v.item() if hasattr(v, "item") else float(v))
                 for k, v in attn_weights.items()
             }
     except Exception as exc:
@@ -463,9 +450,7 @@ def format_diagnostic_report(
     flagged_obs = {k: v for k, v in obd.items() if v < obs_density_min}
     flagged_attention = {k: v for k, v in eta.items() if v < attention_min}
     flagged_sparsity = {k: v for k, v in nsp.items() if v < mean_degree_min}
-    flagged_confidence = {
-        k: v for k, v in svc.items() if confidence_lo <= v <= confidence_hi
-    }
+    flagged_confidence = {k: v for k, v in svc.items() if confidence_lo <= v <= confidence_hi}
 
     return {
         "entity_density": {"values": etd, "flagged": flagged_entities},
@@ -569,9 +554,7 @@ def retrain_and_discover(
             crystallized if crystallized else None,
         )
         result["diagnostics"] = diagnostics
-        sparse_types = [
-            t for t, d in diagnostics["neighborhood_sparsity"].items() if d < 1.0
-        ]
+        sparse_types = [t for t, d in diagnostics["neighborhood_sparsity"].items() if d < 1.0]
         if sparse_types:
             log.info(
                 "Sparse entity types (mean degree < 1): %s",
@@ -634,9 +617,7 @@ def run_diagnostics(
         obs_count = len(observations)
 
         if entity_count == 0:
-            log.warning(
-                "PipelineStore at %s has no entities — skipping diagnostics.", resolved
-            )
+            log.warning("PipelineStore at %s has no entities — skipping diagnostics.", resolved)
             return {
                 "status": "empty_graph",
                 "diagnostics": None,

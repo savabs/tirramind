@@ -10,16 +10,14 @@ Covers:
 
 from __future__ import annotations
 
-import json
 import sqlite3
-import time
+
+# Allow importing from scripts/ when running from tests/
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-
-# Allow importing from scripts/ when running from tests/
-import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 
@@ -30,8 +28,8 @@ from backfill import (
     _count_total_obs,
     _run_one,
 )
-from agent.tools.base import ToolResult, ToolRegistry
 
+from agent.tools.base import ToolRegistry, ToolResult
 
 # ---------------------------------------------------------------------------
 # Fixtures

@@ -8,12 +8,10 @@ They are opt-in (request by name) — no autouse.
 from __future__ import annotations
 
 import sqlite3
-import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Markers registration (avoids "unknown marker" warnings)
@@ -22,12 +20,8 @@ import pytest
 
 def pytest_configure(config):
     config.addinivalue_line("markers", "slow: marks tests that take >10s")
-    config.addinivalue_line(
-        "markers", "integration: marks tests requiring network or real API"
-    )
-    config.addinivalue_line(
-        "markers", "live: marks tests hitting real external endpoints"
-    )
+    config.addinivalue_line("markers", "integration: marks tests requiring network or real API")
+    config.addinivalue_line("markers", "live: marks tests hitting real external endpoints")
 
 
 # ---------------------------------------------------------------------------
@@ -70,11 +64,7 @@ def awos_file(tmp_path: Path) -> Path:
     """A minimal AWOS markdown file with all expected sections."""
     p = tmp_path / "awos.md"
     p.write_text(
-        "# AWOS\n\n"
-        "## 3. Agent Operating Principles\n\n"
-        "## 5. Codebase Structure\n\n"
-        "## 11. Changelog\n\n"
-        "## Lessons\n\n"
+        "# AWOS\n\n## 3. Agent Operating Principles\n\n## 5. Codebase Structure\n\n## 11. Changelog\n\n## Lessons\n\n"
     )
     return p
 

@@ -12,7 +12,6 @@ Covers:
 from __future__ import annotations
 
 import pytest
-import torch
 
 from agent.models.gnn.graph_builder import (
     ENTITY_TYPES,
@@ -27,7 +26,6 @@ from agent.models.gnn.trainer import (
     evaluate,
 )
 from agent.pipeline.store import PipelineStore
-
 
 # ═══════════════════════════════════════════════════════════════
 # Fixtures
@@ -156,9 +154,7 @@ class TestSchemaCoverage:
         store, stats = expanded_store
         entities = store.query_all_entities()
         found_types = {e["entity_type"] for e in entities}
-        assert found_types == set(
-            ENTITY_TYPES
-        ), f"Missing: {set(ENTITY_TYPES) - found_types}"
+        assert found_types == set(ENTITY_TYPES), f"Missing: {set(ENTITY_TYPES) - found_types}"
 
     def test_entity_counts_match(self, expanded_store):
         _, stats = expanded_store
@@ -248,8 +244,7 @@ class TestCrossDomainPatterns:
         person_company = [
             p
             for p in stats["pattern_instances"]
-            if p["pattern"].source_type == "person"
-            and p["pattern"].target_type == "company"
+            if p["pattern"].source_type == "person" and p["pattern"].target_type == "company"
         ]
         assert len(person_company) > 0, "No person→company patterns fired"
 
@@ -259,8 +254,7 @@ class TestCrossDomainPatterns:
         vessel_country = [
             p
             for p in stats["pattern_instances"]
-            if p["pattern"].source_type == "vessel"
-            and p["pattern"].target_type == "country"
+            if p["pattern"].source_type == "vessel" and p["pattern"].target_type == "country"
         ]
         assert len(vessel_country) > 0, "No vessel→country patterns fired"
 
@@ -270,8 +264,7 @@ class TestCrossDomainPatterns:
         wallet_inst = [
             p
             for p in stats["pattern_instances"]
-            if p["pattern"].source_type == "wallet"
-            and p["pattern"].target_type == "instrument"
+            if p["pattern"].source_type == "wallet" and p["pattern"].target_type == "instrument"
         ]
         assert len(wallet_inst) > 0, "No wallet→instrument patterns fired"
 
@@ -281,8 +274,7 @@ class TestCrossDomainPatterns:
         cftc_inst = [
             p
             for p in stats["pattern_instances"]
-            if p["pattern"].source_type == "cftc_contract"
-            and p["pattern"].target_type == "instrument"
+            if p["pattern"].source_type == "cftc_contract" and p["pattern"].target_type == "instrument"
         ]
         assert len(cftc_inst) > 0, "No cftc→instrument patterns fired"
 
@@ -292,8 +284,7 @@ class TestCrossDomainPatterns:
         co_co = [
             p
             for p in stats["pattern_instances"]
-            if p["pattern"].source_type == "country"
-            and p["pattern"].target_type == "country"
+            if p["pattern"].source_type == "country" and p["pattern"].target_type == "country"
         ]
         assert len(co_co) > 0, "No country→country patterns fired"
 
@@ -386,18 +377,14 @@ class TestExpandedTraining:
         losses = history["total"]
         assert len(losses) == 5
         # At least one drop in total loss
-        assert (
-            losses[-1] < losses[0]
-        ), f"Loss did not decrease: {losses[0]:.4f} → {losses[-1]:.4f}"
+        assert losses[-1] < losses[0], f"Loss did not decrease: {losses[0]:.4f} → {losses[-1]:.4f}"
 
     def test_obs_type_accuracy_above_random(self, trained):
         """obs_type top-1 accuracy should beat random (1/45 ≈ 2.2%)."""
         trainer, _ = trained
         metrics = evaluate(trainer.model, trainer.store, trainer.config)
         # Even weak signal should get > 3% (above random baseline)
-        assert (
-            metrics["obs_type_acc_top1"] > 0.02
-        ), f"obs_type accuracy too low: {metrics['obs_type_acc_top1']:.3f}"
+        assert metrics["obs_type_acc_top1"] > 0.02, f"obs_type accuracy too low: {metrics['obs_type_acc_top1']:.3f}"
 
     def test_all_loss_components_finite(self, trained):
         _, history = trained
@@ -408,9 +395,9 @@ class TestExpandedTraining:
         # time_delta MSE on raw seconds is naturally large;
         # just verify it's finite and decreasing
         dt_losses = history["time_delta"]
-        assert (
-            dt_losses[-1] <= dt_losses[0] * 2
-        ), f"time_delta loss grew excessively: {dt_losses[0]:.0f} → {dt_losses[-1]:.0f}"
+        assert dt_losses[-1] <= dt_losses[0] * 2, (
+            f"time_delta loss grew excessively: {dt_losses[0]:.0f} → {dt_losses[-1]:.0f}"
+        )
 
     def test_model_embeddings_shape(self, trained):
         trainer, _ = trained
@@ -558,9 +545,7 @@ class TestEdgeCases:
             assert len(obs) >= 1, f"No obs types for {etype}"
             # All returned obs types should be valid OBSERVATION_TYPES
             for ot in obs:
-                assert (
-                    ot in OBSERVATION_TYPES
-                ), f"Invalid obs type '{ot}' for entity type '{etype}'"
+                assert ot in OBSERVATION_TYPES, f"Invalid obs type '{ot}' for entity type '{etype}'"
 
     def test_deterministic_with_same_seed(self, store):
         """Same seed produces identical results."""

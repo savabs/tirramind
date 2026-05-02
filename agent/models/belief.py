@@ -21,7 +21,6 @@ References:
 
 from __future__ import annotations
 
-import hashlib
 import math
 import re
 import time
@@ -181,25 +180,17 @@ def validate_belief(belief: BeliefState) -> list[str]:
 
     # ── Temporal: effective_at <= computed_at ──
     if belief.effective_at > belief.computed_at:
-        errors.append(
-            "effective_at must not be after computed_at "
-            "(information-leakage violation)"
-        )
+        errors.append("effective_at must not be after computed_at (information-leakage violation)")
 
     now = time.time()
     if belief.effective_at < _EPOCH_FLOOR:
         errors.append(f"effective_at ({belief.effective_at}) is before 2020-01-01")
     if belief.computed_at > now + _EPOCH_CEILING_DRIFT:
-        errors.append(
-            f"computed_at ({belief.computed_at}) is more than 1 day in the future"
-        )
+        errors.append(f"computed_at ({belief.computed_at}) is more than 1 day in the future")
 
     # ── Distribution type ──
     if belief.dist_type not in VALID_DIST_TYPES:
-        errors.append(
-            f"dist_type '{belief.dist_type}' not recognized; "
-            f"must be one of {sorted(VALID_DIST_TYPES)}"
-        )
+        errors.append(f"dist_type '{belief.dist_type}' not recognized; must be one of {sorted(VALID_DIST_TYPES)}")
 
     # ── Distribution-specific validation ──
     if belief.dist_type == "gaussian":
@@ -234,9 +225,7 @@ def validate_belief(belief: BeliefState) -> list[str]:
                 if not isinstance(prob, (int, float)):
                     errors.append(f"probability for '{state}' must be a number")
                 elif prob < 0 or prob > 1:
-                    errors.append(
-                        f"probability for '{state}' ({prob}) must be in [0, 1]"
-                    )
+                    errors.append(f"probability for '{state}' ({prob}) must be in [0, 1]")
                 elif math.isnan(prob) or math.isinf(prob):
                     errors.append(f"probability for '{state}' must be finite")
             # Check sum
@@ -254,10 +243,7 @@ def validate_belief(belief: BeliefState) -> list[str]:
     if not isinstance(belief.model_graph_hash, str):
         errors.append("model_graph_hash must be a string")
     elif belief.model_graph_hash and len(belief.model_graph_hash) != _HASH_HEX_LEN:
-        errors.append(
-            f"model_graph_hash must be {_HASH_HEX_LEN} hex chars "
-            f"(got {len(belief.model_graph_hash)})"
-        )
+        errors.append(f"model_graph_hash must be {_HASH_HEX_LEN} hex chars (got {len(belief.model_graph_hash)})")
     elif belief.model_graph_hash:
         try:
             int(belief.model_graph_hash, 16)

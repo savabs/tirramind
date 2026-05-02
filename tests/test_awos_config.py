@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
@@ -35,10 +34,7 @@ def test_env_override(tmp_path: Path) -> None:
 
 def test_yaml_override(tmp_path: Path) -> None:
     y = tmp_path / "cfg.yaml"
-    y.write_text(
-        "classifier_mode: llm\n"
-        "watcher_interval_s: 77\n"
-    )
+    y.write_text("classifier_mode: llm\nwatcher_interval_s: 77\n")
     cfg = AWOSConfig.from_env(env={}, yaml_path=y)
     assert cfg.classifier_mode == "llm"
     assert cfg.watcher_interval_s == 77
@@ -47,9 +43,7 @@ def test_yaml_override(tmp_path: Path) -> None:
 def test_env_beats_yaml(tmp_path: Path) -> None:
     y = tmp_path / "cfg.yaml"
     y.write_text("watcher_interval_s: 1\n")
-    cfg = AWOSConfig.from_env(
-        env={"TIRRA_AWOS_WATCHER_INTERVAL_S": "999"}, yaml_path=y
-    )
+    cfg = AWOSConfig.from_env(env={"TIRRA_AWOS_WATCHER_INTERVAL_S": "999"}, yaml_path=y)
     assert cfg.watcher_interval_s == 999
 
 

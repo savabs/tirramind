@@ -135,7 +135,7 @@ class RollingStats:
         return rank / n
 
     def __repr__(self) -> str:
-        return f"RollingStats(window={self._window}, " f"n={self.n_observations})"
+        return f"RollingStats(window={self._window}, n={self.n_observations})"
 
 
 # ── Anomaly detection ──────────────────────────────────────────
@@ -264,4 +264,4 @@ class SignalStream:
         return np.array([v for _, v in items], dtype=np.float64)
 
     def __repr__(self) -> str:
-        return f"SignalStream({self._signal_id!r}, " f"n_obs={len(self._obs)})"
+        return f"SignalStream({self._signal_id!r}, n_obs={len(self._obs)})"

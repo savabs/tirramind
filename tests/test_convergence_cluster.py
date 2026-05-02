@@ -81,9 +81,7 @@ class TestConvergenceClusterConstruction:
         assert cluster.metadata is None
 
     def test_three_members(self) -> None:
-        alert_c = _make_alert(
-            entity_id="ent_003", entity_type="wallet", entity_name="0xdeadbeef"
-        )
+        alert_c = _make_alert(entity_id="ent_003", entity_type="wallet", entity_name="0xdeadbeef")
         cluster = _make_cluster(
             member_alerts=(
                 _make_alert(entity_id="ent_001"),
@@ -96,17 +94,12 @@ class TestConvergenceClusterConstruction:
         assert len(cluster.contributing_domains) == 3
 
     def test_large_cluster(self) -> None:
-        alerts = tuple(
-            _make_alert(entity_id=f"ent_{i:03d}", entity_name=f"Entity {i}")
-            for i in range(10)
-        )
+        alerts = tuple(_make_alert(entity_id=f"ent_{i:03d}", entity_name=f"Entity {i}") for i in range(10))
         cluster = _make_cluster(member_alerts=alerts)
         assert len(cluster.member_alerts) == 10
 
     def test_metadata_dict(self) -> None:
-        cluster = _make_cluster(
-            metadata={"reason": "test", "score_breakdown": [0.5, 0.3]}
-        )
+        cluster = _make_cluster(metadata={"reason": "test", "score_breakdown": [0.5, 0.3]})
         assert cluster.metadata["reason"] == "test"
 
 

@@ -16,73 +16,72 @@ from pathlib import Path
 from dotenv import load_dotenv
 from rich.console import Console
 from rich.panel import Panel
-from rich.text import Text
 
-from agent.config.settings import AgentConfig, PipelineConfig
-from agent.core.orchestrator import Orchestrator
+from agent.config.settings import AgentConfig
 from agent.core.autonomous import AutonomousRunner, LoopIteration
+from agent.core.orchestrator import Orchestrator
 from agent.data.cache import DataCache
-from agent.pipeline.store import PipelineStore
 from agent.pipeline.executor import DAGExecutor
-from agent.tools.base import ToolRegistry
-from agent.tools.web_search import WebSearchTool
-from agent.tools.web_browse import WebBrowseTool
-from agent.tools.code_executor import CodeExecutorTool
-from agent.tools.shell_runner import ShellRunnerTool
-from agent.tools.file_manager import FileReadTool, FileWriteTool, ListDirectoryTool
-from agent.tools.market_data import MarketDataTool
-from agent.tools.macro_data import MacroDataTool
-from agent.tools.liquidity_regime import LiquidityRegimeTool
-from agent.tools.backtest import BacktestTool
-from agent.tools.polymarket import PolymarketTool
-from agent.tools.polymarket_whales import PolymarketWhalesTool
-from agent.tools.insider_filings import InsiderFilingsTool
-from agent.tools.gdelt import GDELTTool
-from agent.tools.cftc import CFTCTool
-from agent.tools.whale_alert import WhaleAlertTool
-from agent.tools.form144 import Form144Tool
-from agent.tools.finra_short_volume import FinraShortVolumeTool
-from agent.tools.power_grid import PowerGridTool
-from agent.tools.wikipedia_pageviews import WikipediaPageviewsTool
-from agent.tools.ais_vessel import AISVesselTool
-from agent.tools.regulatory_gazette import RegulatoryGazetteTool
-from agent.tools.weather_alerts import WeatherAlertsTool
-from agent.tools.earthquake_proximity import EarthquakeProximityTool
-from agent.tools.transport_throughput import TransportThroughputTool
-from agent.tools.defi_flows import DefiFlowsTool
-from agent.tools.gov_contracts import GovContractsTool
+from agent.pipeline.store import PipelineStore
 from agent.tools.academic_preprints import AcademicPreprintsTool
-from agent.tools.sanctions_monitor import SanctionsMonitorTool
-from agent.tools.cert_transparency import CertTransparencyTool
+from agent.tools.ais_vessel import AISVesselTool
+from agent.tools.backtest import BacktestTool
 from agent.tools.bankruptcy_court import BankruptcyCourtTool
-from agent.tools.dns_monitor import DnsMonitorTool
-from agent.tools.sovereign_debt import SovereignDebtTool
-from agent.tools.central_bank_balance import CentralBankBalanceTool
-from agent.tools.foia_requests import FoiaRequestsTool
-from agent.tools.creditor_filings import CreditorFilingsTool
-from agent.tools.comtrade import ComtradeTool
-from agent.tools.job_postings import JobPostingsTool
+from agent.tools.base import ToolRegistry
 from agent.tools.building_permits import BuildingPermitsTool
 from agent.tools.capital_flows import CapitalFlowsTool
-from agent.tools.patent_filings import PatentFilingsTool
-from agent.tools.lobbying import LobbyingTool
-from agent.tools.satellite_activity import SatelliteActivityTool
-from agent.tools.electricity_monitor import ElectricityMonitorTool
-from agent.tools.interconnection_queue import InterconnectionQueueTool
-from agent.tools.disease_surveillance import DiseaseSurveillanceTool
-from agent.tools.food_security import FoodSecurityTool
-from agent.tools.political_risk import PoliticalRiskTool
-from agent.tools.internet_outages import InternetOutagesTool
-from agent.tools.labor_disruptions import LaborDisruptionsTool
-from agent.tools.migration_flows import MigrationFlowsTool
-from agent.tools.energy_supply import EnergySupplyTool
-from agent.tools.treasury_receipts import TreasuryReceiptsTool
-from agent.tools.drug_regulatory import DrugRegulatoryTool
-from agent.tools.global_pmi import GlobalPmiTool
+from agent.tools.central_bank_balance import CentralBankBalanceTool
+from agent.tools.cert_transparency import CertTransparencyTool
+from agent.tools.cftc import CFTCTool
+from agent.tools.code_executor import CodeExecutorTool
+from agent.tools.comtrade import ComtradeTool
 from agent.tools.consumer_sentiment import ConsumerSentimentTool
-from agent.tools.supply_chain_monitor import SupplyChainMonitorTool
+from agent.tools.creditor_filings import CreditorFilingsTool
+from agent.tools.defi_flows import DefiFlowsTool
+from agent.tools.disease_surveillance import DiseaseSurveillanceTool
+from agent.tools.dns_monitor import DnsMonitorTool
+from agent.tools.drug_regulatory import DrugRegulatoryTool
+from agent.tools.earthquake_proximity import EarthquakeProximityTool
+from agent.tools.electricity_monitor import ElectricityMonitorTool
+from agent.tools.energy_supply import EnergySupplyTool
+from agent.tools.file_manager import FileReadTool, FileWriteTool, ListDirectoryTool
+from agent.tools.finra_short_volume import FinraShortVolumeTool
+from agent.tools.foia_requests import FoiaRequestsTool
+from agent.tools.food_security import FoodSecurityTool
+from agent.tools.form144 import Form144Tool
+from agent.tools.gdelt import GDELTTool
+from agent.tools.global_pmi import GlobalPmiTool
+from agent.tools.gov_contracts import GovContractsTool
+from agent.tools.insider_filings import InsiderFilingsTool
+from agent.tools.interconnection_queue import InterconnectionQueueTool
 from agent.tools.internet_infrastructure import InternetInfrastructureTool
+from agent.tools.internet_outages import InternetOutagesTool
+from agent.tools.job_postings import JobPostingsTool
+from agent.tools.labor_disruptions import LaborDisruptionsTool
+from agent.tools.liquidity_regime import LiquidityRegimeTool
+from agent.tools.lobbying import LobbyingTool
+from agent.tools.macro_data import MacroDataTool
+from agent.tools.market_data import MarketDataTool
+from agent.tools.migration_flows import MigrationFlowsTool
+from agent.tools.patent_filings import PatentFilingsTool
 from agent.tools.pipeline_query import PipelineQueryTool
+from agent.tools.political_risk import PoliticalRiskTool
+from agent.tools.polymarket import PolymarketTool
+from agent.tools.polymarket_whales import PolymarketWhalesTool
+from agent.tools.power_grid import PowerGridTool
+from agent.tools.regulatory_gazette import RegulatoryGazetteTool
+from agent.tools.sanctions_monitor import SanctionsMonitorTool
+from agent.tools.satellite_activity import SatelliteActivityTool
+from agent.tools.shell_runner import ShellRunnerTool
+from agent.tools.sovereign_debt import SovereignDebtTool
+from agent.tools.supply_chain_monitor import SupplyChainMonitorTool
+from agent.tools.transport_throughput import TransportThroughputTool
+from agent.tools.treasury_receipts import TreasuryReceiptsTool
+from agent.tools.weather_alerts import WeatherAlertsTool
+from agent.tools.web_browse import WebBrowseTool
+from agent.tools.web_search import WebSearchTool
+from agent.tools.whale_alert import WhaleAlertTool
+from agent.tools.wikipedia_pageviews import WikipediaPageviewsTool
 
 console = Console()
 
@@ -93,9 +92,7 @@ def build_tool_registry(config: AgentConfig | None = None) -> ToolRegistry:
     registry = ToolRegistry()
 
     # ── PipelineStore: create early so tools can persist entities ──
-    pipeline_store = PipelineStore(
-        db_path=config.pipeline.db_path if config else ".tirra_pipeline/pipeline.db"
-    )
+    pipeline_store = PipelineStore(db_path=config.pipeline.db_path if config else ".tirra_pipeline/pipeline.db")
 
     registry.register(WebSearchTool())
     registry.register(WebBrowseTool())
@@ -113,9 +110,7 @@ def build_tool_registry(config: AgentConfig | None = None) -> ToolRegistry:
     registry.register(PolymarketTool(cache=cache, pipeline_store=pipeline_store))
     registry.register(
         PolymarketWhalesTool(
-            db_path=(
-                config.pipeline.db_path if config else ".tirra_pipeline/pipeline.db"
-            ),
+            db_path=(config.pipeline.db_path if config else ".tirra_pipeline/pipeline.db"),
         )
     )
     registry.register(InsiderFilingsTool(cache=cache, pipeline_store=pipeline_store))
@@ -174,9 +169,7 @@ def build_tool_registry(config: AgentConfig | None = None) -> ToolRegistry:
         ontology = OntologyRegistry(pipeline_store)
         set_ontology_registry(ontology)
     except Exception:
-        logging.getLogger(__name__).debug(
-            "OntologyRegistry init skipped (discovery module unavailable)"
-        )
+        logging.getLogger(__name__).debug("OntologyRegistry init skipped (discovery module unavailable)")
 
     # ── Tier 8, Change 15: Load discovered tool configs ───────
     try:
@@ -192,9 +185,7 @@ def build_tool_registry(config: AgentConfig | None = None) -> ToolRegistry:
             if any(sid.startswith(source_prefix) for sid in active_ids):
                 registry.register(tool)
     except Exception:
-        logging.getLogger(__name__).debug(
-            "Discovered tool loading skipped (no configs or module unavailable)"
-        )
+        logging.getLogger(__name__).debug("Discovered tool loading skipped (no configs or module unavailable)")
 
     return registry
 
@@ -202,20 +193,14 @@ def build_tool_registry(config: AgentConfig | None = None) -> ToolRegistry:
 def on_step(step: int, task, result) -> None:
     """Real-time progress callback."""
     status = "[green]✓[/]" if result.success else "[red]✗[/]"
-    console.print(
-        f"  {status} Step {step}: [bold]{task.tool}[/] → {task.description[:60]}"
-    )
+    console.print(f"  {status} Step {step}: [bold]{task.tool}[/] → {task.description[:60]}")
     if not result.success:
         console.print(f"    [red]{result.output[:120]}[/]")
 
 
 def run_goal(goal: str, config: AgentConfig) -> None:
     """Execute a single goal."""
-    console.print(
-        Panel(
-            f"[bold cyan]Goal:[/] {goal}", title="TirraMind Agent", border_style="cyan"
-        )
-    )
+    console.print(Panel(f"[bold cyan]Goal:[/] {goal}", title="TirraMind Agent", border_style="cyan"))
 
     registry = build_tool_registry(config)
     console.print(f"[dim]Tools loaded: {', '.join(registry.list_names())}[/]")
@@ -227,15 +212,9 @@ def run_goal(goal: str, config: AgentConfig) -> None:
 
     console.print()
     if result.success:
-        console.print(
-            Panel(result.output, title="[green]Result[/]", border_style="green")
-        )
+        console.print(Panel(result.output, title="[green]Result[/]", border_style="green"))
     else:
-        console.print(
-            Panel(
-                result.output, title="[yellow]Partial Result[/]", border_style="yellow"
-            )
-        )
+        console.print(Panel(result.output, title="[yellow]Partial Result[/]", border_style="yellow"))
 
     console.print(f"\n[dim]Steps: {result.steps_taken} | Success: {result.success}[/]")
 
@@ -289,8 +268,7 @@ def run_interactive(config: AgentConfig) -> None:
     """Interactive REPL mode."""
     console.print(
         Panel(
-            "[bold cyan]TirraMind Agent — Interactive Mode[/]\n"
-            "Type a goal and press Enter. Type 'quit' to exit.",
+            "[bold cyan]TirraMind Agent — Interactive Mode[/]\nType a goal and press Enter. Type 'quit' to exit.",
             border_style="cyan",
         )
     )
@@ -350,9 +328,7 @@ def _pipeline_run(rest: list[str], config: AgentConfig) -> None:
     dag = dag_registry.get(dag_name)
     if dag is None:
         console.print(f"[red]DAG not found: {dag_name}[/]")
-        console.print(
-            f"[dim]Available: {', '.join(d.name for d in dag_registry.list_all())}[/]"
-        )
+        console.print(f"[dim]Available: {', '.join(d.name for d in dag_registry.list_all())}[/]")
         sys.exit(1)
 
     store = PipelineStore(db_path=config.pipeline.db_path)
@@ -433,11 +409,7 @@ def _pipeline_status(rest: list[str], config: AgentConfig) -> None:
             return
         console.print("[bold]Recent Pipeline Runs:[/]")
         for r in runs:
-            status_color = (
-                "green"
-                if r["status"] == "success"
-                else "yellow" if r["status"] == "running" else "red"
-            )
+            status_color = "green" if r["status"] == "success" else "yellow" if r["status"] == "running" else "red"
             console.print(
                 f"  [{status_color}]{r['status']:<8}[/] "
                 f"[cyan]{r['dag_name']}[/] "
@@ -448,8 +420,8 @@ def _pipeline_status(rest: list[str], config: AgentConfig) -> None:
 def _pipeline_start(config: AgentConfig) -> None:
     """Start the pipeline scheduler (blocks until Ctrl+C)."""
     try:
-        from agent.pipeline.scheduler import PipelineScheduler
         from agent.pipeline.registry import DAGRegistry
+        from agent.pipeline.scheduler import PipelineScheduler
     except ImportError:
         console.print("[red]PipelineScheduler or DAGRegistry not yet implemented.[/]")
         sys.exit(1)
@@ -467,7 +439,7 @@ def _pipeline_start(config: AgentConfig) -> None:
     scheduler = PipelineScheduler(executor=executor, registry=dag_registry)
     console.print(
         Panel(
-            "[bold cyan]Pipeline Scheduler — Starting[/]\n" "Press Ctrl+C to stop.",
+            "[bold cyan]Pipeline Scheduler — Starting[/]\nPress Ctrl+C to stop.",
             title="TirraMind Pipeline",
             border_style="blue",
         )
@@ -484,16 +456,10 @@ def main() -> None:
     # Load .env before parsing config
     load_dotenv(Path.cwd() / ".env")
 
-    parser = argparse.ArgumentParser(
-        description="TirraMind Autonomous Intelligence Agent"
-    )
+    parser = argparse.ArgumentParser(description="TirraMind Autonomous Intelligence Agent")
     parser.add_argument("goal", nargs="?", help="The goal for the agent to accomplish")
-    parser.add_argument(
-        "--interactive", "-i", action="store_true", help="Interactive REPL mode"
-    )
-    parser.add_argument(
-        "--autonomous", "-a", action="store_true", help="Autonomous self-directed mode"
-    )
+    parser.add_argument("--interactive", "-i", action="store_true", help="Interactive REPL mode")
+    parser.add_argument("--autonomous", "-a", action="store_true", help="Autonomous self-directed mode")
     parser.add_argument(
         "--max-goals",
         type=int,
@@ -507,9 +473,7 @@ def main() -> None:
         metavar="CMD",
         help="Pipeline mode: run <dag>, list, status [run_id], start",
     )
-    parser.add_argument(
-        "--verbose", "-v", action="store_true", help="Enable debug logging"
-    )
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable debug logging")
     args = parser.parse_args()
 
     level = logging.DEBUG if args.verbose else logging.INFO

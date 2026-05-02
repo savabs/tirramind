@@ -8,19 +8,16 @@ Covers:
 from __future__ import annotations
 
 import time
-from unittest.mock import patch
 
 import pytest
 
 from agent.pipeline.regime_gate import (
     RegimeContext,
     feature_trust_scale,
-    get_current_regime,
     is_high_changepoint,
     sac_entropy_scale,
     world_model_prior_decay,
 )
-
 
 # ── Helpers ────────────────────────────────────────────────────
 

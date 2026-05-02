@@ -15,7 +15,6 @@ import time
 
 import numpy as np
 import pytest
-from scipy import stats as sp_stats
 
 from agent.convergence.coincidence import (
     CoincidenceResult,
@@ -28,7 +27,6 @@ from agent.convergence.fdr import (
     _P_FLOOR,
     apply_all_controls,
     apply_bh_correction,
-    cross_category_filter,
     fisher_combined_test,
     persistence_filter,
 )
@@ -38,7 +36,6 @@ from agent.convergence.graph import (
     detect_convergence_cliques,
     score_clique,
 )
-
 
 # ── Helpers ────────────────────────────────────────────────────
 

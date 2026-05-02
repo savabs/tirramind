@@ -11,19 +11,15 @@ Covers:
 
 from __future__ import annotations
 
-import json
 import time
-from datetime import date, timedelta
+from datetime import UTC, date
 from pathlib import Path
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
 
-from agent.pipeline.dag import DAG
 from agent.pipeline.dags.inference import (
-    DAG_NAME,
     _emit_portfolio,
     _gnn_inference,
     _load_models,
@@ -31,7 +27,6 @@ from agent.pipeline.dags.inference import (
     build_inference_dag,
 )
 from agent.pipeline.store import PipelineStore
-
 
 # ──────────────────────────────────────────────────────────────
 # Fixtures
@@ -388,9 +383,7 @@ class TestSACInference:
             mock_trainer.select_action.return_value = np.array([0.3, 0.5, 0.2])
 
             # Mock InstrumentStateAssembler
-            with patch(
-                "agent.learning.policy.state_assembler.InstrumentStateAssembler"
-            ) as MockAsm:
+            with patch("agent.learning.policy.state_assembler.InstrumentStateAssembler") as MockAsm:
                 import torch
 
                 mock_asm = MockAsm.return_value
@@ -501,14 +494,14 @@ class TestEmitPortfolio:
         # The _compute_daily_returns function looks for
         # observation_type="daily_return" with value containing "log_return"
         today_date = date.fromisoformat(today)
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         today_ts = datetime(
             today_date.year,
             today_date.month,
             today_date.day,
             hour=12,
-            tzinfo=timezone.utc,
+            tzinfo=UTC,
         ).timestamp()
 
         # Register instrument entities first
@@ -575,9 +568,7 @@ class TestEmitPortfolio:
 
         pnl_records = store2.query_paper_pnl(start_date=today, end_date=today)
         assert len(pnl_records) == 1
-        assert pnl_records[0]["portfolio_return"] == pytest.approx(
-            expected_pnl, abs=1e-10
-        )
+        assert pnl_records[0]["portfolio_return"] == pytest.approx(expected_pnl, abs=1e-10)
         store2.close()
 
     def test_no_previous_weights_skips_pnl(self, tmp_path: Path):
@@ -634,9 +625,9 @@ class TestEmitPortfolio:
         store.store_portfolio_weights("2026-04-14", {"ES=F": 0.6})
         # Seed today returns
         store.register_entity("instrument", "S&P 500 Futures", "ES=F")
-        from datetime import datetime, timezone
+        from datetime import datetime
 
-        ts = datetime(2026, 4, 15, 12, tzinfo=timezone.utc).timestamp()
+        ts = datetime(2026, 4, 15, 12, tzinfo=UTC).timestamp()
         store.store_entity_observation(
             entity_id="ES=F",
             source_tool="instrument_ingest",
@@ -807,7 +798,7 @@ class TestPaperPnlCRUD:
 
     def test_limit(self, store: PipelineStore):
         for i in range(10):
-            store.store_paper_pnl(f"2026-04-{i+10:02d}", 0.001 * i, 0.001, 0.001 * i)
+            store.store_paper_pnl(f"2026-04-{i + 10:02d}", 0.001 * i, 0.001, 0.001 * i)
         results = store.query_paper_pnl(limit=3)
         assert len(results) == 3
 

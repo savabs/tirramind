@@ -16,15 +16,13 @@ import httpx
 import pytest
 
 from agent.tools.defi_flows import (
-    DefiFlowsTool,
-    VALID_MODES,
+    _DEXS_URL,
     _MARKET_CATEGORIES,
     _PROTOCOLS_URL,
     _STABLECOINS_URL,
-    _DEXS_URL,
+    VALID_MODES,
+    DefiFlowsTool,
 )
-from agent.tools.base import ToolResult
-
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -300,9 +298,7 @@ class TestTVLMode:
 
 class TestStablecoinsMode:
     def test_basic_stablecoins(self):
-        with patch.object(
-            DefiFlowsTool, "_fetch_json", return_value=SAMPLE_STABLECOINS
-        ):
+        with patch.object(DefiFlowsTool, "_fetch_json", return_value=SAMPLE_STABLECOINS):
             r = _tool().execute(mode="stablecoins")
             assert r.success
             assert "stablecoins" in r.data
@@ -310,31 +306,23 @@ class TestStablecoinsMode:
             assert r.data["stablecoins"][0]["name"] == "Tether"
 
     def test_stablecoins_sorted_by_supply(self):
-        with patch.object(
-            DefiFlowsTool, "_fetch_json", return_value=SAMPLE_STABLECOINS
-        ):
+        with patch.object(DefiFlowsTool, "_fetch_json", return_value=SAMPLE_STABLECOINS):
             r = _tool().execute(mode="stablecoins")
             supplies = [s["circulating_usd"] for s in r.data["stablecoins"]]
             assert supplies == sorted(supplies, reverse=True)
 
     def test_stablecoins_total_supply(self):
-        with patch.object(
-            DefiFlowsTool, "_fetch_json", return_value=SAMPLE_STABLECOINS
-        ):
+        with patch.object(DefiFlowsTool, "_fetch_json", return_value=SAMPLE_STABLECOINS):
             r = _tool().execute(mode="stablecoins")
             assert r.data["total_supply"] == 155_000_000_000
 
     def test_stablecoins_limit(self):
-        with patch.object(
-            DefiFlowsTool, "_fetch_json", return_value=SAMPLE_STABLECOINS
-        ):
+        with patch.object(DefiFlowsTool, "_fetch_json", return_value=SAMPLE_STABLECOINS):
             r = _tool().execute(mode="stablecoins", limit=1)
             assert r.data["count"] == 1
 
     def test_stablecoins_fields(self):
-        with patch.object(
-            DefiFlowsTool, "_fetch_json", return_value=SAMPLE_STABLECOINS
-        ):
+        with patch.object(DefiFlowsTool, "_fetch_json", return_value=SAMPLE_STABLECOINS):
             r = _tool().execute(mode="stablecoins")
             s = r.data["stablecoins"][0]
             assert "name" in s
@@ -348,9 +336,7 @@ class TestStablecoinsMode:
             assert not r.success
 
     def test_stablecoins_empty(self):
-        with patch.object(
-            DefiFlowsTool, "_fetch_json", return_value={"peggedAssets": []}
-        ):
+        with patch.object(DefiFlowsTool, "_fetch_json", return_value={"peggedAssets": []}):
             r = _tool().execute(mode="stablecoins")
             assert r.success
             assert r.data["count"] == 0
@@ -454,9 +440,7 @@ class TestChainTVLMode:
 
 class TestHTTPErrors:
     def test_timeout(self):
-        with patch.object(
-            DefiFlowsTool, "_fetch_json", side_effect=httpx.TimeoutException("timeout")
-        ):
+        with patch.object(DefiFlowsTool, "_fetch_json", side_effect=httpx.TimeoutException("timeout")):
             r = _tool().execute(mode="tvl")
             assert not r.success
             assert "timed out" in r.output
@@ -475,16 +459,12 @@ class TestHTTPErrors:
             assert not r.success
 
     def test_connection_error(self):
-        with patch.object(
-            DefiFlowsTool, "_fetch_json", side_effect=httpx.ConnectError("fail")
-        ):
+        with patch.object(DefiFlowsTool, "_fetch_json", side_effect=httpx.ConnectError("fail")):
             r = _tool().execute(mode="tvl")
             assert not r.success
 
     def test_generic_exception(self):
-        with patch.object(
-            DefiFlowsTool, "_fetch_json", side_effect=RuntimeError("boom")
-        ):
+        with patch.object(DefiFlowsTool, "_fetch_json", side_effect=RuntimeError("boom")):
             r = _tool().execute(mode="tvl")
             assert not r.success
             assert "Unexpected" in r.output
@@ -543,9 +523,7 @@ class TestOutputFormatting:
             assert "TVL" in r.output
 
     def test_stablecoins_output_mentions_supply(self):
-        with patch.object(
-            DefiFlowsTool, "_fetch_json", return_value=SAMPLE_STABLECOINS
-        ):
+        with patch.object(DefiFlowsTool, "_fetch_json", return_value=SAMPLE_STABLECOINS):
             r = _tool().execute(mode="stablecoins")
             assert "supply" in r.output.lower()
 
@@ -565,7 +543,7 @@ class TestOutputFormatting:
 
 class TestConstants:
     def test_valid_modes(self):
-        assert VALID_MODES == {"tvl", "stablecoins", "dex_volume", "chain"}
+        assert {"tvl", "stablecoins", "dex_volume", "chain"} == VALID_MODES
 
     def test_market_categories(self):
         assert "Lending" in _MARKET_CATEGORIES

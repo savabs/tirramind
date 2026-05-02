@@ -21,7 +21,7 @@ Signal theory:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -126,7 +126,7 @@ class SupplyChainMonitorTool(Tool):
     def _persist_entities_inner(self, series_data: dict[str, Any]) -> None:
         assert self._store is not None  # noqa: S101
         store = self._store
-        now_ts = datetime.now(tz=timezone.utc).timestamp()
+        now_ts = datetime.now(tz=UTC).timestamp()
 
         for series_id, info in series_data.items():
             # info may be a dict with 'label'/'sector'/'values', or a list
@@ -272,9 +272,7 @@ class SupplyChainMonitorTool(Tool):
         }
 
         if self._cache:
-            self._cache.set(
-                cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL
-            )
+            self._cache.set(cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL)
 
         self._persist_entities(data)
 
@@ -305,9 +303,7 @@ class SupplyChainMonitorTool(Tool):
         }
 
         if self._cache:
-            self._cache.set(
-                cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL
-            )
+            self._cache.set(cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL)
 
         self._persist_entities(data)
 
@@ -348,9 +344,7 @@ class SupplyChainMonitorTool(Tool):
         }
 
         if self._cache:
-            self._cache.set(
-                cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL
-            )
+            self._cache.set(cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL)
 
         self._persist_entities(data)
 
@@ -377,7 +371,7 @@ def _fetch_bls_multi(
     months: int,
 ) -> tuple[dict[str, list[dict]], str | None]:
     """Fetch multiple BLS series in a single request (up to 50 per request)."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     end_year = now.year
     start_year = max(end_year - 2, end_year - (months // 12 + 1))
 
@@ -569,9 +563,7 @@ def _compute_pressure_score(
         if avg_mom > 0:
             score_components.append(magnitude)
         else:
-            score_components.append(
-                -magnitude * 0.5
-            )  # Deflation less alarming than inflation
+            score_components.append(-magnitude * 0.5)  # Deflation less alarming than inflation
 
     # Import price component
     all_imports = import_sig.get("series", {}).get("EIUIR", {})
@@ -621,15 +613,9 @@ def _format_ppi_summary(
 
         period = sig.get("latest_period", "")
         mom = sig.get("mom_pct")
-        mom_str = (
-            f" MoM: {'+' if mom and mom > 0 else ''}{mom}%" if mom is not None else ""
-        )
+        mom_str = f" MoM: {'+' if mom and mom > 0 else ''}{mom}%" if mom is not None else ""
         three_mo = sig.get("three_month_pct")
-        three_str = (
-            f" 3mo: {'+' if three_mo and three_mo > 0 else ''}{three_mo}%"
-            if three_mo is not None
-            else ""
-        )
+        three_str = f" 3mo: {'+' if three_mo and three_mo > 0 else ''}{three_mo}%" if three_mo is not None else ""
         alert = sig.get("alert")
         alert_str = f" ⚠ {alert}" if alert else ""
         lines.append(f"  {label}: {latest} ({period}){mom_str}{three_str}{alert_str}")
@@ -638,10 +624,7 @@ def _format_ppi_summary(
     if avg is not None:
         rising = signals.get("sectors_rising", 0)
         falling = signals.get("sectors_falling", 0)
-        lines.append(
-            f"\n  Cross-sector: avg MoM {'+' if avg > 0 else ''}{avg}%"
-            f" ({rising} rising, {falling} falling)"
-        )
+        lines.append(f"\n  Cross-sector: avg MoM {'+' if avg > 0 else ''}{avg}% ({rising} rising, {falling} falling)")
 
     if signals.get("broad_inflation"):
         lines.append("  ⚠ BROAD INFLATION — 4+ sectors rising simultaneously")
@@ -665,9 +648,7 @@ def _format_import_summary(
 
         period = sig.get("latest_period", "")
         mom = sig.get("mom_pct")
-        mom_str = (
-            f" MoM: {'+' if mom and mom > 0 else ''}{mom}%" if mom is not None else ""
-        )
+        mom_str = f" MoM: {'+' if mom and mom > 0 else ''}{mom}%" if mom is not None else ""
         lines.append(f"  {label}: {latest} ({period}){mom_str}")
 
     return "\n".join(lines)
@@ -708,8 +689,6 @@ def _format_pressure_summary(
             lines.append(f"    {label}: {direction} {abs(mom)}%")
 
     if ppi_sig.get("broad_inflation"):
-        lines.append(
-            "\n  ⚠ BROAD COST-PUSH PRESSURE — multiple sectors and imports rising"
-        )
+        lines.append("\n  ⚠ BROAD COST-PUSH PRESSURE — multiple sectors and imports rising")
 
     return "\n".join(lines)

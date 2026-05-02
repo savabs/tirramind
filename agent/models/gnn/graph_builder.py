@@ -344,9 +344,7 @@ def _build_node_features(
             features[local_idx, offset + 8] = dist_feats["num_tools"]
             # Obs type distribution (18 dims)
             for ot_idx, ot_name in enumerate(OBSERVATION_TYPES):
-                features[local_idx, offset + 9 + ot_idx] = dist_feats["obs_type_dist"][
-                    ot_name
-                ]
+                features[local_idx, offset + 9 + ot_idx] = dist_feats["obs_type_dist"][ot_name]
 
     return features
 
@@ -397,9 +395,7 @@ def _build_edge_data(
             continue
 
         triplet = (type_a, ltype, type_b)
-        bucket = grouped.setdefault(
-            triplet, {"src": [], "dst": [], "conf": [], "age": []}
-        )
+        bucket = grouped.setdefault(triplet, {"src": [], "dst": [], "conf": [], "age": []})
         bucket["src"].append(local_a)
         bucket["dst"].append(local_b)
         bucket["conf"].append(link.get("confidence", 1.0))

@@ -27,6 +27,7 @@ from __future__ import annotations
 import logging
 import os
 import time
+from datetime import UTC
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -49,9 +50,7 @@ _TIMEOUT = 15
 _CACHE_TTL = 21600  # 6 hours — monthly data
 
 # ── Eurostat ────────────────────────────────────────────────────
-_EUROSTAT_BASE = (
-    "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/ei_bsco_m"
-)
+_EUROSTAT_BASE = "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/ei_bsco_m"
 
 # Known EU geo codes
 _EU_GEOS = frozenset(
@@ -134,7 +133,7 @@ class ConsumerSentimentTool(Tool):
     def __init__(
         self,
         cache: DataCache | None = None,
-        pipeline_store: "PipelineStore | None" = None,
+        pipeline_store: PipelineStore | None = None,
     ) -> None:
         self._cache = cache
         self._store = pipeline_store
@@ -224,8 +223,7 @@ class ConsumerSentimentTool(Tool):
         if not valid_geos:
             return ToolResult(
                 success=False,
-                output=f"No valid Eurostat geo codes in '{countries_str}'. "
-                f"Available: {', '.join(sorted(_EU_GEOS))}",
+                output=f"No valid Eurostat geo codes in '{countries_str}'. Available: {', '.join(sorted(_EU_GEOS))}",
             )
 
         cache_key = f"consumer_sentiment:eu:{','.join(sorted(valid_geos))}:{months}"
@@ -250,9 +248,7 @@ class ConsumerSentimentTool(Tool):
         }
 
         if self._cache:
-            self._cache.set(
-                cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL
-            )
+            self._cache.set(cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL)
 
         return ToolResult(success=True, output=summary, data=result_data)
 
@@ -295,9 +291,7 @@ class ConsumerSentimentTool(Tool):
         }
 
         if self._cache:
-            self._cache.set(
-                cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL
-            )
+            self._cache.set(cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL)
 
         return ToolResult(success=True, output=summary, data=result_data)
 
@@ -333,9 +327,7 @@ class ConsumerSentimentTool(Tool):
         }
 
         if self._cache:
-            self._cache.set(
-                cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL
-            )
+            self._cache.set(cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL)
 
         return ToolResult(success=True, output=summary, data=result_data)
 
@@ -618,9 +610,9 @@ def _fetch_fred_series(
 
 def _fetch_bls_cpi(months: int) -> tuple[list[dict], str | None]:
     """Fetch BLS CPI-U seasonally adjusted."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     # BLS requires year range; we need enough years to cover months
     end_year = now.year
     start_year = max(end_year - 2, end_year - (months // 12 + 1))
@@ -728,9 +720,7 @@ def _compute_eu_signals(
 
         if len(series) >= 3:
             recent_3 = [r["value"] for r in series[-3:]]
-            consecutive_drops = all(
-                recent_3[i] < recent_3[i - 1] for i in range(1, len(recent_3))
-            )
+            consecutive_drops = all(recent_3[i] < recent_3[i - 1] for i in range(1, len(recent_3)))
             country_sig["consecutive_decline"] = consecutive_drops
         else:
             country_sig["consecutive_decline"] = False
@@ -746,14 +736,8 @@ def _compute_eu_signals(
         signals["most_pessimistic"] = min(latest_values, key=latest_values.get)  # type: ignore[arg-type]
 
         # Synchronized decline: all countries deteriorating
-        trends = [
-            signals["countries"][g].get("trend")
-            for g in geos
-            if g in signals["countries"]
-        ]
-        signals["synchronized_decline"] = (
-            all(t == "DETERIORATING" for t in trends) and len(trends) >= 2
-        )
+        trends = [signals["countries"][g].get("trend") for g in geos if g in signals["countries"]]
+        signals["synchronized_decline"] = all(t == "DETERIORATING" for t in trends) and len(trends) >= 2
     else:
         signals["cross_country_spread"] = None
         signals["synchronized_decline"] = False
@@ -858,13 +842,9 @@ def _compute_cpi_signals(
         gap = latest_exp - actual_yoy
         signals["expectation_gap"] = round(gap, 2)
         if gap > 1.5:
-            signals["gap_signal"] = (
-                "EXPECTATIONS_ABOVE_REALITY — consumers more worried than warranted"
-            )
+            signals["gap_signal"] = "EXPECTATIONS_ABOVE_REALITY — consumers more worried than warranted"
         elif gap < -1.0:
-            signals["gap_signal"] = (
-                "EXPECTATIONS_BELOW_REALITY — inflation underestimated"
-            )
+            signals["gap_signal"] = "EXPECTATIONS_BELOW_REALITY — inflation underestimated"
         else:
             signals["gap_signal"] = "ALIGNED"
     else:
@@ -903,9 +883,7 @@ def _format_eu_summary(
     if spread is not None:
         best = signals.get("most_optimistic", "?")
         worst = signals.get("most_pessimistic", "?")
-        lines.append(
-            f"\n  Divergence: spread={spread} pts (best: {best}, worst: {worst})"
-        )
+        lines.append(f"\n  Divergence: spread={spread} pts (best: {best}, worst: {worst})")
 
     if signals.get("synchronized_decline"):
         lines.append("  ⚠ SYNCHRONIZED DECLINE — all tracked countries deteriorating")
@@ -923,15 +901,9 @@ def _format_us_summary(
     sentinel_val = signals.get("sentiment_latest")
     if sentinel_val is not None:
         mom = signals.get("sentiment_mom")
-        mom_str = (
-            f" (MoM: {'+' if mom and mom > 0 else ''}{mom})" if mom is not None else ""
-        )
+        mom_str = f" (MoM: {'+' if mom and mom > 0 else ''}{mom})" if mom is not None else ""
         vs_avg = signals.get("sentiment_vs_avg")
-        vs_str = (
-            f", vs {months}mo avg: {'+' if vs_avg and vs_avg > 0 else ''}{vs_avg}"
-            if vs_avg is not None
-            else ""
-        )
+        vs_str = f", vs {months}mo avg: {'+' if vs_avg and vs_avg > 0 else ''}{vs_avg}" if vs_avg is not None else ""
         lines.append(f"  Headline: {sentinel_val}{mom_str}{vs_str}")
         alert = signals.get("sentiment_alert")
         if alert:
@@ -969,9 +941,7 @@ def _format_cpi_summary(
 
     lines.append(f"  CPI-U SA: {cpi_val} ({period})")
     if mom is not None:
-        lines.append(
-            f"  MoM: {'+' if mom > 0 else ''}{mom}% (annualized: {'+' if ann and ann > 0 else ''}{ann}%)"
-        )
+        lines.append(f"  MoM: {'+' if mom > 0 else ''}{mom}% (annualized: {'+' if ann and ann > 0 else ''}{ann}%)")
     if yoy is not None:
         lines.append(f"  YoY: {'+' if yoy > 0 else ''}{yoy}%")
 

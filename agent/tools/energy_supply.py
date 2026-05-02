@@ -151,10 +151,7 @@ class EnergySupplyTool(Tool):
             if series_filter not in STOCK_SERIES:
                 return ToolResult(
                     success=False,
-                    output=(
-                        f"Invalid series '{series_filter}'. "
-                        f"Must be one of: {sorted(STOCK_SERIES)}"
-                    ),
+                    output=(f"Invalid series '{series_filter}'. Must be one of: {sorted(STOCK_SERIES)}"),
                 )
             series_map = {series_filter: STOCK_SERIES[series_filter]}
         else:
@@ -173,10 +170,7 @@ class EnergySupplyTool(Tool):
             if series_filter not in SUPPLY_SERIES:
                 return ToolResult(
                     success=False,
-                    output=(
-                        f"Invalid series '{series_filter}'. "
-                        f"Must be one of: {sorted(SUPPLY_SERIES)}"
-                    ),
+                    output=(f"Invalid series '{series_filter}'. Must be one of: {sorted(SUPPLY_SERIES)}"),
                 )
             series_map = {series_filter: SUPPLY_SERIES[series_filter]}
         else:
@@ -395,9 +389,7 @@ def _compute_stock_signals(records: list[dict], name: str) -> dict:
     if len(values) >= 2:
         wow_change = latest - values[-2]
         signals["wow_change"] = round(wow_change, 1)
-        signals["wow_pct"] = (
-            round(100 * wow_change / values[-2], 2) if values[-2] != 0 else None
-        )
+        signals["wow_pct"] = round(100 * wow_change / values[-2], 2) if values[-2] != 0 else None
     else:
         signals["wow_change"] = None
         signals["wow_pct"] = None
@@ -431,9 +423,7 @@ def _compute_stock_signals(records: list[dict], name: str) -> dict:
     wow = signals.get("wow_change")
     if wow is not None:
         if abs(wow) > 5000:  # >5M barrel change
-            signals["alert"] = (
-                f"SURPRISE — {wow:+,.0f}K barrel {'build' if wow > 0 else 'draw'}"
-            )
+            signals["alert"] = f"SURPRISE — {wow:+,.0f}K barrel {'build' if wow > 0 else 'draw'}"
         elif direction == "draw" and consecutive >= 3:
             signals["alert"] = f"TIGHTENING — {consecutive} consecutive weekly draws"
         elif direction == "build" and consecutive >= 3:
@@ -467,9 +457,7 @@ def _compute_rig_signals(records: list[dict]) -> dict:
     if len(values) >= 2:
         mom_change = latest - values[-2]
         signals["mom_change"] = round(mom_change, 1)
-        signals["mom_pct"] = (
-            round(100 * mom_change / values[-2], 2) if values[-2] != 0 else None
-        )
+        signals["mom_pct"] = round(100 * mom_change / values[-2], 2) if values[-2] != 0 else None
     else:
         signals["mom_change"] = None
         signals["mom_pct"] = None
@@ -481,13 +469,9 @@ def _compute_rig_signals(records: list[dict]) -> dict:
             three_mo_change_pct = round(100 * (latest - three_mo_ago) / three_mo_ago, 1)
             signals["three_month_change_pct"] = three_mo_change_pct
             if three_mo_change_pct < -10:
-                signals["alert"] = (
-                    f"WARNING — rig count down {abs(three_mo_change_pct)}% over 3 months"
-                )
+                signals["alert"] = f"WARNING — rig count down {abs(three_mo_change_pct)}% over 3 months"
             elif three_mo_change_pct > 10:
-                signals["alert"] = (
-                    f"NOTICE — rig count up {three_mo_change_pct}% over 3 months"
-                )
+                signals["alert"] = f"NOTICE — rig count up {three_mo_change_pct}% over 3 months"
             else:
                 signals["alert"] = None
         else:
@@ -545,16 +529,10 @@ def _format_petroleum_summary(
         latest = signals.get("latest_value", "N/A")
         units = signals.get("units", "")
         lines.append(
-            f"    Latest: {latest:,.0f} {units}"
-            if isinstance(latest, (int, float))
-            else f"    Latest: {latest}"
+            f"    Latest: {latest:,.0f} {units}" if isinstance(latest, (int, float)) else f"    Latest: {latest}"
         )
         avg = signals.get("period_average", "N/A")
-        lines.append(
-            f"    Average: {avg:,.0f}"
-            if isinstance(avg, (int, float))
-            else f"    Average: {avg}"
-        )
+        lines.append(f"    Average: {avg:,.0f}" if isinstance(avg, (int, float)) else f"    Average: {avg}")
 
         wow = signals.get("wow_change")
         wow_pct = signals.get("wow_pct")

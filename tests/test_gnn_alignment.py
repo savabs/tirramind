@@ -8,21 +8,18 @@ Covers:
 
 from __future__ import annotations
 
-import math
 import time
 
 import pytest
 
 from agent.models.gnn.alignment import (
-    _EPS,
-    _GNN_ENTITY_TYPES,
     _ALIGNMENT_SOURCE,
+    _GNN_ENTITY_TYPES,
     compute_belief_log_likelihood_delta,
     load_alignment_weights,
     store_entity_alignment,
 )
 from agent.pipeline.store import PipelineStore
-
 
 # ── Fixtures ───────────────────────────────────────────────────
 
@@ -53,19 +50,10 @@ def _gauss_belief(name: str, mean: float, variance: float) -> dict:
 
 
 class TestComputeBeliefLogLikelihoodDelta:
-
     def test_categorical_sharpened_belief_positive_delta(self):
         """After update, if belief shifted toward a high-prob state, KL > 0."""
-        before = [
-            _cat_belief(
-                "regime.macro", {"expansion": 0.33, "contraction": 0.33, "crisis": 0.34}
-            )
-        ]
-        after = [
-            _cat_belief(
-                "regime.macro", {"expansion": 0.90, "contraction": 0.05, "crisis": 0.05}
-            )
-        ]
+        before = [_cat_belief("regime.macro", {"expansion": 0.33, "contraction": 0.33, "crisis": 0.34})]
+        after = [_cat_belief("regime.macro", {"expansion": 0.90, "contraction": 0.05, "crisis": 0.05})]
 
         deltas = compute_belief_log_likelihood_delta(before, after)
 
@@ -106,11 +94,7 @@ class TestComputeBeliefLogLikelihoodDelta:
     def test_missing_before_variable_excluded(self):
         """Variable present in after but not in before is silently excluded."""
         before = []
-        after = [
-            _cat_belief(
-                "regime.macro", {"expansion": 0.9, "contraction": 0.05, "crisis": 0.05}
-            )
-        ]
+        after = [_cat_belief("regime.macro", {"expansion": 0.9, "contraction": 0.05, "crisis": 0.05})]
 
         deltas = compute_belief_log_likelihood_delta(before, after)
 
@@ -146,7 +130,6 @@ class TestComputeBeliefLogLikelihoodDelta:
 
 
 class TestStoreEntityAlignment:
-
     def test_stores_variable_signals(self, store):
         """Variable deltas are written to store as signals."""
         variable_deltas = {"state.macro_momentum": 0.5, "regime.macro": 0.2}
@@ -164,9 +147,7 @@ class TestStoreEntityAlignment:
 
         expected_mean = (0.4 + 0.6) / 2
         for entity_type in _GNN_ENTITY_TYPES:
-            rows = store.query_signals(
-                f"{_ALIGNMENT_SOURCE}.entity.{entity_type}", limit=1
-            )
+            rows = store.query_signals(f"{_ALIGNMENT_SOURCE}.entity.{entity_type}", limit=1)
             assert len(rows) == 1, f"Missing signal for entity type '{entity_type}'"
             assert abs(rows[0]["value"] - expected_mean) < 1e-6
 
@@ -183,7 +164,6 @@ class TestStoreEntityAlignment:
 
 
 class TestLoadAlignmentWeights:
-
     def test_returns_none_when_no_signals(self, store):
         """No alignment signals in store → returns None (uniform weights)."""
         result = load_alignment_weights(store, ["person", "company"])
@@ -192,9 +172,7 @@ class TestLoadAlignmentWeights:
     def test_high_delta_gives_low_weight(self, store):
         """High alignment delta → weight < 1.0 (entity already well aligned)."""
         # Store a high delta for 'person'
-        store.store_signal(
-            f"{_ALIGNMENT_SOURCE}.entity.person", 2.0, metadata={"as_of": time.time()}
-        )
+        store.store_signal(f"{_ALIGNMENT_SOURCE}.entity.person", 2.0, metadata={"as_of": time.time()})
         weights = load_alignment_weights(store, ["person"])
         assert weights is not None
         # weight = 1 / (1 + 2.0) = 0.333...
@@ -202,18 +180,14 @@ class TestLoadAlignmentWeights:
 
     def test_zero_delta_gives_weight_one(self, store):
         """Zero delta → weight = 1.0 (no alignment history, neutral)."""
-        store.store_signal(
-            f"{_ALIGNMENT_SOURCE}.entity.company", 0.0, metadata={"as_of": time.time()}
-        )
+        store.store_signal(f"{_ALIGNMENT_SOURCE}.entity.company", 0.0, metadata={"as_of": time.time()})
         weights = load_alignment_weights(store, ["company"])
         assert weights is not None
         assert abs(weights["company"] - 1.0) < 1e-6
 
     def test_missing_entity_type_filled_with_default(self, store):
         """Entity type with no signal gets default weight = 1.0."""
-        store.store_signal(
-            f"{_ALIGNMENT_SOURCE}.entity.person", 0.5, metadata={"as_of": time.time()}
-        )
+        store.store_signal(f"{_ALIGNMENT_SOURCE}.entity.person", 0.5, metadata={"as_of": time.time()})
         weights = load_alignment_weights(store, ["person", "vessel"])
         assert weights is not None
         assert "vessel" in weights
@@ -221,9 +195,7 @@ class TestLoadAlignmentWeights:
 
     def test_negative_delta_clamped_to_weight_one(self, store):
         """Negative delta (diffused belief) → max(delta, 0) = 0 → weight = 1.0."""
-        store.store_signal(
-            f"{_ALIGNMENT_SOURCE}.entity.wallet", -0.3, metadata={"as_of": time.time()}
-        )
+        store.store_signal(f"{_ALIGNMENT_SOURCE}.entity.wallet", -0.3, metadata={"as_of": time.time()})
         weights = load_alignment_weights(store, ["wallet"])
         assert weights is not None
         assert abs(weights["wallet"] - 1.0) < 1e-6
@@ -232,7 +204,6 @@ class TestLoadAlignmentWeights:
         """Signals older than lookback_days are ignored → returns None."""
         # Write a signal with old timestamp (manually through raw signal insertion)
         # We simulate by writing via the store but with a computed_at in the past
-        import sqlite3
 
         conn = store._get_conn()
         old_time = time.time() - 30 * 86400  # 30 days ago

@@ -181,13 +181,10 @@ class SurpriseWeightLearner:
         if S.ndim != 2 or S.shape[1] != 5:
             raise ValueError(f"surprise_matrix must be (T, 5), got {S.shape}")
         if R.ndim != 1 or R.shape[0] != S.shape[0]:
-            raise ValueError(
-                f"returns must be (T,) matching surprise_matrix rows, "
-                f"got {R.shape} vs {S.shape[0]}"
-            )
+            raise ValueError(f"returns must be (T,) matching surprise_matrix rows, got {R.shape} vs {S.shape[0]}")
         T = S.shape[0]
         min_total = cfg.min_train_periods + cfg.test_periods
-        if T < min_total:
+        if min_total > T:
             raise InsufficientDataError(f"Need ≥ {min_total} periods, got {T}")
 
         if np.any(np.isnan(S)):

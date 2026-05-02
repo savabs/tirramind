@@ -32,8 +32,8 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable
 
 import torch
 import torch.nn as nn
@@ -131,13 +131,9 @@ def compute_fisher(
         loss = loss_fn()
 
         if not isinstance(loss, Tensor):
-            raise RuntimeError(
-                f"loss_fn() must return a Tensor, got {type(loss).__name__}"
-            )
+            raise RuntimeError(f"loss_fn() must return a Tensor, got {type(loss).__name__}")
         if loss.dim() != 0:
-            raise RuntimeError(
-                f"loss_fn() must return a scalar (0-dim) Tensor, got shape {tuple(loss.shape)}"
-            )
+            raise RuntimeError(f"loss_fn() must return a scalar (0-dim) Tensor, got shape {tuple(loss.shape)}")
         if not loss.requires_grad:
             log.warning(
                 "compute_fisher: loss_fn() returned a tensor with requires_grad=False "
@@ -158,9 +154,7 @@ def compute_fisher(
 
     # Average and move to CPU
     n = float(n_samples)
-    fisher: dict[str, Tensor] = {
-        name: (accum / n).cpu() for name, accum in fisher_accum.items()
-    }
+    fisher: dict[str, Tensor] = {name: (accum / n).cpu() for name, accum in fisher_accum.items()}
 
     n_params = sum(t.numel() for t in fisher.values())
     nonzero = sum((t > 0).sum().item() for t in fisher.values())
@@ -216,8 +210,7 @@ def ewc_penalty(model: nn.Module, state: EWCState) -> Tensor:
 
         if fisher_i.shape != param.shape or anchor_i.shape != param.shape:
             log.warning(
-                "ewc_penalty: shape mismatch for '%s' — "
-                "model=%s, fisher=%s, anchor=%s. Skipping.",
+                "ewc_penalty: shape mismatch for '%s' — model=%s, fisher=%s, anchor=%s. Skipping.",
                 name,
                 tuple(param.shape),
                 tuple(fisher_i.shape),

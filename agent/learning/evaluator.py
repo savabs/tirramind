@@ -61,6 +61,7 @@ Scoring guide:
 @dataclass
 class Evaluation:
     """Structured assessment of an agent run."""
+
     success: bool
     score: float  # 0-1
     new_facts_count: int = 0
@@ -141,10 +142,7 @@ class Evaluator:
             score=0.6 if result.success else 0.2,
             new_facts_count=1 if result.success else 0,
             dead_end=not result.success and result.steps_taken <= 1,
-            lessons=[
-                f"Run {'succeeded' if result.success else 'failed'} "
-                f"in {result.steps_taken} steps"
-            ],
+            lessons=[f"Run {'succeeded' if result.success else 'failed'} in {result.steps_taken} steps"],
         )
 
     @staticmethod

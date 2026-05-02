@@ -238,7 +238,7 @@ class GlobalPmiTool(Tool):
     def __init__(
         self,
         cache: DataCache | None = None,
-        pipeline_store: "PipelineStore | None" = None,
+        pipeline_store: PipelineStore | None = None,
     ) -> None:
         self._cache = cache
         self._store = pipeline_store
@@ -372,9 +372,7 @@ class GlobalPmiTool(Tool):
             # OECD CSV columns vary but include: REF_AREA, TIME_PERIOD, OBS_VALUE
             country = record.get("REF_AREA") or record.get("Reference area", "")
             period = record.get("TIME_PERIOD") or record.get("Time period", "")
-            value = _parse_float(
-                record.get("OBS_VALUE") or record.get("Observation value")
-            )
+            value = _parse_float(record.get("OBS_VALUE") or record.get("Observation value"))
 
             if country and period and value is not None:
                 rows.append(
@@ -443,26 +441,18 @@ class GlobalPmiTool(Tool):
             "signals": all_signals,
         }
 
-    def _compute_signals(
-        self, country: str, entries: list[dict[str, Any]]
-    ) -> dict[str, Any]:
+    def _compute_signals(self, country: str, entries: list[dict[str, Any]]) -> dict[str, Any]:
         """Compute momentum, regime, and direction for a single country."""
         signals: dict[str, Any] = {}
         latest = entries[-1]["value"]
 
         # Regime: > 100 = expansion, < 100 = contraction
         if latest > 100:
-            direction = (
-                "expanding"
-                if len(entries) >= 2 and entries[-1]["value"] > entries[-2]["value"]
-                else "peaking"
-            )
+            direction = "expanding" if len(entries) >= 2 and entries[-1]["value"] > entries[-2]["value"] else "peaking"
             signals["regime"] = direction
         else:
             direction = (
-                "contracting"
-                if len(entries) >= 2 and entries[-1]["value"] < entries[-2]["value"]
-                else "troughing"
+                "contracting" if len(entries) >= 2 and entries[-1]["value"] < entries[-2]["value"] else "troughing"
             )
             signals["regime"] = direction
 
@@ -475,17 +465,13 @@ class GlobalPmiTool(Tool):
         if len(entries) >= 7:
             six_ago = entries[-7]["value"]
             if six_ago != 0:
-                signals["momentum_6m"] = round(
-                    (latest - six_ago) / abs(six_ago) * 100, 2
-                )
+                signals["momentum_6m"] = round((latest - six_ago) / abs(six_ago) * 100, 2)
 
         signals["latest_value"] = latest
         signals["latest_period"] = entries[-1]["period"]
         return signals
 
-    def _compute_spreads(
-        self, by_country: dict[str, list[dict[str, Any]]]
-    ) -> dict[str, float]:
+    def _compute_spreads(self, by_country: dict[str, list[dict[str, Any]]]) -> dict[str, float]:
         """Compute cross-country spreads using latest values."""
         latest_vals: dict[str, float] = {}
         for cc, entries in by_country.items():

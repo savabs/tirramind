@@ -19,8 +19,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from agent.tools.electricity_monitor import (
-    EIA_FUEL_TYPES,
-    KNOWN_REGIONS,
     VALID_MODES,
     ElectricityMonitorTool,
     _aggregate_hourly,
@@ -28,8 +26,6 @@ from agent.tools.electricity_monitor import (
     _fuel_mix_proportions,
     _safe_float,
 )
-from agent.tools.base import ToolResult
-
 
 # ── FIXTURES ──
 
@@ -82,7 +78,7 @@ class TestModeValidation:
         assert not r.success
 
     def test_valid_modes_constant(self):
-        assert VALID_MODES == {"demand", "generation", "interchange"}
+        assert {"demand", "generation", "interchange"} == VALID_MODES
 
     def test_no_api_key(self, tool_no_key):
         r = tool_no_key.execute(mode="demand", region="PJM")
@@ -391,9 +387,7 @@ class TestHelpers:
 class TestFetchEia:
     @patch("agent.tools.electricity_monitor.httpx.get")
     def test_success(self, mock_get):
-        mock_get.return_value = _mock_response(
-            200, json_data={"response": {"data": [{"value": 42}]}}
-        )
+        mock_get.return_value = _mock_response(200, json_data={"response": {"data": [{"value": 42}]}})
         result = _fetch_eia("electricity/rto/region-data", None, "key")
         assert result is not None
         assert len(result) == 1
@@ -414,9 +408,7 @@ class TestFetchEia:
 
     @patch("agent.tools.electricity_monitor.httpx.get")
     def test_with_facets(self, mock_get):
-        mock_get.return_value = _mock_response(
-            200, json_data={"response": {"data": []}}
-        )
+        mock_get.return_value = _mock_response(200, json_data={"response": {"data": []}})
         result = _fetch_eia("test", {"respondent": ["PJM"]}, "key")
         assert result is not None
 

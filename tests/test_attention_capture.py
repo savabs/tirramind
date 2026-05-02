@@ -9,13 +9,11 @@ Covers:
 
 from __future__ import annotations
 
-import pytest
 import torch
 from torch_geometric.data import HeteroData
 
 from agent.models.gnn.graph_builder import IDMap
 from agent.models.gnn.het_tgn import AttentionCapturingHGTConv, HetTGN
-
 
 # ─── Helpers ──────────────────────────────────────────────────
 
@@ -334,7 +332,8 @@ class TestPatternExtractorUsesAttention:
 
     def test_attention_extraction_returns_scores(self):
         """_extract_attention_hooks now delegates to model.get_attention_weights."""
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import MagicMock
+
         from agent.models.gnn.pattern_extractor import PatternExtractor
 
         data, id_map, metadata = _make_simple_graph()
@@ -353,6 +352,7 @@ class TestPatternExtractorUsesAttention:
     def test_graceful_fallback_on_error(self):
         """If get_attention_weights raises, returns empty dict."""
         from unittest.mock import MagicMock, patch
+
         from agent.models.gnn.pattern_extractor import PatternExtractor
 
         data, id_map, metadata = _make_simple_graph()
@@ -360,9 +360,7 @@ class TestPatternExtractorUsesAttention:
         store = MagicMock()
 
         extractor = PatternExtractor(model, store)
-        with patch.object(
-            model, "get_attention_weights", side_effect=RuntimeError("boom")
-        ):
+        with patch.object(model, "get_attention_weights", side_effect=RuntimeError("boom")):
             result = extractor._extract_attention_hooks(data, id_map)
         assert result == {}
 

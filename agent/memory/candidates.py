@@ -102,9 +102,7 @@ class CandidateStore:
     # Public API
     # ------------------------------------------------------------------ #
 
-    def process(
-        self, new_learnings: list[LearningEntry], run_id: str
-    ) -> ProcessResult:
+    def process(self, new_learnings: list[LearningEntry], run_id: str) -> ProcessResult:
         """Main entry point — cluster, merge, evaluate."""
         result = ProcessResult()
 
@@ -133,9 +131,7 @@ class CandidateStore:
                 cand.distinct_runs.append(run_id)
             cand.support_count = len(cand.evidence)
             cand.last_seen = entry.timestamp
-            cand.avg_reward = (
-                sum(e["reward"] for e in cand.evidence) / cand.support_count
-            )
+            cand.avg_reward = sum(e["reward"] for e in cand.evidence) / cand.support_count
             cand.reward_sign_agreement = self._sign_agreement(cand)
             result.candidates_updated += 1
 
@@ -204,13 +200,8 @@ class CandidateStore:
     ) -> str:
         """Returns 'accept', 'reject', or 'staged'."""
         # Rejection: low average reward
-        if (
-            candidate.support_count >= self._min_support
-            and candidate.avg_reward < self._low_reward
-        ):
-            candidate.rejection_reason = (
-                f"low_avg_reward ({candidate.avg_reward:.3f})"
-            )
+        if candidate.support_count >= self._min_support and candidate.avg_reward < self._low_reward:
+            candidate.rejection_reason = f"low_avg_reward ({candidate.avg_reward:.3f})"
             return "reject"
 
         # Rejection: stale — no new evidence in N days
@@ -222,9 +213,7 @@ class CandidateStore:
         # Rejection: contradicts accepted lesson with higher support
         for acc in accepted:
             if self._contradicts(candidate, acc) and acc.support_count > candidate.support_count:
-                candidate.rejection_reason = (
-                    f"contradicts_accepted:{acc.cluster_key}"
-                )
+                candidate.rejection_reason = f"contradicts_accepted:{acc.cluster_key}"
                 return "reject"
 
         # Promotion check
@@ -259,9 +248,7 @@ class CandidateStore:
         prefix_b, sign_b = parts_b
         return prefix_a == prefix_b and sign_a != sign_b
 
-    def _is_duplicate(
-        self, candidate: LessonCandidate, accepted: list[LessonCandidate]
-    ) -> bool:
+    def _is_duplicate(self, candidate: LessonCandidate, accepted: list[LessonCandidate]) -> bool:
         tokens_a = set(candidate.claim.lower().split())
         if not tokens_a:
             return False

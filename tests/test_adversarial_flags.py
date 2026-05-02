@@ -12,7 +12,6 @@ from agent.adversarial.config import (
 )
 from agent.adversarial.flags import AdversarialFlag
 
-
 # ── AdversarialFlag ──────────────────────────────────────────────────
 
 
@@ -92,9 +91,7 @@ class TestAdversarialFlag:
         assert f.evidence == {}
 
     def test_custom_timestamp(self):
-        f = AdversarialFlag(
-            flag_type="edge_decay", severity=0.5, confidence=0.5, timestamp=123.456
-        )
+        f = AdversarialFlag(flag_type="edge_decay", severity=0.5, confidence=0.5, timestamp=123.456)
         assert f.timestamp == 123.456
 
     def test_default_timestamp_is_float(self):

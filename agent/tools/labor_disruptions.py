@@ -33,6 +33,7 @@ Market relevance:
 from __future__ import annotations
 
 import logging
+from datetime import UTC
 from typing import Any
 
 import httpx
@@ -50,7 +51,7 @@ _BLS_BASE = "https://api.bls.gov/publicAPI/v2/timeseries/data/"
 
 # BLS series IDs for major work stoppages
 SERIES_WORKERS = "WSU001"  # Workers involved (thousands)
-SERIES_IDLE = "WSU002"     # Days idle (thousands)
+SERIES_IDLE = "WSU002"  # Days idle (thousands)
 
 VALID_MODES = {"work_stoppages", "idle_days", "overview"}
 
@@ -110,9 +111,9 @@ class LaborDisruptionsTool(Tool):
                 output=f"Invalid mode '{mode}'. Must be one of: {sorted(VALID_MODES)}",
             )
 
-        from datetime import datetime, timezone
+        from datetime import datetime
 
-        now_year = datetime.now(timezone.utc).year
+        now_year = datetime.now(UTC).year
         end_year = kwargs.get("end_year") or now_year
         start_year = kwargs.get("start_year") or (end_year - _DEFAULT_SPAN)
 
@@ -127,11 +128,17 @@ class LaborDisruptionsTool(Tool):
 
         if mode == "work_stoppages":
             return self._handle_single_series(
-                SERIES_WORKERS, start_year, end_year, "workers",
+                SERIES_WORKERS,
+                start_year,
+                end_year,
+                "workers",
             )
         elif mode == "idle_days":
             return self._handle_single_series(
-                SERIES_IDLE, start_year, end_year, "idle_days",
+                SERIES_IDLE,
+                start_year,
+                end_year,
+                "idle_days",
             )
         else:
             return self._handle_overview(start_year, end_year)
@@ -139,14 +146,20 @@ class LaborDisruptionsTool(Tool):
     # ── Mode handlers ───────────────────────────────────────
 
     def _handle_single_series(
-        self, series_id: str, start: int, end: int, label: str,
+        self,
+        series_id: str,
+        start: int,
+        end: int,
+        label: str,
     ) -> ToolResult:
         cache_key = f"labor:{label}:{start}-{end}"
         if self._cache:
             hit = self._cache.get(cache_key)
             if hit is not None:
                 return ToolResult(
-                    success=True, output=hit["output"], data=hit["data"],
+                    success=True,
+                    output=hit["output"],
+                    data=hit["data"],
                 )
 
         records, err = _fetch_bls_series(series_id, start, end)
@@ -181,7 +194,9 @@ class LaborDisruptionsTool(Tool):
             hit = self._cache.get(cache_key)
             if hit is not None:
                 return ToolResult(
-                    success=True, output=hit["output"], data=hit["data"],
+                    success=True,
+                    output=hit["output"],
+                    data=hit["data"],
                 )
 
         workers, err_w = _fetch_bls_series(SERIES_WORKERS, start, end)
@@ -219,7 +234,9 @@ class LaborDisruptionsTool(Tool):
 
 
 def _fetch_bls_series(
-    series_id: str, start_year: int, end_year: int,
+    series_id: str,
+    start_year: int,
+    end_year: int,
 ) -> tuple[list[dict], str | None]:
     """Fetch BLS time series. Returns (records, error_string_or_None)."""
     payload = {
@@ -230,7 +247,8 @@ def _fetch_bls_series(
 
     try:
         with httpx.Client(
-            timeout=_TIMEOUT, headers={"User-Agent": _UA},
+            timeout=_TIMEOUT,
+            headers={"User-Agent": _UA},
         ) as client:
             resp = client.post(_BLS_BASE, json=payload)
     except httpx.TimeoutException:
@@ -281,15 +299,19 @@ def _parse_bls_records(raw: list, series_id: str) -> list[dict]:
             if code or text:
                 footnotes.append(f"{code}: {text}" if code else text)
 
-        records.append({
-            "year": year,
-            "period": period,
-            "period_name": period_name,
-            "value": value,
-            "preliminary": any("P" in fn.get("code", "") for fn in entry.get("footnotes", []) if isinstance(fn, dict)),
-            "series_id": series_id,
-            "footnotes": footnotes,
-        })
+        records.append(
+            {
+                "year": year,
+                "period": period,
+                "period_name": period_name,
+                "value": value,
+                "preliminary": any(
+                    "P" in fn.get("code", "") for fn in entry.get("footnotes", []) if isinstance(fn, dict)
+                ),
+                "series_id": series_id,
+                "footnotes": footnotes,
+            }
+        )
 
     # Sort chronologically (BLS returns newest-first)
     records.sort(key=lambda r: (r["year"], r["period"]))
@@ -381,7 +403,8 @@ def _compute_single_signals(records: list[dict], label: str) -> dict:
 
 
 def _compute_overview_signals(
-    workers: list[dict], idle: list[dict],
+    workers: list[dict],
+    idle: list[dict],
 ) -> dict:
     """Compute combined signals from workers + idle-days series."""
     w_signals = _compute_single_signals(workers, "workers")
@@ -420,7 +443,11 @@ def _compute_overview_signals(
 
 
 def _format_single_summary(
-    records: list[dict], signals: dict, label: str, start: int, end: int,
+    records: list[dict],
+    signals: dict,
+    label: str,
+    start: int,
+    end: int,
 ) -> str:
     """Format a single-series summary."""
     unit = "thousands of workers" if label == "workers" else "thousands of days idle"
@@ -458,7 +485,11 @@ def _format_single_summary(
 
 
 def _format_overview_summary(
-    workers: list[dict], idle: list[dict], signals: dict, start: int, end: int,
+    workers: list[dict],
+    idle: list[dict],
+    signals: dict,
+    start: int,
+    end: int,
 ) -> str:
     """Format combined overview summary."""
     lines = [f"BLS Work Stoppages — Overview ({start}-{end})"]

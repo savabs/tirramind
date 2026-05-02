@@ -8,8 +8,6 @@ boundary conditions.
 
 from __future__ import annotations
 
-import json
-import math
 import time
 
 import pytest
@@ -21,7 +19,6 @@ from agent.features.builders import (
 )
 from agent.features.protocol import EngineeredFeature, validate_feature
 from agent.pipeline.store import PipelineStore
-
 
 # ── helpers ────────────────────────────────────────────────────
 
@@ -159,15 +156,9 @@ class TestConvergenceFeatureBuilderBasic:
 
     def test_stress_breadth_multiple_signals(self):
         store = _store()
-        _insert_convergence_signal(
-            store, signal_name="convergence.a.2026-04-01", value=0.5
-        )
-        _insert_convergence_signal(
-            store, signal_name="convergence.b.2026-04-01", value=0.7
-        )
-        _insert_convergence_signal(
-            store, signal_name="convergence.c.2026-04-02", value=0.3
-        )
+        _insert_convergence_signal(store, signal_name="convergence.a.2026-04-01", value=0.5)
+        _insert_convergence_signal(store, signal_name="convergence.b.2026-04-01", value=0.7)
+        _insert_convergence_signal(store, signal_name="convergence.c.2026-04-02", value=0.3)
         features = ConvergenceFeatureBuilder().build(store, _NOW)
         breadth = next(f for f in features if "breadth" in f.feature_name)
         assert breadth.value == 3.0
@@ -175,12 +166,8 @@ class TestConvergenceFeatureBuilderBasic:
 
     def test_stress_intensity_is_max_value(self):
         store = _store()
-        _insert_convergence_signal(
-            store, signal_name="convergence.a.2026-04-01", value=0.3
-        )
-        _insert_convergence_signal(
-            store, signal_name="convergence.b.2026-04-01", value=0.9
-        )
+        _insert_convergence_signal(store, signal_name="convergence.a.2026-04-01", value=0.3)
+        _insert_convergence_signal(store, signal_name="convergence.b.2026-04-01", value=0.9)
         features = ConvergenceFeatureBuilder().build(store, _NOW)
         intensity = next(f for f in features if "intensity" in f.feature_name)
         assert intensity.value == pytest.approx(0.9)
@@ -253,8 +240,7 @@ class TestConvergenceFeatureBuilderEdgeCases:
         store.store_signal("convergence.test.2026-04-01", 0.5, {"event_type": "test"})
         conn = store._get_conn()
         conn.execute(
-            "UPDATE signals SET computed_at=? WHERE id = "
-            "(SELECT id FROM signals ORDER BY id DESC LIMIT 1)",
+            "UPDATE signals SET computed_at=? WHERE id = (SELECT id FROM signals ORDER BY id DESC LIMIT 1)",
             (_NOW - 3600,),
         )
         conn.commit()
@@ -270,8 +256,7 @@ class TestConvergenceFeatureBuilderEdgeCases:
         # Override computed_at to be within the window
         conn = store._get_conn()
         conn.execute(
-            "UPDATE signals SET computed_at=? WHERE id = "
-            "(SELECT id FROM signals ORDER BY id DESC LIMIT 1)",
+            "UPDATE signals SET computed_at=? WHERE id = (SELECT id FROM signals ORDER BY id DESC LIMIT 1)",
             (_NOW - 3600,),
         )
         conn.commit()
@@ -283,12 +268,8 @@ class TestConvergenceFeatureBuilderEdgeCases:
         """Same signal_name appearing multiple times counts as one for breadth."""
         store = _store()
         name = "convergence.credit_stress.2026-04-01"
-        _insert_convergence_signal(
-            store, signal_name=name, value=0.5, computed_at=_NOW - 3600
-        )
-        _insert_convergence_signal(
-            store, signal_name=name, value=0.8, computed_at=_NOW - 1800
-        )
+        _insert_convergence_signal(store, signal_name=name, value=0.5, computed_at=_NOW - 3600)
+        _insert_convergence_signal(store, signal_name=name, value=0.8, computed_at=_NOW - 1800)
         features = ConvergenceFeatureBuilder().build(store, _NOW)
         breadth = next(f for f in features if "breadth" in f.feature_name)
         assert breadth.value == 1.0
@@ -342,9 +323,7 @@ class TestMacroStateFeatureBuilderBasic:
         data.update(_make_fred_series("DFF", n_obs=60, start_value=5.25, trend=0.001))
         data.update(_make_fred_series("GS10", n_obs=60, start_value=4.5, trend=0.002))
         data.update(_make_fred_series("GS2", n_obs=60, start_value=4.8, trend=0.001))
-        data.update(
-            _make_fred_series("WALCL", n_obs=60, start_value=8_000_000, trend=-10_000)
-        )
+        data.update(_make_fred_series("WALCL", n_obs=60, start_value=8_000_000, trend=-10_000))
         _insert_macro_data(store, data)
         features = MacroStateFeatureBuilder().build(store, _NOW)
         assert len(features) == 3
@@ -510,9 +489,7 @@ class TestLiquidityPressure:
     def test_shrinking_balance_sheet(self):
         """Declining WALCL → negative z-score (tightening)."""
         store = _store()
-        data = _make_fred_series(
-            "WALCL", n_obs=60, start_value=9_000_000, trend=-20_000
-        )
+        data = _make_fred_series("WALCL", n_obs=60, start_value=9_000_000, trend=-20_000)
         _insert_macro_data(store, data)
         features = MacroStateFeatureBuilder().build(store, _NOW)
         liq = next(f for f in features if "liquidity_pressure" in f.feature_name)

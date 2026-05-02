@@ -6,23 +6,20 @@ filtering, named areas, vessel lookup, port calls, destination flow,
 cache integration, HTTP errors, schema validation, registry integration.
 """
 
-import json
-from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock, patch, PropertyMock
+from datetime import UTC, datetime, timedelta
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from agent.tools.ais_vessel import (
+    _NAMED_AREAS,
+    _NAV_STATUS,
     AISVesselTool,
     _in_bbox,
     _ship_type_label,
     _ship_type_matches,
-    _NAMED_AREAS,
-    _NAV_STATUS,
-    _SHIP_TYPE_RANGES,
 )
 from agent.tools.base import ToolResult
-
 
 # ── Helpers ─────────────────────────────────────────────────────────
 
@@ -241,9 +238,7 @@ class TestAreaMode:
             _make_feature(222222222, 60.0, 30.0),
         ]
         with patch.object(tool, "_fetch_locations", return_value=features):
-            r = tool.execute(
-                mode="area", lat_min=59.0, lat_max=61.0, lon_min=24.0, lon_max=26.0
-            )
+            r = tool.execute(mode="area", lat_min=59.0, lat_max=61.0, lon_min=24.0, lon_max=26.0)
         assert r.success
         assert r.data["total_vessels"] == 1
 
@@ -255,9 +250,7 @@ class TestAreaMode:
 
     def test_invalid_bbox_min_gte_max(self):
         tool = AISVesselTool()
-        r = tool.execute(
-            mode="area", lat_min=61.0, lat_max=59.0, lon_min=24.0, lon_max=26.0
-        )
+        r = tool.execute(mode="area", lat_min=61.0, lat_max=59.0, lon_min=24.0, lon_max=26.0)
         assert not r.success
         assert "Invalid bounding box" in r.output
 
@@ -271,12 +264,11 @@ class TestAreaMode:
             111111111: _make_meta(111111111, ship_type=80),  # tanker
             222222222: _make_meta(222222222, ship_type=70),  # cargo
         }
-        with patch.object(
-            tool, "_fetch_locations", return_value=features
-        ), patch.object(tool, "_fetch_metadata", return_value=meta):
-            r = tool.execute(
-                mode="area", area_name="danish_straits", ship_type="tanker"
-            )
+        with (
+            patch.object(tool, "_fetch_locations", return_value=features),
+            patch.object(tool, "_fetch_metadata", return_value=meta),
+        ):
+            r = tool.execute(mode="area", area_name="danish_straits", ship_type="tanker")
         assert r.success
         assert r.data["total_vessels"] == 1
         assert r.data["vessels"][0]["mmsi"] == 111111111
@@ -285,9 +277,10 @@ class TestAreaMode:
         """ship_type=all should NOT fetch metadata (optimization)."""
         tool = AISVesselTool()
         features = [_make_feature(111111111, 57.0, 11.0)]
-        with patch.object(
-            tool, "_fetch_locations", return_value=features
-        ) as loc_mock, patch.object(tool, "_fetch_metadata") as meta_mock:
+        with (
+            patch.object(tool, "_fetch_locations", return_value=features) as loc_mock,
+            patch.object(tool, "_fetch_metadata") as meta_mock,
+        ):
             r = tool.execute(mode="area", area_name="danish_straits", ship_type="all")
         assert r.success
         loc_mock.assert_called_once()
@@ -378,9 +371,7 @@ class TestAreaMode:
         tool = AISVesselTool()
         import httpx
 
-        with patch.object(
-            tool, "_fetch_locations", side_effect=httpx.HTTPError("timeout")
-        ):
+        with patch.object(tool, "_fetch_locations", side_effect=httpx.HTTPError("timeout")):
             r = tool.execute(mode="area", area_name="danish_straits")
         assert not r.success
         assert "fetch failed" in r.output
@@ -390,14 +381,11 @@ class TestAreaMode:
         import httpx
 
         features = [_make_feature(111, 57.0, 11.0)]
-        with patch.object(
-            tool, "_fetch_locations", return_value=features
-        ), patch.object(
-            tool, "_fetch_metadata", side_effect=httpx.HTTPError("timeout")
+        with (
+            patch.object(tool, "_fetch_locations", return_value=features),
+            patch.object(tool, "_fetch_metadata", side_effect=httpx.HTTPError("timeout")),
         ):
-            r = tool.execute(
-                mode="area", area_name="danish_straits", ship_type="tanker"
-            )
+            r = tool.execute(mode="area", area_name="danish_straits", ship_type="tanker")
         assert not r.success
         assert "metadata fetch failed" in r.output
 
@@ -429,9 +417,10 @@ class TestAreaMode:
             2: _make_meta(2, name="FAST SHIP"),
             3: _make_meta(3, name="MED VESSEL"),
         }
-        with patch.object(
-            tool, "_fetch_locations", return_value=features
-        ), patch.object(tool, "_fetch_metadata", return_value=meta):
+        with (
+            patch.object(tool, "_fetch_locations", return_value=features),
+            patch.object(tool, "_fetch_metadata", return_value=meta),
+        ):
             r = tool.execute(mode="area", area_name="danish_straits", ship_type="cargo")
         assert r.success
         # Output should have FAST SHIP before MED VESSEL before SLOW BOAT
@@ -487,9 +476,10 @@ class TestVesselMode:
         meta = _make_meta(230935000, name="EIRA", ship_type=70, destination="FIRAA RR6")
         features = [_make_feature(230935000, 64.657, 24.412, sog=0.0, nav_stat=5)]
 
-        with patch.object(
-            tool, "_fetch_vessel_metadata_single", return_value=meta
-        ), patch.object(tool, "_fetch_locations", return_value=features):
+        with (
+            patch.object(tool, "_fetch_vessel_metadata_single", return_value=meta),
+            patch.object(tool, "_fetch_locations", return_value=features),
+        ):
             r = tool.execute(mode="vessel", mmsi=230935000)
         assert r.success
         assert r.data["name"] == "EIRA"
@@ -504,9 +494,10 @@ class TestVesselMode:
 
     def test_vessel_not_found(self):
         tool = AISVesselTool()
-        with patch.object(
-            tool, "_fetch_vessel_metadata_single", return_value=None
-        ), patch.object(tool, "_fetch_locations", return_value=[]):
+        with (
+            patch.object(tool, "_fetch_vessel_metadata_single", return_value=None),
+            patch.object(tool, "_fetch_locations", return_value=[]),
+        ):
             r = tool.execute(mode="vessel", mmsi=999999999)
         assert not r.success
         assert "not found" in r.output.lower()
@@ -515,9 +506,10 @@ class TestVesselMode:
         """Vessel has metadata but isn't in location feed (out of range)."""
         tool = AISVesselTool()
         meta = _make_meta(123456789, name="FAR AWAY SHIP", destination="SG SIN")
-        with patch.object(
-            tool, "_fetch_vessel_metadata_single", return_value=meta
-        ), patch.object(tool, "_fetch_locations", return_value=[]):
+        with (
+            patch.object(tool, "_fetch_vessel_metadata_single", return_value=meta),
+            patch.object(tool, "_fetch_locations", return_value=[]),
+        ):
             r = tool.execute(mode="vessel", mmsi=123456789)
         assert r.success
         assert "FAR AWAY SHIP" in r.output
@@ -527,9 +519,10 @@ class TestVesselMode:
         """Vessel in location feed but no metadata returned."""
         tool = AISVesselTool()
         features = [_make_feature(123456789, 60.0, 25.0, sog=10.0)]
-        with patch.object(
-            tool, "_fetch_vessel_metadata_single", return_value=None
-        ), patch.object(tool, "_fetch_locations", return_value=features):
+        with (
+            patch.object(tool, "_fetch_vessel_metadata_single", return_value=None),
+            patch.object(tool, "_fetch_locations", return_value=features),
+        ):
             r = tool.execute(mode="vessel", mmsi=123456789)
         assert r.success
         assert r.data["lat"] == pytest.approx(60.0)
@@ -540,9 +533,10 @@ class TestVesselMode:
         meta = _make_meta(111)
         meta["draught"] = 125  # 12.5m in AIS encoding (tenths of meters)
         features = [_make_feature(111, 60.0, 25.0)]
-        with patch.object(
-            tool, "_fetch_vessel_metadata_single", return_value=meta
-        ), patch.object(tool, "_fetch_locations", return_value=features):
+        with (
+            patch.object(tool, "_fetch_vessel_metadata_single", return_value=meta),
+            patch.object(tool, "_fetch_locations", return_value=features),
+        ):
             r = tool.execute(mode="vessel", mmsi=111)
         assert r.success
         assert "12.5m" in r.output
@@ -551,9 +545,7 @@ class TestVesselMode:
         tool = AISVesselTool()
         import httpx
 
-        with patch.object(
-            tool, "_fetch_vessel_metadata_single", side_effect=httpx.HTTPError("err")
-        ):
+        with patch.object(tool, "_fetch_vessel_metadata_single", side_effect=httpx.HTTPError("err")):
             r = tool.execute(mode="vessel", mmsi=111)
         assert not r.success
 
@@ -563,9 +555,10 @@ class TestVesselMode:
         import httpx
 
         meta = _make_meta(111, name="STILL WORKS")
-        with patch.object(
-            tool, "_fetch_vessel_metadata_single", return_value=meta
-        ), patch.object(tool, "_fetch_locations", side_effect=httpx.HTTPError("err")):
+        with (
+            patch.object(tool, "_fetch_vessel_metadata_single", return_value=meta),
+            patch.object(tool, "_fetch_locations", side_effect=httpx.HTTPError("err")),
+        ):
             r = tool.execute(mode="vessel", mmsi=111)
         assert r.success
         assert "STILL WORKS" in r.output
@@ -574,9 +567,10 @@ class TestVesselMode:
         """MMSI passed as string should still work (coerced to int)."""
         tool = AISVesselTool()
         meta = _make_meta(230935000, name="EIRA")
-        with patch.object(
-            tool, "_fetch_vessel_metadata_single", return_value=meta
-        ), patch.object(tool, "_fetch_locations", return_value=[]):
+        with (
+            patch.object(tool, "_fetch_vessel_metadata_single", return_value=meta),
+            patch.object(tool, "_fetch_locations", return_value=[]),
+        ):
             r = tool.execute(mode="vessel", mmsi="230935000")
         assert r.success
 
@@ -606,9 +600,7 @@ class TestPortCallsMode:
         assert r.success
         # Should have called with yesterday's date
         called_date = mock.call_args[0][0]
-        yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime(
-            "%Y-%m-%d"
-        )
+        yesterday = (datetime.now(UTC) - timedelta(days=1)).strftime("%Y-%m-%d")
         assert called_date == yesterday
 
     def test_port_calls_empty(self):
@@ -622,9 +614,7 @@ class TestPortCallsMode:
         tool = AISVesselTool()
         import httpx
 
-        with patch.object(
-            tool, "_fetch_port_calls", side_effect=httpx.HTTPError("err")
-        ):
+        with patch.object(tool, "_fetch_port_calls", side_effect=httpx.HTTPError("err")):
             r = tool.execute(mode="port_calls", from_date="2026-03-26")
         assert not r.success
 

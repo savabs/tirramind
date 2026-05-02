@@ -21,11 +21,11 @@ from __future__ import annotations
 import logging
 import re
 import time
-import xml.etree.ElementTree as ET
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
+import defusedxml.ElementTree as ET
 import httpx
 
 from agent.data.cache import DataCache
@@ -58,7 +58,6 @@ _ACQ_WEIGHTS: dict[str, float] = {
 
 
 class Form144Tool(Tool):
-
     name = "form144"
 
     description = (
@@ -79,10 +78,7 @@ class Form144Tool(Tool):
             },
             "ticker": {
                 "type": "string",
-                "description": (
-                    "Optional: filter to a specific company ticker. "
-                    "If omitted, scans all companies."
-                ),
+                "description": ("Optional: filter to a specific company ticker. If omitted, scans all companies."),
                 "default": "",
             },
             "min_cluster_size": {
@@ -181,15 +177,9 @@ class Form144Tool(Tool):
             )
 
         # Format output
-        lines = [
-            f"Insider Sell-Intent Clusters — {len(clusters)} found (last {days_back} days):\n"
-        ]
+        lines = [f"Insider Sell-Intent Clusters — {len(clusters)} found (last {days_back} days):\n"]
         for i, c in enumerate(clusters, 1):
-            pct = (
-                f"{c['pct_of_outstanding']:.3f}%"
-                if c["pct_of_outstanding"] > 0
-                else "N/A"
-            )
+            pct = f"{c['pct_of_outstanding']:.3f}%" if c["pct_of_outstanding"] > 0 else "N/A"
             lines.append(
                 f"  {i}. {c['ticker']} ({c['company']}) — {c['insider_count']} insiders, "
                 f"${c['total_value']:,.0f} total ({pct} of outstanding)\n"
@@ -197,11 +187,7 @@ class Form144Tool(Tool):
                 f"Urgency: {c['urgency']} | Conviction: {c['conviction']}"
             )
             for fil in c["filings"][:5]:
-                acq_tag = (
-                    f" [{fil['acquisition_type']}]"
-                    if fil["acquisition_type"] != "other"
-                    else ""
-                )
+                acq_tag = f" [{fil['acquisition_type']}]" if fil["acquisition_type"] != "other" else ""
                 lines.append(
                     f"       ⊖ {fil['insider_name']}"
                     + (f" ({fil['relationship']})" if fil["relationship"] else "")
@@ -282,9 +268,7 @@ class Form144Tool(Tool):
 
         return all_hits
 
-    def _fetch_filing_xml(
-        self, cik: str, accession: str, primary_doc: str
-    ) -> str | None:
+    def _fetch_filing_xml(self, cik: str, accession: str, primary_doc: str) -> str | None:
         """Fetch a single Form 144 XML from EDGAR archives."""
         accession_clean = accession.replace("-", "")
         url = f"{_EDGAR_ARCHIVES}/{cik}/{accession_clean}/{primary_doc}"
@@ -298,9 +282,7 @@ class Form144Tool(Tool):
         time.sleep(_SEC_REQUEST_DELAY)
 
         try:
-            with httpx.Client(
-                timeout=15, headers={"User-Agent": _USER_AGENT}, follow_redirects=True
-            ) as client:
+            with httpx.Client(timeout=15, headers={"User-Agent": _USER_AGENT}, follow_redirects=True) as client:
                 resp = client.get(url)
                 resp.raise_for_status()
                 xml_text = resp.text
@@ -341,9 +323,7 @@ class Form144Tool(Tool):
             # Find the display name with a ticker (issuer)
             issuer_display = names[0]
             issuer_cik = ciks[0]
-            filer_name = (
-                _clean_name(names[1].split("(CIK")[0]) if len(names) > 1 else ""
-            )
+            filer_name = _clean_name(names[1].split("(CIK")[0]) if len(names) > 1 else ""
             ticker = _extract_ticker(issuer_display)
 
             if not ticker and len(names) > 1:
@@ -358,11 +338,7 @@ class Form144Tool(Tool):
 
             company = _extract_company_name(issuer_display)
 
-            primary_doc = (
-                hit.get("_id", "").split(":", 1)[-1]
-                if ":" in hit.get("_id", "")
-                else ""
-            )
+            primary_doc = hit.get("_id", "").split(":", 1)[-1] if ":" in hit.get("_id", "") else ""
             if not primary_doc:
                 primary_doc = "primary_doc.xml"
 
@@ -423,9 +399,7 @@ class Form144Tool(Tool):
             for m in metas:
                 if fetched >= 15:  # max 15 XMLs per ticker
                     break
-                xml_text = self._fetch_filing_xml(
-                    m["issuer_cik"], m["accession"], m["primary_doc"]
-                )
+                xml_text = self._fetch_filing_xml(m["issuer_cik"], m["accession"], m["primary_doc"])
                 fetched += 1
                 if not xml_text:
                     # Fallback to metadata-only record
@@ -454,9 +428,7 @@ class Form144Tool(Tool):
                     )
                     continue
 
-                parsed = _parse_form144_xml(
-                    xml_text, ticker, m["company"], m["file_date"]
-                )
+                parsed = _parse_form144_xml(xml_text, ticker, m["company"], m["file_date"])
                 if parsed and not parsed.get("is_gift"):
                     parsed["ticker"] = ticker
                     parsed["issuer_cik"] = m["issuer_cik"]
@@ -555,9 +527,7 @@ class Form144Tool(Tool):
                     metadata={"relationship": f.get("relationship", "")},
                 )
 
-    def _detect_sell_clusters(
-        self, filings: list[dict[str, Any]], min_size: int = 2
-    ) -> list[dict[str, Any]]:
+    def _detect_sell_clusters(self, filings: list[dict[str, Any]], min_size: int = 2) -> list[dict[str, Any]]:
         """Detect sell-intent clusters: 2+ distinct insiders within 14 days."""
         by_ticker: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for f in filings:
@@ -570,9 +540,7 @@ class Form144Tool(Tool):
                 continue
 
             ticker_filings.sort(key=lambda f: f["filing_date"])
-            best = self._find_best_sell_cluster(
-                ticker_filings, window_days=14, min_size=min_size
-            )
+            best = self._find_best_sell_cluster(ticker_filings, window_days=14, min_size=min_size)
             if best:
                 clusters.append(best)
 
@@ -621,9 +589,7 @@ class Form144Tool(Tool):
 
             if len(seen_names) >= min_size:
                 total_value = sum(f["dollar_value"] for f in window_filings)
-                max_acq_weight = max(
-                    _ACQ_WEIGHTS.get(f["acquisition_type"], 1.0) for f in window_filings
-                )
+                max_acq_weight = max(_ACQ_WEIGHTS.get(f["acquisition_type"], 1.0) for f in window_filings)
                 score = len(seen_names) * total_value * max_acq_weight
 
                 if score > best_score:
@@ -644,8 +610,7 @@ class Form144Tool(Tool):
 
                     # Conviction
                     has_voluntary = any(
-                        f["acquisition_type"] in ("open_market", "private_placement")
-                        for f in window_filings
+                        f["acquisition_type"] in ("open_market", "private_placement") for f in window_filings
                     )
                     has_officer = any(
                         any(
@@ -675,7 +640,9 @@ class Form144Tool(Tool):
                                 else (
                                     "medium-high"
                                     if (has_officer and len(seen_names) >= 3)
-                                    else "medium" if has_officer else "moderate"
+                                    else "medium"
+                                    if has_officer
+                                    else "moderate"
                                 )
                             )
                         )
@@ -696,18 +663,12 @@ class Form144Tool(Tool):
                         "pct_of_outstanding": round(pct, 4),
                         "cluster_start": window_filings[0]["filing_date"],
                         "cluster_end": window_filings[-1]["filing_date"],
-                        "urgency": (
-                            "immediate"
-                            if has_immediate
-                            else "near_term" if has_near else "planned"
-                        ),
+                        "urgency": ("immediate" if has_immediate else "near_term" if has_near else "planned"),
                         "conviction": conviction,
                         "has_voluntary_sells": has_voluntary,
                         "score": score,
                         "entity_ids": ent_ids,
-                        "filings": sorted(
-                            window_filings, key=lambda f: f["filing_date"]
-                        ),
+                        "filings": sorted(window_filings, key=lambda f: f["filing_date"]),
                     }
 
         return best
@@ -755,9 +716,7 @@ def _parse_form144_xml(
             company = name_el.text.strip()
 
         # Long element name for the person selling
-        person_el = issuer.find(
-            f"{ns}nameOfPersonForWhoseAccountTheSecuritiesAreToBeSold"
-        )
+        person_el = issuer.find(f"{ns}nameOfPersonForWhoseAccountTheSecuritiesAreToBeSold")
         if person_el is not None and person_el.text:
             insider_name = _clean_name(person_el.text)
 
@@ -787,9 +746,7 @@ def _parse_form144_xml(
         dollar_value = _safe_float(value_el.text if value_el is not None else None)
 
         outstanding_el = sec_info.find(f"{ns}noOfUnitsOutstanding")
-        shares_outstanding = _safe_int(
-            outstanding_el.text if outstanding_el is not None else None
-        )
+        shares_outstanding = _safe_int(outstanding_el.text if outstanding_el is not None else None)
 
         date_el = sec_info.find(f"{ns}approxSaleDate")
         if date_el is not None and date_el.text:
@@ -815,16 +772,10 @@ def _parse_form144_xml(
 
     for stbs in form_data.findall(f"{ns}securitiesToBeSold"):
         nature_el = stbs.find(f"{ns}natureOfAcquisitionTransaction")
-        nature_text = (
-            nature_el.text.strip() if nature_el is not None and nature_el.text else ""
-        )
+        nature_text = nature_el.text.strip() if nature_el is not None and nature_el.text else ""
 
         gift_el = stbs.find(f"{ns}isGiftTransaction")
-        gift_flag = (
-            gift_el.text.strip().upper()
-            if gift_el is not None and gift_el.text
-            else "N"
-        )
+        gift_flag = gift_el.text.strip().upper() if gift_el is not None and gift_el.text else "N"
         if gift_flag == "Y":
             is_gift = True
 

@@ -30,9 +30,10 @@ class TaskStatus(str, Enum):
 @dataclass
 class Task:
     """A single node in the task tree."""
+
     id: str
     description: str
-    tool: str | None = None          # which tool to use (None = needs further decomposition)
+    tool: str | None = None  # which tool to use (None = needs further decomposition)
     tool_args: dict[str, Any] = field(default_factory=dict)
     success_criteria: str = ""
     status: TaskStatus = TaskStatus.PENDING
@@ -161,9 +162,15 @@ class TaskPlanner:
         log.warning("Planning failed — using fallback plan")
         root = Task(id="root", description=goal)
         root.subtasks = [
-            Task(id="1", description=f"Search the web for: {goal}", tool="web_search",
-                 tool_args={"query": goal}, depth=1),
-            Task(id="2", description="Analyze results and produce report", tool="execute_python",
-                 tool_args={"code": f"print('Analysis of: {goal}')"}, depth=1),
+            Task(
+                id="1", description=f"Search the web for: {goal}", tool="web_search", tool_args={"query": goal}, depth=1
+            ),
+            Task(
+                id="2",
+                description="Analyze results and produce report",
+                tool="execute_python",
+                tool_args={"code": f"print('Analysis of: {goal}')"},
+                depth=1,
+            ),
         ]
         return root

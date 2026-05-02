@@ -31,7 +31,6 @@ from __future__ import annotations
 import csv
 import io
 import logging
-from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -307,8 +306,7 @@ class WeatherAlertsTool(Tool):
                 "type": "string",
                 "default": "Severe",
                 "description": (
-                    "Minimum severity for alerts: Extreme, Severe, Moderate, Minor. "
-                    "Default: Severe (includes Extreme)."
+                    "Minimum severity for alerts: Extreme, Severe, Moderate, Minor. Default: Severe (includes Extreme)."
                 ),
             },
             "state": {
@@ -419,9 +417,7 @@ class WeatherAlertsTool(Tool):
         if not formatted:
             return ToolResult(
                 success=True,
-                output=f"NWS: No active alerts (severity >= {severity}"
-                + (f", state={state}" if state else "")
-                + ").",
+                output=f"NWS: No active alerts (severity >= {severity}" + (f", state={state}" if state else "") + ").",
                 data={"alerts": [], "count": 0},
             )
 
@@ -494,10 +490,7 @@ class WeatherAlertsTool(Tool):
         for zone_name, zone_fires in sorted(by_zone.items(), key=lambda x: -len(x[1])):
             sector = zone_fires[0]["sector"]
             max_bright = max(f["brightness"] for f in zone_fires)
-            lines.append(
-                f"  {zone_name} ({sector}) — {len(zone_fires)} detections, "
-                f"max brightness {max_bright:.0f}K"
-            )
+            lines.append(f"  {zone_name} ({sector}) — {len(zone_fires)} detections, max brightness {max_bright:.0f}K")
             for f in zone_fires[:3]:
                 lines.append(
                     f"    ({f['lat']:.2f}, {f['lon']:.2f}) "
@@ -551,10 +544,7 @@ class WeatherAlertsTool(Tool):
             for a in formatted:
                 by_sev[a["severity"]] = by_sev.get(a["severity"], 0) + 1
 
-            sev_str = ", ".join(
-                f"{s}: {c}"
-                for s, c in sorted(by_sev.items(), key=lambda x: _severity_rank(x[0]))
-            )
+            sev_str = ", ".join(f"{s}: {c}" for s, c in sorted(by_sev.items(), key=lambda x: _severity_rank(x[0])))
             lines.append(f"  NWS Alerts: {len(formatted)} active ({sev_str})")
 
             # Count by event type
@@ -577,14 +567,11 @@ class WeatherAlertsTool(Tool):
                     continue
                 for zone in INFRA_ZONES:
                     if _point_in_zone(fire["lat"], fire["lon"], zone):
-                        near_infra.append(
-                            {**fire, "zone": zone["name"], "sector": zone["sector"]}
-                        )
+                        near_infra.append({**fire, "zone": zone["name"], "sector": zone["sector"]})
                         break
 
             lines.append(
-                f"  NASA FIRMS: {len(fires)} global fire points, "
-                f"{len(near_infra)} near critical infrastructure"
+                f"  NASA FIRMS: {len(fires)} global fire points, {len(near_infra)} near critical infrastructure"
             )
             if near_infra:
                 by_zone: dict[str, int] = {}
@@ -621,9 +608,7 @@ class WeatherAlertsTool(Tool):
         params: dict[str, str] = {"status": "actual"}
         # Build severity filter: include everything >= requested level
         sev_rank = _severity_rank(severity)
-        included = [
-            s for s in _SEVERITIES if _severity_rank(s) <= sev_rank and s != "Unknown"
-        ]
+        included = [s for s in _SEVERITIES if _severity_rank(s) <= sev_rank and s != "Unknown"]
         if included:
             params["severity"] = ",".join(included)
         if state:

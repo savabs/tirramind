@@ -22,18 +22,20 @@ class Classification(BaseModel):
     @property
     def is_actionable(self) -> bool:
         """True when this classification is worth dispatching to policies."""
-        return self.category not in {
-            TriggerCategory.ROUTINE,
-            TriggerCategory.UNKNOWN,
-        } and self.confidence > 0.0
+        return (
+            self.category
+            not in {
+                TriggerCategory.ROUTINE,
+                TriggerCategory.UNKNOWN,
+            }
+            and self.confidence > 0.0
+        )
 
 
 class Classifier(Protocol):
     name: str
 
-    def classify(
-        self, text: str, context: dict | None = None
-    ) -> Classification: ...
+    def classify(self, text: str, context: dict | None = None) -> Classification: ...
 
 
 __all__ = ["Classification", "Classifier"]

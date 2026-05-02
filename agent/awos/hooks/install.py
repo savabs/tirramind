@@ -88,9 +88,7 @@ def uninstall(repo_root: Path) -> list[Path]:
         if _AWOS_MARKER not in text:
             continue
         stripped = "\n".join(
-            line
-            for line in text.splitlines()
-            if "agent.awos.cli scan" not in line and _AWOS_MARKER not in line
+            line for line in text.splitlines() if "agent.awos.cli scan" not in line and _AWOS_MARKER not in line
         ).strip()
         if not stripped or stripped.strip() in {"#!/usr/bin/env bash", "#!/bin/bash"}:
             path.unlink()

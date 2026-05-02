@@ -21,7 +21,6 @@ from agent.models.belief import BeliefState
 from agent.quant.backtest import WalkForward
 from agent.quant.regime_strategy import RegimeStrategy
 
-
 # ── Helpers ────────────────────────────────────────────────────
 
 
@@ -42,9 +41,7 @@ def _belief(
     )
 
 
-def _belief_set(
-    probs: dict[str, float], variable: str = "regime.macro"
-) -> list[BeliefState]:
+def _belief_set(probs: dict[str, float], variable: str = "regime.macro") -> list[BeliefState]:
     """One-element belief set (common case)."""
     return [_belief(probs, variable=variable)]
 
@@ -139,11 +136,7 @@ class TestMissingBeliefs:
     def test_wrong_variable_name(self):
         """Belief for different variable → default."""
         s = RegimeStrategy()
-        beliefs = [
-            _belief_set(
-                {"expansion": 1.0, "crisis": 0.0}, variable="latent.stress_level"
-            )
-        ] * 3
+        beliefs = [_belief_set({"expansion": 1.0, "crisis": 0.0}, variable="latent.stress_level")] * 3
         w = s.generate_weights(np.zeros(10), 3, test_extra={"beliefs": beliefs})
         np.testing.assert_array_almost_equal(w, 0.0)
 
@@ -190,9 +183,7 @@ class TestCustomConfig:
 
     def test_custom_variable_name(self):
         s = RegimeStrategy(regime_variable="regime.sector")
-        beliefs = [
-            _belief_set({"expansion": 0.7, "crisis": 0.1}, variable="regime.sector")
-        ] * 3
+        beliefs = [_belief_set({"expansion": 0.7, "crisis": 0.1}, variable="regime.sector")] * 3
         w = s.generate_weights(np.zeros(10), 3, test_extra={"beliefs": beliefs})
         np.testing.assert_array_almost_equal(w, 0.6)
 
@@ -308,9 +299,7 @@ class TestWalkForwardIntegration:
         # WalkForward will slice extra["beliefs"][split:split+test_size].
         all_beliefs = []
         for _ in range(n):
-            all_beliefs.append(
-                _belief_set({"expansion": 0.7, "stable": 0.2, "crisis": 0.1})
-            )
+            all_beliefs.append(_belief_set({"expansion": 0.7, "stable": 0.2, "crisis": 0.1}))
 
         wf = WalkForward(min_train=20, test_size=10, periods_per_year=52)
         result = wf.run(

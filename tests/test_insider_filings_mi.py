@@ -19,7 +19,7 @@ import math
 import numpy as np
 import pytest
 
-from agent.pipeline.depth_eval import compute_conditional_mi, run_depth_evaluation
+from agent.pipeline.depth_eval import run_depth_evaluation
 from agent.pipeline.entity import entity_id_from_key
 from agent.pipeline.store import PipelineStore
 from agent.tools.insider_filings import InsiderFilingsTool
@@ -54,11 +54,16 @@ class TestInsiderFilingsMIIntegration:
         tool = InsiderFilingsTool(pipeline_store=store)
         txns = [
             {
-                "ticker": "AAPL", "company": "Apple Inc.",
-                "name": f"INSIDER_{i}", "role": "Director",
-                "type": "P", "shares": float(1000 + l2_obs[i] * 100),
-                "price": 150.0, "date": f"2026-01-{(i % 28) + 1:02d}",
-                "reporter_cik": f"000{i:07d}", "issuer_cik": "0000320193",
+                "ticker": "AAPL",
+                "company": "Apple Inc.",
+                "name": f"INSIDER_{i}",
+                "role": "Director",
+                "type": "P",
+                "shares": float(1000 + l2_obs[i] * 100),
+                "price": 150.0,
+                "date": f"2026-01-{(i % 28) + 1:02d}",
+                "reporter_cik": f"000{i:07d}",
+                "issuer_cik": "0000320193",
             }
             for i in range(n)
         ]
@@ -83,9 +88,7 @@ class TestInsiderFilingsMIIntegration:
         # MI gain should be positive: L2 adds information beyond L1
         assert result["mi_gain"] is not None
         assert not math.isnan(result["mi_gain"]), "MI should not be NaN with n=200"
-        assert result["mi_gain"] > 0.0, (
-            f"L2 should add signal beyond L1, got MI gain = {result['mi_gain']}"
-        )
+        assert result["mi_gain"] > 0.0, f"L2 should add signal beyond L1, got MI gain = {result['mi_gain']}"
         assert result["sample_size"] == n
         assert result["row_id"] is not None
 
@@ -122,9 +125,9 @@ class TestInsiderFilingsMIIntegration:
         """When L2 is pure noise independent of target, MI ≈ 0."""
         rng = np.random.default_rng(7)
         n = 200
-        l2_obs = rng.normal(0, 1, n)      # pure noise
-        target = rng.normal(0, 1, n)       # independent noise
-        l1_obs = rng.normal(0, 1, n)       # also independent
+        l2_obs = rng.normal(0, 1, n)  # pure noise
+        target = rng.normal(0, 1, n)  # independent noise
+        l1_obs = rng.normal(0, 1, n)  # also independent
 
         result = run_depth_evaluation(
             store=store,
@@ -138,6 +141,4 @@ class TestInsiderFilingsMIIntegration:
 
         # MI should be near zero (sklearn KSG clamps negative to 0)
         assert result["mi_gain"] is not None
-        assert result["mi_gain"] < 0.1, (
-            f"Independent noise should yield MI near 0, got {result['mi_gain']}"
-        )
+        assert result["mi_gain"] < 0.1, f"Independent noise should yield MI near 0, got {result['mi_gain']}"

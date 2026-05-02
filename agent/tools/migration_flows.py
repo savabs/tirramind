@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import UTC
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -110,7 +111,7 @@ class MigrationFlowsTool(Tool):
     def __init__(
         self,
         cache: DataCache | None = None,
-        pipeline_store: "PipelineStore | None" = None,
+        pipeline_store: PipelineStore | None = None,
     ) -> None:
         self._cache = cache
         self._store = pipeline_store
@@ -184,13 +185,9 @@ class MigrationFlowsTool(Tool):
         limit = min(kwargs.get("limit") or 20, 100)
 
         if mode == "displacement":
-            result = self._handle_displacement(
-                country, year, kwargs.get("role", "asylum"), limit
-            )
+            result = self._handle_displacement(country, year, kwargs.get("role", "asylum"), limit)
         elif mode == "asylum":
-            result = self._handle_asylum(
-                country, year, kwargs.get("role", "asylum"), limit
-            )
+            result = self._handle_asylum(country, year, kwargs.get("role", "asylum"), limit)
         else:
             result = self._handle_remittances(country, year, limit)
 
@@ -241,9 +238,7 @@ class MigrationFlowsTool(Tool):
         }
 
         if self._cache:
-            self._cache.set(
-                cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL
-            )
+            self._cache.set(cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL)
 
         return ToolResult(success=True, output=summary, data=result_data)
 
@@ -287,9 +282,7 @@ class MigrationFlowsTool(Tool):
         }
 
         if self._cache:
-            self._cache.set(
-                cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL
-            )
+            self._cache.set(cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL)
 
         return ToolResult(success=True, output=summary, data=result_data)
 
@@ -310,9 +303,9 @@ class MigrationFlowsTool(Tool):
                 output=f"Invalid country code '{country}'. Must be 2-3 characters.",
             )
 
-        from datetime import datetime, timezone
+        from datetime import datetime
 
-        now_year = datetime.now(timezone.utc).year
+        now_year = datetime.now(UTC).year
         end_year = year or now_year
         start_year = end_year - 9  # 10 years of data
 
@@ -327,9 +320,7 @@ class MigrationFlowsTool(Tool):
             return ToolResult(success=False, output=err)
 
         signals = _compute_remittance_signals(records)
-        summary = _format_remittance_summary(
-            records, signals, country, start_year, end_year
-        )
+        summary = _format_remittance_summary(records, signals, country, start_year, end_year)
 
         result_data = {
             "records": records,
@@ -341,9 +332,7 @@ class MigrationFlowsTool(Tool):
         }
 
         if self._cache:
-            self._cache.set(
-                cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL
-            )
+            self._cache.set(cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL)
 
         return ToolResult(success=True, output=summary, data=result_data)
 
@@ -766,15 +755,9 @@ def _format_displacement_summary(
         return str(n)
 
     lines.append(f"Total displaced: {_fmt(signals.get('total_displaced', 0))}")
-    lines.append(
-        f"  Refugees: {_fmt(signals.get('total_refugees', 0))} ({signals.get('refugee_pct', 0)}%)"
-    )
-    lines.append(
-        f"  IDPs: {_fmt(signals.get('total_idps', 0))} ({signals.get('idp_pct', 0)}%)"
-    )
-    lines.append(
-        f"  Asylum seekers: {_fmt(signals.get('total_asylum_seekers', 0))} ({signals.get('asylum_pct', 0)}%)"
-    )
+    lines.append(f"  Refugees: {_fmt(signals.get('total_refugees', 0))} ({signals.get('refugee_pct', 0)}%)")
+    lines.append(f"  IDPs: {_fmt(signals.get('total_idps', 0))} ({signals.get('idp_pct', 0)}%)")
+    lines.append(f"  Asylum seekers: {_fmt(signals.get('total_asylum_seekers', 0))} ({signals.get('asylum_pct', 0)}%)")
     lines.append(f"  Stateless: {_fmt(signals.get('total_stateless', 0))}")
 
     alert = signals.get("alert")

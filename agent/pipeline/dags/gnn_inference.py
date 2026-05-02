@@ -114,9 +114,7 @@ def run_gnn_inference(params: dict, upstream: dict) -> dict:
 
         # Apply epochs to trainer config
         trainer_config["epochs"] = epochs_arm
-        log.info(
-            "GNN training epochs: %d (scheduler=%s)", epochs_arm, scheduler is not None
-        )
+        log.info("GNN training epochs: %d (scheduler=%s)", epochs_arm, scheduler is not None)
 
         cfg = TrainerConfig(**trainer_config)
         trained = False
@@ -171,23 +169,21 @@ def run_gnn_inference(params: dict, upstream: dict) -> dict:
             try:
                 new_obs = store.query_all_observations(since=since_ts)
                 log.info(
-                    "Phase 46 EWC check: %d new observations since last update "
-                    "(ts=%.0f), threshold=%d.",
+                    "Phase 46 EWC check: %d new observations since last update (ts=%.0f), threshold=%d.",
                     len(new_obs),
                     since_ts,
                     cfg.online_batch_threshold,
                 )
                 if len(new_obs) >= cfg.online_batch_threshold:
                     log.info(
-                        "Triggering EWC online continual-learning step " "(%d events).",
+                        "Triggering EWC online continual-learning step (%d events).",
                         len(new_obs),
                     )
                     update_result = trainer.online_update(new_obs)
                     online_updated = True
                     online_result = update_result
                     log.info(
-                        "EWC online update complete: loss_new=%.4f "
-                        "loss_ewc=%.4f loss_total=%.4f n_events=%d",
+                        "EWC online update complete: loss_new=%.4f loss_ewc=%.4f loss_total=%.4f n_events=%d",
                         update_result["loss_new"],
                         update_result["loss_ewc"],
                         update_result["loss_total"],
@@ -195,8 +191,7 @@ def run_gnn_inference(params: dict, upstream: dict) -> dict:
                     )
                 else:
                     log.info(
-                        "EWC online update skipped: %d new observations "
-                        "< threshold %d.",
+                        "EWC online update skipped: %d new observations < threshold %d.",
                         len(new_obs),
                         cfg.online_batch_threshold,
                     )
@@ -204,8 +199,7 @@ def run_gnn_inference(params: dict, upstream: dict) -> dict:
                 # Non-fatal: online update failure should not abort the DAG run.
                 # The loaded model is still valid for inference.
                 log.warning(
-                    "EWC online update failed (non-fatal, continuing with "
-                    "loaded model): %s",
+                    "EWC online update failed (non-fatal, continuing with loaded model): %s",
                     exc,
                 )
         elif not trained and trainer._ewc_state is None:
@@ -226,9 +220,7 @@ def run_gnn_inference(params: dict, upstream: dict) -> dict:
         if scheduler is not None and trained:
             try:
                 val_loss_after = getattr(trainer, "last_val_loss", None)
-                after_metrics = (
-                    {"val_loss": val_loss_after} if val_loss_after is not None else {}
-                )
+                after_metrics = {"val_loss": val_loss_after} if val_loss_after is not None else {}
                 reward = compute_refit_reward("gnn_epochs", {}, after_metrics)
                 scheduler.record_outcome("gnn_epochs", epochs_arm, reward)
                 scheduler.save()
