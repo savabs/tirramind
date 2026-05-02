@@ -581,6 +581,11 @@ class TrainerConfig:
     log_var_max: float = 3.0
     """Upper clamp for s_k = ln(sigma_k^2). Bounds the effective weight
     BELOW at exp(-log_var_max)."""
+    return_log_var_max: float = 0.0
+    """Tighter upper clamp for the return component log-variance only.
+    Defaults to 0.0 → effective return weight ≥ exp(-0) = 1.0, preventing
+    auto-tune from silencing the return head. Set to log_var_max (3.0)
+    to disable the special handling and treat return like other losses."""
     obs_since: float | None = None
     """When set, exclude observations with observed_at < obs_since
     from training/val/test splits. Useful for skipping sparse early
@@ -1356,7 +1361,17 @@ class Trainer:
                     lv = self._log_vars
                     lv_min = cfg.log_var_min
                     lv_max = cfg.log_var_max
-                    clamped = {k: torch.clamp(p, min=lv_min, max=lv_max) for k, p in lv.items()}
+                    # Use a tighter upper clamp for 'return' so auto-tune
+                    # cannot silence the return head (cfg.return_log_var_max
+                    # defaults to 0.0 → weight ≥ exp(-0) = 1.0).
+                    clamped = {
+                        k: torch.clamp(
+                            p,
+                            min=lv_min,
+                            max=(cfg.return_log_var_max if k == "return" else lv_max),
+                        )
+                        for k, p in lv.items()
+                    }
                     total = (
                         torch.exp(-clamped["obs_type"]) * obs_loss
                         + clamped["obs_type"]

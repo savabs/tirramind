@@ -177,6 +177,16 @@ def main() -> None:
         help="Use ListNet ranking loss for return head instead of Huber (Phase 41b).",
     )
     parser.add_argument(
+        "--return-log-var-max",
+        type=float,
+        default=0.0,
+        help=(
+            "Upper clamp for the return component log-variance under --auto-tune. "
+            "Default 0.0 ensures the return weight stays >= exp(-0)=1.0 so "
+            "auto-tune cannot silence the return head (Phase 41b fix)."
+        ),
+    )
+    parser.add_argument(
         "--model-out",
         default=".tirra_pipeline/gnn_model.pt",
         help="Output path for trained model checkpoint",
@@ -369,6 +379,7 @@ def main() -> None:
             window_size=args.window_size,
             auto_tune_loss_weights=args.auto_tune,
             use_listnet_return_loss=args.listnet,
+            return_log_var_max=args.return_log_var_max,
             obs_since=obs_since,
             device=device,
             checkpoint_dir=args.checkpoint_dir,
