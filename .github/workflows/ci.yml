@@ -1,0 +1,75 @@
+# TirraMind CI — lint + vault health + full test suite on every push and PR.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── 1. Ruff lint & format check ─────────────────────────────────────────
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install ruff
+      - run: ruff check agent/ tests/
+      - run: ruff format --check agent/ tests/
+
+  # ── 2. Obsidian vault health ─────────────────────────────────────────────
+  # Fails on FM01/FM02 (missing frontmatter) and LK01 (broken wiki links).
+  # Fails on FL01/FL03 (fact drift — numeric constants copied outside owner).
+  vault-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install vault-lint deps
+        run: pip install pyyaml
+      - name: Obsidian lint (FM01/FM02/LK01 are errors; LK02/ST* advisory)
+        run: python scripts/obsidian_lint.py --strict --no-stale
+      - name: Fact drift lint (FL01/FL03 are errors)
+        run: python scripts/fact_lint.py
+
+  # ── 3. Full test suite (Python 3.11 + 3.12) ─────────────────────────────
+  # torch-geometric requires torch to be present before install, so we
+  # install the CPU-only wheel explicitly rather than using the ml extra.
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install base + quant deps
+        run: pip install -e ".[dev,quant]"
+
+      # CPU-only torch (~270 MB) — avoids the 2+ GB CUDA wheel
+      # Pin to 2.2.2 which has PyG wheels for both 3.11 and 3.12
+      - name: Install torch (CPU-only)
+        run: |
+          pip install torch==2.2.2+cpu --index-url https://download.pytorch.org/whl/cpu
+
+      # PyG wheels keyed to torch version — must come after torch
+      - name: Install torch-geometric (CPU-only)
+        run: |
+          pip install torch-geometric \
+            --find-links https://data.pyg.org/whl/torch-2.2.2+cpu.html
+
+      - name: Run tests (exclude live/slow)
+        run: pytest tests/ -v --tb=short -m "not live and not slow"

@@ -36,7 +36,9 @@ Thumbs.db
 *.md
 docs/
 tasks/
-.github/
+# .github/ excluded from ignore — workflows must be tracked for GitHub Actions to run
+!.github/
+!.github/**
 
 # Media and miscellaneous local files
 *.jpeg
