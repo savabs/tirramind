@@ -280,6 +280,7 @@ def test_build_plan_contains_insider_filings():
 
 def test_build_plan_gdelt_skipped():
     plan = _build_plan(1825)
-    gdelt_entries = [e for e in plan if e["label"] == "gdelt"]
+    gdelt_entries = [e for e in plan if e["label"] == "gdelt_backfill"]
     assert len(gdelt_entries) == 1
-    assert gdelt_entries[0].get("skip") is True
+    # gdelt_backfill is Group A (not skipped) — it runs the historical download
+    assert gdelt_entries[0].get("skip") is not True

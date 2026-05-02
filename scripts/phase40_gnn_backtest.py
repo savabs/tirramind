@@ -529,6 +529,10 @@ def _compute_ic_diagnostic(
     Score is the per-instrument portfolio weight (rank-preserving proxy for raw
     GNN signal — softmax is monotone so Spearman is unchanged).
 
+    Also computes ICIR = mean_IC / std_IC (Grinold & Kahn 2000) — the
+    standard quant measure of signal consistency. Unlike t-stat, ICIR
+    does not depend on fold count and is directly comparable across runs.
+
     Returns
     -------
     dict  strategy_name → {fold_ics, mean_ic, std_ic, t_stat, n_folds}
@@ -540,6 +544,10 @@ def _compute_ic_diagnostic(
         n = len(ics)
         mean_ic = float(ics.mean()) if n > 0 else 0.0
         std_ic = float(ics.std(ddof=1)) if n > 1 else 0.0
+        # ICIR = mean_IC / std_IC — signal consistency metric (Grinold & Kahn 2000).
+        # ICIR > 0.40 = has real signal; ICIR > 0.0 = directionally consistent.
+        # Unlike t-stat, ICIR is fold-count-independent and comparable across runs.
+        icir = mean_ic / (std_ic + 1e-8)
         t_stat = (
             (mean_ic / (std_ic / np.sqrt(n))) if (n > 0 and std_ic > 1e-10) else 0.0
         )
@@ -547,6 +555,7 @@ def _compute_ic_diagnostic(
             "fold_ics": ics.tolist(),
             "mean_ic": mean_ic,
             "std_ic": std_ic,
+            "icir": icir,
             "t_stat": t_stat,
             "n_folds": n,
         }
@@ -558,7 +567,7 @@ def _print_ic_report(ic_results: dict) -> None:
     print("\n" + "=" * 60)
     print("IC DIAGNOSTIC  — Spearman(score_i, 21d_fwd_return_i) per fold")
     print("=" * 60)
-    hdr = f"  {'Strategy':<22} {'Mean IC':>9} {'Std IC':>8} {'t-stat':>8} {'p25':>7} {'p75':>7} {'Folds':>6}"
+    hdr = f"  {'Strategy':<22} {'Mean IC':>9} {'Std IC':>8} {'ICIR':>7} {'t-stat':>8} {'p25':>7} {'p75':>7} {'Folds':>6}"
     print(hdr)
     print("  " + "-" * (len(hdr) - 2))
     for name, r in ic_results.items():
@@ -567,13 +576,15 @@ def _print_ic_report(ic_results: dict) -> None:
         p75 = float(np.percentile(ics, 75)) if len(ics) > 0 else 0.0
         print(
             f"  {name:<22} {r['mean_ic']:>9.4f} {r['std_ic']:>8.4f}"
-            f" {r['t_stat']:>8.2f} {p25:>7.4f} {p75:>7.4f} {r['n_folds']:>6d}"
+            f" {r.get('icir', 0.0):>7.3f} {r['t_stat']:>8.2f}"
+            f" {p25:>7.4f} {p75:>7.4f} {r['n_folds']:>6d}"
         )
     print()
-    print("  Thresholds:")
-    print("    |Mean IC| > 0.03 AND |t| > 2.0  →  weak but real signal")
-    print("    |Mean IC| > 0.07                →  meaningful signal")
-    print("    |Mean IC| ≈ 0  OR  |t| < 1.0   →  embedding is noise")
+    print("  Thresholds (ICIR is the primary metric — fold-count independent):")
+    print("    ICIR > 0.40   →  real signal (Grinold & Kahn 2000)")
+    print("    ICIR > 0.20   →  directional signal, worth investigating")
+    print("    ICIR < 0.10   →  noise")
+    print("    (legacy) |Mean IC| > 0.05 AND |t| > 2.0  →  statistically significant")
     for name, r in ic_results.items():
         mic, t = r["mean_ic"], r["t_stat"]
         if abs(mic) < 0.02 or abs(t) < 1.0:
@@ -736,12 +747,59 @@ def main() -> None:
 
     print()
 
-    # ── 10. IC Diagnostic ─────────────────────────────────────────────────────
+    # ── 10. IC Diagnostic (with ICIR) ─────────────────────────────────────────
     # Uses fold weights already cached during step 7 — no extra GNN passes.
     # rank(softmax(score)) == rank(score), so Spearman IC is exact.
+    # ICIR = mean_IC / std_IC added as primary metric (Grinold & Kahn 2000).
     log.info("Computing IC diagnostic (signal quality — no extra GNN passes)…")
     ic_results = _compute_ic_diagnostic(strategies, dates, returns)
     _print_ic_report(ic_results)
+
+    # ── 11. Stratified IC — source attribution ────────────────────────────────
+    # Partitions instrument universe by data source coverage (has_cftc / no_cftc,
+    # has_polymarket / no_polymarket, has_geo_link / no_geo_link).
+    # Computes IC per partition so we know EXACTLY which sources contribute signal.
+    # This answers: "does CFTC data make the GNN more predictive for those instruments?"
+    # No retraining needed — uses fold weight cache from step 7.
+    from agent.quant.experiment_tracker import (
+        ExperimentTracker,
+        compute_stratified_ic,
+        print_stratified_ic_report,
+    )
+
+    log.info("Computing stratified IC (source attribution)…")
+    stratified = compute_stratified_ic(
+        strategies=strategies,
+        dates=dates,
+        returns=returns,
+        instrument_names=entity_ids,
+        db_path=str(DB_PATH),
+        min_train=MIN_TRAIN,
+        test_size=TEST_SIZE,
+        step_size=STEP_SIZE,
+    )
+    print_stratified_ic_report(stratified)
+
+    # ── 12. Experiment manifest — auto-saved every run ────────────────────────
+    # Writes JSON to .tirra_pipeline/experiments/exp_{timestamp}.json
+    # Contains: data snapshot, IC results (with ICIR), stratified IC, model state.
+    # Run 'python scripts/compare_experiments.py' to diff two runs.
+    tracker = ExperimentTracker(DB_PATH, MODEL_PATH)
+    manifest = tracker.build_manifest(
+        ic_results=ic_results,
+        stratified_ic=stratified,
+        extra={
+            "n_instruments": N,
+            "n_dates": T,
+            "date_range": [dates[0], dates[-1]],
+            "min_train": MIN_TRAIN,
+            "test_size": TEST_SIZE,
+            "step_size": STEP_SIZE,
+        },
+    )
+    manifest_path = tracker.save(manifest)
+    print(f"\n  Manifest saved → {manifest_path}")
+    print("  Run 'python scripts/compare_experiments.py' to compare runs.")
 
 
 if __name__ == "__main__":

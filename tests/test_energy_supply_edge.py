@@ -648,7 +648,7 @@ class TestCache:
         tool = _tool(cache=cache)
         result = tool.execute(mode="rig_count")
         assert result.success
-        cache.set.assert_called_once()
+        cache.put.assert_called_once()
 
     @patch("agent.tools.energy_supply._fetch_eia")
     def test_stocks_per_series_cache_hit(self, mock_fetch):

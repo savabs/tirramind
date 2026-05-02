@@ -530,7 +530,19 @@ class CFTCTool(Tool):
         # Sort by open interest descending
         result.sort(key=lambda r: r.get("Open_Interest_All") or 0, reverse=True)
 
-        return result[:top_n]
+        # Always keep mapped contracts (regardless of OI rank) so all 19 instrument
+        # mappings are persisted even if they don't appear in the top-N by volume.
+        from agent.tools.instrument_universe import cftc_code_to_ticker
+        mapped_codes = set(cftc_code_to_ticker().keys())
+
+        top = result[:top_n]
+        top_codes = {r.get("CFTC_Contract_Market_Code", "").strip() for r in top}
+        extras = [
+            r for r in result[top_n:]
+            if r.get("CFTC_Contract_Market_Code", "").strip() in mapped_codes
+            and r.get("CFTC_Contract_Market_Code", "").strip() not in top_codes
+        ]
+        return top + extras
 
     # ── Signal computation ───────────────────────────────────────────
 
