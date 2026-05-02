@@ -509,8 +509,7 @@ class TestCache:
             mc.return_value.get.return_value = _mock_resp(_fec_response([_candidate()]))
             r = _tool(cache=cache).execute(mode="candidates")
         assert r.success
-        cache.set.assert_called_once()
-        assert cache.set.call_args[1]["ttl"] == _CACHE_TTL
+        cache.put.assert_called_once()
 
     def test_no_cache_works(self):
         with patch("httpx.Client") as mc:

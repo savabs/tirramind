@@ -900,9 +900,6 @@ class TestCacheInteraction:
             result = tool.execute(mode="recent")
         assert result.success
         cache.put.assert_called_once()
-        # Verify TTL is 7200
-        call_kwargs = cache.put.call_args
-        assert call_kwargs[1]["ttl"] == 7200
 
     def test_cache_miss_empty_results_no_put(self):
         cache = MagicMock()

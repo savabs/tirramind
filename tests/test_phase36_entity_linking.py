@@ -116,8 +116,8 @@ class TestPolymarketTopicInstrumentLinks:
         expected_ids = {entity_id_from_key("instrument", t) for t in expected_tickers}
         assert linked_ids == expected_ids
 
-    def test_politics_category_creates_no_links(self) -> None:
-        """Politics topics have no instrument mapping → no links."""
+    def test_politics_category_creates_links(self) -> None:
+        """Politics topics now have instrument mapping (SPY, ES=F, ZN=F, TLT, VIXY)."""
         store = _make_store()
         tool = PolymarketTool.__new__(PolymarketTool)
         tool._store = store
@@ -125,7 +125,7 @@ class TestPolymarketTopicInstrumentLinks:
         markets = [_make_market(slug="us-election", category="politics")]
         tool._persist_entities_inner(markets)
 
-        store.link_entities.assert_not_called()
+        assert store.link_entities.call_count == len(_TOPIC_INSTRUMENT_MAP["politics"])
 
     def test_empty_category_creates_no_links(self) -> None:
         """Empty category → no links."""
@@ -202,7 +202,8 @@ class TestPolymarketTopicInstrumentLinks:
         tool = PolymarketTool.__new__(PolymarketTool)
         tool._store = store
 
-        for cat in ["geopolitics", "tech", "science", "sports"]:
+        # Only truly unmapped categories (politics/geopolitics/tech/science were all added to the map)
+        for cat in ["sports", "entertainment", "unknown_cat"]:
             store.reset_mock()
             markets = [_make_market(slug=f"test-{cat}", category=cat)]
             tool._persist_entities_inner(markets)
@@ -221,8 +222,12 @@ class TestPolymarketTopicInstrumentLinks:
         ]
         tool._persist_entities_inner(markets)
 
-        # crypto: 2 links, finance: 3 links, politics: 0
-        expected_link_count = len(_TOPIC_INSTRUMENT_MAP["crypto"]) + len(_TOPIC_INSTRUMENT_MAP["finance"])
+        # crypto + finance + politics (politics is now mapped)
+        expected_link_count = (
+            len(_TOPIC_INSTRUMENT_MAP["crypto"])
+            + len(_TOPIC_INSTRUMENT_MAP["finance"])
+            + len(_TOPIC_INSTRUMENT_MAP["politics"])
+        )
         assert store.link_entities.call_count == expected_link_count
 
 
@@ -574,6 +579,7 @@ class TestTopicInstrumentMap:
         assert "BTC-USD" in _TOPIC_INSTRUMENT_MAP["crypto"]
         assert "ETH-USD" in _TOPIC_INSTRUMENT_MAP["crypto"]
 
-    def test_no_politics_mapping(self) -> None:
-        """Politics has no instrument mapping (deliberate)."""
-        assert "politics" not in _TOPIC_INSTRUMENT_MAP
+    def test_politics_mapping_exists(self) -> None:
+        """Politics maps to macro/vol instruments (SPY, ES=F, ZN=F, TLT, VIXY)."""
+        assert "politics" in _TOPIC_INSTRUMENT_MAP
+        assert len(_TOPIC_INSTRUMENT_MAP["politics"]) > 0
