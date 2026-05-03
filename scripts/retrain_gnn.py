@@ -209,6 +209,24 @@ def main() -> None:
         help="Number of HGT layers (default: 2)",
     )
     parser.add_argument(
+        "--num-heads",
+        type=int,
+        default=2,
+        help="Number of HGT attention heads (default: 2). Must be a divisor of --hidden-dim.",
+    )
+    parser.add_argument(
+        "--direction-loss",
+        action="store_true",
+        help="Add binary cross-entropy direction loss (sign prediction) alongside return loss. "
+        "Adds cfg.direction_loss_weight * BCE(sign(pred), sign(target)) to total loss.",
+    )
+    parser.add_argument(
+        "--direction-loss-weight",
+        type=float,
+        default=0.3,
+        help="Weight for direction BCE loss when --direction-loss is active (default: 0.3).",
+    )
+    parser.add_argument(
         "--window-size",
         type=float,
         default=86400.0,
@@ -372,7 +390,7 @@ def main() -> None:
             hidden_dim=args.hidden_dim,
             memory_dim=args.hidden_dim,
             message_dim=args.hidden_dim,
-            num_heads=2,
+            num_heads=args.num_heads,
             num_layers=args.num_layers,
             learning_rate=args.lr,
             epochs=args.epochs,
@@ -386,6 +404,8 @@ def main() -> None:
             resume_from_epoch=args.resume,
             gdelt_subsample_frac=args.gdelt_frac,
             max_windows=args.max_windows,
+            use_direction_loss=args.direction_loss,
+            direction_loss_weight=args.direction_loss_weight,
         )
 
         console.print(f"\n[bold cyan]═══ Training Config ═══[/]")

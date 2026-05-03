@@ -101,7 +101,9 @@ class InjectedPattern:
 # ═══════════════════════════════════════════════════════════════
 
 
-def _listnet_loss(scores: torch.Tensor, targets: torch.Tensor, tau: float = 1.0) -> torch.Tensor:
+def _listnet_loss(
+    scores: torch.Tensor, targets: torch.Tensor, tau: float = 1.0
+) -> torch.Tensor:
     """ListNet top-1 approximation (Cao et al. 2007, ICML).
 
     Minimises KL(p_target || p_pred) where p = softmax(x / tau).
@@ -208,25 +210,35 @@ class SyntheticGraphGenerator:
         # company → country (headquartered_in)
         for cid in entities.get("company", []):
             co_id = self._rng.choice(entities.get("country", ["default"]))
-            store.link_entities(cid, co_id, "headquartered_in", "synthetic", confidence=0.9)
+            store.link_entities(
+                cid, co_id, "headquartered_in", "synthetic", confidence=0.9
+            )
             link_count += 1
 
         # company → country (operates_in) — subset of companies
-        for cid in entities.get("company", [])[: max(1, len(entities.get("company", [])) // 2)]:
+        for cid in entities.get("company", [])[
+            : max(1, len(entities.get("company", [])) // 2)
+        ]:
             co_id = self._rng.choice(entities.get("country", ["default"]))
             store.link_entities(cid, co_id, "operates_in", "synthetic", confidence=0.8)
             link_count += 1
 
         # company → country (market_authorized_in) — pharma companies
-        for cid in entities.get("company", [])[: max(1, len(entities.get("company", [])) // 3)]:
+        for cid in entities.get("company", [])[
+            : max(1, len(entities.get("company", [])) // 3)
+        ]:
             co_id = self._rng.choice(entities.get("country", ["default"]))
-            store.link_entities(cid, co_id, "market_authorized_in", "synthetic", confidence=0.85)
+            store.link_entities(
+                cid, co_id, "market_authorized_in", "synthetic", confidence=0.85
+            )
             link_count += 1
 
         # company → company (lobbies_for) — some business relationships
         comps = entities.get("company", [])
         for i in range(min(3, len(comps) - 1)):
-            store.link_entities(comps[i], comps[i + 1], "lobbies_for", "synthetic", confidence=0.7)
+            store.link_entities(
+                comps[i], comps[i + 1], "lobbies_for", "synthetic", confidence=0.7
+            )
             link_count += 1
 
         # company → company (debtor_of) — creditor relationships
@@ -238,10 +250,14 @@ class SyntheticGraphGenerator:
             link_count += 1
 
         # company → organization (awarded_by) — government contracts
-        for cid in entities.get("company", [])[: max(1, len(entities.get("company", [])) // 2)]:
+        for cid in entities.get("company", [])[
+            : max(1, len(entities.get("company", [])) // 2)
+        ]:
             if entities.get("organization"):
                 org_id = self._rng.choice(entities["organization"])
-                store.link_entities(cid, org_id, "awarded_by", "synthetic", confidence=0.9)
+                store.link_entities(
+                    cid, org_id, "awarded_by", "synthetic", confidence=0.9
+                )
                 link_count += 1
 
         # person → company (works_for)
@@ -260,7 +276,9 @@ class SyntheticGraphGenerator:
         # wallet → country (exchange_based_in)
         for wid in entities.get("wallet", []):
             co_id = self._rng.choice(entities.get("country", ["default"]))
-            store.link_entities(wid, co_id, "exchange_based_in", "synthetic", confidence=0.7)
+            store.link_entities(
+                wid, co_id, "exchange_based_in", "synthetic", confidence=0.7
+            )
             link_count += 1
 
         # wallet → wallet (transacts_with) — inter-wallet transfers
@@ -280,50 +298,74 @@ class SyntheticGraphGenerator:
             if entities.get("instrument"):
                 # Pick a crypto-like instrument
                 inst_id = self._rng.choice(entities["instrument"])
-                store.link_entities(wid, inst_id, "trades_instrument", "synthetic", confidence=0.75)
+                store.link_entities(
+                    wid, inst_id, "trades_instrument", "synthetic", confidence=0.75
+                )
                 link_count += 1
 
         # instrument → company (tracks_issuer) — stocks/ETFs
-        for inst_id in entities.get("instrument", [])[: max(1, len(entities.get("instrument", [])) * 2 // 3)]:
+        for inst_id in entities.get("instrument", [])[
+            : max(1, len(entities.get("instrument", [])) * 2 // 3)
+        ]:
             if entities.get("company"):
                 cid = self._rng.choice(entities["company"])
-                store.link_entities(inst_id, cid, "tracks_issuer", "synthetic", confidence=0.95)
+                store.link_entities(
+                    inst_id, cid, "tracks_issuer", "synthetic", confidence=0.95
+                )
                 link_count += 1
 
         # instrument → country (located_in) — domicile
         for inst_id in entities.get("instrument", []):
             co_id = self._rng.choice(entities.get("country", ["default"]))
-            store.link_entities(inst_id, co_id, "located_in", "synthetic", confidence=0.9)
+            store.link_entities(
+                inst_id, co_id, "located_in", "synthetic", confidence=0.9
+            )
             link_count += 1
 
         # instrument → country (fx_base_country / fx_quote_country) — subset
-        fx_insts = entities.get("instrument", [])[: max(1, len(entities.get("instrument", [])) // 3)]
+        fx_insts = entities.get("instrument", [])[
+            : max(1, len(entities.get("instrument", [])) // 3)
+        ]
         for inst_id in fx_insts:
             countries = entities.get("country", [])
             if len(countries) >= 2:
                 base_co, quote_co = self._rng.sample(countries, 2)
-                store.link_entities(inst_id, base_co, "fx_base_country", "synthetic", confidence=0.95)
-                store.link_entities(inst_id, quote_co, "fx_quote_country", "synthetic", confidence=0.95)
+                store.link_entities(
+                    inst_id, base_co, "fx_base_country", "synthetic", confidence=0.95
+                )
+                store.link_entities(
+                    inst_id, quote_co, "fx_quote_country", "synthetic", confidence=0.95
+                )
                 link_count += 2
 
         # instrument → country (exchange_country) — commodity futures
-        for inst_id in entities.get("instrument", [])[-max(1, len(entities.get("instrument", [])) // 3) :]:
+        for inst_id in entities.get("instrument", [])[
+            -max(1, len(entities.get("instrument", [])) // 3) :
+        ]:
             co_id = self._rng.choice(entities.get("country", ["default"]))
-            store.link_entities(inst_id, co_id, "exchange_country", "synthetic", confidence=0.95)
+            store.link_entities(
+                inst_id, co_id, "exchange_country", "synthetic", confidence=0.95
+            )
             link_count += 1
 
         # instrument → protocol (tracks_protocol) — crypto instruments
-        for inst_id in entities.get("instrument", [])[: max(1, len(entities.get("instrument", [])) // 5)]:
+        for inst_id in entities.get("instrument", [])[
+            : max(1, len(entities.get("instrument", [])) // 5)
+        ]:
             if entities.get("protocol"):
                 proto_id = self._rng.choice(entities["protocol"])
-                store.link_entities(inst_id, proto_id, "tracks_protocol", "synthetic", confidence=0.9)
+                store.link_entities(
+                    inst_id, proto_id, "tracks_protocol", "synthetic", confidence=0.9
+                )
                 link_count += 1
 
         # cftc_contract → instrument (cftc_tracks)
         for cid in entities.get("cftc_contract", []):
             if entities.get("instrument"):
                 inst_id = self._rng.choice(entities["instrument"])
-                store.link_entities(cid, inst_id, "cftc_tracks", "synthetic", confidence=0.95)
+                store.link_entities(
+                    cid, inst_id, "cftc_tracks", "synthetic", confidence=0.95
+                )
                 link_count += 1
 
         # country → country (sanctioned_under) — geopolitical
@@ -332,14 +374,18 @@ class SyntheticGraphGenerator:
             # 1-2 sanction relationships
             for _ in range(min(2, len(countries) - 1)):
                 a, b = self._rng.sample(countries, 2)
-                store.link_entities(a, b, "sanctioned_under", "synthetic", confidence=0.85)
+                store.link_entities(
+                    a, b, "sanctioned_under", "synthetic", confidence=0.85
+                )
                 link_count += 1
 
         # domain → company (domain_owned_by) — Phase 36
         for did in entities.get("domain", []):
             if entities.get("company"):
                 cid = self._rng.choice(entities["company"])
-                store.link_entities(did, cid, "domain_owned_by", "synthetic", confidence=0.8)
+                store.link_entities(
+                    did, cid, "domain_owned_by", "synthetic", confidence=0.8
+                )
                 link_count += 1
 
         # topic → instrument (topic_relates_to_instrument) — Phase 36
@@ -403,14 +449,17 @@ class SyntheticGraphGenerator:
 
         # Build entity type index
         all_entities = store.query_all_entities()
-        entity_type_map: dict[str, str] = {e["entity_id"]: e["entity_type"] for e in all_entities}
+        entity_type_map: dict[str, str] = {
+            e["entity_id"]: e["entity_type"] for e in all_entities
+        }
 
         for pattern in self.patterns:
             # Find source observations matching the pattern
             source_obs = [
                 o
                 for o in all_obs
-                if o["entity_type"] == pattern.source_type and o["observation_type"] == pattern.source_obs_type
+                if o["entity_type"] == pattern.source_type
+                and o["observation_type"] == pattern.source_obs_type
             ]
             for src_ob in source_obs:
                 src_id = src_ob["entity_id"]
@@ -612,6 +661,16 @@ class TrainerConfig:
     resume_from_epoch: int = 0
     """Skip the first N epochs by loading the checkpoint for epoch N from
     checkpoint_dir before training begins.  0 = start from scratch."""
+    use_direction_loss: bool = False
+    """When True, add a binary direction (sign) cross-entropy loss alongside
+    the return loss.  Loss formulation: treat the predicted scalar return as a
+    logit and apply BCE(sigmoid(pred), (target > 0).float()).  This directly
+    penalises sign errors independently of magnitude, providing a complementary
+    gradient to ListNet (which optimises ranking order) and Huber (which
+    minimises absolute error).  Weight controlled by direction_loss_weight."""
+    direction_loss_weight: float = 0.3
+    """Multiplier for the direction BCE loss when use_direction_loss=True.
+    Added as: ret_loss += direction_loss_weight * direction_bce_loss."""
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -693,17 +752,30 @@ class Trainer:
         self._log_vars: dict[str, torch.nn.Parameter] | None = None
         if cfg.auto_tune_loss_weights:
             self._log_vars = {
-                "obs_type": torch.nn.Parameter(torch.tensor(-math.log(max(cfg.obs_type_weight, 1e-6)))),
-                "time_delta": torch.nn.Parameter(torch.tensor(-math.log(max(cfg.time_delta_weight, 1e-6)))),
-                "contrastive": torch.nn.Parameter(torch.tensor(-math.log(max(cfg.contrastive_weight, 1e-6)))),
-                "value": torch.nn.Parameter(torch.tensor(-math.log(max(cfg.value_weight, 1e-6)))),
-                "return": torch.nn.Parameter(torch.tensor(-math.log(max(cfg.return_weight, 1e-6)))),
+                "obs_type": torch.nn.Parameter(
+                    torch.tensor(-math.log(max(cfg.obs_type_weight, 1e-6)))
+                ),
+                "time_delta": torch.nn.Parameter(
+                    torch.tensor(-math.log(max(cfg.time_delta_weight, 1e-6)))
+                ),
+                "contrastive": torch.nn.Parameter(
+                    torch.tensor(-math.log(max(cfg.contrastive_weight, 1e-6)))
+                ),
+                "value": torch.nn.Parameter(
+                    torch.tensor(-math.log(max(cfg.value_weight, 1e-6)))
+                ),
+                "return": torch.nn.Parameter(
+                    torch.tensor(-math.log(max(cfg.return_weight, 1e-6)))
+                ),
             }
 
         # Move model and log-var tensors to target device
         self._model = self._model.to(self._device)
         if self._log_vars is not None:
-            self._log_vars = {k: torch.nn.Parameter(v.to(self._device)) for k, v in self._log_vars.items()}
+            self._log_vars = {
+                k: torch.nn.Parameter(v.to(self._device))
+                for k, v in self._log_vars.items()
+            }
 
         # Build optimizer — include log-var params when auto-tuning
         opt_params = list(self._model.parameters())
@@ -720,7 +792,9 @@ class Trainer:
         all_obs.sort(key=lambda o: o.get("observed_at", 0.0))
         # Apply obs_since filter if configured
         if self.config.obs_since is not None:
-            all_obs = [o for o in all_obs if o.get("observed_at", 0.0) >= self.config.obs_since]
+            all_obs = [
+                o for o in all_obs if o.get("observed_at", 0.0) >= self.config.obs_since
+            ]
         n = len(all_obs)
         n_train = int(n * self.config.train_ratio)
         n_val = int(n * (self.config.train_ratio + self.config.val_ratio))
@@ -835,8 +909,16 @@ class Trainer:
 
         return (
             global_ids,
-            (torch.tensor(obs_types, dtype=torch.long) if obs_types else torch.zeros(0, dtype=torch.long)),
-            (torch.tensor(time_deltas, dtype=torch.float) if time_deltas else torch.zeros(0)),
+            (
+                torch.tensor(obs_types, dtype=torch.long)
+                if obs_types
+                else torch.zeros(0, dtype=torch.long)
+            ),
+            (
+                torch.tensor(time_deltas, dtype=torch.float)
+                if time_deltas
+                else torch.zeros(0)
+            ),
             (torch.tensor(values, dtype=torch.float) if values else torch.zeros(0)),
         )
 
@@ -909,7 +991,9 @@ class Trainer:
             n_nodes = b_embs_n.size(0)
             if n_nodes > 1:
                 pool = [j for j in range(n_nodes) if j != b_local]
-                neg_indices = random.sample(pool, min(self.config.num_negative_samples, len(pool)))
+                neg_indices = random.sample(
+                    pool, min(self.config.num_negative_samples, len(pool))
+                )
                 for neg_idx in neg_indices:
                     neg_dist = F.pairwise_distance(
                         emb_a_n.unsqueeze(0),
@@ -950,7 +1034,9 @@ class Trainer:
             "return": [],
         }
         if cfg.resume_from_epoch > 0 and cfg.checkpoint_dir:
-            ckpt_path = os.path.join(cfg.checkpoint_dir, f"epoch_{cfg.resume_from_epoch:03d}.pt")
+            ckpt_path = os.path.join(
+                cfg.checkpoint_dir, f"epoch_{cfg.resume_from_epoch:03d}.pt"
+            )
             if os.path.exists(ckpt_path):
                 ckpt = torch.load(ckpt_path, map_location=self._device)
                 # ── Handle entity-count growth between checkpoints ───────
@@ -959,15 +1045,21 @@ class Trainer:
                 # approach: pop the variable-size memory buffers out of the
                 # state dict before calling load_state_dict, then copy them
                 # manually with zero-padding for any new rows.
-                ckpt_state = dict(ckpt["model_state"])  # shallow copy — don't mutate ckpt
+                ckpt_state = dict(
+                    ckpt["model_state"]
+                )  # shallow copy — don't mutate ckpt
                 MEMORY_BUFFER_KEYS = ("memory.memory", "memory.last_update")
-                saved_buffers = {k: ckpt_state.pop(k) for k in MEMORY_BUFFER_KEYS if k in ckpt_state}
+                saved_buffers = {
+                    k: ckpt_state.pop(k) for k in MEMORY_BUFFER_KEYS if k in ckpt_state
+                }
                 # Filter out keys whose shape doesn't match the current model.
                 # strict=False already handles missing/extra keys, but PyTorch
                 # still raises RuntimeError on size mismatches even with strict=False.
                 current_state = model.state_dict()
                 shape_mismatches = [
-                    k for k, v in ckpt_state.items() if k in current_state and v.shape != current_state[k].shape
+                    k
+                    for k, v in ckpt_state.items()
+                    if k in current_state and v.shape != current_state[k].shape
                 ]
                 if shape_mismatches:
                     log.warning(
@@ -1052,7 +1144,9 @@ class Trainer:
                     start_epoch,
                 )
             else:
-                log.warning("Checkpoint %s not found — starting from scratch.", ckpt_path)
+                log.warning(
+                    "Checkpoint %s not found — starting from scratch.", ckpt_path
+                )
 
         train_obs, _, _ = self._split_observations()
         windows = self._make_windows(train_obs)
@@ -1062,7 +1156,9 @@ class Trainer:
         # This bounds peak RAM to O(max_windows * avg_graph_size) regardless
         # of total DB size. 0 = use all windows (original behaviour).
         if cfg.max_windows > 0 and len(windows) > cfg.max_windows + 1:
-            windows = windows[-(cfg.max_windows + 1) :]  # +1 because we need windows[i+1] as next
+            windows = windows[
+                -(cfg.max_windows + 1) :
+            ]  # +1 because we need windows[i+1] as next
             log.info(
                 "max_windows=%d: truncated to last %d windows (%.1f%% of training data)",
                 cfg.max_windows,
@@ -1072,7 +1168,9 @@ class Trainer:
 
         # Cache entity type lookups — entities don't change during training
         all_entities = self.store.query_all_entities()
-        self._eid_to_type_cache = {e["entity_id"]: e["entity_type"] for e in all_entities}
+        self._eid_to_type_cache = {
+            e["entity_id"]: e["entity_type"] for e in all_entities
+        }
 
         if cfg.checkpoint_dir:
             os.makedirs(cfg.checkpoint_dir, exist_ok=True)
@@ -1124,9 +1222,13 @@ class Trainer:
         # → high weight → more training emphasis).  Loaded once per
         # train() call — constant across all epochs and windows.
         # Returns None if no alignment signals are stored (uniform weights).
-        entity_types_in_graph = list({e.get("entity_type") for e in all_entities if e.get("entity_type")})
+        entity_types_in_graph = list(
+            {e.get("entity_type") for e in all_entities if e.get("entity_type")}
+        )
         try:
-            _alignment_weights: dict[str, float] | None = load_alignment_weights(self.store, entity_types_in_graph)
+            _alignment_weights: dict[str, float] | None = load_alignment_weights(
+                self.store, entity_types_in_graph
+            )
         except Exception as exc:
             log.debug("Phase 49: failed to load alignment weights: %s", exc)
             _alignment_weights = None
@@ -1214,10 +1316,12 @@ class Trainer:
                 embeddings = model(data, id_map)
 
                 # Supervision targets from next window
-                global_ids, obs_targets, dt_targets, val_targets = self._compute_targets(
-                    curr_obs,
-                    next_obs,
-                    id_map,
+                global_ids, obs_targets, dt_targets, val_targets = (
+                    self._compute_targets(
+                        curr_obs,
+                        next_obs,
+                        id_map,
+                    )
                 )
 
                 # Move supervision targets to device
@@ -1260,11 +1364,16 @@ class Trainer:
                         # Phase 49: apply per-entity-type alignment weights
                         if _alignment_weights is not None and _valid_ntypes:
                             per_example_w = torch.tensor(
-                                [_alignment_weights.get(nt, 1.0) for nt in _valid_ntypes],
+                                [
+                                    _alignment_weights.get(nt, 1.0)
+                                    for nt in _valid_ntypes
+                                ],
                                 dtype=torch.float32,
                                 device=logits.device,
                             )
-                            raw_ce = F.cross_entropy(logits, valid_targets, reduction="none")
+                            raw_ce = F.cross_entropy(
+                                logits, valid_targets, reduction="none"
+                            )
                             obs_loss = (raw_ce * per_example_w).mean()
                         else:
                             obs_loss = F.cross_entropy(logits, valid_targets)
@@ -1277,7 +1386,11 @@ class Trainer:
                 # outlier predictions, replacing the raw MSE that caused spikes.
                 dt_loss = torch.tensor(0.0, device=self._device)
                 if target_embs:
-                    dt_pred = model.time_delta_head(target_emb_tensor).squeeze(-1).clamp(-20.0, 20.0)
+                    dt_pred = (
+                        model.time_delta_head(target_emb_tensor)
+                        .squeeze(-1)
+                        .clamp(-20.0, 20.0)
+                    )
                     valid_dt = dt_targets[valid_indices]
                     dt_loss = F.huber_loss(dt_pred, valid_dt, delta=1.0)
 
@@ -1323,7 +1436,9 @@ class Trainer:
                         _ret_targets.append(_lr)
                     if _ret_embs:
                         _ret_emb_t = torch.stack(_ret_embs)
-                        _ret_tgt_t = torch.tensor(_ret_targets, dtype=torch.float32, device=self._device)
+                        _ret_tgt_t = torch.tensor(
+                            _ret_targets, dtype=torch.float32, device=self._device
+                        )
                         # Guard: filter out any NaN/Inf targets that came from
                         # bad DB rows (stock splits, missing prices, etc.).
                         # A single NaN target propagates through huber_loss →
@@ -1342,7 +1457,23 @@ class Trainer:
                                     tau=cfg.listnet_temperature,
                                 )
                             else:
-                                ret_loss = F.huber_loss(_ret_pred[_finite_mask], _ret_tgt_t[_finite_mask])
+                                ret_loss = F.huber_loss(
+                                    _ret_pred[_finite_mask], _ret_tgt_t[_finite_mask]
+                                )
+                            # Direction BCE loss (Phase H-D/H-F hypothesis).
+                            # Treat predicted scalar as logit; penalises sign
+                            # errors independently of magnitude.  Provides a
+                            # complementary gradient to ListNet's rank ordering.
+                            if cfg.use_direction_loss:
+                                _dir_tgt = (
+                                    _ret_tgt_t[_finite_mask] > 0
+                                ).float()
+                                _dir_loss = F.binary_cross_entropy_with_logits(
+                                    _ret_pred[_finite_mask], _dir_tgt
+                                )
+                                ret_loss = (
+                                    ret_loss + cfg.direction_loss_weight * _dir_loss
+                                )
 
                 # ── total loss ───────────────────────────
                 if self._log_vars is not None:
@@ -1441,7 +1572,9 @@ class Trainer:
 
             # ── Per-epoch checkpoint ──────────────────────────────────────
             if cfg.checkpoint_dir:
-                ckpt_path = os.path.join(cfg.checkpoint_dir, f"epoch_{epoch + 1:03d}.pt")
+                ckpt_path = os.path.join(
+                    cfg.checkpoint_dir, f"epoch_{epoch + 1:03d}.pt"
+                )
                 ckpt_payload: dict = {
                     "epoch": epoch + 1,
                     "model_state": model.state_dict(),
@@ -1449,7 +1582,9 @@ class Trainer:
                     "history": history,
                 }
                 if self._log_vars is not None:
-                    ckpt_payload["log_vars"] = {k: v.data.cpu() for k, v in self._log_vars.items()}
+                    ckpt_payload["log_vars"] = {
+                        k: v.data.cpu() for k, v in self._log_vars.items()
+                    }
                 torch.save(ckpt_payload, ckpt_path)
                 log.info("  Checkpoint saved → %s", ckpt_path)
         # After all epochs complete, approximate F_i ≈ E[(dL/dθ_i)²] on
@@ -1487,7 +1622,9 @@ class Trainer:
                 fisher_diag = compute_fisher(model, _fisher_loss_fn, n_samples=1)
                 self._ewc_state = EWCState(
                     fisher=fisher_diag,
-                    anchor={n: p.data.clone().cpu() for n, p in model.named_parameters()},
+                    anchor={
+                        n: p.data.clone().cpu() for n, p in model.named_parameters()
+                    },
                     lambda_=cfg.ewc_lambda,
                     last_update_ts=time.time(),
                     obs_count_at_update=len(all_prefetched_obs),
@@ -1499,7 +1636,9 @@ class Trainer:
                     len(all_prefetched_obs),
                 )
             else:
-                log.warning("Fisher computation skipped — last training window produced an empty graph (no nodes).")
+                log.warning(
+                    "Fisher computation skipped — last training window produced an empty graph (no nodes)."
+                )
         else:
             log.warning(
                 "Fisher computation skipped — need ≥ 2 training windows "
@@ -1522,7 +1661,8 @@ class Trainer:
         if self._log_vars is not None:
             cfg = self.config
             return {
-                k: math.exp(-max(cfg.log_var_min, min(cfg.log_var_max, p.item()))) for k, p in self._log_vars.items()
+                k: math.exp(-max(cfg.log_var_min, min(cfg.log_var_max, p.item())))
+                for k, p in self._log_vars.items()
             }
         cfg = self.config
         return {
@@ -1614,7 +1754,9 @@ class Trainer:
         cfg = self.config
 
         embeddings = model(data, id_map)
-        global_ids, obs_targets, dt_targets, val_targets = self._compute_targets(curr_obs, next_obs, id_map)
+        global_ids, obs_targets, dt_targets, val_targets = self._compute_targets(
+            curr_obs, next_obs, id_map
+        )
 
         # ── obs_type loss ────────────────────────────────────────────────
         obs_loss = torch.tensor(0.0)
@@ -1792,7 +1934,9 @@ class Trainer:
 
         # ── Forward: compute L_new ───────────────────────────────────────
         model.train()
-        loss_new: torch.Tensor = self._loss_from_window(data, id_map, curr_obs, next_obs)
+        loss_new: torch.Tensor = self._loss_from_window(
+            data, id_map, curr_obs, next_obs
+        )
 
         # ── EWC penalty: λ · Σ F_i (θ_i − θ_i*)² ───────────────────────
         loss_ewc: torch.Tensor = ewc_penalty(model, self._ewc_state)
@@ -1847,7 +1991,9 @@ class Trainer:
             path: File path for the saved checkpoint.
         """
         if self._model is None:
-            raise RuntimeError("No model to save — call build_model() or train() first.")
+            raise RuntimeError(
+                "No model to save — call build_model() or train() first."
+            )
 
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -1957,7 +2103,9 @@ class Trainer:
         )
 
         trainer._model.load_state_dict(checkpoint["model_state_dict"])
-        trainer._optimizer = torch.optim.Adam(trainer._model.parameters(), lr=config.learning_rate)
+        trainer._optimizer = torch.optim.Adam(
+            trainer._model.parameters(), lr=config.learning_rate
+        )
 
         # Phase 46: restore EWC state if present (absent = pre-Phase-46 checkpoint).
         if "ewc_fisher" in checkpoint:
@@ -1974,7 +2122,9 @@ class Trainer:
                 trainer._ewc_state.lambda_,
             )
         else:
-            log.info("No EWC state in checkpoint (pre-Phase-46 model). Run train() to compute Fisher diagonal.")
+            log.info(
+                "No EWC state in checkpoint (pre-Phase-46 model). Run train() to compute Fisher diagonal."
+            )
 
         log.info("Model loaded from %s.", path)
         return trainer
@@ -2221,7 +2371,11 @@ def generate_outcome_labels(
                 continue
 
             src_obs = sorted(
-                [o for o in obs_by_entity.get(eid_a, []) if o.get("observation_type") == cp.obs_type_a],
+                [
+                    o
+                    for o in obs_by_entity.get(eid_a, [])
+                    if o.get("observation_type") == cp.obs_type_a
+                ],
                 key=lambda o: o.get("observed_at", 0.0),
             )
             if not src_obs:
@@ -2231,13 +2385,20 @@ def generate_outcome_labels(
                 if eid_to_type.get(eid_b) != cp.target_type:
                     continue
                 dst_obs = sorted(
-                    [o for o in obs_by_entity.get(eid_b, []) if o.get("observation_type") == cp.obs_type_b],
+                    [
+                        o
+                        for o in obs_by_entity.get(eid_b, [])
+                        if o.get("observation_type") == cp.obs_type_b
+                    ],
                     key=lambda o: o.get("observed_at", 0.0),
                 )
 
                 for so in src_obs:
                     st = so.get("observed_at", 0.0)
-                    hit = any(0 < (do.get("observed_at", 0.0) - st) <= cp.window_seconds for do in dst_obs)
+                    hit = any(
+                        0 < (do.get("observed_at", 0.0) - st) <= cp.window_seconds
+                        for do in dst_obs
+                    )
                     lbl = OutcomeLabel(
                         src_entity_id=eid_a,
                         dst_entity_id=eid_b,
