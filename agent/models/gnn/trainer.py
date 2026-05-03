@@ -672,6 +672,14 @@ class TrainerConfig:
     """Multiplier for the direction BCE loss when use_direction_loss=True.
     Added as: ret_loss += direction_loss_weight * direction_bce_loss."""
 
+    # ── Weights & Biases streaming (optional) ──────────────────────────────
+    wandb_project: str | None = None
+    """W&B project name. If None, wandb logging is disabled."""
+    wandb_run_name: str | None = None
+    """W&B run display name (e.g. 'h-a-epoch31-40'). Auto-generated if None."""
+    wandb_tags: list[str] | None = None
+    """Optional list of tags for the W&B run (e.g. ['h-a', 'phase43'])."""
+
 
 # ═══════════════════════════════════════════════════════════════
 # Trainer
@@ -705,6 +713,9 @@ class Trainer:
         self._log_vars: dict[str, torch.nn.Parameter] | None = None
         self._graph_builder = GraphBuilder(store)
         self._ewc_state: EWCState | None = None
+        self._wandb_run = (
+            None  # W&B run handle; initialised by train() if wandb_project is set
+        )
         """Populated by train() after the final epoch.
         Holds the Fisher diagonal + anchor weights for continual learning.
         Persisted through save_model / load_model."""
@@ -1022,6 +1033,35 @@ class Trainer:
         optimizer = self._optimizer
         cfg = self.config
         model.train()
+
+        # ── W&B initialisation (optional) ────────────────────────────────
+        self._wandb_run = None
+        if cfg.wandb_project:
+            try:
+                import wandb as _wandb  # type: ignore[import]
+                import dataclasses
+
+                self._wandb_run = _wandb.init(
+                    project=cfg.wandb_project,
+                    name=cfg.wandb_run_name or None,
+                    tags=cfg.wandb_tags or None,
+                    resume="allow",
+                    config={
+                        k: v
+                        for k, v in dataclasses.asdict(cfg).items()
+                        if k not in ("wandb_project", "wandb_run_name", "wandb_tags")
+                    },
+                )
+                log.info(
+                    "W&B run started: %s",
+                    self._wandb_run.url if self._wandb_run else "?",
+                )
+            except Exception as _wb_init_exc:
+                log.warning(
+                    "W&B init failed (non-fatal) — continuing without streaming: %s",
+                    _wb_init_exc,
+                )
+                self._wandb_run = None
 
         # ── Resume from checkpoint if requested ───────────────────────────
         start_epoch = 0
@@ -1465,9 +1505,7 @@ class Trainer:
                             # errors independently of magnitude.  Provides a
                             # complementary gradient to ListNet's rank ordering.
                             if cfg.use_direction_loss:
-                                _dir_tgt = (
-                                    _ret_tgt_t[_finite_mask] > 0
-                                ).float()
+                                _dir_tgt = (_ret_tgt_t[_finite_mask] > 0).float()
                                 _dir_loss = F.binary_cross_entropy_with_logits(
                                     _ret_pred[_finite_mask], _dir_tgt
                                 )
@@ -1570,6 +1608,28 @@ class Trainer:
                     eff["return"],
                 )
 
+            # ── W&B streaming ─────────────────────────────────────────────
+            if self._wandb_run is not None:
+                try:
+                    _wmetrics: dict = {
+                        "epoch": epoch + 1,
+                        "loss/total": history["total"][-1],
+                        "loss/obs_type": history["obs_type"][-1],
+                        "loss/time_delta": history["time_delta"][-1],
+                        "loss/contrastive": history["contrastive"][-1],
+                        "loss/value": history["value"][-1],
+                        "loss/return": (
+                            history["return"][-1] if history["return"] else float("nan")
+                        ),
+                    }
+                    if self._log_vars is not None:
+                        _weff = self.effective_loss_weights()
+                        for _k, _v in _weff.items():
+                            _wmetrics[f"weight/{_k}"] = _v
+                    self._wandb_run.log(_wmetrics, step=epoch + 1)
+                except Exception as _wandb_exc:
+                    log.debug("W&B log failed (non-fatal): %s", _wandb_exc)
+
             # ── Per-epoch checkpoint ──────────────────────────────────────
             if cfg.checkpoint_dir:
                 ckpt_path = os.path.join(
@@ -1646,6 +1706,14 @@ class Trainer:
                 "accumulates.",
                 len(windows),
             )
+
+        # ── W&B finish ───────────────────────────────────────────────────
+        if self._wandb_run is not None:
+            try:
+                self._wandb_run.finish()
+            except Exception:
+                pass
+            self._wandb_run = None
 
         return history
 
