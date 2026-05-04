@@ -1256,6 +1256,31 @@ class Trainer:
             )
         _obs_timestamps = [o.get("observed_at", 0.0) for o in all_prefetched_obs]
 
+        # ── Fix: dynamic return upscaling ────────────────────────────────────
+        # The return head sees only instrument_daily obs with log_return (~53
+        # entities) while obs_type sees all ~2,145 entities.  Without upscaling,
+        # the return gradient is ~40× weaker than every other head, causing the
+        # return head to get drowned out and silenced by auto-tune.
+        # We compute the ratio once here and apply it as a multiplier to ret_loss
+        # every window.  Ratio = n_unique_entities / n_return_labeled_entities.
+        _return_entities = {
+            o["entity_id"]
+            for o in all_prefetched_obs
+            if o.get("observation_type") == "instrument_daily"
+            and isinstance(o.get("value"), dict)
+            and "log_return" in o["value"]
+            and o.get("entity_id") is not None
+        }
+        _n_return_entities = max(len(_return_entities), 1)
+        _n_total_entities = max(len(all_entities), 1)
+        _return_upscale = _n_total_entities / _n_return_entities
+        log.info(
+            "Return upscale: %d total entities / %d return-labeled = %.1f×",
+            _n_total_entities,
+            _n_return_entities,
+            _return_upscale,
+        )
+
         # ── Phase 49: Load GNN alignment weights ──────────────────────────
         # Alignment weights tell the training loop which entity types are
         # not yet well-aligned with the world model (low belief sharpening
@@ -1424,6 +1449,9 @@ class Trainer:
                 # explosions when the head outputs large values mid-training.
                 # Huber loss (delta=1.0) further limits gradient magnitude on
                 # outlier predictions, replacing the raw MSE that caused spikes.
+                # Fix: also clamp TARGETS to [0, 20] so any bad DB row with a
+                # far-future observed_at can't produce a target outside the
+                # prediction range and cause runaway loss (observed: 168K at ep1).
                 dt_loss = torch.tensor(0.0, device=self._device)
                 if target_embs:
                     dt_pred = (
@@ -1431,13 +1459,18 @@ class Trainer:
                         .squeeze(-1)
                         .clamp(-20.0, 20.0)
                     )
-                    valid_dt = dt_targets[valid_indices]
+                    valid_dt = dt_targets[valid_indices].clamp(0.0, 20.0)
                     dt_loss = F.huber_loss(dt_pred, valid_dt, delta=1.0)
 
                 # ── value prediction loss ────────────────
+                # Fix: clamp predictions to [-1e4, 1e4].  Raw financial values
+                # (usd_amount, whale txn amounts) can be $1B+.  Without a clamp
+                # the value head produces gradient spikes that propagate backwards
+                # and corrupt all other heads (observed: val_loss = 1,094,629
+                # at epoch 24 in H-G run).
                 val_loss = torch.tensor(0.0, device=self._device)
                 if target_embs:
-                    val_pred = model.value_pred_head(target_emb_tensor).squeeze(-1)
+                    val_pred = model.value_pred_head(target_emb_tensor).squeeze(-1).clamp(-1e4, 1e4)
                     valid_val = val_targets[valid_indices]
                     val_loss = F.huber_loss(val_pred, valid_val)
 
@@ -1512,6 +1545,15 @@ class Trainer:
                                 ret_loss = (
                                     ret_loss + cfg.direction_loss_weight * _dir_loss
                                 )
+                        # Fix: ListNet loss is KL(p_target || p_pred).
+                        # In theory non-negative, but floating-point rounding
+                        # in softmax can produce tiny negatives.  A negative
+                        # loss rewards the model for being wrong — clamp it out.
+                        # Also apply return upscaling: the return head sees only
+                        # ~53 instruments while obs_type sees ~2,145 entities.
+                        # Without upscaling the return gradient is ~40× weaker
+                        # and auto-tune silences it within 10 epochs.
+                        ret_loss = ret_loss.clamp(min=0.0) * _return_upscale
 
                 # ── total loss ───────────────────────────
                 if self._log_vars is not None:
