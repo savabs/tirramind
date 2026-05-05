@@ -1077,6 +1077,8 @@ class Trainer:
             ckpt_path = os.path.join(
                 cfg.checkpoint_dir, f"epoch_{cfg.resume_from_epoch:03d}.pt"
             )
+            print(f"[RESUME] Looking for checkpoint: {ckpt_path}")
+            print(f"[RESUME] File exists: {os.path.exists(ckpt_path)}")
             if os.path.exists(ckpt_path):
                 ckpt = torch.load(ckpt_path, map_location=self._device)
                 # ── Handle entity-count growth between checkpoints ───────
@@ -1184,8 +1186,11 @@ class Trainer:
                     start_epoch,
                 )
             else:
-                log.warning(
-                    "Checkpoint %s not found — starting from scratch.", ckpt_path
+                raise FileNotFoundError(
+                    f"[RESUME] Checkpoint not found: {ckpt_path}\n"
+                    f"  checkpoint_dir={cfg.checkpoint_dir}\n"
+                    f"  resume_from_epoch={cfg.resume_from_epoch}\n"
+                    "  Attach the tirramind-h-d-ckpt dataset containing epoch_018.pt"
                 )
 
         train_obs, _, _ = self._split_observations()
@@ -1470,7 +1475,11 @@ class Trainer:
                 # at epoch 24 in H-G run).
                 val_loss = torch.tensor(0.0, device=self._device)
                 if target_embs:
-                    val_pred = model.value_pred_head(target_emb_tensor).squeeze(-1).clamp(-1e4, 1e4)
+                    val_pred = (
+                        model.value_pred_head(target_emb_tensor)
+                        .squeeze(-1)
+                        .clamp(-1e4, 1e4)
+                    )
                     valid_val = val_targets[valid_indices]
                     val_loss = F.huber_loss(val_pred, valid_val)
 
@@ -2212,7 +2221,15 @@ class Trainer:
             num_nodes=num_nodes,
         )
 
-        trainer._model.load_state_dict(checkpoint["model_state_dict"])
+        missing, unexpected = trainer._model.load_state_dict(
+            checkpoint["model_state_dict"], strict=False
+        )
+        if missing or unexpected:
+            log.warning(
+                "load_model: %d missing keys, %d unexpected keys (strict=False).",
+                len(missing),
+                len(unexpected),
+            )
         trainer._optimizer = torch.optim.Adam(
             trainer._model.parameters(), lr=config.learning_rate
         )
