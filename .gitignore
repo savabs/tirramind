@@ -39,6 +39,9 @@ tasks/
 # .github/ excluded from ignore — workflows must be tracked for GitHub Actions to run
 !.github/
 !.github/**
+# .claude/skills/ — Claude agent skills must be tracked (skill SKILL.md files)
+!.claude/
+!.claude/**
 
 # Media and miscellaneous local files
 *.jpeg
@@ -55,3 +58,7 @@ tasks/
 .awos/
 tirramind_data_upload.zip
 tirramind_code.zip
+
+# Auto-research paper cache
+knowledge/*.tar.gz
+knowledge/*.tar

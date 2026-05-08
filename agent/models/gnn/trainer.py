@@ -1648,6 +1648,23 @@ class Trainer:
                 history["contrastive"][-1],
                 history["return"][-1],
             )
+
+            # ── Optimization-target validator (Phase AR.4) ───────────────
+            # Warn when dt loss dominates return head by >50× for 3+ epochs.
+            # This indicates the return head is receiving near-zero gradient
+            # and IC will stay flat regardless of architecture improvements.
+            if len(history["time_delta"]) >= 3 and len(history["return"]) >= 3:
+                _dt_avg = sum(history["time_delta"][-3:]) / 3
+                _ret_avg = sum(history["return"][-3:]) / 3
+                _ratio = _dt_avg / (_ret_avg + 1e-8)
+                if _ratio > 50:
+                    log.warning(
+                        "OPTIMIZATION TARGET WARNING: return head receiving <2%% of "
+                        "gradient budget (dt/ret loss ratio=%.0fx over last 3 epochs). "
+                        "IC is likely to stay flat. Consider: --return-weight, "
+                        "--gdelt-frac, or checking data balance.",
+                        _ratio,
+                    )
             if self._log_vars is not None:
                 eff = self.effective_loss_weights()
                 log.info(

@@ -195,15 +195,82 @@ Then rebuild `tirramind_data_upload.zip` including the new checkpoints for the n
 
 | Item | Value |
 |---|---|
-| Last completed epoch | 30 |
-| Next run target | epochs 31–40 (see multi-hypothesis plan below) |
-| Phase 41b changes | ListNet ranking loss (`--listnet`), `auto_tune_loss_weights` (`--auto-tune`), `--gdelt-frac 0.05` |
-| Phase 42 changes | Enriched DB: 19 cftc_tracks (was 5), 119 produced_in links (was 0), 982,650 obs, 2,502 entities |
+| **Production model** | `gnn_model.pt` = **H-G** (24MB, epoch 40, ICIR=+0.221) |
+| H-G backup | `gnn_model_h_g_backup.pt` (24MB) ✅ already in place |
+| H-G checkpoints | `checkpoints/h_g/epoch_031–040.pt` — all present locally |
+| **Active Kaggle run** | H-D, W&B: `tirramind` / `h-d-resume-ep18-40` |
+| H-D resume checkpoint | `checkpoints/h_d/epoch_018.pt` (27MB) — uploaded to `tirramind-h-d-ckpt` dataset |
+| H-D architecture | `--num-layers 3 --num-heads 4 --hidden-dim 128` |
+| H-D training target | epochs 19→40 (resumed from epoch 18) |
+| H-D local model | `gnn_model_h_d.pt` (11MB) — **STALE** (epoch 18 only); replace after Kaggle run |
 | DB observations | 982,650 |
 | Entities | 2,502 |
-| Upload zip | `tirramind_data_upload.zip` (376MB) — db + epoch_001–010, epoch_015–030 |
-| Epochs 011–014 | Missing locally (not downloaded from prior Kaggle run) — resume from 030 unaffected |
-| Starved edge types | 5: country→event_involves→country, topic→instrument, exchange_country, wallet→instrument, market_authorized_in |
+| Key commits this session | `6edbfb6` trainer loud-fail on missing resume; `2371f36` relax find_data_root |
+
+---
+
+## H-D Post-Training Evaluation Procedure
+
+Run this **after the Kaggle h-d-resume-ep18-40 run completes** (check W&B for epoch 40 completion).
+
+### Step 1 — Download from Kaggle Output tab
+
+Go to the Kaggle notebook → Output tab → download:
+- `gnn_model_h_d.pt` (final H-D model, ~27MB)
+- `epoch_040.pt` (final H-D checkpoint, ~27MB)
+
+### Step 2 — Place files locally
+
+```bash
+cd /home/becmachlean/2024/projects/tirramind_v1
+
+cp ~/Downloads/gnn_model_h_d.pt .tirra_pipeline/gnn_model_h_d.pt
+cp ~/Downloads/epoch_040.pt .tirra_pipeline/checkpoints/h_d/epoch_040.pt
+
+ls -lh .tirra_pipeline/gnn_model_h_d.pt   # expect ~27MB (vs 11MB stale version)
+```
+
+### Step 3 — Run H-D backtest
+
+⚠️ `phase40_gnn_backtest.py` has a **hardcoded** `MODEL_PATH = gnn_model.pt` (no `--model` flag).
+Swap temporarily:
+
+```bash
+# H-G backup already at gnn_model_h_g_backup.pt — confirmed present
+cp .tirra_pipeline/gnn_model_h_d.pt .tirra_pipeline/gnn_model.pt
+
+python3 scripts/phase40_gnn_backtest.py
+```
+
+Capture the ICIR line from stdout. Compare:
+
+| Model | ICIR | Status |
+|---|---|---|
+| H-G (production) | +0.221 | baseline to beat |
+| H-D (challenger) | _fill after run_ | — |
+
+### Step 4 — Promote or restore
+
+**If H-D ICIR > +0.221:**
+```bash
+# H-D wins — stays as production (gnn_model.pt already swapped in Step 3)
+echo "H-D promoted to production"
+# Update "Current Training State" above with new ICIR value
+```
+
+**If H-D ICIR ≤ +0.221:**
+```bash
+# H-G stays production — restore
+cp .tirra_pipeline/gnn_model_h_g_backup.pt .tirra_pipeline/gnn_model.pt
+echo "H-G retained as production, H-D is experiment only"
+```
+
+### Step 5 — Update this runbook
+
+After the evaluation, update "Current Training State":
+- Record H-D ICIR
+- Update production model line
+- Note which hypothesis won
 
 ---
 
