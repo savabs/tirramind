@@ -132,6 +132,8 @@ def build_retrain_cmd(
     device: str,
     config_file: Path | None,
     model_out: str = ".tirra_pipeline/gnn_model_h_g.pt",
+    wandb_project: str | None = None,
+    wandb_run_name: str | None = None,
 ) -> list[str]:
     """Build the retrain_gnn.py subprocess command.
 
@@ -174,6 +176,10 @@ def build_retrain_cmd(
     ]
     if config_file is not None and config_file.exists():
         cmd += ["--config-file", str(config_file)]
+    if wandb_project:
+        cmd += ["--wandb-project", wandb_project]
+    if wandb_run_name:
+        cmd += ["--wandb-run-name", wandb_run_name]
     return cmd
 
 
@@ -484,6 +490,7 @@ def run(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0915
         )
 
         # ── Train one block ───────────────────────────────────────────────────
+        run_name = f"h-g-ep{latest_epoch}-{target_epoch}"
         cmd = build_retrain_cmd(
             work_dir=work_dir,
             checkpoint_dir=checkpoint_dir,
@@ -492,6 +499,8 @@ def run(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0915
             resume_epoch=latest_epoch,
             device=device,
             config_file=current_config_file,
+            wandb_project=args.wandb_project if args.wandb_project else None,
+            wandb_run_name=run_name if args.wandb_project else None,
         )
         print("[orchestrator] Running:", " ".join(cmd), flush=True)
 
@@ -680,6 +689,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Path to next_config.json from a previous session. "
         "If not given, checks checkpoint-dir/next_config.json automatically.",
+    )
+    p.add_argument(
+        "--wandb-project",
+        default=None,
+        help="wandb project name to log metrics to (e.g. 'tirramind'). "
+        "Passed through to retrain_gnn.py for each block. "
+        "Requires WANDB_API_KEY env var or ~/.netrc on Kaggle.",
     )
     return p.parse_args(argv)
 
