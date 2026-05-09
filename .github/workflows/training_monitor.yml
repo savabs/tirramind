@@ -1,0 +1,196 @@
+name: Training Monitor
+
+on:
+  push:
+    branches:
+      - training-state
+
+# Rate-limit: max 3 auto-triggers per 24 hours
+# (prevents runaway loops from a pattern that repeatedly returns non-structural codes)
+concurrency:
+  group: training-monitor
+  cancel-in-progress: false
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────
+  # Job 1: Parse session summary and extract state/epoch
+  # ─────────────────────────────────────────────────────────────────────────
+  parse_state:
+    name: Parse Training State
+    runs-on: ubuntu-latest
+    outputs:
+      state: ${{ steps.extract.outputs.state }}
+      epoch: ${{ steps.extract.outputs.epoch }}
+      pattern: ${{ steps.extract.outputs.pattern }}
+      summary_file: ${{ steps.extract.outputs.summary_file }}
+      auto_trigger_count: ${{ steps.rate_limit.outputs.count }}
+    steps:
+      - name: Checkout training-state branch
+        uses: actions/checkout@v4
+        with:
+          ref: training-state
+          fetch-depth: 1
+
+      - name: Extract state from latest session summary
+        id: extract
+        run: |
+          # Find the most recent session_summary_*.md
+          LATEST=$(ls knowledge/session_summary_*.md 2>/dev/null | sort | tail -1)
+          if [ -z "$LATEST" ]; then
+            echo "No session summary found — defaulting to session_end."
+            echo "state=session_end" >> "$GITHUB_OUTPUT"
+            echo "epoch=0" >> "$GITHUB_OUTPUT"
+            echo "pattern=unknown" >> "$GITHUB_OUTPUT"
+            echo "summary_file=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Found: $LATEST"
+          cat "$LATEST"
+          STATE=$(grep '^state:' "$LATEST" | head -1 | sed 's/state: *//')
+          EPOCH=$(grep '^epoch:' "$LATEST" | head -1 | sed 's/epoch: *//')
+          PATTERN=$(grep '^pattern:' "$LATEST" | head -1 | sed 's/pattern: *//')
+          echo "state=${STATE:-session_end}" >> "$GITHUB_OUTPUT"
+          echo "epoch=${EPOCH:-0}" >> "$GITHUB_OUTPUT"
+          echo "pattern=${PATTERN:-unknown}" >> "$GITHUB_OUTPUT"
+          echo "summary_file=$LATEST" >> "$GITHUB_OUTPUT"
+
+      - name: Rate limit check (max 3 auto-triggers per 24h)
+        id: rate_limit
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+            const runs = await github.rest.actions.listWorkflowRuns({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'training_monitor.yml',
+              created: `>=${since}`,
+              per_page: 50,
+            });
+            const autoRuns = runs.data.workflow_runs.filter(
+              r => r.triggering_actor?.login !== context.actor ||
+                   r.event === 'push'
+            );
+            const count = autoRuns.length;
+            console.log(`Auto-trigger count in last 24h: ${count}`);
+            core.setOutput('count', String(count));
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Job 2: Alert on structural or collapse halt → open GitHub Issue
+  # ─────────────────────────────────────────────────────────────────────────
+  alert_halt:
+    name: Alert on Training Halt
+    needs: parse_state
+    runs-on: ubuntu-latest
+    if: |
+      needs.parse_state.outputs.state == 'structural_halt' ||
+      needs.parse_state.outputs.state == 'collapse_halt' ||
+      needs.parse_state.outputs.state == 'crash'
+    steps:
+      - name: Checkout training-state branch
+        uses: actions/checkout@v4
+        with:
+          ref: training-state
+          fetch-depth: 1
+
+      - name: Open GitHub Issue for human review
+        uses: actions/github-script@v7
+        env:
+          STATE: ${{ needs.parse_state.outputs.state }}
+          EPOCH: ${{ needs.parse_state.outputs.epoch }}
+          PATTERN: ${{ needs.parse_state.outputs.pattern }}
+          SUMMARY_FILE: ${{ needs.parse_state.outputs.summary_file }}
+        with:
+          script: |
+            const fs = require('fs');
+            const state = process.env.STATE;
+            const epoch = process.env.EPOCH;
+            const pattern = process.env.PATTERN;
+            const summaryFile = process.env.SUMMARY_FILE;
+
+            let body = `Training halted at epoch ${epoch} with state \`${state}\`.\n\n`;
+            body += `**Pattern:** \`${pattern}\`\n\n`;
+
+            if (summaryFile && fs.existsSync(summaryFile)) {
+              const content = fs.readFileSync(summaryFile, 'utf8');
+              body += '## Session Summary\n\n```\n' + content + '\n```\n\n';
+            }
+
+            body += '## Next Steps\n\n';
+            if (state === 'structural_halt') {
+              body += '1. Open VS Code Copilot chat\n';
+              body += '2. Run the `apply-training-fix` skill\n';
+              body += '3. Push the fix to `main` branch\n';
+              body += '4. The next Kaggle run will pick up automatically.\n';
+            } else if (state === 'collapse_halt') {
+              body += '1. Run `gnn_attention_diagnostic.py` on latest checkpoint\n';
+              body += '2. Check `knowledge/diag_*.md` for root cause\n';
+              body += '3. Apply fix and push to `main`\n';
+            } else if (state === 'crash') {
+              body += '1. Check Kaggle session logs for OOM or CUDA error\n';
+              body += '2. Consider reducing `--max-windows` or `--block-size`\n';
+              body += '3. Push fix and manually restart Kaggle session\n';
+            }
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `[Training Halt] ${state} at epoch ${epoch} (${pattern})`,
+              body: body,
+              labels: ['training-halt'],
+            });
+            console.log(`Issue created for ${state} halt at epoch ${epoch}`);
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Job 3: Trigger next Kaggle run on normal/config-change exit
+  # ─────────────────────────────────────────────────────────────────────────
+  trigger_next_run:
+    name: Trigger Next Kaggle Run
+    needs: parse_state
+    runs-on: ubuntu-latest
+    if: |
+      needs.parse_state.outputs.state != 'structural_halt' &&
+      needs.parse_state.outputs.state != 'collapse_halt' &&
+      needs.parse_state.outputs.state != 'crash' &&
+      fromJSON(needs.parse_state.outputs.auto_trigger_count) < 3
+    steps:
+      - name: Checkout main branch (for kernel notebook + metadata)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Install Kaggle CLI
+        run: pip install --quiet kaggle
+
+      - name: Push new kernel version to Kaggle
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+          STATE: ${{ needs.parse_state.outputs.state }}
+          EPOCH: ${{ needs.parse_state.outputs.epoch }}
+        run: |
+          # Update kernel title to include epoch so Kaggle sees a "change"
+          # (Kaggle only re-runs if it detects a diff in the kernel metadata/code)
+          python3 - <<'PYEOF'
+          import json, os, datetime
+          meta_path = "notebooks/tirramind-h-g/kernel-metadata.json"
+          with open(meta_path) as f:
+              meta = json.load(f)
+          epoch = os.environ.get("EPOCH", "?")
+          date_str = datetime.date.today().isoformat()
+          meta["title"] = f"tirramind_h-g e{epoch} {date_str}"
+          with open(meta_path, "w") as f:
+              json.dump(meta, f, indent=2)
+          print(f"Updated kernel title: {meta['title']}")
+          PYEOF
+
+          # Push the kernel — Kaggle queues a new run automatically
+          kaggle kernels push --path notebooks/tirramind-h-g/
+          echo "Kaggle kernel push complete. State: $STATE, Epoch: $EPOCH"
+
+      - name: Rate limit warning
+        if: fromJSON(needs.parse_state.outputs.auto_trigger_count) >= 3
+        run: |
+          echo "::warning::Rate limit reached (3 auto-triggers in 24h). Manual restart required."
+          echo "Rate limit: ${{ needs.parse_state.outputs.auto_trigger_count }} runs in last 24h."
