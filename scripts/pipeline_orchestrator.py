@@ -346,6 +346,101 @@ def sync_state_to_github(
 
 
 # ---------------------------------------------------------------------------
+# Helper: sync latest checkpoint + state files to Hugging Face Hub
+# ---------------------------------------------------------------------------
+
+
+def sync_checkpoint_to_hf(
+    *,
+    checkpoint_dir: Path,
+    knowledge_dir: Path,
+    end_epoch: int,
+    hf_repo: str,
+    hf_token: str | None,
+) -> bool:
+    """Push latest checkpoint + state files to a HF Hub dataset repo.
+
+    Uploads:
+        - checkpoint_dir/epoch_NNN.pt  (latest only)
+        - checkpoint_dir/metrics.jsonl
+        - checkpoint_dir/next_config.json  (if exists)
+        - knowledge_dir/improvement_history.jsonl  (if exists)
+
+    Returns True on success, False on failure (non-fatal).
+
+    The HF repo is expected to be a dataset repo, e.g.
+    ``savabs/tirramind-hg-data``.  Files are placed in the repo root.
+    Requires ``huggingface_hub`` (pre-installed on Kaggle).
+    """
+    if not hf_token:
+        print("[hf-sync] HF_TOKEN not set — skipping HF Hub upload.", flush=True)
+        return False
+
+    try:
+        from huggingface_hub import HfApi  # noqa: PLC0415
+    except ImportError:
+        print(
+            "[hf-sync] huggingface_hub not installed — skipping.",
+            flush=True,
+        )
+        return False
+
+    api = HfApi(token=hf_token)
+
+    # Ensure the repo exists (no-op if already present)
+    try:
+        api.create_repo(repo_id=hf_repo, repo_type="dataset", exist_ok=True, private=True)
+    except Exception as exc:
+        print(f"[hf-sync] WARNING: could not create/verify repo: {exc}", flush=True)
+        return False
+
+    # Collect files to upload
+    to_upload: list[tuple[Path, str]] = []  # (local_path, path_in_repo)
+
+    # Latest checkpoint only (keeps the repo small)
+    ckpt_name = f"epoch_{end_epoch:03d}.pt"
+    ckpt_path = checkpoint_dir / ckpt_name
+    if ckpt_path.exists():
+        to_upload.append((ckpt_path, ckpt_name))
+    else:
+        # Fallback: find the latest available checkpoint
+        existing = sorted(checkpoint_dir.glob("epoch_*.pt"))
+        if existing:
+            to_upload.append((existing[-1], existing[-1].name))
+
+    for fname in ["metrics.jsonl", "next_config.json"]:
+        p = checkpoint_dir / fname
+        if p.exists():
+            to_upload.append((p, fname))
+
+    hist = knowledge_dir / "improvement_history.jsonl"
+    if hist.exists():
+        to_upload.append((hist, "improvement_history.jsonl"))
+
+    if not to_upload:
+        print("[hf-sync] No files to upload.", flush=True)
+        return True
+
+    failed = []
+    for local, repo_path in to_upload:
+        try:
+            api.upload_file(
+                path_or_fileobj=str(local),
+                path_in_repo=repo_path,
+                repo_id=hf_repo,
+                repo_type="dataset",
+                commit_message=f"training: epoch {end_epoch} — {repo_path}",
+            )
+            size_mb = local.stat().st_size / 1_000_000
+            print(f"[hf-sync] ✓ {repo_path} ({size_mb:.1f} MB) → {hf_repo}", flush=True)
+        except Exception as exc:
+            print(f"[hf-sync] WARNING: failed to upload {repo_path}: {exc}", flush=True)
+            failed.append(repo_path)
+
+    return len(failed) == 0
+
+
+# ---------------------------------------------------------------------------
 # Helper: load next_config.json and check if it's current
 # ---------------------------------------------------------------------------
 
@@ -622,6 +717,29 @@ def run(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0915
             flush=True,
         )
 
+    hf_repo = getattr(args, "hf_repo", None)
+    hf_token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_TOKEN")
+    if hf_repo:
+        hf_ok = sync_checkpoint_to_hf(
+            checkpoint_dir=checkpoint_dir,
+            knowledge_dir=knowledge_dir,
+            end_epoch=latest_epoch,
+            hf_repo=hf_repo,
+            hf_token=hf_token,
+        )
+        if not hf_ok:
+            print(
+                "[orchestrator] WARNING: HF Hub sync failed — "
+                "checkpoint may not persist. Check HF_TOKEN secret.",
+                flush=True,
+            )
+    else:
+        print(
+            "[orchestrator] --hf-repo not set — checkpoint will not persist across sessions. "
+            "Set --hf-repo savabs/tirramind-hg-data to enable.",
+            flush=True,
+        )
+
     # Map internal state to exit code
     exit_codes = {
         PipelineState.SESSION_END: 0,
@@ -696,6 +814,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="wandb project name to log metrics to (e.g. 'tirramind'). "
         "Passed through to retrain_gnn.py for each block. "
         "Requires WANDB_API_KEY env var or ~/.netrc on Kaggle.",
+    )
+    p.add_argument(
+        "--hf-repo",
+        default=None,
+        help="Hugging Face Hub dataset repo to push checkpoints to after each session "
+        "(e.g. 'savabs/tirramind-hg-data'). "
+        "Requires HF_TOKEN env var (add as Kaggle secret 'HF_TOKEN').",
     )
     return p.parse_args(argv)
 
