@@ -51,31 +51,31 @@ without human action. The human's only interaction is:
 
 ### Phase 1: `pipeline_orchestrator.py`
 
-- [ ] **AP.1.1** — Write `find_latest_checkpoint(checkpoint_dir)` helper
+- [x] **AP.1.1** — Write `find_latest_checkpoint(checkpoint_dir)` helper ✅
   - Glob `epoch_*.pt`, parse numbers, return max or 0 if none
   - Unit test: empty dir → 0, dir with epoch_022.pt → 22
 
-- [ ] **AP.1.2** — Write `is_collapsed(metrics_path)` helper
+- [x] **AP.1.2** — Write `is_collapsed(metrics_path)` helper ✅
   - Load last 3 records from metrics.jsonl
   - Returns True if return_loss mean < -0.05 for all 3 OR total_loss > 10× first epoch total
   - Unit test: normal metrics → False, 3 negative-loss records → True
 
-- [ ] **AP.1.3** — Write `build_retrain_cmd(epochs, resume, config_file, **kwargs)` helper
+- [x] **AP.1.3** — Write `build_retrain_cmd(epochs, resume, config_file, **kwargs)` helper ✅
   - Returns `["python", "scripts/retrain_gnn.py", "--epochs", str(epochs), ...]`
   - Applies all standard flags (device, gdelt-frac, max-windows, skip-eval, backup, etc.)
   - If `config_file` provided and exists: append `["--config-file", str(config_file)]`
 
-- [ ] **AP.1.4** — Write `write_halt_record(reason, epoch, details, knowledge_dir)` helper
+- [x] **AP.1.4** — Write `write_halt_record(reason, epoch, details, knowledge_dir)` helper ✅
   - Writes `knowledge/session_summary_{ts}.md` with frontmatter `state: {reason}_halt`
   - Includes: epoch, last pattern, reason, details
 
-- [ ] **AP.1.5** — Write `sync_state_to_github(state, epoch, files, message)` helper
+- [x] **AP.1.5** — Write `sync_state_to_github(state, epoch, files, message)` helper ✅
   - `git add` the given files
   - `git commit -m "training: epoch {epoch} | state={state}"`
   - `git push origin HEAD:training-state --force`
   - Returns success bool (logs error but does NOT raise on failure)
 
-- [ ] **AP.1.6** — Assemble main loop with `--total-budget-hours` time gate
+- [x] **AP.1.6** — Assemble main loop with `--total-budget-hours` time gate ✅
   - Runs `build_retrain_cmd` → `subprocess.call` for each block
   - Runs `auto_improve.py --no-watch` after each block
   - Applies next_config.json on exit_code 1
@@ -83,12 +83,12 @@ without human action. The human's only interaction is:
   - Falls through to sync on budget exhaustion
   - **Exit condition:** `python3 -m py_compile scripts/pipeline_orchestrator.py` passes
 
-- [ ] **AP.1.7** — Add CLI (argparse) and `__main__` block
+- [x] **AP.1.7** — Add CLI (argparse) and `__main__` block ✅
   - Flags: `--checkpoint-dir`, `--db-path`, `--knowledge-dir`, `--block-size` (default 5),
     `--total-budget-hours` (default 11), `--device` (default cuda), `--config-file` (optional)
   - **Exit condition:** `python3 scripts/pipeline_orchestrator.py --help` prints usage
 
-- [ ] **AP.1.8** — Write unit tests for AP.1.1–AP.1.5 helpers
+- [x] **AP.1.8** — Write unit tests for AP.1.1–AP.1.5 helpers (31/31 pass) ✅
   - Use `tempfile.mkdtemp()` for all file I/O — no real filesystem mutations
   - Mock `subprocess.call` and `subprocess.run`
   - 1 happy path + 2 failure cases per helper (per leaf-node test rule)
@@ -98,7 +98,7 @@ without human action. The human's only interaction is:
 
 ### Phase 2: GitHub Actions workflow
 
-- [ ] **AP.2.1** — Create `.github/workflows/training_monitor.yml`
+- [x] **AP.2.1** — Create `.github/workflows/training_monitor.yml` ✅
   - Trigger: `push` to branch `training-state`
   - Job 1: parse `session_summary_*.md` frontmatter → extract `state` and `epoch`
   - Job 2 (if structural/collapse): open GitHub Issue with session summary body
@@ -106,7 +106,7 @@ without human action. The human's only interaction is:
   - Cap at 3 auto-triggers per 24h (check recent workflow runs count)
   - **Exit condition:** manually push a fake `training-state` commit, verify correct job runs
 
-- [ ] **AP.2.2** — Add GitHub Secrets for Kaggle API
+- [x] **AP.2.2** — Add `KAGGLE_API_TOKEN` secret to GitHub repo ✅ (2026-05-28)
   - Add `KAGGLE_USERNAME` = `deeperisbetter` to repo secrets
   - Add `KAGGLE_KEY` = value from `~/.kaggle/kaggle.json` to repo secrets
   - **Exit condition:** GH Actions job can run `kaggle kernels pull` without auth error
@@ -120,12 +120,12 @@ without human action. The human's only interaction is:
 
 ### Phase 3: Kaggle notebook update
 
-- [ ] **AP.3.1** — Update notebook cell 5: pull training-state branch files
+- [x] **AP.3.1** — Update notebook cell 5: pull training-state branch files ✅
   - Add git fetch + checkout of `metrics.jsonl`, `next_config.json`, `improvement_history.jsonl`
   - If branch doesn't exist: log "fresh start" and continue
   - **Exit condition:** run in notebook manually, verify files appear in `/kaggle/working/`
 
-- [ ] **AP.3.2** — Update notebook cell 11: replace retrain command with orchestrator
+- [x] **AP.3.2** — Update notebook cell 11: replace retrain command with orchestrator ✅
   - Replace `retrain_gnn.py` subprocess with `pipeline_orchestrator.py` subprocess
   - Pass `--config-file` if `next_config.json` exists in working dir
   - **Exit condition:** cell runs without error on Kaggle (can test with `--total-budget-hours 0.1 --block-size 1`)
@@ -149,7 +149,7 @@ without human action. The human's only interaction is:
 
 ### Phase 5: Update runbook
 
-- [ ] **AP.5.1** — Update `docs/memory/kaggle_runbook.md`
+- [x] **AP.5.1** — Update `docs/memory/kaggle_runbook.md` ✅
   - Add new section: "Automated Pipeline Workflow"
   - Document: which secrets are needed, what to do on structural halt GitHub Issues,
     how to manually trigger if GitHub Actions fails, how to override orchestrator flags
@@ -175,7 +175,7 @@ without human action. The human's only interaction is:
 - [x] `auto_improve.py` 7-pattern decision tree ✅
 - [x] `retrain_gnn.py --config-file` flag ✅
 - [ ] AP.0.1 — GitHub token write access verified
-- [ ] AP.0.2 — kernel-metadata.json committed
+- [x] AP.0.2 — kernel-metadata.json committed ✅
 
 AP.1 coding should not begin until AP.0.1 and AP.0.2 are complete.
 The orchestrator's sync function depends on knowing the exact push command that works.
