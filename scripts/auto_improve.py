@@ -45,9 +45,9 @@ from pathlib import Path
 # Constants
 # ---------------------------------------------------------------------------
 
-STAGNATION_WINDOW = 5            # epochs to evaluate
-STAGNATION_THRESHOLD = 0.005     # <0.5% improvement = stagnant
-MIN_EPOCHS_BEFORE_CHECK = 4      # don't trigger before enough data
+STAGNATION_WINDOW = 5  # epochs to evaluate
+STAGNATION_THRESHOLD = 0.005  # <0.5% improvement = stagnant
+MIN_EPOCHS_BEFORE_CHECK = 4  # don't trigger before enough data
 OSCILLATION_CV_THRESHOLD = 0.12  # CV > 12% = oscillating
 
 # History file: tracks what patterns have been tried
@@ -56,6 +56,7 @@ IMPROVEMENT_HISTORY_FILE = "improvement_history.jsonl"
 # ---------------------------------------------------------------------------
 # Metrics loading
 # ---------------------------------------------------------------------------
+
 
 def load_metrics(checkpoint_dir: Path) -> list[dict]:
     """Read all epoch records from metrics.jsonl. Returns list sorted by epoch."""
@@ -117,6 +118,7 @@ def append_improvement_history(knowledge_dir: Path, entry: dict) -> None:
 # Statistical helpers
 # ---------------------------------------------------------------------------
 
+
 def _finite(values: list[float]) -> list[float]:
     return [v for v in values if not math.isnan(v) and not math.isinf(v)]
 
@@ -153,14 +155,142 @@ def coefficient_of_variation(vals: list[float]) -> float:
     if abs(mean) < 1e-10:
         return 0.0
     var = sum((x - mean) ** 2 for x in vals) / len(vals)
-    return var ** 0.5 / abs(mean)
+    return var**0.5 / abs(mean)
 
 
 # ---------------------------------------------------------------------------
-# Decision tree
+# LLM-powered classification
 # ---------------------------------------------------------------------------
 
-def classify_pattern(
+_LLM_SYSTEM = """You are a GNN training optimizer for TirraMind, a financial prediction system.
+Your job: analyse epoch-by-epoch training metrics and decide what single hyperparameter change will best improve the return prediction head.
+
+Context:
+- The model trains on heterogeneous temporal graph data: ~92% GDELT news nodes, ~8% financial instrument nodes.
+- Key metric to minimize: `return_loss` (lower = better IC/alpha).
+- `total_loss` = return_loss + temporal_loss. `dt_ret_ratio` = dt_loss / return_loss.
+- If dt_ret_ratio > 20, the temporal objective is starving the return head.
+
+Tunable parameters:
+- lr (float, 5e-6 to 5e-3): learning rate
+- return_weight (float, 0.5–5.0): gradient weight on return head
+- gdelt_frac (float, 0.01–0.10): GDELT subsample fraction (lower = less noise)
+- listnet_temperature (float, 0.1–2.0): lower = sharper IC gradient
+- auto_tune (bool): uncertainty weighting — can suppress return head when ratio is high
+
+Output ONLY a JSON object — no markdown, no text outside the JSON:
+{
+  "pattern": "<name>",
+  "rationale": "<1-2 sentences citing specific metric values>",
+  "flag_overrides": {},
+  "remove_flags": [],
+  "resume_epoch": <int>,
+  "escalate": false
+}
+
+Valid pattern names: improving, divergence, oscillation, dt_dominance, auto_tune_suppressing, gdelt_noise, listnet_temperature, structural
+Use "structural" with escalate=true only when all other options have already been tried and failed."""
+
+
+def _call_anthropic(messages: list[dict], api_key: str, model: str) -> str:
+    """POST to Anthropic /v1/messages. Returns assistant content string."""
+    import urllib.request
+
+    payload = json.dumps(
+        {"model": model, "max_tokens": 512, "system": _LLM_SYSTEM, "messages": messages}
+    ).encode()
+    req = urllib.request.Request(
+        "https://api.anthropic.com/v1/messages",
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=45) as resp:
+        body = json.loads(resp.read())
+    return body["content"][0]["text"]
+
+
+def _llm_classify(
+    records: list[dict],
+    improvement_history: list[dict],
+) -> "tuple[str, dict] | None":
+    """Ask Claude to classify the training pattern.
+
+    Returns (pattern, action) on success, or None if the LLM is unavailable
+    or the response is unparseable — triggers heuristic fallback.
+    """
+    api_key = os.getenv("TIRRA_LLM_API_KEY") or os.getenv("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        return None  # no key → fall back silently
+
+    model = os.getenv("TIRRA_LLM_MODEL", "claude-haiku-4-5-20251001")
+    last = records[-1]
+    last_epoch = last.get("epoch", 0)
+
+    metrics_summary = [
+        {
+            "epoch": r.get("epoch"),
+            "total_loss": round(r.get("loss", {}).get("total", float("nan")), 5),
+            "return_loss": round(r.get("loss", {}).get("return", float("nan")), 5),
+            "dt_ret_ratio": round(r.get("dt_ret_ratio", float("nan")), 2),
+        }
+        for r in records[-15:]
+    ]
+    hist_summary = [
+        {
+            "epoch": h.get("epoch"),
+            "pattern": h.get("pattern"),
+            "change": h.get("flag_overrides"),
+        }
+        for h in improvement_history[-8:]
+    ]
+    user_msg = json.dumps(
+        {
+            "current_epoch": last_epoch,
+            "current_config": last.get("config", {}),
+            "epoch_metrics": metrics_summary,
+            "recent_decisions": hist_summary,
+        },
+        indent=2,
+    )
+
+    try:
+        raw = _call_anthropic([{"role": "user", "content": user_msg}], api_key, model)
+        raw = raw.strip()
+        # Strip markdown fences if the model adds them
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        decision = json.loads(raw.strip())
+        action = {
+            "rationale": decision.get("rationale", "LLM decision"),
+            "flag_overrides": decision.get("flag_overrides", {}),
+            "remove_flags": decision.get("remove_flags", []),
+            "resume_epoch": decision.get("resume_epoch", last_epoch),
+            "escalate": bool(decision.get("escalate", False)),
+        }
+        pattern = decision.get("pattern", "structural")
+        print(f"  [LLM] Pattern classified by Claude ({model}): {pattern}")
+        return pattern, action
+    except Exception as exc:
+        print(
+            f"  [LLM] Failed ({type(exc).__name__}: {exc}). Falling back to heuristic.",
+            file=sys.stderr,
+        )
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Heuristic decision tree (fallback when LLM unavailable)
+# ---------------------------------------------------------------------------
+
+
+def _heuristic_classify(
     records: list[dict],
     improvement_history: list[dict],
     window: int = STAGNATION_WINDOW,
@@ -183,17 +313,21 @@ def classify_pattern(
     last = records[-1]
     config = last.get("config", {})
 
-    lr             = config.get("lr", 1e-3)
-    return_weight  = config.get("return_weight", 1.0)
-    gdelt_frac     = config.get("gdelt_frac", 0.05)
-    listnet_temp   = config.get("listnet_temp", 1.0)
-    auto_tune      = config.get("auto_tune", False)
-    last_epoch     = last.get("epoch", 0)
+    lr = config.get("lr", 1e-3)
+    return_weight = config.get("return_weight", 1.0)
+    gdelt_frac = config.get("gdelt_frac", 0.05)
+    listnet_temp = config.get("listnet_temp", 1.0)
+    auto_tune = config.get("auto_tune", False)
+    last_epoch = last.get("epoch", 0)
 
-    ret_losses = _finite([r.get("loss", {}).get("return", float("nan")) for r in recent])
+    ret_losses = _finite(
+        [r.get("loss", {}).get("return", float("nan")) for r in recent]
+    )
 
     if len(ret_losses) < 2:
-        return "insufficient_data", {"rationale": "Not enough finite return loss values."}
+        return "insufficient_data", {
+            "rationale": "Not enough finite return loss values."
+        }
 
     # Patterns tried in recent history (last 6 recommendations)
     recent_patterns = [h["pattern"] for h in improvement_history[-6:]]
@@ -222,7 +356,9 @@ def classify_pattern(
 
     # ── Not stagnant (and not diverging)? Genuinely improving. ───────────────
     if not is_stagnant(ret_losses, window, stagnation_threshold):
-        improvement_pct = (ret_losses[0] - ret_losses[-1]) / (ret_losses[0] + 1e-8) * 100
+        improvement_pct = (
+            (ret_losses[0] - ret_losses[-1]) / (ret_losses[0] + 1e-8) * 100
+        )
         return "improving", {
             "rationale": (
                 f"Return loss improving {improvement_pct:.1f}% over last {len(ret_losses)} epochs."
@@ -330,8 +466,28 @@ def classify_pattern(
 
 
 # ---------------------------------------------------------------------------
+# Public classifier: LLM first, heuristic fallback
+# ---------------------------------------------------------------------------
+
+
+def classify_pattern(
+    records: list[dict],
+    improvement_history: list[dict],
+    window: int = STAGNATION_WINDOW,
+    stagnation_threshold: float = STAGNATION_THRESHOLD,
+) -> tuple[str, dict]:
+    """Classify the training pattern. Tries LLM first; falls back to heuristic."""
+    llm_result = _llm_classify(records, improvement_history)
+    if llm_result is not None:
+        return llm_result
+    print("  [heuristic] No LLM available — using rule-based classification.")
+    return _heuristic_classify(records, improvement_history, window, stagnation_threshold)
+
+
+# ---------------------------------------------------------------------------
 # Output writers
 # ---------------------------------------------------------------------------
+
 
 def write_next_config(
     checkpoint_dir: Path,
@@ -445,6 +601,7 @@ research this training issue: "GNN {pattern} at epoch {epoch}: {action.get('rati
 # Core check
 # ---------------------------------------------------------------------------
 
+
 def check_once(
     checkpoint_dir: Path,
     knowledge_dir: Path,
@@ -469,7 +626,10 @@ def check_once(
         print(f"  Loaded {len(records)} epoch records (latest: epoch {last_epoch})")
 
     if last_epoch < min_epochs:
-        print(f"  Epoch {last_epoch} < min_epochs ({min_epochs}), skipping.", file=sys.stderr)
+        print(
+            f"  Epoch {last_epoch} < min_epochs ({min_epochs}), skipping.",
+            file=sys.stderr,
+        )
         return "too_early", {}
 
     run_config = load_run_config(checkpoint_dir)
@@ -488,21 +648,35 @@ def check_once(
 
     if action.get("escalate"):
         # ── Slow path ─────────────────────────────────────────────────────────
-        print(f"\n[AUTO-IMPROVE] ⚠ Structural issue at epoch {last_epoch}. Escalating to research.")
+        print(
+            f"\n[AUTO-IMPROVE] ⚠ Structural issue at epoch {last_epoch}. Escalating to research."
+        )
         trigger_path = write_trigger_file(records, pattern, action, knowledge_dir)
         print(f"[AUTO-IMPROVE] Trigger written → {trigger_path}")
-        append_improvement_history(knowledge_dir, {
-            "ts": datetime.now().isoformat(), "epoch": last_epoch,
-            "pattern": pattern, "action": "escalated_to_research",
-        })
+        append_improvement_history(
+            knowledge_dir,
+            {
+                "ts": datetime.now().isoformat(),
+                "epoch": last_epoch,
+                "pattern": pattern,
+                "action": "escalated_to_research",
+            },
+        )
         if auto_research:
             print("[AUTO-IMPROVE] Running auto_research.py...")
             script = Path(__file__).parent / "auto_research.py"
-            subprocess.run([
-                sys.executable, str(script),
-                "--from-trigger", str(trigger_path),
-                "--github-search", "--max-papers", "5",
-            ], capture_output=False)
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "--from-trigger",
+                    str(trigger_path),
+                    "--github-search",
+                    "--max-papers",
+                    "5",
+                ],
+                capture_output=False,
+            )
             print("[AUTO-IMPROVE] → Then in Copilot chat: 'apply training fix'")
         return pattern, action
 
@@ -510,16 +684,21 @@ def check_once(
     print(f"\n[AUTO-IMPROVE] ✓ Config change: {pattern}")
     next_cfg_path = write_next_config(checkpoint_dir, pattern, action, run_config)
     print(f"[AUTO-IMPROVE] next_config.json → {next_cfg_path}")
-    append_improvement_history(knowledge_dir, {
-        "ts": datetime.now().isoformat(), "epoch": last_epoch,
-        "pattern": pattern,
-        "flag_overrides": action.get("flag_overrides", {}),
-        "rationale": action.get("rationale", ""),
-    })
+    append_improvement_history(
+        knowledge_dir,
+        {
+            "ts": datetime.now().isoformat(),
+            "epoch": last_epoch,
+            "pattern": pattern,
+            "flag_overrides": action.get("flag_overrides", {}),
+            "rationale": action.get("rationale", ""),
+        },
+    )
 
     resume_epoch = action.get("resume_epoch", last_epoch)
     flags = " ".join(
-        f"--{k.replace('_', '-')} {v}" for k, v in action.get("flag_overrides", {}).items()
+        f"--{k.replace('_', '-')} {v}"
+        for k, v in action.get("flag_overrides", {}).items()
     )
     remove = " ".join(action.get("remove_flags", []))
 
@@ -533,7 +712,9 @@ def check_once(
     print(f"      --resume {resume_epoch} \\")
     print(f"      --checkpoint-dir {{CKPT_DIR}} \\")
     print(f"      --config-file {{CKPT_DIR}}/next_config.json \\")
-    print(f"      --listnet --skip-eval --gdelt-frac 0.05 --max-windows 200 --epochs 10")
+    print(
+        f"      --listnet --skip-eval --gdelt-frac 0.05 --max-windows 200 --epochs 10"
+    )
     print("─────────────────────────────────────────────────────────────────────\n")
     return pattern, action
 
@@ -541,6 +722,7 @@ def check_once(
 # ---------------------------------------------------------------------------
 # Watch loop
 # ---------------------------------------------------------------------------
+
 
 def watch_loop(
     checkpoint_dir: Path,
@@ -554,18 +736,26 @@ def watch_loop(
     """Poll metrics.jsonl for new epochs and run check_once on each new epoch."""
     last_epoch_seen = 0
     print(f"[AUTO-IMPROVE] Watching {checkpoint_dir} (poll every {poll_interval}s)")
-    print(f"  window={stagnation_window}, threshold={stagnation_threshold:.3f}  |  Ctrl-C to stop\n")
+    print(
+        f"  window={stagnation_window}, threshold={stagnation_threshold:.3f}  |  Ctrl-C to stop\n"
+    )
     while True:
         records = load_metrics(checkpoint_dir)
         if records:
             latest_epoch = records[-1].get("epoch", 0)
             if latest_epoch > last_epoch_seen:
                 last_epoch_seen = latest_epoch
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] New epoch: {latest_epoch}")
+                print(
+                    f"[{datetime.now().strftime('%H:%M:%S')}] New epoch: {latest_epoch}"
+                )
                 if latest_epoch >= min_epochs:
                     check_once(
-                        checkpoint_dir, knowledge_dir, auto_research,
-                        stagnation_window, stagnation_threshold, min_epochs,
+                        checkpoint_dir,
+                        knowledge_dir,
+                        auto_research,
+                        stagnation_window,
+                        stagnation_threshold,
+                        min_epochs,
                     )
                     print()
         time.sleep(poll_interval)
@@ -574,6 +764,7 @@ def watch_loop(
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -638,7 +829,9 @@ def main() -> None:
     args = parser.parse_args()
 
     if not args.checkpoint_dir.exists():
-        print(f"ERROR: checkpoint dir not found: {args.checkpoint_dir}", file=sys.stderr)
+        print(
+            f"ERROR: checkpoint dir not found: {args.checkpoint_dir}", file=sys.stderr
+        )
         sys.exit(1)
 
     auto_research = not args.no_auto_research
@@ -646,9 +839,13 @@ def main() -> None:
     if args.watch:
         try:
             watch_loop(
-                args.checkpoint_dir, args.knowledge_dir, auto_research,
-                args.poll_interval, args.stagnation_window,
-                args.stagnation_threshold, args.min_epochs,
+                args.checkpoint_dir,
+                args.knowledge_dir,
+                auto_research,
+                args.poll_interval,
+                args.stagnation_window,
+                args.stagnation_threshold,
+                args.min_epochs,
             )
         except KeyboardInterrupt:
             print("\n[AUTO-IMPROVE] Stopped.")
@@ -656,8 +853,12 @@ def main() -> None:
 
     # One-shot (default / --no-watch)
     pattern, action = check_once(
-        args.checkpoint_dir, args.knowledge_dir, auto_research,
-        args.stagnation_window, args.stagnation_threshold, args.min_epochs,
+        args.checkpoint_dir,
+        args.knowledge_dir,
+        auto_research,
+        args.stagnation_window,
+        args.stagnation_threshold,
+        args.min_epochs,
     )
 
     ok_patterns = {"improving", "no_metrics", "insufficient_data", "too_early"}
