@@ -67,8 +67,37 @@ zip -j ...   # ← -j strips all paths — DO NOT USE
 
 ---
 
+## Kaggle CLI Setup (one-time, done 2026-05-08)
+
+```bash
+# kaggle >= 1.8.0 requires Python >= 3.11. Installed via pyenv:
+/home/becmachlean/.pyenv/versions/3.12.3/bin/python3 -m venv ~/.kaggle-venv
+~/.kaggle-venv/bin/pip install "kaggle>=1.8.0"
+ln -sf ~/.kaggle-venv/bin/kaggle ~/.local/bin/kaggle
+# → kaggle 2.1.2 installed at ~/.local/bin/kaggle
+```
+
+**KGAT tokens require Bearer auth.** The kaggle 2.x CLI reads `kaggle.json` and defaults to Basic auth,
+but KGAT tokens (prefix `KGAT_`) must be sent as Bearer. Fix: set `KAGGLE_API_TOKEN` env var — the CLI
+then uses it as a Bearer token instead of Basic.
+
+Added to `~/.bashrc` (2026-05-08):
+```bash
+export KAGGLE_API_TOKEN=$(python3 -c "import json; print(json.load(open('/home/becmachlean/.kaggle/kaggle.json'))['key'])" 2>/dev/null)
+```
+
+With this set, all `kaggle` CLI commands work: `--mine`, `kernels list`, `datasets files`, `datasets version`.
+
+---
+
 ## Kaggle Dataset Upload Steps
 
+### Via CLI (preferred, requires fresh token)
+```bash
+kaggle datasets version -p /tmp/tirramind_upload -m "Phase 41b ListNet + epoch_020"
+```
+
+### Via browser (fallback)
 1. kaggle.com → Datasets → `tirramind-data` → **New Version**
 2. Upload `tirramind_data_upload.zip`
 3. Kaggle auto-extracts — the folder structure above will appear under `/kaggle/input/tirramind-data/`
@@ -150,6 +179,30 @@ be randomly initialized and trained from epoch 11 onward.
 
 The `--resume N` flag is set automatically by the notebook's Cell 9 — it finds the highest `epoch_*.pt` file.
 
+### Phase 41b — ListNet retrain command
+
+**Upload:** `tirramind_listnet_upload.zip` (pipeline.db + epoch_020.pt)
+**Resume from:** epoch_020 | **Target:** epoch 30
+
+Update **Cell 11** in the Kaggle notebook to:
+
+```bash
+python scripts/retrain_gnn.py \
+  --auto-tune --listnet \
+  --gdelt-frac 0.05 \
+  --epochs 30 --resume 20 \
+  --max-windows 200 \
+  --device cuda \
+  --skip-eval \
+  --checkpoint-dir .tirra_pipeline/checkpoints \
+  --backup
+```
+
+Update **Cell 13** to: `if epoch_num > 20` (download only new checkpoints epoch 21–30).
+
+**Exit condition:** mean IC > 0.03 and t-stat > 2.0 for GNN-ReturnHead in `phase40_gnn_backtest.py`.
+If IC still flat after epoch 30: run `python scripts/phase41b_propagation_diagnostic.py`.
+
 ---
 
 ## File Sizes (for upload budget planning)
@@ -195,17 +248,17 @@ Then rebuild `tirramind_data_upload.zip` including the new checkpoints for the n
 
 | Item | Value |
 |---|---|
-| **Production model** | `gnn_model.pt` = **H-G** (24MB, epoch 40, ICIR=+0.221) |
+| **Production model** | `gnn_model.pt` = **H-G** (24MB, epoch 40, ICIR=+0.041 ReturnHead, +0.403 ValueHead CFTC) |
 | H-G backup | `gnn_model_h_g_backup.pt` (24MB) ✅ already in place |
 | H-G checkpoints | `checkpoints/h_g/epoch_031–040.pt` — all present locally |
-| **Active Kaggle run** | H-D, W&B: `tirramind` / `h-d-resume-ep18-40` |
-| H-D resume checkpoint | `checkpoints/h_d/epoch_018.pt` (27MB) — uploaded to `tirramind-h-d-ckpt` dataset |
-| H-D architecture | `--num-layers 3 --num-heads 4 --hidden-dim 128` |
-| H-D training target | epochs 19→40 (resumed from epoch 18) |
-| H-D local model | `gnn_model_h_d.pt` (11MB) — **STALE** (epoch 18 only); replace after Kaggle run |
+| **H-D result** | Evaluated epoch 18 locally: ReturnHead ICIR=-0.007 (NO SIGNAL). H-D LOSES. |
+| H-D status | Kaggle run timed out at epoch 29 (12h limit). epoch_029.pt NOT downloaded (flat return loss confirmed). |
+| **Next Kaggle run** | Phase 41b — ListNet retrain from epoch 20. Resume checkpoint: `epoch_020.pt`. |
+| Upload zip | `tirramind_listnet_upload.zip` (48MB) — ready at project root |
 | DB observations | 982,650 |
 | Entities | 2,502 |
-| Key commits this session | `6edbfb6` trainer loud-fail on missing resume; `2371f36` relax find_data_root |
+| Key code change | Phase 41b: ListNet ranking loss (`--listnet` flag). Committed at `6edbfb6`. |
+| Key change (AR.4) | Loss-component ratio validator added to trainer.py: warns if dt/return ratio >50× for 3+ epochs |
 
 ---
 
@@ -332,7 +385,90 @@ Winning architecture from H-D/H-G/H-H advances to replace H-A as the new baselin
 
 ---
 
+---
+
+## Automated Training Pipeline (Phase 44+)
+
+> **As of commit `a3eb4d5`, training is fully automated.** The human only acts on GitHub Issues labelled `training-halt`.
+
+### Two-Loop Architecture
+
+```
+Loop 1 (intra-Kaggle):  pipeline_orchestrator.py
+  → trains 5-epoch blocks
+  → calls auto_improve.py after each block
+  → applies next_config.json if present
+  → detects collapse / structural halt
+  → writes knowledge/session_summary_YYYYMMDD_HHMM.md
+  → force-pushes to `training-state` branch at session end
+
+Loop 2 (inter-session):  .github/workflows/training_monitor.yml
+  → triggers on push to `training-state`
+  → parses session_summary frontmatter (`state:`, `epoch:`)
+  → if state = structural_halt / collapse_halt / crash → opens GitHub Issue
+  → if state = normal / config_changed → runs `kaggle kernels push`
+  → rate cap: max 3 auto-triggers per 24h
+```
+
+### GitHub Secrets Required
+
+| Secret Name | Value | Set? |
+|---|---|---|
+| `KAGGLE_API_TOKEN` | `{"username":"deeperisbetter","key":"KGAT_..."}` (full JSON) | ✅ added 2026-05-28 |
+
+### Starting the First Automated Run
+
+1. Manually trigger one Kaggle session (push notebook via `kaggle kernels push --path notebooks/tirramind-h-g/`)
+2. The orchestrator runs, trains ~5-epoch blocks for 11h, then pushes to `training-state`
+3. GitHub Actions sees the push → auto-triggers the next Kaggle session
+4. From this point: fully automated (up to 3 sessions/24h)
+
+### Manual Start Command
+
+```bash
+cd /home/becmachlean/2024/projects/tirramind_v1
+~/.kaggle-venv/bin/kaggle kernels push --path notebooks/tirramind-h-g/
+```
+
+### Kaggle Secret Requirements
+
+The Kaggle notebook uses secret `tirramind_token` for git push (writing to `training-state` branch).  
+The PAT stored there must have **Contents: write** scope on `savabs/tirramind`.  
+If the push is silently failing, check the Kaggle session logs for `[sync] WARNING: Could not push state to GitHub`.
+
+### Halts and Human Action
+
+When `state: structural_halt` or `crash` appears in the session summary:
+1. GitHub Actions opens an Issue labelled `training-halt`
+2. Human reads the Issue — it links to `knowledge/session_summary_*.md` with details
+3. Human inspects, fixes (code push or config change), then closes the Issue
+4. Next manual `kaggle kernels push` restarts the loop
+
+### Notebook Cell Map (current — H-G variant)
+
+| Cell # | Purpose |
+|---|---|
+| 5 | git clone + data setup + pull from `training-state` branch (metrics.jsonl, next_config.json, improvement_history.jsonl) |
+| 11 | Runs `pipeline_orchestrator.py` (replaced `retrain_gnn.py` direct call) |
+
+### Orchestrator CLI Flags
+
+```bash
+python scripts/pipeline_orchestrator.py \
+  --work-dir /kaggle/working/tirramind_v1 \
+  --checkpoint-dir .tirra_pipeline/checkpoints/h_g \
+  --db-path .tirra_pipeline/pipeline.db \
+  --block-size 5 \
+  --total-budget-hours 11.0 \
+  --device cuda
+```
+
+Exit codes: 0 = normal, 1 = config_changed (auto-restart), 2 = structural_halt, 3 = collapse_halt, 4 = crash
+
+---
+
 ## Related
 
 - [[quant_training_ground]] — active task file with phase status
 - [[tirramind_structure]] — repo structure and metrics
+- [[auto_training_pipeline]] — research doc for the automated pipeline
