@@ -14,12 +14,8 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-import tempfile
-import types
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
-
-import pytest
+from unittest.mock import patch
 
 # Add repo root to path so we can import without installing
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -30,10 +26,9 @@ from scripts.pipeline_orchestrator import (  # noqa: E402
     find_latest_checkpoint,
     is_collapsed,
     load_config_if_current,
-    write_session_summary,
     sync_state_to_github,
+    write_session_summary,
 )
-
 
 # ---------------------------------------------------------------------------
 # find_latest_checkpoint
@@ -81,43 +76,53 @@ class TestIsCollapsed:
         assert is_collapsed(tmp_path) is False
 
     def test_fewer_than_3_records_returns_false(self, tmp_path):
-        _write_metrics(tmp_path, [
-            {"epoch": 1, "loss": {"total": 1.0, "return": 0.5}},
-            {"epoch": 2, "loss": {"total": 0.9, "return": 0.4}},
-        ])
+        _write_metrics(
+            tmp_path,
+            [
+                {"epoch": 1, "loss": {"total": 1.0, "return": 0.5}},
+                {"epoch": 2, "loss": {"total": 0.9, "return": 0.4}},
+            ],
+        )
         assert is_collapsed(tmp_path) is False
 
     def test_normal_healthy_training_returns_false(self, tmp_path):
-        _write_metrics(tmp_path, [
-            {"epoch": i, "loss": {"total": 1.0 - i * 0.05, "return": 0.5 - i * 0.02}}
-            for i in range(10)
-        ])
+        _write_metrics(
+            tmp_path,
+            [
+                {
+                    "epoch": i,
+                    "loss": {"total": 1.0 - i * 0.05, "return": 0.5 - i * 0.02},
+                }
+                for i in range(10)
+            ],
+        )
         assert is_collapsed(tmp_path) is False
 
     def test_loss_explosion_returns_true(self, tmp_path):
         # First epoch total=1.0, last 3 epochs total >> 10.0
         records = [{"epoch": 1, "loss": {"total": 1.0, "return": 0.5}}]
-        records += [
-            {"epoch": i, "loss": {"total": 50.0 + i, "return": 0.3}}
-            for i in range(2, 12)
-        ]
+        records += [{"epoch": i, "loss": {"total": 50.0 + i, "return": 0.3}} for i in range(2, 12)]
         _write_metrics(tmp_path, records)
         assert is_collapsed(tmp_path) is True
 
     def test_negative_return_loss_proxy_returns_true(self, tmp_path):
         # 3 consecutive records with return < -0.05
-        _write_metrics(tmp_path, [
-            {"epoch": i, "loss": {"total": 2.0, "return": -0.1}} for i in range(3)
-        ])
+        _write_metrics(
+            tmp_path,
+            [{"epoch": i, "loss": {"total": 2.0, "return": -0.1}} for i in range(3)],
+        )
         assert is_collapsed(tmp_path) is True
 
     def test_mixed_negative_return_not_all_negative_returns_false(self, tmp_path):
         # Only 2 of 3 tail records are negative
-        _write_metrics(tmp_path, [
-            {"epoch": 1, "loss": {"total": 1.0, "return": 0.2}},
-            {"epoch": 2, "loss": {"total": 1.0, "return": -0.1}},
-            {"epoch": 3, "loss": {"total": 1.0, "return": -0.2}},
-        ])
+        _write_metrics(
+            tmp_path,
+            [
+                {"epoch": 1, "loss": {"total": 1.0, "return": 0.2}},
+                {"epoch": 2, "loss": {"total": 1.0, "return": -0.1}},
+                {"epoch": 3, "loss": {"total": 1.0, "return": -0.2}},
+            ],
+        )
         assert is_collapsed(tmp_path) is False
 
 
@@ -168,10 +173,20 @@ class TestBuildRetrainCmd:
     def test_all_standard_flags_present(self, tmp_path):
         cmd = build_retrain_cmd(**self._base_args(tmp_path))
         for flag in [
-            "--hidden-dim", "--num-layers", "--num-heads", "--lr",
-            "--backup", "--window-size", "--gdelt-frac", "--max-windows",
-            "--auto-tune", "--listnet", "--return-log-var-max",
-            "--skip-eval", "--checkpoint-dir", "--model-out",
+            "--hidden-dim",
+            "--num-layers",
+            "--num-heads",
+            "--lr",
+            "--backup",
+            "--window-size",
+            "--gdelt-frac",
+            "--max-windows",
+            "--auto-tune",
+            "--listnet",
+            "--return-log-var-max",
+            "--skip-eval",
+            "--checkpoint-dir",
+            "--model-out",
         ]:
             assert flag in cmd, f"Missing flag: {flag}"
 
@@ -287,7 +302,7 @@ class TestSyncStateToGitHub:
 
     def test_token_sets_remote_url(self, tmp_path):
         kwargs = self._base_kwargs(tmp_path)
-        kwargs["github_token"] = "ghp_testtoken"
+        kwargs["github_token"] = "ghp_testtoken"  # noqa: S105
         ok = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
         with patch("scripts.pipeline_orchestrator.subprocess.run", return_value=ok) as mock_run:
             sync_state_to_github(**kwargs)

@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from agent.pipeline.entity import entity_id_from_key
-from agent.tools.gdelt import GDELTTool
+from agent.tools.gdelt import _GOLDSTEIN_TENSION_THRESHOLD, GDELTTool
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -567,3 +567,111 @@ class TestMIMeasurement:
         val = obs[0]["value"]
         assert "counterpart_country" in val
         assert "goldstein" in val
+
+
+# ===========================================================================
+# Class: TestGoldsteinTensionFilter
+# ===========================================================================
+
+
+class TestGoldsteinTensionFilter:
+    """Goldstein < -5.0 ingestion filter — only genuine tension events are persisted.
+
+    Root cause: without this filter the DB is 91% GDELT diplomatic noise.
+    Filter cuts ~900k backfill rows to ~90k (genuine tension only).
+    """
+
+    def test_threshold_value(self) -> None:
+        """Sentinel: threshold must be exactly -5.0."""
+        assert _GOLDSTEIN_TENSION_THRESHOLD == -5.0
+
+    def test_high_tension_event_persisted(self) -> None:
+        """Event with goldstein < -5.0 IS persisted."""
+        store = _make_store()
+        tool = GDELTTool(pipeline_store=store)
+        ev = _make_event(actor1_country="US", actor2_country="CH", goldstein=-8.0)
+        tool._persist_entities_inner([ev])
+        assert store.store_entity_observation.call_count == 2
+
+    def test_low_tension_event_skipped(self) -> None:
+        """Event with goldstein >= -5.0 (routine/cooperative) is NOT persisted."""
+        store = _make_store()
+        tool = GDELTTool(pipeline_store=store)
+        ev = _make_event(actor1_country="US", actor2_country="CH", goldstein=-2.0)
+        tool._persist_entities_inner([ev])
+        store.register_entity.assert_not_called()
+        store.store_entity_observation.assert_not_called()
+
+    def test_boundary_exactly_minus_five_skipped(self) -> None:
+        """Goldstein == -5.0 exactly is NOT persisted (strict less-than)."""
+        store = _make_store()
+        tool = GDELTTool(pipeline_store=store)
+        ev = _make_event(actor1_country="US", actor2_country="CH", goldstein=-5.0)
+        tool._persist_entities_inner([ev])
+        store.register_entity.assert_not_called()
+        store.store_entity_observation.assert_not_called()
+
+    def test_cooperative_event_skipped(self) -> None:
+        """Positive goldstein (cooperation) is NOT persisted."""
+        store = _make_store()
+        tool = GDELTTool(pipeline_store=store)
+        ev = _make_event(actor1_country="US", actor2_country="CH", goldstein=4.0)
+        tool._persist_entities_inner([ev])
+        store.register_entity.assert_not_called()
+
+    def test_null_goldstein_skipped(self) -> None:
+        """Event with goldstein=None is NOT persisted (can't assess tension level)."""
+        store = _make_store()
+        tool = GDELTTool(pipeline_store=store)
+        ev = _make_event(actor1_country="US", actor2_country="CH", goldstein=None)
+        tool._persist_entities_inner([ev])
+        store.register_entity.assert_not_called()
+        store.store_entity_observation.assert_not_called()
+
+    def test_mixed_batch_only_tension_persisted(self) -> None:
+        """Mixed batch: only events with goldstein < -5.0 write to DB."""
+        store = _make_store()
+        tool = GDELTTool(pipeline_store=store)
+        events = [
+            _make_event(event_id="1", actor1_country="US", actor2_country="CH", goldstein=-9.0),
+            _make_event(event_id="2", actor1_country="US", actor2_country="IR", goldstein=-1.0),  # skip
+            _make_event(event_id="3", actor1_country="RU", actor2_country="UA", goldstein=-7.5),
+            _make_event(event_id="4", actor1_country="US", actor2_country="DE", goldstein=3.0),  # skip
+            _make_event(event_id="5", actor1_country="CN", actor2_country="TW", goldstein=None),  # skip
+        ]
+        tool._persist_entities_inner(events)
+        # Events 1 and 3 pass; each has 2 actors → 4 observations total
+        assert store.store_entity_observation.call_count == 4
+
+    def test_backfill_mode_respects_filter(self) -> None:
+        """_execute_backfill calls _persist_entities which respects the filter."""
+        store = _make_store()
+        tool = GDELTTool(pipeline_store=store)
+
+        # Two events: one high-tension, one routine
+        events = [
+            _make_event(event_id="A", actor1_country="US", actor2_country="CH", goldstein=-8.0),
+            _make_event(event_id="B", actor1_country="US", actor2_country="FR", goldstein=-0.5),
+        ]
+        with (
+            patch.object(tool, "_compute_historical_sample_timestamps", return_value=["20260101120000"]),
+            patch.object(tool, "_fetch_event_batches", return_value=[]),  # not used in backfill
+            patch("agent.tools.gdelt.httpx.Client") as mock_client_cls,
+            patch.object(tool, "_parse_events", return_value=events),
+        ):
+            # Simulate a successful HTTP response for the backfill batch
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.raise_for_status = MagicMock()
+            mock_resp.content = b""
+            mock_client_cls.return_value.__enter__.return_value.get.return_value = mock_resp
+
+            with patch("agent.tools.gdelt.zipfile.ZipFile") as mock_zip_cls:
+                mock_zip = MagicMock()
+                mock_zip.namelist.return_value = ["test.csv"]
+                mock_zip.read.return_value = b"fake"
+                mock_zip_cls.return_value.__enter__.return_value = mock_zip
+                tool._execute_backfill(days_back=7, sample_every_days=7)
+
+        # Only the high-tension event (goldstein=-8.0) should have been persisted
+        assert store.store_entity_observation.call_count == 2  # 2 actors × 1 event

@@ -49,12 +49,12 @@ GNN_LOOKBACK_DAYS = 90
 
 # Sources to ablate — in priority order (highest expected contribution first)
 DEFAULT_SOURCES = [
-    "cftc",           # CFTC managed money positioning → commodity futures
-    "gdelt",          # Geopolitical events → country nodes → instruments
-    "polymarket",     # Prediction market odds → topic nodes → instruments
-    "whale_alert",    # Crypto large transfers → wallet nodes
-    "sovereign_debt", # Country credit spreads → country nodes
-    "global_pmi",     # PMI → country nodes
+    "cftc",  # CFTC managed money positioning → commodity futures
+    "gdelt",  # Geopolitical events → country nodes → instruments
+    "polymarket",  # Prediction market odds → topic nodes → instruments
+    "whale_alert",  # Crypto large transfers → wallet nodes
+    "sovereign_debt",  # Country credit spreads → country nodes
+    "global_pmi",  # PMI → country nodes
     "capital_flows",  # Cross-border flows → country nodes
 ]
 
@@ -95,7 +95,13 @@ def _compute_ic_for_weights(
     std_ic = float(ics.std(ddof=1)) if n > 1 else 0.0
     icir = mean_ic / (std_ic + 1e-8)
     t_stat = (mean_ic / (std_ic / np.sqrt(n))) if (n > 0 and std_ic > 1e-10) else 0.0
-    return {"mean_ic": mean_ic, "std_ic": std_ic, "icir": icir, "t_stat": t_stat, "n_folds": n}
+    return {
+        "mean_ic": mean_ic,
+        "std_ic": std_ic,
+        "icir": icir,
+        "t_stat": t_stat,
+        "n_folds": n,
+    }
 
 
 def _build_weights_with_masked_source(
@@ -121,7 +127,9 @@ def _build_weights_with_masked_source(
     split = MIN_TRAIN
     while split + TEST_SIZE <= len(dates):
         fold_date = dates[split]
-        fold_ts = datetime.fromisoformat(fold_date).replace(tzinfo=timezone.utc).timestamp()
+        fold_ts = (
+            datetime.fromisoformat(fold_date).replace(tzinfo=timezone.utc).timestamp()
+        )
         since_ts = fold_ts - GNN_LOOKBACK_DAYS * 86400
 
         end_idx = bisect.bisect_left(all_obs_ts, fold_ts)
@@ -130,7 +138,9 @@ def _build_weights_with_masked_source(
 
         # Apply source mask
         if masked_source is not None:
-            obs_window = [o for o in obs_window if o.get("source_tool") != masked_source]
+            obs_window = [
+                o for o in obs_window if o.get("source_tool") != masked_source
+            ]
 
         if not obs_window:
             weight_cache[fold_date] = np.ones(N) / N
@@ -245,7 +255,13 @@ def run_ablation(
 
     log.info("Computing baseline (full data)…")
     baseline_weights = _build_weights_with_masked_source(
-        trainer, dates, all_obs, all_obs_ts, full_id_map, full_links, entity_ids,
+        trainer,
+        dates,
+        all_obs,
+        all_obs_ts,
+        full_id_map,
+        full_links,
+        entity_ids,
         masked_source=None,
     )
     baseline_ic = _compute_ic_for_weights(baseline_weights, dates, returns)
@@ -254,7 +270,13 @@ def run_ablation(
     for source in sources:
         log.info("Ablating source: %s…", source)
         masked_weights = _build_weights_with_masked_source(
-            trainer, dates, all_obs, all_obs_ts, full_id_map, full_links, entity_ids,
+            trainer,
+            dates,
+            all_obs,
+            all_obs_ts,
+            full_id_map,
+            full_links,
+            entity_ids,
             masked_source=source,
         )
         masked_ic = _compute_ic_for_weights(masked_weights, dates, returns)
@@ -292,18 +314,24 @@ def print_ablation_report(results: dict[str, dict]) -> None:
     print("  Positive ΔIC = removing source HURTS signal → source is contributing")
     print("  Negative ΔIC = removing source HELPS signal → source is adding noise")
     print()
-    print(f"  {'Source':<20} {'Base IC':>9} {'Masked IC':>10} {'ΔIC':>8} {'ΔICIR':>8}  Interpretation")
+    print(
+        f"  {'Source':<20} {'Base IC':>9} {'Masked IC':>10} {'ΔIC':>8} {'ΔICIR':>8}  Interpretation"
+    )
     print("  " + "-" * 85)
 
     # Sort by |delta_ic| descending
-    sorted_results = sorted(results.items(), key=lambda x: abs(x[1]["delta_mean_ic"]), reverse=True)
+    sorted_results = sorted(
+        results.items(), key=lambda x: abs(x[1]["delta_mean_ic"]), reverse=True
+    )
     for source, r in sorted_results:
         base = r["baseline"]["mean_ic"]
         masked = r["masked"]["mean_ic"]
         delta_ic = r["delta_mean_ic"]
         delta_icir = r["delta_icir"]
         interp_short = r["interpretation"].split(":")[0]
-        print(f"  {source:<20} {base:>9.4f} {masked:>10.4f} {delta_ic:>+8.4f} {delta_icir:>+8.3f}  {interp_short}")
+        print(
+            f"  {source:<20} {base:>9.4f} {masked:>10.4f} {delta_ic:>+8.4f} {delta_icir:>+8.3f}  {interp_short}"
+        )
 
     print()
     print("  Full interpretations:")
@@ -316,7 +344,9 @@ def print_ablation_report(results: dict[str, dict]) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Source ablation test for GNN signal attribution")
+    parser = argparse.ArgumentParser(
+        description="Source ablation test for GNN signal attribution"
+    )
     parser.add_argument("--db-path", default=str(DB_PATH))
     parser.add_argument("--model-path", default=str(MODEL_PATH))
     parser.add_argument(
@@ -324,7 +354,9 @@ def main() -> None:
         default=",".join(DEFAULT_SOURCES),
         help="Comma-separated list of source_tool names to ablate",
     )
-    parser.add_argument("--save", action="store_true", help="Save results to experiment manifest")
+    parser.add_argument(
+        "--save", action="store_true", help="Save results to experiment manifest"
+    )
     args = parser.parse_args()
 
     sources = [s.strip() for s in args.sources.split(",") if s.strip()]
@@ -336,6 +368,7 @@ def main() -> None:
     if args.save:
         import json
         from agent.quant.experiment_tracker import ExperimentTracker, _json_safe
+
         tracker = ExperimentTracker(args.db_path, args.model_path)
         manifest = tracker.build_manifest(
             ic_results={},

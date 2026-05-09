@@ -30,18 +30,23 @@ if _env_file.exists():
 # ── Validate env ─────────────────────────────────────────────────────────────
 _api_key = os.environ.get("WANDB_API_KEY")
 if not _api_key:
-    print("ERROR: WANDB_API_KEY not set. Export it or add to .env at project root.", file=sys.stderr)
+    print(
+        "ERROR: WANDB_API_KEY not set. Export it or add to .env at project root.",
+        file=sys.stderr,
+    )
     sys.exit(1)
 
 import wandb  # noqa: E402  (import after key check so error is clear)
 
-DEAD_THRESHOLD = 1e-4   # return loss change smaller than this = dead head
-EXPLODE_RATIO  = 10.0   # loss increases by this ratio = explosion
+DEAD_THRESHOLD = 1e-4  # return loss change smaller than this = dead head
+EXPLODE_RATIO = 10.0  # loss increases by this ratio = explosion
 
 
 def _flag_return_head(history: list[dict]) -> str:
     """Return a human-readable status for the return head."""
-    returns = [r.get("loss/return") for r in history if r.get("loss/return") is not None]
+    returns = [
+        r.get("loss/return") for r in history if r.get("loss/return") is not None
+    ]
     if not returns:
         return "ABSENT (never logged)"
     if len(returns) < 2:
@@ -59,7 +64,11 @@ def _flag_return_head(history: list[dict]) -> str:
 
 def _flag_time_delta(history: list[dict]) -> str:
     """Warn if time_delta loss looks unnormalized (very large absolute value)."""
-    tds = [r.get("loss/time_delta") for r in history if r.get("loss/time_delta") is not None]
+    tds = [
+        r.get("loss/time_delta")
+        for r in history
+        if r.get("loss/time_delta") is not None
+    ]
     if not tds:
         return "absent"
     mean_td = sum(tds[-5:]) / len(tds[-5:])
@@ -70,11 +79,19 @@ def _flag_time_delta(history: list[dict]) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Query live wandb training state")
-    parser.add_argument("--project",  default="tirramind",  help="wandb project name")
-    parser.add_argument("--entity",   default=os.environ.get("WANDB_ENTITY", ""), help="wandb entity (username/org)")
-    parser.add_argument("--run",      default=None,  help="specific run name or ID")
-    parser.add_argument("--last",     type=int, default=10, help="show last N epochs per run")
-    parser.add_argument("--all-runs", action="store_true", help="summarise all runs in project")
+    parser.add_argument("--project", default="tirramind", help="wandb project name")
+    parser.add_argument(
+        "--entity",
+        default=os.environ.get("WANDB_ENTITY", ""),
+        help="wandb entity (username/org)",
+    )
+    parser.add_argument("--run", default=None, help="specific run name or ID")
+    parser.add_argument(
+        "--last", type=int, default=10, help="show last N epochs per run"
+    )
+    parser.add_argument(
+        "--all-runs", action="store_true", help="summarise all runs in project"
+    )
     args = parser.parse_args()
 
     api = wandb.Api(api_key=_api_key)
@@ -85,9 +102,16 @@ def main() -> None:
     try:
         if args.run:
             # Try exact name match first
-            runs = [r for r in api.runs(project_path) if r.name == args.run or r.id == args.run]
+            runs = [
+                r
+                for r in api.runs(project_path)
+                if r.name == args.run or r.id == args.run
+            ]
             if not runs:
-                print(f"No run found with name/id '{args.run}' in {project_path}", file=sys.stderr)
+                print(
+                    f"No run found with name/id '{args.run}' in {project_path}",
+                    file=sys.stderr,
+                )
                 sys.exit(1)
         else:
             all_runs = list(api.runs(project_path, order="-created_at"))
@@ -123,21 +147,35 @@ def main() -> None:
 
         # Convert to list of dicts for easy slicing
         history = hist_df.to_dict("records")
-        last_n  = history[-args.last:]
+        last_n = history[-args.last :]
 
         # ── Epoch loss table ──────────────────────────────────────────────────
         col_w = 10
-        headers = ["epoch", "total", "obs_type", "time_delta", "contrastive", "value", "return"]
+        headers = [
+            "epoch",
+            "total",
+            "obs_type",
+            "time_delta",
+            "contrastive",
+            "value",
+            "return",
+        ]
         print("│")
         print("│  " + "  ".join(h.rjust(col_w) for h in headers))
         print("│  " + "  ".join("-" * col_w for _ in headers))
         for row in last_n:
             epoch = row.get("epoch", row.get("_step", "?"))
-            vals  = [epoch] + [row.get(f"loss/{h}", float("nan")) for h in headers[1:]]
+            vals = [epoch] + [row.get(f"loss/{h}", float("nan")) for h in headers[1:]]
+
             def _fmt(v):
                 if isinstance(v, float) and v != v:  # NaN
                     return "—".rjust(col_w)
-                return f"{v:.4f}".rjust(col_w) if isinstance(v, float) else str(v).rjust(col_w)
+                return (
+                    f"{v:.4f}".rjust(col_w)
+                    if isinstance(v, float)
+                    else str(v).rjust(col_w)
+                )
+
             print("│  " + "  ".join(_fmt(v) for v in vals))
 
         # ── Effective weights (auto-tune) ─────────────────────────────────────
@@ -156,12 +194,16 @@ def main() -> None:
         print(f"│    time_delta   : {_flag_time_delta(history)}")
 
         # Total loss trend (last 5 vs first 5 of window)
-        totals = [r.get("loss/total") for r in history if r.get("loss/total") is not None]
+        totals = [
+            r.get("loss/total") for r in history if r.get("loss/total") is not None
+        ]
         if len(totals) >= 10:
             first5 = sum(totals[:5]) / 5
-            last5  = sum(totals[-5:]) / 5
-            pct    = (last5 - first5) / (first5 + 1e-9) * 100
-            trend  = f"{'↓' if pct < 0 else '↑'} {abs(pct):.1f}% over {len(totals)} epochs"
+            last5 = sum(totals[-5:]) / 5
+            pct = (last5 - first5) / (first5 + 1e-9) * 100
+            trend = (
+                f"{'↓' if pct < 0 else '↑'} {abs(pct):.1f}% over {len(totals)} epochs"
+            )
             print(f"│    total loss   : {trend}")
 
         print(f"└{'─'*78}\n")

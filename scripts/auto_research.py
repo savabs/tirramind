@@ -25,7 +25,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -62,7 +61,12 @@ REQUEST_TIMEOUT = 10  # seconds
 # HTTP helpers
 # ---------------------------------------------------------------------------
 
-def _get_json(url: str, params: dict[str, str] | None = None, headers: dict[str, str] | None = None) -> Any:
+
+def _get_json(
+    url: str,
+    params: dict[str, str] | None = None,
+    headers: dict[str, str] | None = None,
+) -> Any:
     """Fetch JSON from url with optional query params. Retries on 429 (rate limit)."""
     if params:
         url = f"{url}?{urllib.parse.urlencode(params)}"
@@ -75,7 +79,9 @@ def _get_json(url: str, params: dict[str, str] | None = None, headers: dict[str,
         except urllib.error.HTTPError as exc:
             if exc.code == 429:
                 wait = 5 * (attempt + 1)
-                print(f"  [WARN] Rate limited (429). Waiting {wait}s...", file=sys.stderr)
+                print(
+                    f"  [WARN] Rate limited (429). Waiting {wait}s...", file=sys.stderr
+                )
                 time.sleep(wait)
                 continue
             print(f"  [WARN] HTTP {exc.code}: {url[:80]}...", file=sys.stderr)
@@ -90,6 +96,7 @@ def _get_json(url: str, params: dict[str, str] | None = None, headers: dict[str,
 # ---------------------------------------------------------------------------
 # Keyword extraction
 # ---------------------------------------------------------------------------
+
 
 def extract_keywords(problem: str) -> list[str]:
     """Return non-stopword tokens from problem description, lowercase."""
@@ -108,6 +115,7 @@ def build_semantic_scholar_query(problem: str) -> str:
 # ---------------------------------------------------------------------------
 # Semantic Scholar search
 # ---------------------------------------------------------------------------
+
 
 def search_semantic_scholar(problem: str, max_papers: int = 5) -> list[dict]:
     """Return up to max_papers papers from Semantic Scholar."""
@@ -151,6 +159,7 @@ def search_semantic_scholar(problem: str, max_papers: int = 5) -> list[dict]:
 # GitHub issue search
 # ---------------------------------------------------------------------------
 
+
 def search_github(problem: str, max_issues: int = 5) -> list[dict]:
     """Search GitHub issues/discussions for related problems."""
     keywords = extract_keywords(problem)
@@ -160,7 +169,9 @@ def search_github(problem: str, max_issues: int = 5) -> list[dict]:
 
     print(f"  GitHub query: {query!r}", file=sys.stderr)
 
-    data = _get_json(GITHUB_SEARCH_URL, params={"q": query, "per_page": str(max_issues)})
+    data = _get_json(
+        GITHUB_SEARCH_URL, params={"q": query, "per_page": str(max_issues)}
+    )
     if not data or "items" not in data:
         return []
 
@@ -168,7 +179,9 @@ def search_github(problem: str, max_issues: int = 5) -> list[dict]:
         {
             "title": item.get("title", ""),
             "url": item.get("html_url", ""),
-            "repo": item.get("repository_url", "").replace("https://api.github.com/repos/", ""),
+            "repo": item.get("repository_url", "").replace(
+                "https://api.github.com/repos/", ""
+            ),
             "state": item.get("state", ""),
             "created_at": item.get("created_at", "")[:10],
         }
@@ -179,6 +192,7 @@ def search_github(problem: str, max_issues: int = 5) -> list[dict]:
 # ---------------------------------------------------------------------------
 # Read trigger file
 # ---------------------------------------------------------------------------
+
 
 def read_trigger_file(path: Path) -> str:
     """Extract the problem description from a trigger file."""
@@ -196,6 +210,7 @@ def read_trigger_file(path: Path) -> str:
 # Report rendering
 # ---------------------------------------------------------------------------
 
+
 def slugify(text: str) -> str:
     """Convert to snake_case slug, max 40 chars."""
     words = re.findall(r"[a-zA-Z0-9]+", text.lower())
@@ -209,7 +224,7 @@ def render_report(problem: str, papers: list[dict], issues: list[dict]) -> str:
 
     lines = [
         f"---",
-        f"title: \"Triage: {problem[:60]}\"",
+        f'title: "Triage: {problem[:60]}"',
         f"tags:",
         f"  - doc/research",
         f"  - topic/training",
@@ -289,6 +304,7 @@ def render_report(problem: str, papers: list[dict], issues: list[dict]) -> str:
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(

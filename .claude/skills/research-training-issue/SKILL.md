@@ -1,4 +1,9 @@
 ---
+title: Research Training Issue Skill
+tags:
+  - doc/wiki
+  - topic/pipeline
+  - layer/learning
 name: research-training-issue
 description: Use this skill when asked to research a ML training problem. Given a problem description and optional paper IDs/URLs, searches arXiv, reads the TeX source of relevant papers, and writes a codebase-grounded solution report to knowledge/diag_{slug}.md.
 ---

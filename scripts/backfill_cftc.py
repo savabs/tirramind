@@ -58,8 +58,15 @@ def main() -> None:
         default=",".join(str(y) for y in DEFAULT_YEARS),
         help="Comma-separated years to backfill (default: 2022,2023,2024)",
     )
-    parser.add_argument("--dry-run", action="store_true", help="Print DB counts only, no write")
-    parser.add_argument("--delay", type=float, default=2.0, help="Seconds between downloads (default: 2.0)")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Print DB counts only, no write"
+    )
+    parser.add_argument(
+        "--delay",
+        type=float,
+        default=2.0,
+        help="Seconds between downloads (default: 2.0)",
+    )
     args = parser.parse_args()
 
     db_path = Path(args.db_path)
@@ -117,15 +124,23 @@ def main() -> None:
     tracks = after["cftc_tracks_links"]
     obs = after["cftc_observations"]
     if tracks >= 19 and obs > 10000:
-        print("  ✓ SUCCESS: CFTC backfill complete — all 19 instruments linked, >10K observations")
+        print(
+            "  ✓ SUCCESS: CFTC backfill complete — all 19 instruments linked, >10K observations"
+        )
     elif tracks < 19:
-        print(f"  ⚠ WARNING: Only {tracks}/19 cftc_tracks links. Check cftc_code_to_ticker() mappings.")
+        print(
+            f"  ⚠ WARNING: Only {tracks}/19 cftc_tracks links. Check cftc_code_to_ticker() mappings."
+        )
     elif obs <= 10000:
-        print(f"  ⚠ WARNING: Only {obs:,} observations (target >10K). May need more years.")
+        print(
+            f"  ⚠ WARNING: Only {obs:,} observations (target >10K). May need more years."
+        )
 
     print()
     print("  Next: run 'python scripts/phase40_gnn_backtest.py' to measure IC impact")
-    print("        and 'python scripts/source_ablation.py --sources cftc' for attribution")
+    print(
+        "        and 'python scripts/source_ablation.py --sources cftc' for attribution"
+    )
 
 
 if __name__ == "__main__":

@@ -53,90 +53,165 @@ DB_PATH = Path(".tirra_pipeline/pipeline.db")
 PRODUCER_MAP: dict[str, list[tuple[str, float]]] = {
     # Energy
     "CL=F": [  # WTI Crude Oil — NYMEX
-        ("US", 0.95), ("SA", 0.95), ("RU", 0.95),
-        ("IQ", 0.90), ("AE", 0.90), ("CA", 0.85),
-        ("KW", 0.85), ("IR", 0.80), ("NG", 0.80),
-        ("KZ", 0.80), ("LY", 0.80), ("VE", 0.80),
+        ("US", 0.95),
+        ("SA", 0.95),
+        ("RU", 0.95),
+        ("IQ", 0.90),
+        ("AE", 0.90),
+        ("CA", 0.85),
+        ("KW", 0.85),
+        ("IR", 0.80),
+        ("NG", 0.80),
+        ("KZ", 0.80),
+        ("LY", 0.80),
+        ("VE", 0.80),
     ],
     "BZ=F": [  # Brent Crude — ICE
-        ("SA", 0.95), ("RU", 0.95), ("IQ", 0.90),
-        ("AE", 0.90), ("KW", 0.85), ("NG", 0.85),
-        ("LY", 0.80), ("NO", 0.80),
+        ("SA", 0.95),
+        ("RU", 0.95),
+        ("IQ", 0.90),
+        ("AE", 0.90),
+        ("KW", 0.85),
+        ("NG", 0.85),
+        ("LY", 0.80),
+        ("NO", 0.80),
     ],
     "NG=F": [  # Natural Gas — NYMEX
-        ("US", 0.95), ("RU", 0.95), ("IR", 0.90),
-        ("QA", 0.90), ("AU", 0.85), ("CA", 0.85),
+        ("US", 0.95),
+        ("RU", 0.95),
+        ("IR", 0.90),
+        ("QA", 0.90),
+        ("AU", 0.85),
+        ("CA", 0.85),
         ("DZ", 0.80),
     ],
     "RB=F": [  # RBOB Gasoline — NYMEX (refined product, refinery-country matters)
-        ("US", 0.95), ("SA", 0.90), ("RU", 0.85),
+        ("US", 0.95),
+        ("SA", 0.90),
+        ("RU", 0.85),
     ],
     # Metals
     "GC=F": [  # Gold — COMEX
-        ("US", 0.90), ("AU", 0.95), ("CN", 0.95),
-        ("ZA", 0.90), ("CA", 0.85), ("RU", 0.85),
-        ("PE", 0.80), ("ID", 0.80),
+        ("US", 0.90),
+        ("AU", 0.95),
+        ("CN", 0.95),
+        ("ZA", 0.90),
+        ("CA", 0.85),
+        ("RU", 0.85),
+        ("PE", 0.80),
+        ("ID", 0.80),
     ],
     "SI=F": [  # Silver — COMEX
-        ("MX", 0.95), ("PE", 0.95), ("CN", 0.90),
-        ("RU", 0.85), ("CL", 0.85), ("AU", 0.80),
-        ("US", 0.80), ("PL", 0.80),
+        ("MX", 0.95),
+        ("PE", 0.95),
+        ("CN", 0.90),
+        ("RU", 0.85),
+        ("CL", 0.85),
+        ("AU", 0.80),
+        ("US", 0.80),
+        ("PL", 0.80),
     ],
     "HG=F": [  # Copper — COMEX
-        ("CL", 0.95), ("PE", 0.95), ("CN", 0.90),
-        ("US", 0.80), ("AU", 0.80), ("ZM", 0.80),
+        ("CL", 0.95),
+        ("PE", 0.95),
+        ("CN", 0.90),
+        ("US", 0.80),
+        ("AU", 0.80),
+        ("ZM", 0.80),
     ],
     "PL=F": [  # Platinum — NYMEX
-        ("ZA", 0.95), ("RU", 0.90), ("ZW", 0.80),
-        ("CA", 0.75), ("US", 0.75),
+        ("ZA", 0.95),
+        ("RU", 0.90),
+        ("ZW", 0.80),
+        ("CA", 0.75),
+        ("US", 0.75),
     ],
     "PA=F": [  # Palladium — NYMEX
-        ("RU", 0.95), ("ZA", 0.95),
-        ("US", 0.80), ("CA", 0.75),
+        ("RU", 0.95),
+        ("ZA", 0.95),
+        ("US", 0.80),
+        ("CA", 0.75),
     ],
     # Agriculture — Grains
     "ZC=F": [  # Corn — CBOT
-        ("US", 0.95), ("BR", 0.95), ("AR", 0.90),
-        ("UA", 0.90), ("CN", 0.85), ("MX", 0.75),
+        ("US", 0.95),
+        ("BR", 0.95),
+        ("AR", 0.90),
+        ("UA", 0.90),
+        ("CN", 0.85),
+        ("MX", 0.75),
     ],
     "ZS=F": [  # Soybeans — CBOT
-        ("US", 0.95), ("BR", 0.95), ("AR", 0.95),
-        ("CN", 0.80), ("PY", 0.75), ("CA", 0.70),
+        ("US", 0.95),
+        ("BR", 0.95),
+        ("AR", 0.95),
+        ("CN", 0.80),
+        ("PY", 0.75),
+        ("CA", 0.70),
     ],
     "ZW=F": [  # Wheat SRW — CBOT
-        ("US", 0.95), ("RU", 0.95), ("UA", 0.95),
-        ("AU", 0.90), ("CA", 0.90), ("FR", 0.85),
-        ("AR", 0.85), ("KZ", 0.80),
+        ("US", 0.95),
+        ("RU", 0.95),
+        ("UA", 0.95),
+        ("AU", 0.90),
+        ("CA", 0.90),
+        ("FR", 0.85),
+        ("AR", 0.85),
+        ("KZ", 0.80),
     ],
     # Agriculture — Softs
     "KC=F": [  # Coffee C — ICE
-        ("BR", 0.95), ("VN", 0.95), ("CO", 0.90),
-        ("ID", 0.85), ("ET", 0.80), ("HN", 0.80),
+        ("BR", 0.95),
+        ("VN", 0.95),
+        ("CO", 0.90),
+        ("ID", 0.85),
+        ("ET", 0.80),
+        ("HN", 0.80),
     ],
     "CC=F": [  # Cocoa — ICE
-        ("CI", 0.95), ("GH", 0.95), ("ID", 0.85),
-        ("CM", 0.80), ("NG", 0.75), ("EC", 0.75),
+        ("CI", 0.95),
+        ("GH", 0.95),
+        ("ID", 0.85),
+        ("CM", 0.80),
+        ("NG", 0.75),
+        ("EC", 0.75),
     ],
     "SB=F": [  # Sugar #11 — ICE
-        ("BR", 0.95), ("IN", 0.90), ("EU", 0.85),
-        ("TH", 0.80), ("AU", 0.75), ("CN", 0.75),
+        ("BR", 0.95),
+        ("IN", 0.90),
+        ("EU", 0.85),
+        ("TH", 0.80),
+        ("AU", 0.75),
+        ("CN", 0.75),
     ],
     "CT=F": [  # Cotton #2 — ICE
-        ("CN", 0.95), ("IN", 0.95), ("US", 0.90),
-        ("BR", 0.85), ("PK", 0.80), ("AU", 0.80),
+        ("CN", 0.95),
+        ("IN", 0.95),
+        ("US", 0.90),
+        ("BR", 0.85),
+        ("PK", 0.80),
+        ("AU", 0.80),
         ("UZ", 0.75),
     ],
     "OJ=F": [  # Frozen OJ — ICE
-        ("BR", 0.95), ("US", 0.85), ("MX", 0.75),
+        ("BR", 0.95),
+        ("US", 0.85),
+        ("MX", 0.75),
     ],
     # Livestock
     "LE=F": [  # Live Cattle — CME
-        ("US", 0.95), ("BR", 0.90), ("AU", 0.85),
-        ("AR", 0.85), ("MX", 0.75),
+        ("US", 0.95),
+        ("BR", 0.90),
+        ("AU", 0.85),
+        ("AR", 0.85),
+        ("MX", 0.75),
     ],
     "HE=F": [  # Lean Hogs — CME
-        ("US", 0.95), ("CN", 0.95), ("EU", 0.85),
-        ("BR", 0.80), ("CA", 0.75),
+        ("US", 0.95),
+        ("CN", 0.95),
+        ("EU", 0.85),
+        ("BR", 0.80),
+        ("CA", 0.75),
     ],
 }
 
@@ -163,13 +238,16 @@ def seed_links(db_path: Path, dry_run: bool = False) -> dict:
 
     # Build ticker → entity_id via instrument_universe name mapping
     from agent.tools.instrument_universe import tradeable_instruments
+
     name_to_ticker = {inst.name: inst.ticker for inst in tradeable_instruments()}
 
     inst_rows = conn.execute(
         "SELECT entity_id, canonical_name FROM entities WHERE entity_type='instrument'"
     ).fetchall()
     # Map: ticker → entity_id (via canonical_name=full name)
-    ticker_to_eid = {name_to_ticker[name]: eid for eid, name in inst_rows if name in name_to_ticker}
+    ticker_to_eid = {
+        name_to_ticker[name]: eid for eid, name in inst_rows if name in name_to_ticker
+    }
 
     # Get all existing country entity_ids
     country_rows = conn.execute(
@@ -190,6 +268,7 @@ def seed_links(db_path: Path, dry_run: bool = False) -> dict:
     link_rows: list[tuple] = []
 
     import time
+
     now = time.time()
 
     for ticker, producers in PRODUCER_MAP.items():
@@ -225,8 +304,17 @@ def seed_links(db_path: Path, dry_run: bool = False) -> dict:
                 counts["links_skipped_existing"] += 1
                 continue
 
-            link_rows.append((inst_eid, country_eid, "produced_in", confidence, "seed_producer_links", now,
-                              f'{{"ticker": "{ticker}", "iso": "{iso}"}}'))
+            link_rows.append(
+                (
+                    inst_eid,
+                    country_eid,
+                    "produced_in",
+                    confidence,
+                    "seed_producer_links",
+                    now,
+                    f'{{"ticker": "{ticker}", "iso": "{iso}"}}',
+                )
+            )
             existing_links.add(link_key)
             counts["links_created"] += 1
 
@@ -256,6 +344,7 @@ def verify_links(db_path: Path) -> None:
     conn.close()
 
     from collections import defaultdict
+
     by_ticker = defaultdict(list)
     for ticker, iso, conf in rows:
         by_ticker[ticker].append(f"{iso}({conf:.0%})")
@@ -266,9 +355,13 @@ def verify_links(db_path: Path) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Seed commodity producer-country links")
+    parser = argparse.ArgumentParser(
+        description="Seed commodity producer-country links"
+    )
     parser.add_argument("--db-path", default=str(DB_PATH))
-    parser.add_argument("--dry-run", action="store_true", help="Show what would be created, no writes")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Show what would be created, no writes"
+    )
     args = parser.parse_args()
 
     db_path = Path(args.db_path)
@@ -303,7 +396,9 @@ def main() -> None:
 
     print()
     print("  Next: run 'python scripts/phase40_gnn_backtest.py' to measure IC impact")
-    print("        and 'python scripts/source_ablation.py --sources gdelt' to check attribution")
+    print(
+        "        and 'python scripts/source_ablation.py --sources gdelt' to check attribution"
+    )
 
 
 if __name__ == "__main__":

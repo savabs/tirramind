@@ -40,10 +40,10 @@ log = logging.getLogger(__name__)
 SHIP_TYPE_TO_COMMODITIES: dict[str, list[tuple[str, float]]] = {
     # AIS type code 80-89 (tankers): primarily crude and refined petroleum
     "tanker": [
-        ("CL=F", 0.7),   # WTI Crude — most common Baltic tanker cargo
-        ("BZ=F", 0.7),   # Brent Crude — European benchmark
-        ("RB=F", 0.5),   # RBOB Gasoline (refined product tankers)
-        ("HO=F", 0.5),   # Heating Oil (refined product tankers)
+        ("CL=F", 0.7),  # WTI Crude — most common Baltic tanker cargo
+        ("BZ=F", 0.7),  # Brent Crude — European benchmark
+        ("RB=F", 0.5),  # RBOB Gasoline (refined product tankers)
+        ("HO=F", 0.5),  # Heating Oil (refined product tankers)
     ],
     # AIS type code 70-79 (cargo): bulk dry commodities on Baltic routes
     "cargo": [
@@ -155,11 +155,13 @@ def add_vessel_commodity_links(db_path: Path, dry_run: bool = False) -> dict[str
                     "carries_commodity",
                     "add_vessel_commodity_links.py",
                     confidence,
-                    json.dumps({
-                        "ship_type": ship_type,
-                        "ticker": ticker,
-                        "basis": "ais_ship_type_to_commodity_mapping",
-                    }),
+                    json.dumps(
+                        {
+                            "ship_type": ship_type,
+                            "ticker": ticker,
+                            "basis": "ais_ship_type_to_commodity_mapping",
+                        }
+                    ),
                 ),
             )
             if result.rowcount > 0:

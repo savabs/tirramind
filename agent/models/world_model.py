@@ -38,7 +38,9 @@ from agent.models.state_filter import ContinuousStateFilter
 log = logging.getLogger(__name__)
 
 # Type alias for either filter backend
-_AnyStateFilter = Union[ContinuousStateFilter, "DifferentiableKalmanFilter"]  # noqa: F821
+_AnyStateFilter = Union[
+    ContinuousStateFilter, "DifferentiableKalmanFilter"  # noqa: F821
+]
 
 
 class WorldModel:

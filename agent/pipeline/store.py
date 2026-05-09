@@ -2338,7 +2338,12 @@ class PipelineStore:
     @staticmethod
     def _source_row_to_dict(row: Any) -> dict[str, Any]:
         d = dict(row)
-        for key in ("topic_tags_json", "probe_result_json", "tool_config_json", "metadata_json"):
+        for key in (
+            "topic_tags_json",
+            "probe_result_json",
+            "tool_config_json",
+            "metadata_json",
+        ):
             plain = key.replace("_json", "")
             try:
                 d[plain] = json.loads(d.pop(key, "null"))

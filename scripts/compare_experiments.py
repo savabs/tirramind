@@ -29,9 +29,13 @@ def _short_id(run_id: str) -> str:
 def cmd_list() -> None:
     exps = ExperimentTracker.list_experiments()
     if not exps:
-        print("No experiments found. Run 'python scripts/phase40_gnn_backtest.py' first.")
+        print(
+            "No experiments found. Run 'python scripts/phase40_gnn_backtest.py' first."
+        )
         return
-    print(f"\n{'#':<4} {'Run ID':<26} {'Model Epoch':>12} {'Total Obs':>12} {'Best Mean IC':>14}")
+    print(
+        f"\n{'#':<4} {'Run ID':<26} {'Model Epoch':>12} {'Total Obs':>12} {'Best Mean IC':>14}"
+    )
     print("-" * 72)
     for i, path in enumerate(exps):
         try:
@@ -44,8 +48,9 @@ def cmd_list() -> None:
                 (r.get("mean_ic", 0.0) for r in ic_results.values()), default=0.0
             )
             best_strategy = max(
-                ic_results.items(), key=lambda x: x[1].get("mean_ic", 0.0),
-                default=("none", {})
+                ic_results.items(),
+                key=lambda x: x[1].get("mean_ic", 0.0),
+                default=("none", {}),
             )[0]
             print(
                 f"{i:<4} {m.get('run_id','?'):<26} {str(epoch):>12} "
@@ -91,13 +96,17 @@ def cmd_diff(run_id_a: str, run_id_b: str) -> None:
     src_delta = dd.get("obs_by_source_delta", {})
     if src_delta:
         print(f"    Per-source delta:")
-        for src, delta in sorted(src_delta.items(), key=lambda x: abs(x[1]), reverse=True):
+        for src, delta in sorted(
+            src_delta.items(), key=lambda x: abs(x[1]), reverse=True
+        ):
             print(f"      {src:<24} {delta:>+10,}")
 
     # IC changes
     ic_delta = diff.get("ic_delta", {})
     print(f"\n  IC Changes (A → B):")
-    print(f"    {'Strategy':<22} {'Mean IC (A)':>12} {'Mean IC (B)':>12} {'ΔMean IC':>10} {'ICIR (A)':>10} {'ICIR (B)':>10} {'ΔICIR':>8}")
+    print(
+        f"    {'Strategy':<22} {'Mean IC (A)':>12} {'Mean IC (B)':>12} {'ΔMean IC':>10} {'ICIR (A)':>10} {'ICIR (B)':>10} {'ΔICIR':>8}"
+    )
     print("    " + "-" * 88)
     for strat, d in ic_delta.items():
         print(
@@ -111,14 +120,18 @@ def cmd_diff(run_id_a: str, run_id_b: str) -> None:
     attn_delta = diff.get("attention_delta", {})
     if attn_delta:
         print(f"\n  HGT Attention Changes (A → B):")
-        for edge, delta in sorted(attn_delta.items(), key=lambda x: abs(x[1]), reverse=True):
+        for edge, delta in sorted(
+            attn_delta.items(), key=lambda x: abs(x[1]), reverse=True
+        ):
             print(f"    {edge:<40} {delta:>+.5f}")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--diff", nargs=2, metavar=("A", "B"), help="Diff two run IDs")
-    parser.add_argument("--latest", type=int, metavar="N", help="Diff the last N runs (default 2)")
+    parser.add_argument(
+        "--latest", type=int, metavar="N", help="Diff the last N runs (default 2)"
+    )
     args = parser.parse_args()
 
     if args.diff:

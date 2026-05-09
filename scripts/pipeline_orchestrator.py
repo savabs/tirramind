@@ -32,7 +32,6 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-
 # ---------------------------------------------------------------------------
 # State machine
 # ---------------------------------------------------------------------------
@@ -107,9 +106,7 @@ def is_collapsed(checkpoint_dir: Path) -> bool:
     if not math.isnan(first_total) and first_total > 1e-8:
         explosion_threshold = first_total * 10.0
         tail_totals = [r.get("loss", {}).get("total", float("nan")) for r in tail]
-        if all(
-            not math.isnan(t) and t > explosion_threshold for t in tail_totals
-        ):
+        if all(not math.isnan(t) and t > explosion_threshold for t in tail_totals):
             return True
 
     # Criterion 2: negative return loss proxy (IC < -0.05 for 3 epochs)
@@ -144,23 +141,36 @@ def build_retrain_cmd(
     cmd = [
         sys.executable,
         str(work_dir / "scripts" / "retrain_gnn.py"),
-        "--epochs", str(target_epoch),
-        "--hidden-dim", "128",
-        "--num-layers", "2",
-        "--num-heads", "2",
-        "--lr", "1e-3",
+        "--epochs",
+        str(target_epoch),
+        "--hidden-dim",
+        "128",
+        "--num-layers",
+        "2",
+        "--num-heads",
+        "2",
+        "--lr",
+        "1e-3",
         "--backup",
-        "--window-size", "604800",
-        "--gdelt-frac", "0.05",
-        "--max-windows", "200",
+        "--window-size",
+        "604800",
+        "--gdelt-frac",
+        "0.05",
+        "--max-windows",
+        "200",
         "--auto-tune",
         "--listnet",
-        "--return-log-var-max", "0.0",
-        "--device", device,
+        "--return-log-var-max",
+        "0.0",
+        "--device",
+        device,
         "--skip-eval",
-        "--checkpoint-dir", str(checkpoint_dir),
-        "--model-out", model_out,
-        "--resume", str(resume_epoch),
+        "--checkpoint-dir",
+        str(checkpoint_dir),
+        "--model-out",
+        model_out,
+        "--resume",
+        str(resume_epoch),
     ]
     if config_file is not None and config_file.exists():
         cmd += ["--config-file", str(config_file)]
@@ -264,7 +274,10 @@ def sync_state_to_github(
     if github_token:
         _set_remote = subprocess.run(
             [
-                "git", "remote", "set-url", "origin",
+                "git",
+                "remote",
+                "set-url",
+                "origin",
                 f"https://{github_token}@github.com/savabs/tirramind.git",
             ],
             cwd=str(work_dir),
@@ -331,7 +344,9 @@ def sync_state_to_github(
 # ---------------------------------------------------------------------------
 
 
-def load_config_if_current(config_path: Path, current_epoch: int, block_size: int) -> Path | None:
+def load_config_if_current(
+    config_path: Path, current_epoch: int, block_size: int
+) -> Path | None:
     """Return config_path if it's valid for the current epoch, else None.
 
     A config file is considered stale if its based_on_epoch is more than
@@ -381,10 +396,16 @@ def run(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0915
     github_token: str | None = None
     try:
         from kaggle_secrets import UserSecretsClient  # type: ignore[import-not-found]
+
         github_token = UserSecretsClient().get_secret("tirramind_token")
-        print("[sync] GitHub token loaded from Kaggle secret 'tirramind_token'.", flush=True)
+        print(
+            "[sync] GitHub token loaded from Kaggle secret 'tirramind_token'.",
+            flush=True,
+        )
     except Exception:
-        github_token = os.environ.get("GITHUB_WRITE_TOKEN") or os.environ.get("GITHUB_TOKEN")
+        github_token = os.environ.get("GITHUB_WRITE_TOKEN") or os.environ.get(
+            "GITHUB_TOKEN"
+        )
         if github_token:
             print("[sync] GitHub token loaded from environment.", flush=True)
         else:
@@ -400,13 +421,21 @@ def run(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0915
             Path(args.config_file), latest_epoch, block_size
         )
         if current_config_file:
-            print(f"[config] Using provided config file: {current_config_file}", flush=True)
+            print(
+                f"[config] Using provided config file: {current_config_file}",
+                flush=True,
+            )
     else:
         # Check if auto_improve left one from a previous block/session
         candidate = checkpoint_dir / "next_config.json"
-        current_config_file = load_config_if_current(candidate, latest_epoch, block_size)
+        current_config_file = load_config_if_current(
+            candidate, latest_epoch, block_size
+        )
         if current_config_file:
-            print(f"[config] Found previous session next_config.json — applying.", flush=True)
+            print(
+                f"[config] Found previous session next_config.json — applying.",
+                flush=True,
+            )
 
     # ── One-time pre-flight: CFTC enrichment ─────────────────────────────────
     print("\n[pre-flight] Running CFTC derived feature enrichment...", flush=True)
@@ -417,7 +446,9 @@ def run(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0915
             cwd=str(work_dir),
         )
         if enrich_result.returncode != 0:
-            print("[pre-flight] WARNING: CFTC enrichment failed (non-fatal).", flush=True)
+            print(
+                "[pre-flight] WARNING: CFTC enrichment failed (non-fatal).", flush=True
+            )
         else:
             print("[pre-flight] CFTC derived features ready.", flush=True)
     else:
@@ -501,9 +532,12 @@ def run(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0915
         # ── Auto-improve: pattern detection + next_config ─────────────────────
         auto_improve_script = work_dir / "scripts" / "auto_improve.py"
         ai_cmd = [
-            sys.executable, str(auto_improve_script),
-            "--checkpoint-dir", str(checkpoint_dir),
-            "--knowledge-dir", str(knowledge_dir),
+            sys.executable,
+            str(auto_improve_script),
+            "--checkpoint-dir",
+            str(checkpoint_dir),
+            "--knowledge-dir",
+            str(knowledge_dir),
             "--no-watch",
         ]
         print("\n[orchestrator] Running auto_improve...", flush=True)
@@ -611,7 +645,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--checkpoint-dir",
         required=True,
         help="Directory containing epoch_*.pt checkpoints and metrics.jsonl. "
-             "Typically .tirra_pipeline/checkpoints/h_g/",
+        "Typically .tirra_pipeline/checkpoints/h_g/",
     )
     p.add_argument(
         "--db-path",
@@ -645,7 +679,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--config-file",
         default=None,
         help="Path to next_config.json from a previous session. "
-             "If not given, checks checkpoint-dir/next_config.json automatically.",
+        "If not given, checks checkpoint-dir/next_config.json automatically.",
     )
     return p.parse_args(argv)
 

@@ -481,7 +481,9 @@ def classify_pattern(
     if llm_result is not None:
         return llm_result
     print("  [heuristic] No LLM available — using rule-based classification.")
-    return _heuristic_classify(records, improvement_history, window, stagnation_threshold)
+    return _heuristic_classify(
+        records, improvement_history, window, stagnation_threshold
+    )
 
 
 # ---------------------------------------------------------------------------

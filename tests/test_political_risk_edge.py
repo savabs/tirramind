@@ -20,7 +20,6 @@ import httpx
 import pytest
 
 from agent.tools.political_risk import (
-    _CACHE_TTL,
     _FEC_BASE,
     VALID_MODES,
     VALID_OFFICES,

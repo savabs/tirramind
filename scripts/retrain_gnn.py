@@ -358,6 +358,7 @@ def main() -> None:
             console.print(f"[red]ERROR: --config-file {_cf} not found.[/]")
             sys.exit(1)
         import json as _json_cfg  # noqa: PLC0415
+
         _overrides = _json_cfg.loads(_cf.read_text())
         _flag_map = _overrides.get("flag_overrides", {})
         _remove = set(_overrides.get("remove_flags", []))
@@ -511,23 +512,29 @@ def main() -> None:
         if args.checkpoint_dir:
             import json as _json_rc  # noqa: PLC0415
             import time as _time_rc  # noqa: PLC0415
+
             _rc_path = Path(args.checkpoint_dir) / "run_config.json"
             _rc_path.parent.mkdir(parents=True, exist_ok=True)
-            _rc_path.write_text(_json_rc.dumps({
-                "started": _time_rc.strftime("%Y-%m-%dT%H:%M:%S"),
-                "resume_from_epoch": config.resume_from_epoch,
-                "config": {
-                    "lr": config.learning_rate,
-                    "return_weight": float(config.return_weight),
-                    "gdelt_frac": float(config.gdelt_subsample_frac),
-                    "listnet_temp": float(config.listnet_temperature),
-                    "auto_tune": bool(config.auto_tune_loss_weights),
-                    "use_listnet": bool(config.use_listnet_return_loss),
-                    "epochs": config.epochs,
-                    "hidden_dim": config.hidden_dim,
-                    "direction_loss": bool(config.use_direction_loss),
-                },
-            }, indent=2))
+            _rc_path.write_text(
+                _json_rc.dumps(
+                    {
+                        "started": _time_rc.strftime("%Y-%m-%dT%H:%M:%S"),
+                        "resume_from_epoch": config.resume_from_epoch,
+                        "config": {
+                            "lr": config.learning_rate,
+                            "return_weight": float(config.return_weight),
+                            "gdelt_frac": float(config.gdelt_subsample_frac),
+                            "listnet_temp": float(config.listnet_temperature),
+                            "auto_tune": bool(config.auto_tune_loss_weights),
+                            "use_listnet": bool(config.use_listnet_return_loss),
+                            "epochs": config.epochs,
+                            "hidden_dim": config.hidden_dim,
+                            "direction_loss": bool(config.use_direction_loss),
+                        },
+                    },
+                    indent=2,
+                )
+            )
 
         console.print(f"\n[bold cyan]═══ Training Config ═══[/]")
         console.print(f"  epochs={config.epochs}, lr={config.learning_rate}")
@@ -634,20 +641,29 @@ def main() -> None:
     if args.auto_improve and args.checkpoint_dir:
         console.print("\n[cyan]Running auto-improve stagnation check...[/]")
         import subprocess as _sp  # noqa: PLC0415
+
         _ai_script = Path(__file__).parent / "auto_improve.py"
         _result = _sp.run(
             [
-                sys.executable, str(_ai_script),
-                "--checkpoint-dir", args.checkpoint_dir,
+                sys.executable,
+                str(_ai_script),
+                "--checkpoint-dir",
+                args.checkpoint_dir,
                 "--no-watch",
             ],
             capture_output=False,
         )
         if _result.returncode == 2:
-            console.print("[yellow]Auto-improve: stagnation detected — trigger + triage written to knowledge/[/]")
-            console.print("[yellow]  → Invoke 'apply training fix' in Copilot chat to apply the patch.[/]")
+            console.print(
+                "[yellow]Auto-improve: stagnation detected — trigger + triage written to knowledge/[/]"
+            )
+            console.print(
+                "[yellow]  → Invoke 'apply training fix' in Copilot chat to apply the patch.[/]"
+            )
         elif _result.returncode == 0:
-            console.print("[green]Auto-improve: return loss improving — no action needed.[/]")
+            console.print(
+                "[green]Auto-improve: return loss improving — no action needed.[/]"
+            )
 
     sys.exit(0)
 

@@ -1,4 +1,9 @@
 ---
+title: Apply Training Fix Skill
+tags:
+  - doc/wiki
+  - topic/pipeline
+  - layer/learning
 name: apply-training-fix
 description: Use this skill when asked to apply a training fix from a diagnostic report. Reads the latest knowledge/diag_*.md, identifies the highest-ranked code change, and writes the actual patch to agent/models/gnn/trainer.py or scripts/retrain_gnn.py.
 ---

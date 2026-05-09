@@ -264,7 +264,16 @@ class TestParseEIARecords:
     def test_fields_extracted(self):
         raw = [_stock_record()]
         r = _parse_eia_records(raw)[0]
-        expected = {"period", "area", "product", "process", "series", "series_description", "value", "units"}
+        expected = {
+            "period",
+            "area",
+            "product",
+            "process",
+            "series",
+            "series_description",
+            "value",
+            "units",
+        }
         assert expected == set(r.keys())
 
 
@@ -657,7 +666,14 @@ class TestCache:
         cache.get.return_value = {
             "output": "",
             "data": {
-                "records": [{"value": 100.0, "units": "kb", "series_description": "test", "period": "2024-01"}],
+                "records": [
+                    {
+                        "value": 100.0,
+                        "units": "kb",
+                        "series_description": "test",
+                        "period": "2024-01",
+                    }
+                ],
                 "signals": {"latest_value": 100.0, "alert": None},
             },
         }

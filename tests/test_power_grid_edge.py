@@ -27,12 +27,48 @@ def _make_demand_csv(rows: list[dict] | None = None) -> str:
     header = "Time Stamp,Time Zone,Name,PTID,Load\n"
     if rows is None:
         rows = [
-            {"ts": "03/25/2026 00:00:00", "tz": "EDT", "name": "N.Y.C.", "ptid": "61761", "load": "4500.0"},
-            {"ts": "03/25/2026 00:05:00", "tz": "EDT", "name": "N.Y.C.", "ptid": "61761", "load": "4520.0"},
-            {"ts": "03/25/2026 00:10:00", "tz": "EDT", "name": "N.Y.C.", "ptid": "61761", "load": "4480.0"},
-            {"ts": "03/25/2026 00:00:00", "tz": "EDT", "name": "CAPITL", "ptid": "61757", "load": "1100.0"},
-            {"ts": "03/25/2026 00:05:00", "tz": "EDT", "name": "CAPITL", "ptid": "61757", "load": "1120.0"},
-            {"ts": "03/25/2026 00:10:00", "tz": "EDT", "name": "CAPITL", "ptid": "61757", "load": "1080.0"},
+            {
+                "ts": "03/25/2026 00:00:00",
+                "tz": "EDT",
+                "name": "N.Y.C.",
+                "ptid": "61761",
+                "load": "4500.0",
+            },
+            {
+                "ts": "03/25/2026 00:05:00",
+                "tz": "EDT",
+                "name": "N.Y.C.",
+                "ptid": "61761",
+                "load": "4520.0",
+            },
+            {
+                "ts": "03/25/2026 00:10:00",
+                "tz": "EDT",
+                "name": "N.Y.C.",
+                "ptid": "61761",
+                "load": "4480.0",
+            },
+            {
+                "ts": "03/25/2026 00:00:00",
+                "tz": "EDT",
+                "name": "CAPITL",
+                "ptid": "61757",
+                "load": "1100.0",
+            },
+            {
+                "ts": "03/25/2026 00:05:00",
+                "tz": "EDT",
+                "name": "CAPITL",
+                "ptid": "61757",
+                "load": "1120.0",
+            },
+            {
+                "ts": "03/25/2026 00:10:00",
+                "tz": "EDT",
+                "name": "CAPITL",
+                "ptid": "61757",
+                "load": "1080.0",
+            },
         ]
     lines = header
     for r in rows:
@@ -45,12 +81,42 @@ def _make_fuel_mix_csv(rows: list[dict] | None = None) -> str:
     header = "Time Stamp,Time Zone,Fuel Category,Gen MWh\n"
     if rows is None:
         rows = [
-            {"ts": "03/25/2026 04:00:00", "tz": "EDT", "fuel": "Natural Gas", "gen": "3500.0"},
-            {"ts": "03/25/2026 04:00:00", "tz": "EDT", "fuel": "Nuclear", "gen": "2000.0"},
-            {"ts": "03/25/2026 04:00:00", "tz": "EDT", "fuel": "Hydro", "gen": "1500.0"},
-            {"ts": "03/25/2026 04:05:00", "tz": "EDT", "fuel": "Natural Gas", "gen": "3600.0"},
-            {"ts": "03/25/2026 04:05:00", "tz": "EDT", "fuel": "Nuclear", "gen": "1990.0"},
-            {"ts": "03/25/2026 04:05:00", "tz": "EDT", "fuel": "Hydro", "gen": "1510.0"},
+            {
+                "ts": "03/25/2026 04:00:00",
+                "tz": "EDT",
+                "fuel": "Natural Gas",
+                "gen": "3500.0",
+            },
+            {
+                "ts": "03/25/2026 04:00:00",
+                "tz": "EDT",
+                "fuel": "Nuclear",
+                "gen": "2000.0",
+            },
+            {
+                "ts": "03/25/2026 04:00:00",
+                "tz": "EDT",
+                "fuel": "Hydro",
+                "gen": "1500.0",
+            },
+            {
+                "ts": "03/25/2026 04:05:00",
+                "tz": "EDT",
+                "fuel": "Natural Gas",
+                "gen": "3600.0",
+            },
+            {
+                "ts": "03/25/2026 04:05:00",
+                "tz": "EDT",
+                "fuel": "Nuclear",
+                "gen": "1990.0",
+            },
+            {
+                "ts": "03/25/2026 04:05:00",
+                "tz": "EDT",
+                "fuel": "Hydro",
+                "gen": "1510.0",
+            },
         ]
     lines = header
     for r in rows:
@@ -406,8 +472,20 @@ class TestDemandMode:
         """Rows with non-numeric load values should be skipped."""
         t = _make_tool()
         rows = [
-            {"ts": "03/25/2026 00:00:00", "tz": "EDT", "name": "N.Y.C.", "ptid": "61761", "load": "not_a_number"},
-            {"ts": "03/25/2026 00:05:00", "tz": "EDT", "name": "N.Y.C.", "ptid": "61761", "load": "4500.0"},
+            {
+                "ts": "03/25/2026 00:00:00",
+                "tz": "EDT",
+                "name": "N.Y.C.",
+                "ptid": "61761",
+                "load": "not_a_number",
+            },
+            {
+                "ts": "03/25/2026 00:05:00",
+                "tz": "EDT",
+                "name": "N.Y.C.",
+                "ptid": "61761",
+                "load": "4500.0",
+            },
         ]
         csv_text = _make_demand_csv(rows)
         with patch.object(t, "_fetch_csv", return_value=t._parse_csv(csv_text)):
@@ -477,7 +555,12 @@ class TestFuelMixMode:
         """All generation values are 0."""
         t = _make_tool()
         rows = [
-            {"ts": "03/25/2026 04:00:00", "tz": "EDT", "fuel": "Natural Gas", "gen": "0"},
+            {
+                "ts": "03/25/2026 04:00:00",
+                "tz": "EDT",
+                "fuel": "Natural Gas",
+                "gen": "0",
+            },
             {"ts": "03/25/2026 04:00:00", "tz": "EDT", "fuel": "Nuclear", "gen": "0"},
         ]
         csv_text = _make_fuel_mix_csv(rows)
@@ -799,7 +882,11 @@ class TestArchiveParsing:
 
         with patch("agent.tools.power_grid.httpx.Client") as MockClient:
             instance = MockClient.return_value.__enter__.return_value
-            resp = httpx.Response(200, content=zip_buf.getvalue(), request=httpx.Request("GET", "http://test"))
+            resp = httpx.Response(
+                200,
+                content=zip_buf.getvalue(),
+                request=httpx.Request("GET", "http://test"),
+            )
             instance.get.return_value = resp
             rows = t._fetch_from_archive("pal", "2026-03-15")
         assert rows is not None
@@ -810,7 +897,11 @@ class TestArchiveParsing:
         t = _make_tool()
         with patch("agent.tools.power_grid.httpx.Client") as MockClient:
             instance = MockClient.return_value.__enter__.return_value
-            resp = httpx.Response(200, content=b"not a zip file", request=httpx.Request("GET", "http://test"))
+            resp = httpx.Response(
+                200,
+                content=b"not a zip file",
+                request=httpx.Request("GET", "http://test"),
+            )
             instance.get.return_value = resp
             rows = t._fetch_from_archive("pal", "2026-03-15")
         assert rows is None
@@ -824,7 +915,11 @@ class TestArchiveParsing:
 
         with patch("agent.tools.power_grid.httpx.Client") as MockClient:
             instance = MockClient.return_value.__enter__.return_value
-            resp = httpx.Response(200, content=zip_buf.getvalue(), request=httpx.Request("GET", "http://test"))
+            resp = httpx.Response(
+                200,
+                content=zip_buf.getvalue(),
+                request=httpx.Request("GET", "http://test"),
+            )
             instance.get.return_value = resp
             rows = t._fetch_from_archive("pal", "2026-03-20")
         assert rows is None
@@ -880,7 +975,11 @@ class TestCacheInteraction:
 
         with patch("agent.tools.power_grid.httpx.Client") as MockClient:
             instance = MockClient.return_value.__enter__.return_value
-            resp = httpx.Response(200, content=zip_buf.getvalue(), request=httpx.Request("GET", "http://test"))
+            resp = httpx.Response(
+                200,
+                content=zip_buf.getvalue(),
+                request=httpx.Request("GET", "http://test"),
+            )
             instance.get.return_value = resp
             t._fetch_from_archive("pal", "2026-03-15")
         # Should cache with nyiso_archive source

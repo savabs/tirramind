@@ -60,9 +60,7 @@ def _rolling_percentile_rank(series: list[float], window: int) -> list[float]:
     return ranks
 
 
-def compute_derived_features(
-    db_path: Path, dry_run: bool = False
-) -> dict[str, int]:
+def compute_derived_features(db_path: Path, dry_run: bool = False) -> dict[str, int]:
     """Read futures_positioning obs and write derived obs.
 
     Returns dict of count statistics.
@@ -80,7 +78,9 @@ def compute_derived_features(
     ).fetchall()
 
     if not rows:
-        log.warning("No futures_positioning observations found in DB — nothing to derive.")
+        log.warning(
+            "No futures_positioning observations found in DB — nothing to derive."
+        )
         return {"derived_written": 0, "entities": 0}
 
     # ── 2. Group by entity, build time-ordered series ─────────────────────

@@ -19,6 +19,8 @@ import json
 import logging
 import sqlite3
 from datetime import UTC, datetime
+
+UTC = UTC
 from pathlib import Path
 from typing import Any
 
@@ -46,22 +48,14 @@ class ExperimentTracker:
         """Return entity/observation counts from the live DB."""
         con = sqlite3.connect(self._db_path)
         try:
-            entity_rows = con.execute(
-                "SELECT entity_type, COUNT(*) FROM entities GROUP BY entity_type"
-            ).fetchall()
+            entity_rows = con.execute("SELECT entity_type, COUNT(*) FROM entities GROUP BY entity_type").fetchall()
             obs_rows = con.execute(
-                "SELECT source_tool, COUNT(*) FROM entity_observations "
-                "GROUP BY source_tool ORDER BY COUNT(*) DESC"
+                "SELECT source_tool, COUNT(*) FROM entity_observations GROUP BY source_tool ORDER BY COUNT(*) DESC"
             ).fetchall()
-            total_obs = con.execute(
-                "SELECT COUNT(*) FROM entity_observations"
-            ).fetchone()[0]
-            total_ent = con.execute(
-                "SELECT COUNT(*) FROM entities"
-            ).fetchone()[0]
+            total_obs = con.execute("SELECT COUNT(*) FROM entity_observations").fetchone()[0]
+            total_ent = con.execute("SELECT COUNT(*) FROM entities").fetchone()[0]
             link_rows = con.execute(
-                "SELECT link_type, COUNT(*) FROM entity_links GROUP BY link_type "
-                "ORDER BY COUNT(*) DESC"
+                "SELECT link_type, COUNT(*) FROM entity_links GROUP BY link_type ORDER BY COUNT(*) DESC"
             ).fetchall()
         finally:
             con.close()
@@ -81,17 +75,11 @@ class ExperimentTracker:
         try:
             import torch
 
-            ckpt = torch.load(
-                self._model_path, map_location="cpu", weights_only=False
-            )
+            ckpt = torch.load(self._model_path, map_location="cpu", weights_only=False)
             if isinstance(ckpt, dict):
                 epoch = ckpt.get("epoch", -1)
                 cfg = ckpt.get("config", {})
-                log_vars = {
-                    k: float(v.item())
-                    for k, v in ckpt.get("model_state_dict", {}).items()
-                    if "log_var" in k
-                }
+                log_vars = {k: float(v.item()) for k, v in ckpt.get("model_state_dict", {}).items() if "log_var" in k}
                 return {
                     "available": True,
                     "path": str(self._model_path),
@@ -178,19 +166,13 @@ class ExperimentTracker:
         # Data changes
         da, db = a.get("data_snapshot", {}), b.get("data_snapshot", {})
         result["data_delta"] = {
-            "total_observations": db.get("total_observations", 0)
-            - da.get("total_observations", 0),
-            "total_entities": db.get("total_entities", 0)
-            - da.get("total_entities", 0),
+            "total_observations": db.get("total_observations", 0) - da.get("total_observations", 0),
+            "total_entities": db.get("total_entities", 0) - da.get("total_entities", 0),
         }
         # Per-source obs delta
         sa, sb = da.get("obs_by_source", {}), db.get("obs_by_source", {})
         all_sources = set(sa) | set(sb)
-        src_delta = {
-            s: sb.get(s, 0) - sa.get(s, 0)
-            for s in sorted(all_sources)
-            if sb.get(s, 0) - sa.get(s, 0) != 0
-        }
+        src_delta = {s: sb.get(s, 0) - sa.get(s, 0) for s in sorted(all_sources) if sb.get(s, 0) - sa.get(s, 0) != 0}
         result["data_delta"]["obs_by_source_delta"] = src_delta
 
         # IC changes
@@ -268,36 +250,30 @@ def compute_stratified_ic(
         # For CFTC: instruments linked via cftc_tracks
         cftc_instruments = set(
             r[0]
-            for r in con.execute(
-                """SELECT DISTINCT el.entity_id_b
+            for r in con.execute("""SELECT DISTINCT el.entity_id_b
                    FROM entity_links el
                    JOIN entities ea ON el.entity_id_a = ea.entity_id
                    WHERE ea.entity_type = 'cftc_contract'
-                   AND el.link_type = 'cftc_tracks'"""
-            ).fetchall()
+                   AND el.link_type = 'cftc_tracks'""").fetchall()
         )
         # Reverse: instrument is entity_id_a in some links?
         cftc_instruments |= set(
             r[0]
-            for r in con.execute(
-                """SELECT DISTINCT el.entity_id_a
+            for r in con.execute("""SELECT DISTINCT el.entity_id_a
                    FROM entity_links el
                    JOIN entities eb ON el.entity_id_b = eb.entity_id
                    WHERE eb.entity_type = 'cftc_contract'
-                   AND el.link_type = 'cftc_tracks'"""
-            ).fetchall()
+                   AND el.link_type = 'cftc_tracks'""").fetchall()
         )
 
         # For polymarket: instruments linked via topic_relates_to_inst
         poly_instruments = set(
             r[0]
-            for r in con.execute(
-                """SELECT DISTINCT el.entity_id_b
+            for r in con.execute("""SELECT DISTINCT el.entity_id_b
                    FROM entity_links el
                    JOIN entities ea ON el.entity_id_a = ea.entity_id
                    WHERE ea.entity_type = 'topic'
-                   AND el.link_type = 'topic_relates_to_inst'"""
-            ).fetchall()
+                   AND el.link_type = 'topic_relates_to_inst'""").fetchall()
         )
 
         # For country links: instruments with any located_in / produced_in link
@@ -388,8 +364,11 @@ def print_stratified_ic_report(stratified: dict[str, dict]) -> None:
     for strat_name, groups in stratified.items():
         print(f"  Strategy: {strat_name}")
         # Print paired comparisons
-        pairs = [("has_cftc", "no_cftc"), ("has_polymarket", "no_polymarket"),
-                 ("has_geo_link", "no_geo_link")]
+        pairs = [
+            ("has_cftc", "no_cftc"),
+            ("has_polymarket", "no_polymarket"),
+            ("has_geo_link", "no_geo_link"),
+        ]
         for has_key, no_key in pairs:
             g_has = groups.get(has_key, {})
             g_no = groups.get(no_key, {})
@@ -402,9 +381,7 @@ def print_stratified_ic_report(stratified: dict[str, dict]) -> None:
             icir_no = g_no.get("icir", float("nan"))
             n_has = g_has.get("n_instruments", 0)
             n_no = g_no.get("n_instruments", 0)
-            delta = mic_has - mic_no if (
-                isinstance(mic_has, float) and isinstance(mic_no, float)
-            ) else float("nan")
+            delta = mic_has - mic_no if (isinstance(mic_has, float) and isinstance(mic_no, float)) else float("nan")
 
             verdict = ""
             if isinstance(delta, float):
