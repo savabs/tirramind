@@ -819,7 +819,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--hf-repo",
         default=None,
         help="Hugging Face Hub dataset repo to push checkpoints to after each session "
-        "(e.g. 'savabs/tirramind-hg-data'). "
+        "(e.g. 'aurabear/tirramind-hg-data'). "
         "Requires HF_TOKEN env var (add as Kaggle secret 'HF_TOKEN').",
     )
     return p.parse_args(argv)
