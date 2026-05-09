@@ -193,9 +193,8 @@ When writing patches, be aware of:
 3. **Loss weighting is in `_compute_return_loss()`** and `auto_tune_loss_weights()`.
    The ratio warning is around line 1655.
 
-4. **ListNet temperature tau** is not currently in `TrainerConfig` — it's a hardcoded
-   `/ temperature` in `_listnet_loss()`. If the report recommends tuning tau,
-   add it to `TrainerConfig` and pass it through.
+4. **ListNet temperature tau** is in `TrainerConfig.listnet_temperature` (added in the
+   self-improving loop update). It is passed as `--listnet-temperature` on the CLI.
 
 5. **The GDELT imbalance fix** is controlled by `--gdelt-frac` in `retrain_gnn.py`
    (default 0.05). If the report recommends reducing GDELT further, lower the default.
@@ -208,6 +207,68 @@ When writing patches, be aware of:
 
 ---
 
+## Self-improvement loop context
+
+The `auto_improve.py` fast path writes `{checkpoint_dir}/next_config.json`. Before
+patching, always check whether the issue was already addressed by a fast-path config
+change (it means the current problem is configuration, not code):
+
+```bash
+cat .tirra_pipeline/checkpoints/next_config.json 2>/dev/null | python3 -m json.tool
+```
+
+### Reading `next_config.json`
+
+The file has this structure:
+```json
+{
+  "generated":      "2026-05-09T10:00:00",
+  "based_on_epoch": 22,
+  "pattern":        "dt_dominance",
+  "rationale":      "...",
+  "resume_epoch":   22,
+  "flag_overrides": {"return_weight": 2.0},
+  "remove_flags":   [],
+  "previous_config": {"lr": 0.001, "return_weight": 1.0, ...},
+  "example_command": "python3 scripts/retrain_gnn.py --resume 22 ..."
+}
+```
+
+Key fields for your decision:
+- `pattern` — which stagnation pattern was detected (see table below)
+- `flag_overrides` — the recommended flag changes for the NEXT run (config fix only)
+- `remove_flags` — flags that should be disabled (e.g. `["--auto-tune"]`)
+- `rationale` — why this was recommended
+
+**Pattern → action table:**
+
+| pattern | Meaning | What it changes |
+|---|---|---|
+| `divergence` | Return loss increasing | Reduce LR by 70% |
+| `auto_tune_suppressing` | auto_tune silencing return head | Disable auto_tune, set return_weight=2.0 |
+| `dt_dominance` | dt_loss >> return_loss | Double return_weight (cap 4.0) |
+| `oscillation` | Return loss CV > 12% | Halve LR |
+| `gdelt_noise` | GDELT fraction too high | Halve gdelt_frac |
+| `listnet_temperature` | ListNet tau too smooth | Halve tau |
+| `structural` | All fast-path options exhausted | Escalated to research loop |
+
+**Decision rule:** If a `next_config.json` exists AND its `pattern` is NOT `structural`,
+the recommended change is already a config change — do not patch code. Tell the user to
+run `retrain_gnn.py --config-file .tirra_pipeline/checkpoints/next_config.json` instead.
+
+### Reading `knowledge/improvement_history.jsonl`
+
+Each line is one past recommendation:
+```json
+{"ts": "2026-05-09T10:00:00", "epoch": 22, "pattern": "dt_dominance", "flag_overrides": {"return_weight": 2.0}, "rationale": "..."}
+```
+
+Use this to understand what has already been tried. If the same pattern appears 3+
+times in history without improvement, it has failed as a config fix and now requires
+a structural code change.
+
+---
+
 ## Safety rules for this skill
 
 - Only modify **leaf-node files**: `trainer.py` loss/config functions and `retrain_gnn.py` CLI.
@@ -216,3 +277,4 @@ When writing patches, be aware of:
 - Always run `py_compile` after patching. A syntax error is a hard blocker.
 - Always write a patch record. The patch is not complete without documentation.
 - If the diagnostic report's recommendation is ambiguous, ask the user to clarify before patching.
+

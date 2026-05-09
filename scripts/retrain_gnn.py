@@ -187,6 +187,34 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--return-weight",
+        type=float,
+        default=1.0,
+        help="Weight for the instrument return auxiliary loss (default: 1.0). "
+        "Increase (e.g. 2.0–4.0) when dt_loss dominates the return head signal. "
+        "Has no effect when --auto-tune is active (auto-tune learns its own weights).",
+    )
+    parser.add_argument(
+        "--listnet-temperature",
+        type=float,
+        default=1.0,
+        metavar="TAU",
+        help="ListNet softmax temperature tau (default: 1.0). "
+        "Lower = sharper target distribution → stronger IC gradient. "
+        "Try 0.5 when return loss is flat despite balanced losses.",
+    )
+    parser.add_argument(
+        "--config-file",
+        type=Path,
+        default=None,
+        metavar="FILE",
+        help="JSON file produced by auto_improve.py with recommended flag overrides. "
+        "Applied AFTER argparse so it can override any flag without re-specifying all args. "
+        "Keys must match CLI flag names with '--' stripped and '-' replaced by '_' "
+        "(e.g. 'return_weight', 'lr', 'gdelt_frac'). "
+        "Special key 'resume_epoch' maps to --resume.",
+    )
+    parser.add_argument(
         "--model-out",
         default=".tirra_pipeline/gnn_model.pt",
         help="Output path for trained model checkpoint",
@@ -320,6 +348,37 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    # ── Apply agent-recommended config overrides from --config-file ──────────
+    # auto_improve.py writes next_config.json with flag_overrides. Loading it
+    # here means the agent can recommend "--return-weight 2.0" and the next
+    # run picks it up without the user having to re-type all flags.
+    if args.config_file is not None:
+        _cf = Path(args.config_file)
+        if not _cf.exists():
+            console.print(f"[red]ERROR: --config-file {_cf} not found.[/]")
+            sys.exit(1)
+        import json as _json_cfg  # noqa: PLC0415
+        _overrides = _json_cfg.loads(_cf.read_text())
+        _flag_map = _overrides.get("flag_overrides", {})
+        _remove = set(_overrides.get("remove_flags", []))
+        for _flag, _val in _flag_map.items():
+            # '--return-weight' → 'return_weight'; '--lr' → 'lr'
+            _attr = _flag.lstrip("-").replace("-", "_")
+            if hasattr(args, _attr):
+                setattr(args, _attr, _val)
+                console.print(f"  [cyan][config-file] override: {_flag}={_val}[/]")
+        for _flag in _remove:
+            _attr = _flag.lstrip("-").replace("-", "_")
+            if hasattr(args, _attr):
+                setattr(args, _attr, False)  # store_true flags only
+                console.print(f"  [cyan][config-file] disabled: {_flag}[/]")
+        if "resume_epoch" in _overrides:
+            args.resume = int(_overrides["resume_epoch"])
+            console.print(f"  [cyan][config-file] resume_epoch={args.resume}[/]")
+        console.print(
+            f"  [cyan][config-file] applied overrides from {_cf.name} (pattern: {_overrides.get('pattern', '?')})[/]"
+        )
+
     db_path = Path(args.db_path)
     if not db_path.exists():
         console.print(f"[red]ERROR: {db_path} not found.[/]")
@@ -437,6 +496,8 @@ def main() -> None:
             max_windows=args.max_windows,
             use_direction_loss=args.direction_loss,
             direction_loss_weight=args.direction_loss_weight,
+            return_weight=args.return_weight,
+            listnet_temperature=args.listnet_temperature,
             wandb_project=args.wandb_project,
             wandb_run_name=args.wandb_run,
             wandb_tags=(
@@ -445,6 +506,28 @@ def main() -> None:
                 else None
             ),
         )
+
+        # ── Write run_config.json (agent reads this to know what was tried) ──
+        if args.checkpoint_dir:
+            import json as _json_rc  # noqa: PLC0415
+            import time as _time_rc  # noqa: PLC0415
+            _rc_path = Path(args.checkpoint_dir) / "run_config.json"
+            _rc_path.parent.mkdir(parents=True, exist_ok=True)
+            _rc_path.write_text(_json_rc.dumps({
+                "started": _time_rc.strftime("%Y-%m-%dT%H:%M:%S"),
+                "resume_from_epoch": config.resume_from_epoch,
+                "config": {
+                    "lr": config.learning_rate,
+                    "return_weight": float(config.return_weight),
+                    "gdelt_frac": float(config.gdelt_subsample_frac),
+                    "listnet_temp": float(config.listnet_temperature),
+                    "auto_tune": bool(config.auto_tune_loss_weights),
+                    "use_listnet": bool(config.use_listnet_return_loss),
+                    "epochs": config.epochs,
+                    "hidden_dim": config.hidden_dim,
+                    "direction_loss": bool(config.use_direction_loss),
+                },
+            }, indent=2))
 
         console.print(f"\n[bold cyan]═══ Training Config ═══[/]")
         console.print(f"  epochs={config.epochs}, lr={config.learning_rate}")

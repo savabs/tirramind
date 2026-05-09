@@ -1715,6 +1715,39 @@ class Trainer:
                     }
                 torch.save(ckpt_payload, ckpt_path)
                 log.info("  Checkpoint saved → %s", ckpt_path)
+                # ── Per-epoch metrics.jsonl (lightweight, no torch to read) ──
+                import json as _json_m  # noqa: PLC0415
+                _ret_loss = history["return"][-1] if history.get("return") else float("nan")
+                _dt_loss = history["time_delta"][-1] if history.get("time_delta") else float("nan")
+                _dt_ret_ratio = (
+                    _dt_loss / max(_ret_loss, 1e-8)
+                    if not (math.isnan(_ret_loss) or math.isnan(_dt_loss) or _ret_loss < 1e-10)
+                    else float("nan")
+                )
+                _epoch_record = {
+                    "epoch": epoch + 1,
+                    "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                    "loss": {
+                        "total": history["total"][-1] if history.get("total") else float("nan"),
+                        "return": _ret_loss,
+                        "dt": _dt_loss,
+                        "obs": history["obs_type"][-1] if history.get("obs_type") else float("nan"),
+                        "contrastive": history["contrastive"][-1] if history.get("contrastive") else float("nan"),
+                        "value": history["value"][-1] if history.get("value") else float("nan"),
+                    },
+                    "dt_ret_ratio": _dt_ret_ratio,
+                    "config": {
+                        "lr": cfg.learning_rate,
+                        "return_weight": float(cfg.return_weight),
+                        "gdelt_frac": float(getattr(cfg, "gdelt_subsample_frac", 1.0)),
+                        "listnet_temp": float(getattr(cfg, "listnet_temperature", 1.0)),
+                        "auto_tune": bool(cfg.auto_tune_loss_weights),
+                        "use_listnet": bool(getattr(cfg, "use_listnet_return_loss", False)),
+                    },
+                }
+                _metrics_path = os.path.join(cfg.checkpoint_dir, "metrics.jsonl")
+                with open(_metrics_path, "a") as _mf:
+                    _mf.write(_json_m.dumps(_epoch_record) + "\n")
         # After all epochs complete, approximate F_i ≈ E[(dL/dθ_i)²] on
         # the last training window pair.  This is the Laplace approximation
         # of the posterior p(θ | data_old) that EWC uses to protect
