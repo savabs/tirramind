@@ -311,6 +311,13 @@ def main() -> None:
         metavar="TAG1,TAG2",
         help="Comma-separated list of W&B tags for the run (e.g. 'h-a,phase43').",
     )
+    parser.add_argument(
+        "--auto-improve",
+        action="store_true",
+        help="After training completes, run auto_improve.py --no-watch to check for "
+        "IC stagnation and write a trigger file + triage report if detected. "
+        "Requires scripts/auto_improve.py and scripts/auto_research.py.",
+    )
     args = parser.parse_args()
 
     db_path = Path(args.db_path)
@@ -539,6 +546,25 @@ def main() -> None:
 
     finally:
         store.close()
+
+    # ── Auto-improve: post-training stagnation check ──────────────────────────
+    if args.auto_improve and args.checkpoint_dir:
+        console.print("\n[cyan]Running auto-improve stagnation check...[/]")
+        import subprocess as _sp  # noqa: PLC0415
+        _ai_script = Path(__file__).parent / "auto_improve.py"
+        _result = _sp.run(
+            [
+                sys.executable, str(_ai_script),
+                "--checkpoint-dir", args.checkpoint_dir,
+                "--no-watch",
+            ],
+            capture_output=False,
+        )
+        if _result.returncode == 2:
+            console.print("[yellow]Auto-improve: stagnation detected — trigger + triage written to knowledge/[/]")
+            console.print("[yellow]  → Invoke 'apply training fix' in Copilot chat to apply the patch.[/]")
+        elif _result.returncode == 0:
+            console.print("[green]Auto-improve: return loss improving — no action needed.[/]")
 
     sys.exit(0)
 
