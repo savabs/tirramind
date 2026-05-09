@@ -165,8 +165,7 @@ jobs:
 
       - name: Push new kernel version to Kaggle
         env:
-          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
-          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
           STATE: ${{ needs.parse_state.outputs.state }}
           EPOCH: ${{ needs.parse_state.outputs.epoch }}
         run: |
