@@ -170,10 +170,12 @@ Context:
 - Key metric to minimize: `return_loss` (lower = better IC/alpha).
 - `total_loss` = return_loss + temporal_loss. `dt_ret_ratio` = dt_loss / return_loss.
 - If dt_ret_ratio > 20, the temporal objective is starving the return head.
+- If return_loss variance < 0.1 over 5+ epochs despite other losses moving, the return head is frozen — gradient budget is being stolen by obs_type or dt losses.
 
 Tunable parameters:
 - lr (float, 5e-6 to 5e-3): learning rate
-- return_weight (float, 0.5–5.0): gradient weight on return head
+- return_weight (float, 0.5–10.0): gradient weight on return head — raise aggressively (8–10) when return head is frozen
+- obs_type_weight (float, 0.1–1.0): weight on obs_type classification loss — lower (0.2–0.3) when obs_type loss spikes are stealing gradient budget
 - gdelt_frac (float, 0.01–0.10): GDELT subsample fraction (lower = less noise)
 - listnet_temperature (float, 0.1–2.0): lower = sharper IC gradient
 - auto_tune (bool): uncertainty weighting — can suppress return head when ratio is high
@@ -188,8 +190,9 @@ Output ONLY a JSON object — no markdown, no text outside the JSON:
   "escalate": false
 }
 
-Valid pattern names: improving, divergence, oscillation, dt_dominance, auto_tune_suppressing, gdelt_noise, listnet_temperature, structural
-Use "structural" with escalate=true only when all other options have already been tried and failed."""
+Valid pattern names: improving, divergence, oscillation, dt_dominance, auto_tune_suppressing, gdelt_noise, listnet_temperature, return_head_frozen, structural
+Use "structural" with escalate=true only when all other options have already been tried and failed.
+Use "return_head_frozen" when return_loss variance < 0.1 over the last 5+ epochs — set return_weight=10 and obs_type_weight=0.3."""
 
 
 def _call_anthropic(messages: list[dict], api_key: str, model: str) -> str:
@@ -236,7 +239,9 @@ def _llm_classify(
             "epoch": r.get("epoch"),
             "total_loss": round(r.get("loss", {}).get("total", float("nan")), 5),
             "return_loss": round(r.get("loss", {}).get("return", float("nan")), 5),
+            "obs_type_loss": round(r.get("loss", {}).get("obs_type", float("nan")), 5),
             "dt_ret_ratio": round(r.get("dt_ret_ratio", float("nan")), 2),
+            "trainer_warnings": r.get("warnings", []),
         }
         for r in records[-15:]
     ]
@@ -353,6 +358,40 @@ def _heuristic_classify(
             "resume_epoch": last_epoch,
             "escalate": False,
         }
+
+    # ── PATTERN 1b: return_head_frozen ───────────────────────────────────────
+    # Return loss variance near zero for 5+ epochs while other losses are active.
+    # This is the "gradient budget stolen" failure mode: obs_type or dt losses
+    # are so large the return head gets <2% of gradients and stops moving.
+    # Fix: hammer return_weight up to 10 AND damp obs_type_weight to 0.3.
+    if len(ret_losses) >= 5:
+        ret_var = coefficient_of_variation(ret_losses[-5:])
+        obs_losses = _finite(
+            [r.get("loss", {}).get("obs_type", float("nan")) for r in recent]
+        )
+        obs_mean = sum(obs_losses) / len(obs_losses) if obs_losses else 0.0
+        if (
+            ret_var < 0.01  # variance < 1% of mean = frozen
+            and return_weight < 8.0
+            and recent_patterns.count("return_head_frozen") < 3
+        ):
+            new_rw = min(return_weight * 5.0, 10.0)
+            new_obs = 0.3
+            return "return_head_frozen", {
+                "rationale": (
+                    f"Return loss completely frozen (CV={ret_var:.4f} over last 5 epochs, "
+                    f"mean={ret_losses[-1]:.4f}). obs_type mean={obs_mean:.2f} stealing gradient budget. "
+                    f"Boosting return_weight {return_weight:.1f} → {new_rw:.1f} and "
+                    f"damping obs_type_weight 1.0 → {new_obs}."
+                ),
+                "flag_overrides": {
+                    "return_weight": new_rw,
+                    "obs_type_weight": new_obs,
+                },
+                "remove_flags": [],
+                "resume_epoch": last_epoch,
+                "escalate": False,
+            }
 
     # ── Not stagnant (and not diverging)? Genuinely improving. ───────────────
     if not is_stagnant(ret_losses, window, stagnation_threshold):

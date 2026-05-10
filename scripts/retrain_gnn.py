@@ -191,8 +191,16 @@ def main() -> None:
         type=float,
         default=1.0,
         help="Weight for the instrument return auxiliary loss (default: 1.0). "
-        "Increase (e.g. 2.0–4.0) when dt_loss dominates the return head signal. "
+        "Increase (e.g. 2.0–10.0) when dt_loss or obs_type_loss dominates the return head signal. "
         "Has no effect when --auto-tune is active (auto-tune learns its own weights).",
+    )
+    parser.add_argument(
+        "--obs-type-weight",
+        type=float,
+        default=1.0,
+        help="Weight for the obs_type classification loss (default: 1.0). "
+        "Reduce (e.g. 0.1–0.3) when obs_type loss spikes are stealing gradient budget "
+        "from the return head. Has no effect when --auto-tune is active.",
     )
     parser.add_argument(
         "--listnet-temperature",
@@ -498,6 +506,7 @@ def main() -> None:
             use_direction_loss=args.direction_loss,
             direction_loss_weight=args.direction_loss_weight,
             return_weight=args.return_weight,
+            obs_type_weight=args.obs_type_weight,
             listnet_temperature=args.listnet_temperature,
             wandb_project=args.wandb_project,
             wandb_run_name=args.wandb_run,
