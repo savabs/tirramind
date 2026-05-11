@@ -134,23 +134,31 @@ def build_retrain_cmd(
     model_out: str = ".tirra_pipeline/gnn_model_h_g.pt",
     wandb_project: str | None = None,
     wandb_run_name: str | None = None,
+    arch_overrides: dict | None = None,
 ) -> list[str]:
     """Build the retrain_gnn.py subprocess command.
 
     Mirrors the flags used in Kaggle notebook cell 11 exactly.
     If config_file is provided and exists, appends --config-file.
+    arch_overrides: dict with keys hidden_dim, num_layers, num_heads —
+    overrides the hardcoded defaults when a fresh-start architecture change
+    is requested by the LLM advisor.
     """
+    ao = arch_overrides or {}
+    hidden_dim = str(ao.get("hidden_dim", 128))
+    num_layers = str(ao.get("num_layers", 2))
+    num_heads = str(ao.get("num_heads", 2))
     cmd = [
         sys.executable,
         str(work_dir / "scripts" / "retrain_gnn.py"),
         "--epochs",
         str(target_epoch),
         "--hidden-dim",
-        "128",
+        hidden_dim,
         "--num-layers",
-        "2",
+        num_layers,
         "--num-heads",
-        "2",
+        num_heads,
         "--lr",
         "1e-3",
         "--backup",
@@ -389,7 +397,9 @@ def sync_checkpoint_to_hf(
 
     # Ensure the repo exists (no-op if already present)
     try:
-        api.create_repo(repo_id=hf_repo, repo_type="dataset", exist_ok=True, private=True)
+        api.create_repo(
+            repo_id=hf_repo, repo_type="dataset", exist_ok=True, private=True
+        )
     except Exception as exc:
         print(f"[hf-sync] WARNING: could not create/verify repo: {exc}", flush=True)
         return False
@@ -492,6 +502,7 @@ def run(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0915
     last_pattern = "none"
     state = PipelineState.SESSION_END
     last_flag_overrides: dict | None = None
+    current_arch_overrides: dict = {}  # set by advisor on fresh_start arch changes
 
     # Resolve optional github token (Kaggle secret name: tirramind_token)
     github_token: str | None = None
@@ -596,6 +607,7 @@ def run(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0915
             config_file=current_config_file,
             wandb_project=args.wandb_project if args.wandb_project else None,
             wandb_run_name=run_name if args.wandb_project else None,
+            arch_overrides=current_arch_overrides if current_arch_overrides else None,
         )
         print("[orchestrator] Running:", " ".join(cmd), flush=True)
 
@@ -659,14 +671,49 @@ def run(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0915
         elif ai_retcode == 1:
             # Config changed — load the new next_config.json for next block
             candidate = checkpoint_dir / "next_config.json"
+            fresh_arch: dict = {}
             if candidate.exists():
                 try:
                     cfg_data = json.loads(candidate.read_text())
                     last_pattern = cfg_data.get("pattern", "config_changed")
                     last_flag_overrides = cfg_data.get("flag_overrides", {})
-                except (json.JSONDecodeError, OSError):
+                    fresh_arch = cfg_data.get("arch_overrides", {})
+
+                    if cfg_data.get("fresh_start", False):
+                        # ── Fresh start: archive current checkpoints, reset ──
+                        import shutil as _shutil
+                        archive_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        archive_dir = checkpoint_dir.parent / f"{checkpoint_dir.name}_archive_{archive_ts}"
+                        print(
+                            f"[orchestrator] fresh_start requested by advisor "
+                            f"(pattern={last_pattern}). "
+                            f"Archiving {checkpoint_dir} → {archive_dir}",
+                            flush=True,
+                        )
+                        _shutil.move(str(checkpoint_dir), str(archive_dir))
+                        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+                        # Copy next_config.json into fresh dir so retrain picks it up
+                        import shutil as _shutil2
+                        _shutil2.copy2(str(archive_dir / "next_config.json"), str(candidate))
+                        latest_epoch = 0
+                        start_epoch = 0  # reset session start for summary
+                        print(
+                            f"[orchestrator] Fresh checkpoint dir created. "
+                            f"Starting from epoch 0 with "
+                            f"arch={fresh_arch or 'default'}, "
+                            f"flags={last_flag_overrides}",
+                            flush=True,
+                        )
+                except (json.JSONDecodeError, OSError) as _fresh_exc:
+                    print(
+                        f"[orchestrator] WARNING: could not read next_config.json "
+                        f"for fresh_start check: {_fresh_exc}",
+                        flush=True,
+                    )
                     last_pattern = "config_changed"
             current_config_file = candidate
+            # Carry arch overrides so next build_retrain_cmd uses them
+            current_arch_overrides = fresh_arch
             state = PipelineState.CONFIG_CHANGED
             print(
                 f"[orchestrator] Config updated ({last_pattern}). "
@@ -674,8 +721,9 @@ def run(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0915
                 flush=True,
             )
         else:
-            # Improving — clear any stale config
+            # Improving — clear any stale config and arch overrides
             current_config_file = None
+            current_arch_overrides = {}
             last_pattern = "improving"
             state = PipelineState.IMPROVING
 

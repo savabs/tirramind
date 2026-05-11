@@ -196,10 +196,26 @@ Output ONLY valid JSON — no markdown, no explanation outside the JSON:
   "pattern": "<descriptive_slug>",
   "rationale": "<2-3 sentences citing specific numbers from the metrics>",
   "flag_overrides": {},
+  "arch_overrides": {},
   "remove_flags": [],
   "resume_epoch": <int>,
+  "fresh_start": false,
   "escalate": false
-}"""
+}
+
+Field semantics:
+- flag_overrides: hyperparams compatible with the existing checkpoint (lr, return_weight, obs_type_weight, gdelt_frac, listnet_temperature, auto_tune)
+- arch_overrides: architecture changes that break checkpoint compatibility (hidden_dim, num_layers, num_heads). MUST be paired with fresh_start=true.
+- fresh_start: if true, the orchestrator archives the current checkpoint folder and starts training from epoch 0 with fresh weights. Use when (a) arch_overrides change tensor shapes, or (b) the model has been stuck for 15+ epochs with multiple config interventions and needs a clean slate.
+- resume_epoch: the epoch to resume from IF fresh_start=false. Ignored when fresh_start=true.
+- escalate: true only when the structural problem requires human paper research (writes trigger file).
+
+Architecture search space (use when fundamentally stuck):
+- hidden_dim: 64, 128, 256 (current=128; increase if model capacity is too low; fresh_start required)
+- num_layers: 1, 2, 3 (current=2; increase for deeper message passing; fresh_start required)
+- num_heads: 2, 4 (current=2; must divide hidden_dim; fresh_start required)
+
+Do NOT use fresh_start for lr, return_weight, obs_type_weight changes — these are compatible with existing weights."""
 
 
 def _call_anthropic(messages: list[dict], api_key: str, model: str) -> str:
@@ -279,11 +295,15 @@ def _llm_classify(
             if raw.startswith("json"):
                 raw = raw[4:]
         decision = json.loads(raw.strip())
+        arch = decision.get("arch_overrides", {})
+        fresh = bool(decision.get("fresh_start", bool(arch)))
         action = {
             "rationale": decision.get("rationale", "LLM decision"),
             "flag_overrides": decision.get("flag_overrides", {}),
+            "arch_overrides": arch,
             "remove_flags": decision.get("remove_flags", []),
-            "resume_epoch": decision.get("resume_epoch", last_epoch),
+            "resume_epoch": 0 if fresh else decision.get("resume_epoch", last_epoch),
+            "fresh_start": fresh,
             "escalate": bool(decision.get("escalate", False)),
         }
         pattern = decision.get("pattern", "structural")
@@ -545,12 +565,16 @@ def write_next_config(
 ) -> Path:
     """Write next_config.json — read by retrain_gnn.py --config-file."""
     out_path = checkpoint_dir / "next_config.json"
+    fresh = bool(action.get("fresh_start", False))
+    arch = action.get("arch_overrides", {})
     payload = {
         "generated": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
         "based_on_epoch": action.get("resume_epoch", 0),
         "pattern": pattern,
         "rationale": action.get("rationale", ""),
-        "resume_epoch": action.get("resume_epoch", 0),
+        "resume_epoch": 0 if fresh else action.get("resume_epoch", 0),
+        "fresh_start": fresh,
+        "arch_overrides": arch,
         "flag_overrides": action.get("flag_overrides", {}),
         "remove_flags": action.get("remove_flags", []),
         "previous_config": run_config.get("config", {}),
