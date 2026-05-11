@@ -22,6 +22,7 @@ Modes:
   stablecoins — Stablecoin supply by issuer (circulating, peg mechanism).
   dex_volume — DEX trading volumes, sorted by 24h volume.
   chain      — TVL aggregated by chain (Ethereum, Solana, etc.).
+  history    — Daily TVL time-series for top N protocols (years of history).
 """
 
 from __future__ import annotations
@@ -51,7 +52,9 @@ _DEXS_URL = "https://api.llama.fi/overview/dexs?excludeTotalDataChart=true&exclu
 _UA = "TirraMind/0.1"
 _TIMEOUT = 20
 
-VALID_MODES = {"tvl", "stablecoins", "dex_volume", "chain"}
+VALID_MODES = {"tvl", "stablecoins", "dex_volume", "chain", "history"}
+
+_PROTOCOL_HISTORY_URL = "https://api.llama.fi/protocol/{slug}"
 
 # Categories that are most market-relevant
 _MARKET_CATEGORIES = {
@@ -184,6 +187,7 @@ class DefiFlowsTool(Tool):
         limit = min(max(int(kwargs.get("limit", 20)), 1), 100)
         chain_filter = (kwargs.get("chain") or "").strip()
         category_filter = (kwargs.get("category") or "").strip()
+        days_back = int(kwargs.get("days_back", 730))
 
         try:
             if mode == "tvl":
@@ -194,6 +198,8 @@ class DefiFlowsTool(Tool):
                 return self._dex_volume(limit, chain_filter)
             elif mode == "chain":
                 return self._chain_tvl(limit)
+            elif mode == "history":
+                return self._tvl_history(limit, days_back, chain_filter, category_filter)
         except httpx.TimeoutException:
             return ToolResult(success=False, output="DefiLlama API timed out.")
         except httpx.HTTPError as exc:
@@ -379,6 +385,108 @@ class DefiFlowsTool(Tool):
                 "grand_total_tvl": round(grand_total, 2),
                 "count": len(results),
             },
+        )
+
+    def _tvl_history(
+        self,
+        limit: int,
+        days_back: int,
+        chain_filter: str,
+        category_filter: str,
+    ) -> ToolResult:
+        """Fetch daily TVL history for top N protocols.
+
+        Calls /protocol/{slug} for each of the top `limit` protocols and
+        writes one observation per day into the store. DeFiLlama provides
+        daily data going back to protocol creation (typically 2–5 years).
+        This is the key endpoint for building multi-year protocol density.
+        """
+        protocols_data = self._fetch_json(_PROTOCOLS_URL)
+        if protocols_data is None:
+            return ToolResult(success=False, output="Failed to fetch protocol list.")
+
+        if chain_filter:
+            cf_lower = chain_filter.lower()
+            protocols_data = [
+                p for p in protocols_data
+                if cf_lower in [c.lower() for c in (p.get("chains") or [])]
+            ]
+        if category_filter:
+            cat_lower = category_filter.lower()
+            protocols_data = [
+                p for p in protocols_data
+                if (p.get("category") or "").lower() == cat_lower
+            ]
+
+        protocols_data.sort(key=lambda p: p.get("tvl") or 0, reverse=True)
+        top_protocols = protocols_data[:limit]
+
+        cutoff_ts = time.time() - days_back * 86400
+        total_obs = 0
+        protocols_processed = 0
+
+        for proto in top_protocols:
+            slug = proto.get("slug") or proto.get("name", "").lower().replace(" ", "-")
+            if not slug:
+                continue
+
+            hist_url = _PROTOCOL_HISTORY_URL.format(slug=slug)
+            try:
+                hist = self._fetch_json(hist_url)
+            except Exception as exc:
+                log.debug("History fetch failed for %s: %s", slug, exc)
+                continue
+
+            if not isinstance(hist, dict):
+                continue
+
+            tvl_series = hist.get("tvl") or []
+            name = hist.get("name") or proto.get("name") or slug
+            category = hist.get("category") or proto.get("category") or ""
+            chains = hist.get("chains") or []
+
+            if self._store is not None and entity_id_from_key is not None:
+                protocol_eid = entity_id_from_key("protocol", name.lower())
+                self._store.register_entity(
+                    entity_type="protocol",
+                    canonical_name=name,
+                    entity_id=protocol_eid,
+                )
+                self._store.add_entity_alias(protocol_eid, "protocol_name", name)
+
+                for entry in tvl_series:
+                    ts = entry.get("date") or 0
+                    tvl_usd = entry.get("totalLiquidityUSD") or 0.0
+                    if ts < cutoff_ts:
+                        continue
+                    try:
+                        self._store.store_entity_observation(
+                            entity_id=protocol_eid,
+                            source_tool="defi_flows",
+                            observed_at=float(ts),
+                            observation_type="tvl_change",
+                            depth_level=2,
+                            value={
+                                "tvl_usd": round(float(tvl_usd), 2),
+                                "category": category,
+                                "chains": chains,
+                                "change_1d_pct": None,
+                                "change_7d_pct": None,
+                            },
+                        )
+                        total_obs += 1
+                    except Exception:
+                        log.debug("Obs write failed for %s ts=%s", name, ts)
+
+            protocols_processed += 1
+
+        return ToolResult(
+            success=True,
+            output=(
+                f"DeFiLlama historical TVL: {protocols_processed} protocols, "
+                f"{total_obs} daily observations (last {days_back}d)."
+            ),
+            data={"protocols_processed": protocols_processed, "observations_written": total_obs},
         )
 
     def _fetch_json(self, url: str) -> Any:

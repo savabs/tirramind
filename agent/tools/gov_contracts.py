@@ -200,6 +200,22 @@ class GovContractsTool(Tool):
                     metadata={"source": "gov_contracts", "original_name": agency},
                 )
 
+            # Store one observation per award for the agency (spans the contract timeline)
+            store.store_entity_observation(
+                entity_id=agency_eid,
+                source_tool="gov_contracts",
+                observed_at=ts,
+                observation_type="contract_award",
+                depth_level=2,
+                value={
+                    "award_id": award.get("award_id"),
+                    "amount_usd": award.get("amount_usd") or award.get("amount"),
+                    "recipient": recipient,
+                    "award_type": award.get("award_type"),
+                    "country": country_code,
+                },
+            )
+
             # ── awarded_by link (company → agency/org) ──
             if company_eid != agency_eid:
                 store.link_entities(
