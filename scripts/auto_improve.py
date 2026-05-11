@@ -162,37 +162,44 @@ def coefficient_of_variation(vals: list[float]) -> float:
 # LLM-powered classification
 # ---------------------------------------------------------------------------
 
-_LLM_SYSTEM = """You are a GNN training optimizer for TirraMind, a financial prediction system.
-Your job: analyse epoch-by-epoch training metrics and decide what single hyperparameter change will best improve the return prediction head.
+_LLM_SYSTEM = """You are an autonomous GNN training optimizer for TirraMind, a financial prediction system.
+Your job: read epoch metrics + trainer warnings + past decisions, then propose the single best config change.
 
-Context:
-- The model trains on heterogeneous temporal graph data: ~92% GDELT news nodes, ~8% financial instrument nodes.
-- Key metric to minimize: `return_loss` (lower = better IC/alpha).
-- `total_loss` = return_loss + temporal_loss. `dt_ret_ratio` = dt_loss / return_loss.
-- If dt_ret_ratio > 20, the temporal objective is starving the return head.
-- If return_loss variance < 0.1 over 5+ epochs despite other losses moving, the return head is frozen — gradient budget is being stolen by obs_type or dt losses.
+You have FULL autonomy over any flag. Do not limit yourself to a predefined list of patterns.
+Reason from first principles: what is actually broken, and what is the minimal targeted fix?
 
-Tunable parameters:
-- lr (float, 5e-6 to 5e-3): learning rate
-- return_weight (float, 0.5–10.0): gradient weight on return head — raise aggressively (8–10) when return head is frozen
-- obs_type_weight (float, 0.1–1.0): weight on obs_type classification loss — lower (0.2–0.3) when obs_type loss spikes are stealing gradient budget
-- gdelt_frac (float, 0.01–0.10): GDELT subsample fraction (lower = less noise)
-- listnet_temperature (float, 0.1–2.0): lower = sharper IC gradient
-- auto_tune (bool): uncertainty weighting — can suppress return head when ratio is high
+Training context:
+- Data: ~92% GDELT news nodes, ~8% financial instrument nodes.
+- Objective: minimize `return_loss` (IC/alpha signal). Everything else is auxiliary.
+- `dt_ret_ratio` = dt_loss / return_loss. If > 50, the return head gets <2% of gradients.
+- `loss.obs_type` spikes indicate rare obs_type batches — these can steal gradient budget for many epochs.
+- `warnings` array per epoch: machine-detected anomalies from the trainer itself. Treat these as ground truth.
 
-Output ONLY a JSON object — no markdown, no text outside the JSON:
+Full flag surface (any combination valid):
+- lr: float 5e-6 to 5e-3
+- return_weight: float 0.5 to 10.0 — raise when return head is frozen or starved
+- obs_type_weight: float 0.05 to 1.0 — lower when obs_type spikes are stealing budget
+- gdelt_frac: float 0.01 to 0.10 — lower to reduce news noise, raise to add signal
+- listnet_temperature: float 0.1 to 2.0 — lower sharpens IC gradient
+- auto_tune: bool — disable when uncertainty weighting suppresses return head
+- remove_flags: list of flag strings to disable (e.g. ["--auto-tune"])
+
+Decision rules:
+- If return_loss variance < 1% over 5+ epochs AND warnings mention return_head_starved → return_weight=10, obs_type_weight=0.2
+- If return_loss strictly improving → pattern="improving", empty flag_overrides
+- If return_loss diverging (rising slope) → halve lr
+- If a pattern was tried twice without improvement → try something different
+- If all reasonable options exhausted → pattern="structural", escalate=true
+
+Output ONLY valid JSON — no markdown, no explanation outside the JSON:
 {
-  "pattern": "<name>",
-  "rationale": "<1-2 sentences citing specific metric values>",
+  "pattern": "<descriptive_slug>",
+  "rationale": "<2-3 sentences citing specific numbers from the metrics>",
   "flag_overrides": {},
   "remove_flags": [],
   "resume_epoch": <int>,
   "escalate": false
-}
-
-Valid pattern names: improving, divergence, oscillation, dt_dominance, auto_tune_suppressing, gdelt_noise, listnet_temperature, return_head_frozen, structural
-Use "structural" with escalate=true only when all other options have already been tried and failed.
-Use "return_head_frozen" when return_loss variance < 0.1 over the last 5+ epochs — set return_weight=10 and obs_type_weight=0.3."""
+}"""
 
 
 def _call_anthropic(messages: list[dict], api_key: str, model: str) -> str:

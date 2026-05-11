@@ -15,6 +15,7 @@ Shows:
 
 Requires WANDB_API_KEY in .env or environment.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -67,12 +68,18 @@ query GetRuns($entityName: String!, $project: String!, $n: Int!) {
 
 def wandb_query(api_key: str, entity: str, project: str, n: int = 5) -> list[dict]:
     payload = json.dumps(
-        {"query": QUERY, "variables": {"entityName": entity, "project": project, "n": n}}
+        {
+            "query": QUERY,
+            "variables": {"entityName": entity, "project": project, "n": n},
+        }
     ).encode()
     req = urllib.request.Request(
         WANDB_GQL,
         data=payload,
-        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
     )
     with urllib.request.urlopen(req, timeout=15) as resp:
         data = json.loads(resp.read())
@@ -96,17 +103,27 @@ query GetHistory($entityName: String!, $project: String!, $runName: String!, $n:
 """
 
 
-def wandb_history(api_key: str, entity: str, project: str, run_name: str, n: int = 30) -> list[dict]:
+def wandb_history(
+    api_key: str, entity: str, project: str, run_name: str, n: int = 30
+) -> list[dict]:
     payload = json.dumps(
         {
             "query": HISTORY_QUERY,
-            "variables": {"entityName": entity, "project": project, "runName": run_name, "n": n},
+            "variables": {
+                "entityName": entity,
+                "project": project,
+                "runName": run_name,
+                "n": n,
+            },
         }
     ).encode()
     req = urllib.request.Request(
         WANDB_GQL,
         data=payload,
-        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
     )
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
@@ -124,8 +141,12 @@ def read_local_metrics(epochs: int) -> list[dict]:
     candidates = [
         REPO_ROOT / ".tirra_pipeline" / "checkpoints" / "h_g" / "metrics.jsonl",
         REPO_ROOT / ".tirra_pipeline" / "checkpoints" / "metrics.jsonl",
-        Path("/tmp/hg-output/tirramind_v1/.tirra_pipeline/checkpoints/h_g/metrics.jsonl"),
-        Path("/tmp/hg-output2/tirramind_v1/.tirra_pipeline/checkpoints/h_g/metrics.jsonl"),
+        Path(
+            "/tmp/hg-output/tirramind_v1/.tirra_pipeline/checkpoints/h_g/metrics.jsonl"
+        ),
+        Path(
+            "/tmp/hg-output2/tirramind_v1/.tirra_pipeline/checkpoints/h_g/metrics.jsonl"
+        ),
     ]
     for path in candidates:
         if path.exists():
@@ -151,8 +172,8 @@ STAGNATION_THRESHOLD = 0.005
 
 
 def assess(records: list[dict]) -> str:
-    losses = [r.get("loss/return", r.get("loss_return", None)) for r in records]
-    losses = [x for x in losses if x is not None]
+    losses = [_get_loss(r, "return") for r in records]
+    losses = [x for x in losses if not (x != x)]  # drop NaN
     if len(losses) < 3:
         return "insufficient data"
     recent = losses[-STAGNATION_WINDOW:]
@@ -187,19 +208,35 @@ def kaggle_status() -> str:
 # ---------------------------------------------------------------------------
 # Render
 # ---------------------------------------------------------------------------
+def _get_loss(r: dict, key: str) -> float:
+    """Read loss value from either wandb flat format or local nested format."""
+    # wandb: "loss/return" or "loss_return"
+    v = r.get(f"loss/{key}", r.get(f"loss_{key}"))
+    if v is not None:
+        return float(v)
+    # local metrics.jsonl: {"loss": {"return": ...}}
+    loss_dict = r.get("loss", {})
+    v2 = loss_dict.get(key)
+    if v2 is not None:
+        return float(v2)
+    return float("nan")
+
+
 def render_table(records: list[dict]) -> None:
-    header = f"{'Epoch':>6}  {'loss/total':>10}  {'loss/return':>11}  {'loss/dt':>8}  {'loss/val':>9}  {'lr':>8}"
+    header = f"{'Epoch':>6}  {'total':>10}  {'return':>10}  {'dt':>8}  {'obs':>8}  {'val':>8}  {'warnings'}"
     print(header)
-    print("-" * len(header))
+    print("-" * (len(header) + 30))
     for r in records:
         epoch = r.get("epoch", r.get("_step", "?"))
-        lt = r.get("loss/total", r.get("loss_total", float("nan")))
-        lr_ = r.get("loss/return", r.get("loss_return", float("nan")))
-        ldt = r.get("loss/dt", r.get("loss_dt", float("nan")))
-        lv = r.get("loss/val", r.get("loss_val", float("nan")))
-        learning_rate = r.get("lr", r.get("learning_rate", float("nan")))
+        lt = _get_loss(r, "total")
+        lr_ = _get_loss(r, "return")
+        ldt = _get_loss(r, "dt")
+        lobs = _get_loss(r, "obs_type")
+        lv = _get_loss(r, "value")
+        warns = r.get("warnings", [])
+        warn_str = " | ".join(w.split(":")[0] for w in warns) if warns else ""
         print(
-            f"{epoch!s:>6}  {lt:>10.4f}  {lr_:>11.4f}  {ldt:>8.4f}  {lv:>9.4f}  {learning_rate:>8.2e}"
+            f"{epoch!s:>6}  {lt:>10.4f}  {lr_:>10.4f}  {ldt:>8.4f}  {lobs:>8.4f}  {lv:>8.4f}  {warn_str}"
         )
 
 
@@ -208,8 +245,12 @@ def render_table(records: list[dict]) -> None:
 # ---------------------------------------------------------------------------
 def main() -> None:
     p = argparse.ArgumentParser(description="Check live training status from CLI.")
-    p.add_argument("--epochs", type=int, default=10, help="Number of recent epochs to show.")
-    p.add_argument("--local", action="store_true", help="Read local metrics.jsonl only (no wandb).")
+    p.add_argument(
+        "--epochs", type=int, default=10, help="Number of recent epochs to show."
+    )
+    p.add_argument(
+        "--local", action="store_true", help="Read local metrics.jsonl only (no wandb)."
+    )
     p.add_argument("--entity", default="999-sbpatel", help="wandb entity.")
     p.add_argument("--project", default="tirramind", help="wandb project.")
     args = p.parse_args()
@@ -227,9 +268,13 @@ def main() -> None:
     records: list[dict] = []
 
     if not args.local:
-        api_key = os.environ.get("WANDB_API_KEY") or os.environ.get("TIRRA_WANDB_API_KEY")
+        api_key = os.environ.get("WANDB_API_KEY") or os.environ.get(
+            "TIRRA_WANDB_API_KEY"
+        )
         if not api_key:
-            print("\n[WARN] WANDB_API_KEY not set — falling back to local metrics.jsonl")
+            print(
+                "\n[WARN] WANDB_API_KEY not set — falling back to local metrics.jsonl"
+            )
         else:
             try:
                 runs = wandb_query(api_key, args.entity, args.project, n=5)
@@ -247,17 +292,31 @@ def main() -> None:
                     print(f"URL: {run_url}")
 
                     # Fetch history rows
-                    history = wandb_history(api_key, args.entity, args.project, latest["name"], n=args.epochs)
+                    history = wandb_history(
+                        api_key,
+                        args.entity,
+                        args.project,
+                        latest["name"],
+                        n=args.epochs,
+                    )
                     if history:
                         records = history
                     else:
                         # Fall back to summary metrics if history endpoint fails
                         summary_raw = latest.get("summaryMetrics", "{}")
-                        summary = json.loads(summary_raw) if isinstance(summary_raw, str) else summary_raw
+                        summary = (
+                            json.loads(summary_raw)
+                            if isinstance(summary_raw, str)
+                            else summary_raw
+                        )
                         if summary:
-                            print("\n[INFO] History rows unavailable — showing summary metrics:")
+                            print(
+                                "\n[INFO] History rows unavailable — showing summary metrics:"
+                            )
                             for k, v in summary.items():
-                                if not k.startswith("_") and isinstance(v, (int, float)):
+                                if not k.startswith("_") and isinstance(
+                                    v, (int, float)
+                                ):
                                     print(f"  {k}: {v:.4f}")
             except Exception as e:
                 print(f"\n[WARN] wandb query failed: {e} — falling back to local")
@@ -267,11 +326,15 @@ def main() -> None:
 
     if records:
         print(f"\nLast {min(args.epochs, len(records))} epoch(s):\n")
-        render_table(records[-args.epochs:])
+        render_table(records[-args.epochs :])
         print(f"\nVerdict: {assess(records)}")
     else:
-        print("\n[INFO] No metrics available yet — session may still be in first block.")
-        print("       Check Kaggle UI for live cell output, or wait for block 1 to complete.")
+        print(
+            "\n[INFO] No metrics available yet — session may still be in first block."
+        )
+        print(
+            "       Check Kaggle UI for live cell output, or wait for block 1 to complete."
+        )
 
     print("\n" + "=" * 60)
 
