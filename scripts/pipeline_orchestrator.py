@@ -187,7 +187,7 @@ def build_retrain_cmd(
     if wandb_project:
         cmd += ["--wandb-project", wandb_project]
     if wandb_run_name:
-        cmd += ["--wandb-run-name", wandb_run_name]
+        cmd += ["--wandb-run", wandb_run_name]
     return cmd
 
 
