@@ -246,8 +246,12 @@ def _compute_distributional_features(
         tool = o.get("source_tool", "")
         if tool:
             tools.add(tool)
-        # Collect obs_type
-        ot = o.get("obs_type", "")
+        # Collect obs_type — store returns "observation_type" (DB column name).
+        # "obs_type" is a legacy alias kept for backward compat with any callers
+        # that build obs dicts by hand.  Without this fallback the obs_type_dist
+        # enrichment features (35 dims in ENRICHMENT_DIM) are always zero because
+        # the key lookup silently returns "".
+        ot = o.get("observation_type", "") or o.get("obs_type", "")
         obs_type_counts[ot] = obs_type_counts.get(ot, 0) + 1
 
     # Value distribution

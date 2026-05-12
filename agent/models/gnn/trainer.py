@@ -671,6 +671,22 @@ class TrainerConfig:
     direction_loss_weight: float = 0.3
     """Multiplier for the direction BCE loss when use_direction_loss=True.
     Added as: ret_loss += direction_loss_weight * direction_bce_loss."""
+    use_forward_returns: bool = True
+    """When True, replace the daily log_return supervision target with the
+    N-day (forward_return_horizon) forward return computed from instrument_daily
+    close prices.  This is the correct oracle for cross-sectional IC:
+    we want the model to learn which instruments outperform over the next
+    21 trading days, not what yesterday's return was.
+
+    Falls back to daily log_return when no forward return is found in the
+    lookup (e.g. instrument is delisted before the horizon date).
+
+    Reference: Lewellen (2015) "The Cross-section of Expected Stock Returns";
+    forward holding-period returns are the standard IC denominator."""
+    forward_return_horizon: int = 21
+    """Holding period in TRADING DAYS for forward return computation.
+    21 trading days ≈ 1 calendar month.  Aligns with the monthly rebalancing
+    cadence assumed in the walk-forward backtest."""
 
     # ── Weights & Biases streaming (optional) ──────────────────────────────
     wandb_project: str | None = None
@@ -679,6 +695,105 @@ class TrainerConfig:
     """W&B run display name (e.g. 'h-a-epoch31-40'). Auto-generated if None."""
     wandb_tags: list[str] | None = None
     """Optional list of tags for the W&B run (e.g. ['h-a', 'phase43'])."""
+
+
+# ═══════════════════════════════════════════════════════════════
+# Forward return lookup (Phase 47 — A2 fix)
+# ═══════════════════════════════════════════════════════════════
+
+
+def _build_forward_return_lookup(
+    observations: list[dict],
+    horizon_days: int = 21,
+) -> dict[tuple[str, int], float]:
+    """Precompute N-day forward returns from instrument_daily close prices.
+
+    For each instrument_daily obs at timestamp t, finds the close price
+    approximately *horizon_days* TRADING days later and computes:
+
+        forward_return = (close_t+N - close_t) / |close_t|
+
+    The search approximates 1 trading day ≈ 7/5 calendar days, so a
+    21-trading-day horizon corresponds to ~29.4 calendar seconds.
+    We search ±3 calendar days around that target and take the nearest.
+
+    Args:
+        observations: Full prefetched observation list (all types).
+        horizon_days: Holding period in trading days (default 21).
+
+    Returns:
+        Dict mapping (entity_id, int(observed_at)) → forward_return.
+        Only instrument_daily obs with valid close prices are included.
+        Entries with |close_t| < 1e-8 or non-finite forward returns are
+        excluded to prevent NaN/Inf propagation into the loss.
+
+    References:
+        Lewellen (2015), "The Cross-section of Expected Stock Returns"
+        — forward holding-period returns are the standard IC denominator.
+    """
+    import bisect
+
+    # ── Group instrument_daily obs by entity, sort by timestamp ────────
+    by_entity: dict[str, list[tuple[float, float]]] = {}  # eid → [(ts, close)]
+    for o in observations:
+        if o.get("observation_type") != "instrument_daily":
+            continue
+        v = o.get("value", {})
+        if not isinstance(v, dict):
+            continue
+        close = v.get("close")
+        if close is None:
+            continue
+        try:
+            close_f = float(close)
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(close_f):
+            continue
+        eid = o.get("entity_id")
+        if not eid:
+            continue
+        ts = float(o.get("observed_at", 0.0))
+        by_entity.setdefault(eid, []).append((ts, close_f))
+
+    for eid in by_entity:
+        by_entity[eid].sort(key=lambda x: x[0])
+
+    # ── Compute forward returns ─────────────────────────────────────────
+    # 1 trading day ≈ 1.4 calendar days (252 trading / 365 calendar).
+    # We use 7/5 = 1.4 for simplicity (same approximation as the backtest).
+    CALENDAR_SECS_PER_TRADING_DAY = 86400.0 * 7 / 5  # ≈ 120,960 s
+    target_lag_secs = horizon_days * CALENDAR_SECS_PER_TRADING_DAY
+    # Accept matches within ±3 calendar days of the target lag.
+    tolerance_secs = 3 * 86400.0
+
+    lookup: dict[tuple[str, int], float] = {}
+
+    for eid, sorted_obs in by_entity.items():
+        timestamps = [x[0] for x in sorted_obs]
+        for i, (ts_now, close_now) in enumerate(sorted_obs):
+            if abs(close_now) < 1e-8:
+                continue
+            target_ts = ts_now + target_lag_secs
+            # Binary search for the insertion point of target_ts
+            j = bisect.bisect_left(timestamps, target_ts)
+            # Check candidates j-1 and j for closest match
+            best_close: float | None = None
+            best_dist = float("inf")
+            for cand in (j - 1, j):
+                if 0 <= cand < len(sorted_obs) and cand != i:
+                    dist = abs(sorted_obs[cand][0] - target_ts)
+                    if dist < tolerance_secs and dist < best_dist:
+                        best_dist = dist
+                        best_close = sorted_obs[cand][1]
+            if best_close is None:
+                continue
+            fwd_ret = (best_close - close_now) / abs(close_now)
+            if not math.isfinite(fwd_ret):
+                continue
+            lookup[(eid, int(ts_now))] = fwd_ret
+
+    return lookup
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1287,6 +1402,22 @@ class Trainer:
             _return_upscale,
         )
 
+        # ── A2: Precompute 21-day forward return lookup (Phase 47) ──────────
+        # Replaces daily log_return (near-zero IC) with N-day forward return
+        # (the correct oracle for cross-sectional IC at the backtest horizon).
+        # Computed once from all prefetched instrument_daily obs; O(1) lookup
+        # per obs in the return loss loop below.
+        _forward_returns: dict[tuple[str, int], float] = {}
+        if cfg.use_forward_returns and cfg.return_weight > 0.0:
+            _forward_returns = _build_forward_return_lookup(
+                all_prefetched_obs, horizon_days=cfg.forward_return_horizon
+            )
+            log.info(
+                "A2: Precomputed %d forward-return labels (horizon=%dd)",
+                len(_forward_returns),
+                cfg.forward_return_horizon,
+            )
+
         # ── Phase 49: Load GNN alignment weights ──────────────────────────
         # Alignment weights tell the training loop which entity types are
         # not yet well-aligned with the world model (low belief sharpening
@@ -1487,11 +1618,13 @@ class Trainer:
                 # ── contrastive loss ─────────────────────
                 c_loss = self._contrastive_loss(embeddings, id_map)
 
-                # ── return auxiliary loss (Phase 41) ──────────────────────────────────
-                # Directly supervise instrument embeddings on log_return.
-                # Filters next_obs to instrument_daily with log_return only.
-                # This pushes the embedding to encode return-relevant info,
-                # separate from the generic value_pred_head which sees all types.
+                # ── return auxiliary loss (Phase 47 — A2 fix) ────────────────────────
+                # Supervise instrument embeddings on N-day FORWARD return.
+                # Using daily log_return (the old target) gives near-zero IC
+                # because daily returns have AR(1) ≈ 0 at cross-section.
+                # 21-day forward returns have measurable persistence and align
+                # with the monthly rebalancing cadence in the backtest.
+                # Falls back to daily log_return when no forward label exists.
                 ret_loss = torch.tensor(0.0, device=self._device)
                 if cfg.return_weight > 0.0 and "instrument" in embeddings:
                     _ret_embs: list[torch.Tensor] = []
@@ -1499,16 +1632,23 @@ class Trainer:
                     for _o in next_obs:
                         if _o.get("observation_type") != "instrument_daily":
                             continue
-                        _v = _o.get("value", {})
-                        if not isinstance(_v, dict) or "log_return" not in _v:
-                            continue
-                        try:
-                            _lr = float(_v["log_return"])
-                        except (TypeError, ValueError):
-                            continue
                         _eid = _o.get("entity_id")
                         if _eid is None:
                             continue
+                        # ── A2: prefer forward return over daily log_return ──
+                        _ts_key = int(_o.get("observed_at", 0.0))
+                        _lr: float | None = None
+                        if cfg.use_forward_returns:
+                            _lr = _forward_returns.get((_eid, _ts_key))
+                        if _lr is None:
+                            # Fallback: daily log_return (backward compat)
+                            _v = _o.get("value", {})
+                            if not isinstance(_v, dict) or "log_return" not in _v:
+                                continue
+                            try:
+                                _lr = float(_v["log_return"])
+                            except (TypeError, ValueError):
+                                continue
                         _local_idx = id_map.local_id("instrument", _eid)
                         if _local_idx is None:
                             continue
