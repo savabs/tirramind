@@ -46,6 +46,12 @@ _DOC_API = "https://api.gdeltproject.org/api/v2/doc/doc"
 _BATCH_INTERVAL = 15  # minutes between GDELT batches
 _BATCH_DELAY = 0.2  # seconds between batch downloads (politeness)
 
+# Only persist events with genuine geopolitical tension (Goldstein < -5.0).
+# Goldstein distribution: 53.9% neutral/routine, 19.2% minor friction,
+# 16.8% cooperative, 10.1% high-tension (the only useful part for prediction).
+# Without this filter the DB fills with diplomatic press-conference noise.
+_GOLDSTEIN_TENSION_THRESHOLD: float = -5.0
+
 # ── CAMEO root event codes → human-readable labels ──────────────────
 CAMEO_ROOT_CODES: dict[str, str] = {
     "01": "Make Public Statement",
@@ -705,6 +711,10 @@ class GDELTTool(Tool):
         seen: set[str] = set()
         now_ts = datetime.now(UTC).timestamp()
         for ev in events:
+            # Skip low-tension events — only persist genuine conflict signal.
+            gs = ev.get("goldstein")
+            if gs is None or gs >= _GOLDSTEIN_TENSION_THRESHOLD:
+                continue
             event_id = ev.get("id", "")
             raw_date = ev.get("date", "")
             # Convert YYYYMMDD string to Unix timestamp (noon UTC).

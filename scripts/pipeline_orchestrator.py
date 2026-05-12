@@ -682,8 +682,12 @@ def run(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0915
                     if cfg_data.get("fresh_start", False):
                         # ── Fresh start: archive current checkpoints, reset ──
                         import shutil as _shutil
+
                         archive_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        archive_dir = checkpoint_dir.parent / f"{checkpoint_dir.name}_archive_{archive_ts}"
+                        archive_dir = (
+                            checkpoint_dir.parent
+                            / f"{checkpoint_dir.name}_archive_{archive_ts}"
+                        )
                         print(
                             f"[orchestrator] fresh_start requested by advisor "
                             f"(pattern={last_pattern}). "
@@ -694,7 +698,10 @@ def run(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0915
                         checkpoint_dir.mkdir(parents=True, exist_ok=True)
                         # Copy next_config.json into fresh dir so retrain picks it up
                         import shutil as _shutil2
-                        _shutil2.copy2(str(archive_dir / "next_config.json"), str(candidate))
+
+                        _shutil2.copy2(
+                            str(archive_dir / "next_config.json"), str(candidate)
+                        )
                         latest_epoch = 0
                         start_epoch = 0  # reset session start for summary
                         print(

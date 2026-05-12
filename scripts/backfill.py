@@ -10,6 +10,7 @@ Usage:
     python scripts/backfill.py --skip-group-b    # Group A only
     python scripts/backfill.py --group-b-only    # Group B only
 """
+
 from __future__ import annotations
 
 import argparse
@@ -200,7 +201,9 @@ def _build_plan(days_back: int) -> list[dict[str, Any]]:
             # Compute start_date from days_back so historical contracts are fetched.
             "kwargs": {
                 "mode": "recent",
-                "start_date": (datetime.now(timezone.utc) - timedelta(days=days_back)).strftime("%Y-%m-%d"),
+                "start_date": (
+                    datetime.now(timezone.utc) - timedelta(days=days_back)
+                ).strftime("%Y-%m-%d"),
                 "end_date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
                 "limit": 50,
             },
@@ -213,7 +216,9 @@ def _build_plan(days_back: int) -> list[dict[str, Any]]:
             "tool": "gov_contracts",
             "kwargs": {
                 "mode": "top",
-                "start_date": (datetime.now(timezone.utc) - timedelta(days=days_back)).strftime("%Y-%m-%d"),
+                "start_date": (
+                    datetime.now(timezone.utc) - timedelta(days=days_back)
+                ).strftime("%Y-%m-%d"),
                 "end_date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
                 "limit": 50,
             },
@@ -347,7 +352,11 @@ def _build_plan(days_back: int) -> list[dict[str, Any]]:
             # up to 5 years. This is the primary fix for 'protocol' entity density.
             "label": "defi_flows_history",
             "tool": "defi_flows",
-            "kwargs": {"mode": "history", "days_back": min(days_back, 1825), "limit": 50},
+            "kwargs": {
+                "mode": "history",
+                "days_back": min(days_back, 1825),
+                "limit": 50,
+            },
             "group": "B",
         }
     )

@@ -209,7 +209,9 @@ class WorldModel:
         if configs:
             return configs[0]
 
-        raise RuntimeError(f"No regime posterior found for '{self._regime_node}' and no regime configs available")
+        raise RuntimeError(
+            f"No regime posterior found for '{self._regime_node}' and no regime configs available"
+        )
 
     # ── CPD fitting from data (Change 2a) ─────────────────────
 
@@ -509,7 +511,9 @@ class WorldModel:
         edges_removed = sorted(old_observed_edges - learned_observed_edges)
 
         if not edges_added and not edges_removed:
-            log.info("refine_structure: no structural changes found (%d samples).", n_samples)
+            log.info(
+                "refine_structure: no structural changes found (%d samples).", n_samples
+            )
             return {
                 "refined": False,
                 "n_samples": n_samples,
@@ -522,7 +526,9 @@ class WorldModel:
             try:
                 self._graph.remove_edge(parent, child)
             except ValueError:
-                log.warning("refine_structure: could not remove edge %s → %s", parent, child)
+                log.warning(
+                    "refine_structure: could not remove edge %s → %s", parent, child
+                )
 
         for parent, child in edges_added:
             try:

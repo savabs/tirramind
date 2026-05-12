@@ -101,7 +101,10 @@ class TestIsCollapsed:
     def test_loss_explosion_returns_true(self, tmp_path):
         # First epoch total=1.0, last 3 epochs total >> 10.0
         records = [{"epoch": 1, "loss": {"total": 1.0, "return": 0.5}}]
-        records += [{"epoch": i, "loss": {"total": 50.0 + i, "return": 0.3}} for i in range(2, 12)]
+        records += [
+            {"epoch": i, "loss": {"total": 50.0 + i, "return": 0.3}}
+            for i in range(2, 12)
+        ]
         _write_metrics(tmp_path, records)
         assert is_collapsed(tmp_path) is True
 
@@ -272,8 +275,12 @@ class TestSyncStateToGitHub:
 
     def test_happy_path_calls_git_add_commit_push(self, tmp_path):
         kwargs = self._base_kwargs(tmp_path)
-        completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-        with patch("scripts.pipeline_orchestrator.subprocess.run", return_value=completed) as mock_run:
+        completed = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
+        with patch(
+            "scripts.pipeline_orchestrator.subprocess.run", return_value=completed
+        ) as mock_run:
             result = sync_state_to_github(**kwargs)
         assert result is True
         calls = [str(c) for c in mock_run.call_args_list]
@@ -283,7 +290,9 @@ class TestSyncStateToGitHub:
 
     def test_git_add_failure_returns_false(self, tmp_path):
         kwargs = self._base_kwargs(tmp_path)
-        failed = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="error")
+        failed = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="", stderr="error"
+        )
         with patch("scripts.pipeline_orchestrator.subprocess.run", return_value=failed):
             result = sync_state_to_github(**kwargs)
         assert result is False
@@ -293,10 +302,16 @@ class TestSyncStateToGitHub:
 
         def side_effect(cmd, **kw):
             if "push" in cmd:
-                return subprocess.CompletedProcess(args=cmd, returncode=1, stdout="", stderr="rejected")
-            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="ok", stderr="")
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=1, stdout="", stderr="rejected"
+                )
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=0, stdout="ok", stderr=""
+            )
 
-        with patch("scripts.pipeline_orchestrator.subprocess.run", side_effect=side_effect):
+        with patch(
+            "scripts.pipeline_orchestrator.subprocess.run", side_effect=side_effect
+        ):
             result = sync_state_to_github(**kwargs)
         assert result is False
 
@@ -304,7 +319,9 @@ class TestSyncStateToGitHub:
         kwargs = self._base_kwargs(tmp_path)
         kwargs["github_token"] = "ghp_testtoken"  # noqa: S105
         ok = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-        with patch("scripts.pipeline_orchestrator.subprocess.run", return_value=ok) as mock_run:
+        with patch(
+            "scripts.pipeline_orchestrator.subprocess.run", return_value=ok
+        ) as mock_run:
             sync_state_to_github(**kwargs)
         all_cmds = [str(c) for c in mock_run.call_args_list]
         assert any("set-url" in c and "ghp_testtoken" in c for c in all_cmds)
