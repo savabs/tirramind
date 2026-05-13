@@ -1515,6 +1515,7 @@ class Trainer:
                 "value": 0.0,
                 "return": 0.0,
             }
+            _epoch_ntype_obs: dict[str, list[float]] = {}
             n_windows = 0
             total_windows = _total_windows
 
@@ -1615,7 +1616,13 @@ class Trainer:
                             )
                             obs_loss = (raw_ce * per_example_w).mean()
                         else:
-                            obs_loss = F.cross_entropy(logits, valid_targets)
+                            raw_ce = F.cross_entropy(
+                                logits, valid_targets, reduction="none"
+                            )
+                            obs_loss = raw_ce.mean()
+                        # Per-node-type CE accumulation (for metrics.jsonl)
+                        for _nt, _ce_v in zip(_valid_ntypes, raw_ce.detach().tolist()):
+                            _epoch_ntype_obs.setdefault(_nt, []).append(_ce_v)
 
                 # ── time_delta loss ──────────────────────
                 # Targets are log1p(seconds) ≈ 0–14 for weekly windows.
@@ -1968,6 +1975,14 @@ class Trainer:
                     },
                     "dt_ret_ratio": _dt_ret_ratio,
                     "warnings": _epoch_warnings,
+                    "entity_type_losses": {
+                        nt: sum(vs) / len(vs)
+                        for nt, vs in _epoch_ntype_obs.items()
+                        if vs
+                    },
+                    "entity_type_counts": {
+                        nt: len(vs) for nt, vs in _epoch_ntype_obs.items()
+                    },
                     "config": {
                         "lr": cfg.learning_rate,
                         "return_weight": float(cfg.return_weight),

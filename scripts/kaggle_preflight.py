@@ -39,30 +39,36 @@ ROOT = Path(__file__).resolve().parent.parent
 
 # ── colours ──────────────────────────────────────────────────────────────────
 _GREEN = "\033[32m"
-_RED   = "\033[31m"
-_BOLD  = "\033[1m"
+_RED = "\033[31m"
+_BOLD = "\033[1m"
 _RESET = "\033[0m"
+
 
 def _pass(msg: str) -> str:
     return f"  {_GREEN}[PASS]{_RESET} {msg}"
 
+
 def _fail(msg: str) -> str:
     return f"  {_RED}[FAIL]{_RESET} {msg}"
+
 
 def _warn(msg: str) -> str:
     return f"  {_BOLD}[WARN]{_RESET} {msg}"
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
-def _run(cmd: list[str], timeout: int = 360, env_extra: dict | None = None
-         ) -> tuple[int, str]:
+def _run(
+    cmd: list[str], timeout: int = 360, env_extra: dict | None = None
+) -> tuple[int, str]:
     import os
+
     env = os.environ.copy()
     if env_extra:
         env.update(env_extra)
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True,
-                           cwd=str(ROOT), timeout=timeout, env=env)
+        r = subprocess.run(
+            cmd, capture_output=True, text=True, cwd=str(ROOT), timeout=timeout, env=env
+        )
         return r.returncode, (r.stdout + r.stderr).strip()
     except subprocess.TimeoutExpired:
         return 1, "TIMEOUT"
@@ -81,6 +87,7 @@ def _notebook_source() -> str:
 
 
 # ── individual checks ─────────────────────────────────────────────────────────
+
 
 def check_ewc_tests() -> tuple[bool, str]:
     """EWC tests must pass — these guard against catastrophic forgetting."""
@@ -104,9 +111,12 @@ def check_ewc_tests() -> tuple[bool, str]:
 def check_trainer_import() -> tuple[bool, str]:
     """Trainer must import without error — catches syntax/import bugs."""
     code, out = _run(
-        [sys.executable, "-c",
-         "import sys; sys.path.insert(0, '.'); "
-         "from agent.models.gnn.trainer import Trainer; print('OK')"],
+        [
+            sys.executable,
+            "-c",
+            "import sys; sys.path.insert(0, '.'); "
+            "from agent.models.gnn.trainer import Trainer; print('OK')",
+        ],
     )
     if code == 0 and "OK" in out:
         return True, "agent.models.gnn.trainer imports cleanly"
@@ -120,8 +130,11 @@ def check_git_clean() -> tuple[bool, str]:
     dirty = [l for l in out.splitlines() if l and not l.startswith("??")]
     if not dirty:
         return True, "Git working tree clean"
-    return False, f"{len(dirty)} tracked file(s) with uncommitted changes:\n" + \
-        "\n".join(f"    {l}" for l in dirty[:5])
+    return (
+        False,
+        f"{len(dirty)} tracked file(s) with uncommitted changes:\n"
+        + "\n".join(f"    {l}" for l in dirty[:5]),
+    )
 
 
 def check_git_pushed() -> tuple[bool, str]:
@@ -134,8 +147,9 @@ def check_git_pushed() -> tuple[bool, str]:
         return True, f"HEAD pushed to origin/main ({local.strip()[:10]})"
     _, log = _run(["git", "log", "--oneline", "origin/main..HEAD"])
     commits = [l for l in log.splitlines() if l.strip()]
-    return False, f"{len(commits)} commit(s) not pushed to origin/main:\n" + \
-        "\n".join(f"    {l}" for l in commits[:5])
+    return False, f"{len(commits)} commit(s) not pushed to origin/main:\n" + "\n".join(
+        f"    {l}" for l in commits[:5]
+    )
 
 
 def check_notebook_secrets_cell() -> tuple[bool, str]:
@@ -146,8 +160,10 @@ def check_notebook_secrets_cell() -> tuple[bool, str]:
     has_secrets = "UserSecretsClient" in src and "WANDB_API_KEY" in src
     if has_secrets:
         return True, "Secrets cell present (WANDB_API_KEY loaded from Kaggle Secrets)"
-    return False, ("Missing secrets cell — WANDB_API_KEY will not be set. "
-                   "Add the UserSecretsClient cell before the training cell.")
+    return False, (
+        "Missing secrets cell — WANDB_API_KEY will not be set. "
+        "Add the UserSecretsClient cell before the training cell."
+    )
 
 
 def check_notebook_resume_guard() -> tuple[bool, str]:
@@ -155,12 +171,13 @@ def check_notebook_resume_guard() -> tuple[bool, str]:
     src = _notebook_source()
     if not src:
         return False, "Notebook not found"
-    has_resume = ("next_config.json" in src or "--resume" in src or
-                  "resume_epoch" in src)
+    has_resume = "next_config.json" in src or "--resume" in src or "resume_epoch" in src
     if has_resume:
         return True, "Notebook has resume guard (next_config.json / --resume logic)"
-    return False, ("Notebook has no resume guard — will restart from epoch 0! "
-                   "Add next_config.json check or explicit --resume flag.")
+    return False, (
+        "Notebook has no resume guard — will restart from epoch 0! "
+        "Add next_config.json check or explicit --resume flag."
+    )
 
 
 def check_zip_structure(zip_path: Path | None) -> tuple[bool, str]:
@@ -189,21 +206,27 @@ def check_zip_structure(zip_path: Path | None) -> tuple[bool, str]:
     # Must be flat under checkpoints/ — NOT under h_g/
     bad = [n for n in checkpoints if "/h_g/" in n]
     if bad:
-        return False, (f"Checkpoint in h_g/ subfolder (Cell 5 will fail): {bad[0]}\n"
-                       "    Fix: stage with flat path .tirra_pipeline/checkpoints/epoch_N.pt")
+        return False, (
+            f"Checkpoint in h_g/ subfolder (Cell 5 will fail): {bad[0]}\n"
+            "    Fix: stage with flat path .tirra_pipeline/checkpoints/epoch_N.pt"
+        )
 
     # Must not be at root (symptom of -j flag)
     bad_flat = [n for n in checkpoints if "/" not in n.rstrip("/")]
     if bad_flat:
-        return False, (f"Checkpoint has no directory (was -j used?): {bad_flat[0]}\n"
-                       "    Fix: cd /tmp/staging && zip -r out.zip .tirra_pipeline/")
+        return False, (
+            f"Checkpoint has no directory (was -j used?): {bad_flat[0]}\n"
+            "    Fix: cd /tmp/staging && zip -r out.zip .tirra_pipeline/"
+        )
 
     db_present = any("pipeline.db" in n for n in names)
     if not db_present:
         return False, f"pipeline.db missing from zip: {zip_path.name}"
 
-    return True, (f"Zip OK — {len(checkpoints)} checkpoint(s), "
-                  f"pipeline.db present ({zip_path.name})")
+    return True, (
+        f"Zip OK — {len(checkpoints)} checkpoint(s), "
+        f"pipeline.db present ({zip_path.name})"
+    )
 
 
 def check_db_has_data(db_path: Path | None) -> tuple[bool, str]:
@@ -229,7 +252,10 @@ def check_db_has_data(db_path: Path | None) -> tuple[bool, str]:
         return False, f"DB read error: {e}"
 
     if n == 0:
-        return False, f"DB is EMPTY (0 entity_observations) — training on empty DB produces junk"
+        return (
+            False,
+            f"DB is EMPTY (0 entity_observations) — training on empty DB produces junk",
+        )
     return True, f"DB has {n:,} observations, {ents:,} entities ({db_path.name})"
 
 
@@ -248,20 +274,27 @@ def check_checkpoint_exists(ckpt_path: Path | None) -> tuple[bool, str]:
     if ckpt_path.exists():
         size_mb = ckpt_path.stat().st_size / 1e6
         return True, f"Checkpoint exists: {ckpt_path.name} ({size_mb:.1f} MB)"
-    return False, f"Checkpoint NOT FOUND: {ckpt_path} — zip will be empty of checkpoints"
+    return (
+        False,
+        f"Checkpoint NOT FOUND: {ckpt_path} — zip will be empty of checkpoints",
+    )
 
 
 # ── main ──────────────────────────────────────────────────────────────────────
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Pre-flight checks before kaggle kernels push."
     )
-    parser.add_argument("--zip",        type=Path, help="Path to staging zip to validate")
+    parser.add_argument("--zip", type=Path, help="Path to staging zip to validate")
     parser.add_argument("--checkpoint", type=Path, help="Path to staged checkpoint .pt")
-    parser.add_argument("--db",         type=Path, help="Path to pipeline.db to validate")
-    parser.add_argument("--skip-tests", action="store_true",
-                        help="Skip pytest (faster, use only if tests ran recently)")
+    parser.add_argument("--db", type=Path, help="Path to pipeline.db to validate")
+    parser.add_argument(
+        "--skip-tests",
+        action="store_true",
+        help="Skip pytest (faster, use only if tests ran recently)",
+    )
     args = parser.parse_args()
 
     print(f"\n{_BOLD}{'='*60}{_RESET}")
@@ -271,27 +304,32 @@ def main() -> None:
     checks = []
 
     if not args.skip_tests:
-        checks.append(("EWC Tests",           check_ewc_tests))
+        checks.append(("EWC Tests", check_ewc_tests))
     else:
         print(_warn("EWC tests skipped (--skip-tests)"))
 
     checks += [
-        ("Trainer Import",          check_trainer_import),
-        ("Git Clean",               check_git_clean),
-        ("Git Pushed",              check_git_pushed),
-        ("Notebook Secrets Cell",   check_notebook_secrets_cell),
-        ("Notebook Resume Guard",   check_notebook_resume_guard),
+        ("Trainer Import", check_trainer_import),
+        ("Git Clean", check_git_clean),
+        ("Git Pushed", check_git_pushed),
+        ("Notebook Secrets Cell", check_notebook_secrets_cell),
+        ("Notebook Resume Guard", check_notebook_resume_guard),
     ]
 
     # Parametric checks
-    def _zip_check():   return check_zip_structure(args.zip)
-    def _db_check():    return check_db_has_data(args.db)
-    def _ckpt_check():  return check_checkpoint_exists(args.checkpoint)
+    def _zip_check():
+        return check_zip_structure(args.zip)
+
+    def _db_check():
+        return check_db_has_data(args.db)
+
+    def _ckpt_check():
+        return check_checkpoint_exists(args.checkpoint)
 
     checks += [
-        ("Zip Structure",           _zip_check),
-        ("DB Has Observations",     _db_check),
-        ("Checkpoint Staged",       _ckpt_check),
+        ("Zip Structure", _zip_check),
+        ("DB Has Observations", _db_check),
+        ("Checkpoint Staged", _ckpt_check),
     ]
 
     results: list[tuple[str, bool, str]] = []
@@ -310,8 +348,12 @@ def main() -> None:
         print(f"{_GREEN}{_BOLD}  ✓ All checks passed. Safe to push.{_RESET}\n")
         sys.exit(0)
     else:
-        print(f"{_RED}{_BOLD}  ✗ {len(failures)} check(s) failed — DO NOT PUSH.{_RESET}")
-        print(f"{_RED}    Fix every FAIL above before running: kaggle kernels push{_RESET}\n")
+        print(
+            f"{_RED}{_BOLD}  ✗ {len(failures)} check(s) failed — DO NOT PUSH.{_RESET}"
+        )
+        print(
+            f"{_RED}    Fix every FAIL above before running: kaggle kernels push{_RESET}\n"
+        )
         sys.exit(1)
 
 

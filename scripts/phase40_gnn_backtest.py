@@ -616,22 +616,36 @@ def _print_result(name: str, m: dict, n_folds: int) -> None:
 
 
 def main() -> None:
+    import argparse
+    import json as _json_bt
     import torch
     from agent.models.gnn.trainer import Trainer
     from agent.pipeline.store import PipelineStore
     from agent.quant.backtest import EqualWeightStrategy, MultiAssetWalkForward
 
+    ap = argparse.ArgumentParser(description="Phase 40 GNN walk-forward backtest")
+    ap.add_argument("--model-path", type=Path, default=MODEL_PATH,
+                    help="Path to GNN checkpoint .pt file")
+    ap.add_argument("--db-path", type=Path, default=DB_PATH,
+                    help="Path to pipeline.db")
+    ap.add_argument("--out", type=Path, default=None,
+                    help="Write IC summary JSON so auto_improve.py can read it")
+    args = ap.parse_args()
+    _model_path: Path = args.model_path
+    _db_path: Path = args.db_path
+    _out_path: Path | None = args.out
+
     # ── 1. Validate paths ────────────────────────────────────────────────────
-    if not DB_PATH.exists():
-        print(f"ERROR: DB not found at {DB_PATH}. Run daily_collection first.")
+    if not _db_path.exists():
+        print(f"ERROR: DB not found at {_db_path}. Run daily_collection first.")
         sys.exit(1)
-    if not MODEL_PATH.exists():
-        print(f"ERROR: Model not found at {MODEL_PATH}. Run retrain_gnn.py first.")
+    if not _model_path.exists():
+        print(f"ERROR: Model not found at {_model_path}. Run retrain_gnn.py first.")
         sys.exit(1)
 
     # ── 2. Load store + instrument universe ──────────────────────────────────
-    log.info("Loading PipelineStore from %s", DB_PATH)
-    store = PipelineStore(str(DB_PATH))
+    log.info("Loading PipelineStore from %s", _db_path)
+    store = PipelineStore(str(_db_path))
 
     entities = store.query_all_entities()
     entity_ids: list[str] = []
@@ -647,7 +661,7 @@ def main() -> None:
 
     # ── 3. Load price returns (fast: typed SQL, skips 977K GDELT rows) ────────
     log.info("Loading instrument returns (fast SQL path)…")
-    dates, returns = _load_instrument_returns_fast(str(DB_PATH), entity_ids)
+    dates, returns = _load_instrument_returns_fast(str(_db_path), entity_ids)
     T, N = returns.shape
     log.info(
         "Returns matrix: %d dates × %d instruments  (%s → %s)",
@@ -662,8 +676,8 @@ def main() -> None:
         sys.exit(1)
 
     # ── 4. Load trained GNN model ─────────────────────────────────────────────
-    log.info("Loading GNN model from %s", MODEL_PATH)
-    trainer = Trainer.load_model(MODEL_PATH, store)
+    log.info("Loading GNN model from %s", _model_path)
+    trainer = Trainer.load_model(_model_path, store)
     log.info(
         "Model loaded: %d params", sum(p.numel() for p in trainer.model.parameters())
     )
@@ -723,7 +737,7 @@ def main() -> None:
     print(f"  Folds:       {len(results[strategies[0].name].folds)}")
     print(f"  Window:      {MIN_TRAIN}d train / {TEST_SIZE}d test / {STEP_SIZE}d step")
     print(
-        f"  GNN:         {MODEL_PATH.name}  ({sum(p.numel() for p in trainer.model.parameters()):,} params)"
+        f"  GNN:         {_model_path.name}  ({sum(p.numel() for p in trainer.model.parameters()):,} params)"
     )
 
     for strat in strategies:
@@ -755,6 +769,20 @@ def main() -> None:
     ic_results = _compute_ic_diagnostic(strategies, dates, returns)
     _print_ic_report(ic_results)
 
+    # ── 10b. Write IC summary JSON (for auto_improve.py) ────
+    _ic_summary: dict = {"model_path": str(_model_path), "strategies": ic_results}
+    _best_strat = max(ic_results, key=lambda k: ic_results[k]["mean_ic"], default=None)
+    if _best_strat:
+        _ic_summary["best"] = {"strategy": _best_strat, **ic_results[_best_strat]}
+    _default_ic_out = _model_path.parent / "ic_results.json"
+    for _dest in dict.fromkeys(d for d in [_default_ic_out, _out_path] if d is not None):
+        try:
+            _dest.parent.mkdir(parents=True, exist_ok=True)
+            _dest.write_text(_json_bt.dumps(_ic_summary, indent=2))
+            print(f"  IC results → {_dest}")
+        except OSError as _e:
+            log.warning("Could not write IC results to %s: %s", _dest, _e)
+
     # ── 11. Stratified IC — source attribution ────────────────────────────────
     # Partitions instrument universe by data source coverage (has_cftc / no_cftc,
     # has_polymarket / no_polymarket, has_geo_link / no_geo_link).
@@ -773,7 +801,7 @@ def main() -> None:
         dates=dates,
         returns=returns,
         instrument_names=entity_ids,
-        db_path=str(DB_PATH),
+        db_path=str(_db_path),
         min_train=MIN_TRAIN,
         test_size=TEST_SIZE,
         step_size=STEP_SIZE,
@@ -784,7 +812,7 @@ def main() -> None:
     # Writes JSON to .tirra_pipeline/experiments/exp_{timestamp}.json
     # Contains: data snapshot, IC results (with ICIR), stratified IC, model state.
     # Run 'python scripts/compare_experiments.py' to diff two runs.
-    tracker = ExperimentTracker(DB_PATH, MODEL_PATH)
+    tracker = ExperimentTracker(_db_path, _model_path)
     manifest = tracker.build_manifest(
         ic_results=ic_results,
         stratified_ic=stratified,

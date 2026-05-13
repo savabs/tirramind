@@ -114,6 +114,29 @@ def append_improvement_history(knowledge_dir: Path, entry: dict) -> None:
         fh.write(json.dumps(entry) + "\n")
 
 
+def _load_ic_results(checkpoint_dir: Path) -> float | None:
+    """Read best strategy mean Spearman IC from ic_results.json.
+
+    Written by phase40_gnn_backtest.py --out <path> (or default location
+    checkpoint_dir/ic_results.json).  Returns None if file absent / unreadable.
+    """
+    ic_path = checkpoint_dir / "ic_results.json"
+    if not ic_path.exists():
+        return None
+    try:
+        data = json.loads(ic_path.read_text())
+        best = data.get("best")
+        if best and isinstance(best.get("mean_ic"), float):
+            return float(best["mean_ic"])
+        # Fallback: max mean_ic across all strategies
+        strats = data.get("strategies", {})
+        if strats:
+            return max(v.get("mean_ic", -999.0) for v in strats.values())
+    except (json.JSONDecodeError, OSError, TypeError, ValueError):
+        pass
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Statistical helpers
 # ---------------------------------------------------------------------------
@@ -327,6 +350,8 @@ def _heuristic_classify(
     improvement_history: list[dict],
     window: int = STAGNATION_WINDOW,
     stagnation_threshold: float = STAGNATION_THRESHOLD,
+    *,
+    ic: float | None = None,
 ) -> tuple[str, dict]:
     """
     Analyse the last `window` epoch records and return (pattern_name, action).
@@ -431,6 +456,49 @@ def _heuristic_classify(
             ),
             "resume_epoch": last_epoch,
             "flag_overrides": {},
+            "escalate": False,
+        }
+
+    # ── IC override: trust IC over loss stagnation ────────────────────────────
+    # Loss can plateau while IC is positive (training proxy saturated but the
+    # model generalises — correct behaviour for a well-regularised model).
+    # Do NOT intervene when IC > 0.02: loss stagnation here means success.
+    if ic is not None and ic > 0.02:
+        return "improving_ic_positive", {
+            "rationale": (
+                f"Return loss stagnant but Spearman IC={ic:+.4f} (>0.02) — "
+                "model is producing real predictive signal. No config change needed."
+            ),
+            "resume_epoch": last_epoch,
+            "flag_overrides": {},
+            "escalate": False,
+        }
+
+    # ── IC degradation: negative IC despite plausible-looking loss ───────────
+    # IC < -0.01 means the model is anti-predictive.  Check entity_type_losses
+    # to find which entity type is dominating.  Default action: halve gdelt_frac.
+    if ic is not None and ic < -0.01 and recent_patterns.count("ic_degrading") < 2:
+        last_et_losses: dict = last.get("entity_type_losses", {})
+        worst_type = (
+            max(last_et_losses, key=lambda k: last_et_losses[k])
+            if last_et_losses
+            else None
+        )
+        rationale = f"Spearman IC={ic:+.4f} (model is anti-predictive). "
+        if worst_type:
+            rationale += (
+                f"Highest per-type obs CE: {worst_type} "
+                f"({last_et_losses[worst_type]:.2f}). "
+                "Halving gdelt_frac to reduce noise from dominant entity type."
+            )
+        else:
+            rationale += "Halving gdelt_frac as default noise-reduction step."
+        new_gdelt = max(round(gdelt_frac * 0.5, 3), 0.01)
+        return "ic_degrading", {
+            "rationale": rationale,
+            "flag_overrides": {"gdelt_frac": new_gdelt},
+            "remove_flags": [],
+            "resume_epoch": last_epoch,
             "escalate": False,
         }
 
@@ -541,6 +609,8 @@ def classify_pattern(
     improvement_history: list[dict],
     window: int = STAGNATION_WINDOW,
     stagnation_threshold: float = STAGNATION_THRESHOLD,
+    *,
+    ic: float | None = None,
 ) -> tuple[str, dict]:
     """Classify the training pattern. Tries LLM first; falls back to heuristic."""
     llm_result = _llm_classify(records, improvement_history)
@@ -548,7 +618,7 @@ def classify_pattern(
         return llm_result
     print("  [heuristic] No LLM available — using rule-based classification.")
     return _heuristic_classify(
-        records, improvement_history, window, stagnation_threshold
+        records, improvement_history, window, stagnation_threshold, ic=ic
     )
 
 
@@ -706,9 +776,18 @@ def check_once(
 
     run_config = load_run_config(checkpoint_dir)
     improvement_history = load_improvement_history(knowledge_dir)
+    ic_score: float | None = _load_ic_results(checkpoint_dir)
+
+    if verbose and ic_score is not None:
+        print(f"  IC (Spearman, best GNN strategy): {ic_score:+.4f}")
+    elif verbose:
+        print(
+            "  IC: not yet measured — run phase40_gnn_backtest.py to unlock IC-gated triggers"
+        )
 
     pattern, action = classify_pattern(
-        records, improvement_history, stagnation_window, stagnation_threshold
+        records, improvement_history, stagnation_window, stagnation_threshold,
+        ic=ic_score,
     )
 
     if verbose:
