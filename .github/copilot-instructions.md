@@ -48,11 +48,13 @@ The agent should use `grep_search` for `[[filename]]` to discover backlinks prog
 - **Contradiction handling:** When sources disagree, note both positions with dates in the page and add `contradicted: true` to frontmatter. Never silently overwrite old information.
 - **Log rotation:** When `wiki/log.md` exceeds 500 entries, rotate to `wiki/log-YYYY.md` and start fresh.
 
-### Frontmatter Template
+### Stub Frontmatter Template
+
+Every `.md` stub (the Obsidian navigation file that accompanies each `.html` artifact) uses this template:
 
 ```yaml
 ---
-title: <title from first H1 or descriptive name>
+title: <title>
 tags:
   - doc/<type>
   - phase/<N>
@@ -60,7 +62,63 @@ tags:
   - layer/<slug>
   - status/<state>   # only for task files
 ---
+
+> **Content:** [<filename>.html](<filename>.html) — open in browser.
+
+## Related
+- [[linked_research_or_spec]]
+- [[linked_task]]
 ```
+
+---
+
+## HTML-First Artifact System
+
+**All new output artifacts are HTML files.** Research notes, specs, checkpoints, task files, ADRs, wiki pages — everything goes in HTML. Markdown is reserved for thin Obsidian navigation stubs only.
+
+### Why HTML over Markdown
+
+- **Information density:** Tables, SVG diagrams, CSS layouts, annotated code, color. Everything Markdown fakes with ASCII, HTML does natively.
+- **Readability:** Nobody reads a 100-line markdown file. HTML with tabs, color, and visual hierarchy gets read — and shared.
+- **Two-way interaction:** Sliders, knobs, copy-to-prompt buttons. The artifact talks back.
+- **Custom editing interfaces:** Throwaway HTML tools (ticket triagers, DAG reviewers, parameter tuners) always ending with a "Copy as prompt" or "Copy as JSON" export button.
+
+### The Hybrid Model: HTML Content + MD Stub
+
+Every artifact consists of two files:
+
+| File | Purpose |
+|---|---|
+| `docs/research/feature.html` | **Canonical content** — the rich HTML document you read and share |
+| `docs/research/feature.md` | **Navigation stub** — Obsidian frontmatter + wiki links only |
+
+The `.html` file is what you open, read, and share. The `.md` stub is what Obsidian indexes for graph view, backlinks, and tag search.
+
+### HTML File Conventions
+
+- **Open locally:** `open feature.html` or ask the agent to open in browser. Upload to S3 for shareable links.
+- **Structure:** Every HTML artifact must include a header (title, phase, date), a navigation sidebar or tab structure for long documents, and SVG/CSS diagrams instead of ASCII art.
+- **Interactive artifacts** (triagers, tuners, editors) must end with a **"Copy as prompt"** or **"Copy as JSON"** button that exports current state to clipboard.
+- **Code snippets** inside HTML artifacts use `<pre><code>` with syntax highlighting — never raw markdown code fences.
+
+### When Plain Markdown Is Allowed (no HTML companion needed)
+
+- The `.md` navigation stubs themselves
+- `README.md` at the project root
+- `wiki/log.md` (append-only log entries)
+- Code comments and docstrings (not documents)
+
+### Existing `.md` Files — Migration Policy
+
+**Do not convert old `.md` files to HTML.** The migration is forward-only and touch-based:
+
+| File state | Action |
+|---|---|
+| `tasks/done/*.md` or inactive research/specs | Leave untouched — historical record, never modify |
+| `tasks/active/*.md` currently being worked on | Create an `.html` companion alongside it. The `.html` is the primary working document from that point. The `.md` becomes a legacy reference — mention it in the HTML's Related section but stop updating it. |
+| Any new artifact created today or later | `.html` + thin `.md` stub from the start — no legacy `.md` involved |
+
+**How to companion an active `.md`:** create `<same-name>.html` next to it, open the `.md` for context, build the rich HTML version, then add a note at the top of the old `.md`: `> Legacy reference. Primary doc: [[<name>.html]]`. The `.md` is now read-only.
 
 ---
 
@@ -82,9 +140,9 @@ This applies to everything: planning, specs, implementation, debugging, research
 
 When a new phase starts, follow this exact sequence:
 
-1. **Research** — Write `docs/research/<phase_name>.md`. Read only relevant files. No code.
-2. **Spec** — Write `docs/specs/<phase_name>_spec.md`. Transform research into ordered atomic steps.
-3. **Decompose into task file** — Update `tasks/active/<task_name>.md` with numbered steps (e.g., 2.1, 2.2, ...).
+1. **Research** — Write `docs/research/<phase_name>.html` (+ thin `.md` stub). Read only relevant files. No code.
+2. **Spec** — Write `docs/specs/<phase_name>_spec.html` (+ thin `.md` stub). Transform research into ordered atomic steps.
+3. **Decompose into task file** — Write `tasks/active/<task_name>.html` (+ thin `.md` stub) with numbered steps (e.g., 2.1, 2.2, ...).
 4. **Implement one step at a time** — each step: make the change → test it → mark it done → move to next.
 
 **Each step must be independently verifiable.** If you can't describe a one-line test for it, it's too vague. Break it further.
@@ -102,7 +160,7 @@ LLM context windows fill up. Every wasted token is a lost thought. Protect conte
 3. **Read only necessary files.** Don't explore the whole codebase when you need one function.
 4. **Use Obsidian backlinks and tags to navigate.** Instead of scanning directories, grep for `[[filename]]` to find what references a file, or grep for a tag to find all related docs. This is faster than reading file after file.
 5. **Start new chat sessions after completing a feature.** Old context becomes stale and wastes tokens.
-6. **Write checkpoint files** (`docs/memory/chat_checkpoint_<date>.md`) at natural breakpoints so the next session can pick up without re-reading everything. Checkpoint files must include frontmatter with `doc/checkpoint` tag.
+6. **Write checkpoint files** (`docs/memory/chat_checkpoint_<date>.html` + `.md` stub) at natural breakpoints so the next session can pick up without re-reading everything. The `.md` stub must have `doc/checkpoint` tag.
 7. **Keep task files as the source of truth** for what's done and what's next. The task file should be enough to resume work cold.
 8. **Don't re-analyze architecture during implementation.** That's what the research phase was for. If something is wrong, update the spec, don't re-derive in chat.
 9. **Use the knowledge graph to cold-start.** When beginning a new session, read the latest checkpoint and active task first, then follow `[[wiki links]]` to reach the relevant research/spec context. If a maintained project memory file exists, use it as an accelerator, not a hard dependency. Don't re-read the entire codebase.
@@ -116,7 +174,7 @@ LLM context windows fill up. Every wasted token is a lost thought. Protect conte
 3. **Read only necessary files.** Don't explore the whole codebase when you need one function.
 4. **Use Obsidian backlinks and tags to navigate.** Instead of scanning directories, grep for `[[filename]]` to find what references a file, or grep for a tag to find all related docs. This is faster than reading file after file.
 5. **Start new chat sessions after completing a feature.** Old context becomes stale and wastes tokens.
-6. **Write checkpoint files** (`docs/memory/chat_checkpoint_<date>.md`) at natural breakpoints so the next session can pick up without re-reading everything. Checkpoint files must include frontmatter with `doc/checkpoint` tag.
+6. **Write checkpoint files** (`docs/memory/chat_checkpoint_<date>.html` + `.md` stub) at natural breakpoints so the next session can pick up without re-reading everything. The `.md` stub must have `doc/checkpoint` tag.
 7. **Keep task files as the source of truth** for what's done and what's next. The task file should be enough to resume work cold.
 8. **Don't re-analyze architecture during implementation.** That's what the research phase was for. If something is wrong, update the spec, don't re-derive in chat.
 9. **Use the knowledge graph to cold-start.** When beginning a new session, read the latest checkpoint and active task first, then follow `[[wiki links]]` to reach the relevant research/spec context. If a maintained project memory file exists, use it as an accelerator, not a hard dependency. Don't re-read the entire codebase.
@@ -147,8 +205,8 @@ Each fact lives in exactly one file. All other files reference it; they never co
 |---|---|---|
 | Current metrics (test counts, node counts, ENRICHMENT_DIM, DAG size) | `memories/repo/tirramind_structure.md` | `[[tirramind_structure]]` link only |
 | Roadmap / next phases / phase ordering | `tasks/active/quant_training_ground.md` | `[[quant_training_ground]]` link only |
-| What happened in a session | `docs/memory/checkpoint_<date>.md` | Append-only — never edited after session |
-| Architecture decisions | `docs/adr/NNNN-<slug>.md` | `[[adr-slug]]` link only |
+| What happened in a session | `docs/memory/checkpoint_<date>.html` | Append-only — never edited after session |
+| Architecture decisions | `docs/adr/NNNN-<slug>.html` | `[[adr-slug]]` link only |
 
 **Checkpoints are historical records.** They record what was believed at the time the checkpoint was
 written. They are never corrected inline after the session ends. If a checkpoint stated something
@@ -256,9 +314,9 @@ Treat a request as non-trivial by default if it does any of the following:
 - requires external concepts, unfamiliar technology, or design judgment
 
 Before implementing a non-trivial request, the agent must first ensure all three artifacts exist and are current:
-1. `docs/research/<feature_name>.md`
-2. `docs/specs/<feature_name>_spec.md`
-3. `tasks/active/<task_name>.md`
+1. `docs/research/<feature_name>.html` (+ `.md` stub)
+2. `docs/specs/<feature_name>_spec.html` (+ `.md` stub)
+3. `tasks/active/<task_name>.html` (+ `.md` stub)
 
 Before that preflight passes, the agent may edit only workflow artifacts needed to satisfy the preflight:
 - `docs/research/`
@@ -281,64 +339,40 @@ When implementation starts, explicitly reference the governing task file and spe
 3. For each meaningful implementation step, identify the step-local topic, subtopics, and adjacent concepts, and add the relevant references to the research note or spec before implementation begins.
 4. Analyze project structure and dependencies.
 5. Identify the correct insertion points for new code.
-6. Record findings in `docs/research/<feature_name>.md`, including relevant repositories, documentation links/titles, reuse constraints, and the concepts to implement.
-7. Use `docs/research/RESEARCH_TEMPLATE.md` as the default checklist when creating a new research note unless a task clearly needs a more specialized structure.
-8. **Add Obsidian frontmatter** with appropriate `tags` (doc/research, phase/N, topic/slug, layer/slug) and a `## Related` section linking to the spec, task, and topically related docs using `[[wiki links]]`.
+6. Record findings in `docs/research/<feature_name>.html`, including relevant repositories, documentation links/titles, reuse constraints, and the concepts to implement. Create a companion `.md` stub with frontmatter for Obsidian navigation.
+7. Use `docs/research/RESEARCH_TEMPLATE.html` as the default structure when creating a new research note unless a task clearly needs a more specialized structure.
+8. **Add Obsidian metadata to the `.md` stub** with appropriate `tags` (doc/research, phase/N, topic/slug, layer/slug) and a `## Related` section linking to the spec, task, and topically related docs using `[[wiki links]]`.
 
 **No code is edited during this phase.**
 
-Research document structure:
-
-```
-# Feature: <name>
-
-## Current Architecture
-- (relevant modules, patterns, dependencies)
-
-## Observations
-- (what exists, what's missing, what connects to what)
-
-## Risks
-- (edge cases, breaking changes, security concerns)
-
-## Data Requirements
-- (what data series/sources are needed, what's available, what's missing)
-
-## Math/Algorithm Survey
-- (what algorithms apply, what libraries exist vs. build from scratch, complexity)
-```
+Research HTML document structure — use tabs or collapsible sections for:
+- **Current Architecture** — relevant modules, patterns, dependencies (include module relationship SVG)
+- **Observations** — what exists, what's missing, what connects to what
+- **Risks** — edge cases, breaking changes, security concerns (color-coded by severity)
+- **Data Requirements** — data series/sources needed, available, missing
+- **Math/Algorithm Survey** — algorithms, libraries, complexity (include decision table for implementation options)
+- **References** — verified sources (URLs, doc titles, version numbers) for every external claim
+- **Related** — navigation links to companion spec and task HTML files
 
 ---
 
 ## Phase 2: Specification (before any code changes)
 
 Transform research into a precise implementation plan.
-Write to `docs/specs/<feature_name>_spec.md`.
+Write to `docs/specs/<feature_name>_spec.html` with a companion `.md` stub for Obsidian navigation.
 
 If external codebases informed the design, the spec must state whether the source is only conceptual or whether the license permits implementation patterns to be reused. When in doubt, treat the source as conceptual only.
 
-**Add Obsidian frontmatter** with `doc/spec` tag and link back to the research note and task file in a `## Related` section.
+**Add Obsidian metadata to the `.md` stub** with `doc/spec` tag and link back to the research note and task file in a `## Related` section.
 
-Specification structure:
+Specification HTML document structure — use tabs or sections for:
+- **Goal** — what the feature must accomplish
+- **Files Affected** — list of files to create or modify
+- **Implementation Steps** — ordered numbered steps with color-coded status (not started / in progress / done)
+- **Edge Cases** — possible failure scenarios
+- **Testing Plan** — how the feature should be validated
 
-```
-# Spec: <feature_name>
-
-## Goal
-What the feature must accomplish.
-
-## Files Affected
-List of files to create or modify.
-
-## Implementation Steps
-Ordered steps.
-
-## Edge Cases
-Possible failure scenarios.
-
-## Testing Plan
-How the feature should be validated.
-```
+Include: flowchart SVG of the implementation pipeline, code mockups for key interfaces, and links back to the research HTML file.
 
 ---
 
@@ -387,7 +421,11 @@ Periodically compress context within a session — especially after generating l
 
 ## Task Management
 
-Each active feature has a task file: `tasks/active/<task_name>.md`
+Each active feature has a task file: `tasks/active/<task_name>.html` with a companion `tasks/active/<task_name>.md` stub for Obsidian navigation.
+
+The HTML task file tracks phase, status, numbered steps with completion state, and links to the research and spec HTML files.
+
+The `.md` stub uses this frontmatter:
 
 ```yaml
 ---
@@ -399,28 +437,24 @@ tags:
   - topic/<slug>
   - layer/<slug>
 ---
-```
 
-```
-# Task: <name>
+> **Content:** [<task_name>.html](<task_name>.html) — open in browser.
 
-Status: active | completed
-Research: [[<name>]]
-Spec: [[<name>_spec]]
+## Related
+- [[<name>]]        # research
+- [[<name>_spec]]   # spec
 ```
-
-Use `[[wiki links]]` for Research and Spec references, not bare paths.
 
 Mark completed tasks by:
-1. Changing `Status:` to `completed`
-2. Updating the `status/active` tag to `status/done` in frontmatter
-3. Moving the file to `tasks/done/`
+1. Updating the task HTML file status to `completed`
+2. Updating the stub's `status/active` tag to `status/done`
+3. Moving both the `.html` and `.md` files to `tasks/done/`
 
 ---
 
 ## Architecture Decision Records
 
-When a design decision affects multiple modules, layers, or has non-obvious tradeoffs, capture it in `docs/adr/NNNN-<slug>.md` using the template at `docs/adr/TEMPLATE.md`. ADRs are numbered sequentially and never deleted — only superseded.
+When a design decision affects multiple modules, layers, or has non-obvious tradeoffs, capture it in `docs/adr/NNNN-<slug>.html` (+ thin `.md` stub) using the template at `docs/adr/TEMPLATE.html`. ADRs are numbered sequentially and never deleted — only superseded.
 
 ---
 
@@ -429,11 +463,11 @@ When a design decision affects multiple modules, layers, or has non-obvious trad
 Store important architectural knowledge in a maintained project memory file under `docs/memory/` when one exists.
 Until then, treat the latest checkpoint plus the active task/spec/research triad as the persistent context for future tasks.
 
-Write checkpoint files (`docs/memory/chat_checkpoint_<date>.md`) at natural breakpoints so the next session can pick up without re-reading everything.
+Write checkpoint files (`docs/memory/chat_checkpoint_<date>.html` + `.md` stub) at natural breakpoints so the next session can pick up without re-reading everything.
 
-**Always save snapshots and summaries to files.** When the user asks for a snapshot, status update, summary, or says they're logging off — write it to `docs/memory/chat_checkpoint_<date>.md` automatically. Never just print a summary to chat without also persisting it. The checkpoint file is the handoff artifact; treat it as mandatory, not optional.
+**Always save snapshots and summaries to files.** When the user asks for a snapshot, status update, summary, or says they're logging off — write it to `docs/memory/chat_checkpoint_<date>.html` (and a companion `.md` stub) automatically. Never just print a summary to chat without also persisting it. The checkpoint file is the handoff artifact; treat it as mandatory, not optional.
 
-**All memory files must have Obsidian frontmatter.** Checkpoint files get `doc/checkpoint` tag. Project memory gets `doc/memory` tag. Include `[[wiki links]]` to the task files and specs that were worked on during the session.
+**All memory HTML files must have a companion `.md` stub.** Checkpoint stubs get `doc/checkpoint` tag. Project memory stubs get `doc/memory` tag. Include `[[wiki links]]` to the task files and specs that were worked on during the session.
 
 ### Automation Tools
 
