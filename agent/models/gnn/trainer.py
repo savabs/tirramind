@@ -1301,6 +1301,39 @@ class Trainer:
                     ckpt_path,
                     start_epoch,
                 )
+                # ── Restore EWC state from sidecar if present ─────────────
+                # The per-epoch checkpoint does NOT contain EWC state (Fisher
+                # is only computed after the full block finishes).  A separate
+                # sidecar file ewc_state.pt is written by train() after Fisher
+                # computation so subsequent blocks can resume with full EWC
+                # regularisation instead of starting cold (λ=0 → spike).
+                _ewc_sidecar = os.path.join(cfg.checkpoint_dir, "ewc_state.pt")
+                if os.path.exists(_ewc_sidecar):
+                    try:
+                        _ewc_ckpt = torch.load(_ewc_sidecar, map_location=self._device)
+                        self._ewc_state = EWCState(
+                            fisher=_ewc_ckpt["ewc_fisher"],
+                            anchor={
+                                k: v.to(self._device)
+                                for k, v in _ewc_ckpt["ewc_anchor"].items()
+                            },
+                            lambda_=_ewc_ckpt.get("ewc_lambda", cfg.ewc_lambda),
+                            last_update_ts=_ewc_ckpt.get("ewc_last_update_ts", 0.0),
+                            obs_count_at_update=_ewc_ckpt.get("ewc_obs_count_at_update", 0),
+                        )
+                        log.info(
+                            "EWC sidecar loaded: %d Fisher params, lambda=%.1f "
+                            "(EWC regularisation active from epoch 1).",
+                            len(self._ewc_state.fisher),
+                            self._ewc_state.lambda_,
+                        )
+                    except Exception as _ewc_exc:
+                        log.warning(
+                            "EWC sidecar load failed (%s) — starting block without EWC.",
+                            _ewc_exc,
+                        )
+                else:
+                    log.info("No EWC sidecar found — first block, EWC will be computed after training.")
             else:
                 raise FileNotFoundError(
                     f"[RESUME] Checkpoint not found: {ckpt_path}\n"
@@ -1989,6 +2022,22 @@ class Trainer:
                     cfg.ewc_lambda,
                     len(all_prefetched_obs),
                 )
+                # ── Persist EWC state as sidecar for next block ───────────
+                # The per-epoch .pt checkpoints do NOT include EWC state.
+                # Writing a separate sidecar here means the next block's
+                # train(resume=N) call will load it and start with full
+                # EWC regularisation, preventing the loss spike on restart.
+                if cfg.checkpoint_dir:
+                    _ewc_sidecar = os.path.join(cfg.checkpoint_dir, "ewc_state.pt")
+                    _ewc_payload = {
+                        "ewc_fisher": {k: v.cpu() for k, v in self._ewc_state.fisher.items()},
+                        "ewc_anchor": {k: v.cpu() for k, v in self._ewc_state.anchor.items()},
+                        "ewc_lambda": self._ewc_state.lambda_,
+                        "ewc_last_update_ts": self._ewc_state.last_update_ts,
+                        "ewc_obs_count_at_update": self._ewc_state.obs_count_at_update,
+                    }
+                    torch.save(_ewc_payload, _ewc_sidecar)
+                    log.info("EWC sidecar saved → %s (%d Fisher params).", _ewc_sidecar, len(self._ewc_state.fisher))
             else:
                 log.warning(
                     "Fisher computation skipped — last training window produced an empty graph (no nodes)."
