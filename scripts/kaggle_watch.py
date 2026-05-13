@@ -13,6 +13,7 @@ Usage:
 
 Press Ctrl+C to stop.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -22,7 +23,7 @@ import subprocess
 import sys
 import time
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -71,7 +72,11 @@ def _kaggle_status(kernel: str) -> dict:
             status = "queued"
         else:
             status = "unknown"
-        return {"status": status, "raw": raw, "url": f"https://www.kaggle.com/code/{kernel}"}
+        return {
+            "status": status,
+            "raw": raw,
+            "url": f"https://www.kaggle.com/code/{kernel}",
+        }
     except FileNotFoundError:
         return {"status": "kaggle CLI not found", "raw": "", "url": ""}
     except subprocess.TimeoutExpired:
@@ -133,9 +138,15 @@ def _latest_run(api_key: str, entity: str, project: str) -> dict | None:
         return {"_error": str(e)}
 
 
-def _run_history(api_key: str, entity: str, project: str, run_name: str, n: int) -> list[dict]:
+def _run_history(
+    api_key: str, entity: str, project: str, run_name: str, n: int
+) -> list[dict]:
     try:
-        data = _gql(api_key, _HIST_Q, {"entity": entity, "project": project, "run": run_name, "n": n})
+        data = _gql(
+            api_key,
+            _HIST_Q,
+            {"entity": entity, "project": project, "run": run_name, "n": n},
+        )
         rows = data["data"]["project"]["run"]["history"].get("rows", [])
         return [json.loads(r) if isinstance(r, str) else r for r in rows]
     except Exception:
@@ -281,7 +292,9 @@ def _render(
             if len(rets) >= 3:
                 delta = rets[-1] - rets[0]
                 if delta < -0.001:
-                    verdict = _clr(f"▼ IMPROVING  ({delta:+.4f} over {len(rets)} epochs)", _GRN)
+                    verdict = _clr(
+                        f"▼ IMPROVING  ({delta:+.4f} over {len(rets)} epochs)", _GRN
+                    )
                 elif delta > 0.001:
                     verdict = _clr(f"▲ DIVERGING  ({delta:+.4f})", _RED)
                 else:
@@ -306,29 +319,83 @@ def main() -> None:
     p.add_argument("--entity", default=os.environ.get("WANDB_ENTITY", "999-sbpatel"))
     p.add_argument("--project", default="tirramind")
     p.add_argument("--epochs", type=int, default=8, help="Epoch rows to show in table")
-    p.add_argument("--interval", type=int, default=60, help="Refresh interval in seconds")
+    p.add_argument(
+        "--interval", type=int, default=60, help="Refresh interval in seconds"
+    )
     p.add_argument("--once", action="store_true", help="Print once and exit")
+    p.add_argument(
+        "--log-file",
+        default=str(REPO_ROOT / "logs" / "training_live.jsonl"),
+        help="Append JSON snapshots here each refresh (for offline analysis)",
+    )
     args = p.parse_args()
 
     api_key = os.environ.get("WANDB_API_KEY") or os.environ.get("TIRRA_WANDB_API_KEY")
     if not api_key:
-        print("ERROR: WANDB_API_KEY not set. Add it to .env at project root.", file=sys.stderr)
+        print(
+            "ERROR: WANDB_API_KEY not set. Add it to .env at project root.",
+            file=sys.stderr,
+        )
         sys.exit(1)
+
+    log_path = Path(args.log_file)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    def _append_log(kst: dict, run: dict | None, history: list[dict]) -> None:
+        """Write one timestamped snapshot to the persistent JSONL log."""
+        try:
+            summary: dict = {}
+            if run and "_error" not in run:
+                try:
+                    summary = json.loads(run.get("summaryMetrics") or "{}")
+                except Exception:
+                    pass
+            latest_row = history[-1] if history else {}
+            record = {
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "kernel_status": kst.get("status", "unknown"),
+                "run_name": (run or {}).get("displayName") or (run or {}).get("name"),
+                "run_state": (run or {}).get("state"),
+                "run_heartbeat": (run or {}).get("heartbeatAt"),
+                "epoch": summary.get("epoch", latest_row.get("epoch", latest_row.get("_step"))),
+                "loss_total": _v(latest_row, "loss/total", "loss_total"),
+                "loss_return": _v(latest_row, "loss/return", "loss_return"),
+                "loss_obs_type": _v(latest_row, "loss/obs_type", "loss_obs_type"),
+                "loss_time_delta": _v(latest_row, "loss/time_delta", "loss_dt"),
+                "loss_value": _v(latest_row, "loss/value", "loss_value"),
+                "ic_emb_norm": _v(summary, "ic/emb_norm", "ic_emb_norm"),
+                "ic_value_head": _v(summary, "ic/value_head", "ic_value_head"),
+                "history_epochs": len(history),
+            }
+            with open(log_path, "a") as fh:
+                fh.write(json.dumps(record) + "\n")
+        except Exception:
+            pass  # never crash the dashboard on log write failure
 
     def _fetch():
         kst = _kaggle_status(args.kernel)
         run = _latest_run(api_key, args.entity, args.project)
         history: list[dict] = []
         if run and "_error" not in run:
-            history = _run_history(api_key, args.entity, args.project, run["name"], args.epochs)
+            history = _run_history(
+                api_key, args.entity, args.project, run["name"], args.epochs
+            )
         return kst, run, history
 
     if args.once:
         kst, run, history = _fetch()
-        print(_render(
-            kernel=args.kernel, kst=kst, run=run, history=history,
-            entity=args.entity, project=args.project, refresh_at=0,
-        ))
+        _append_log(kst, run, history)
+        print(
+            _render(
+                kernel=args.kernel,
+                kst=kst,
+                run=run,
+                history=history,
+                entity=args.entity,
+                project=args.project,
+                refresh_at=0,
+            )
+        )
         return
 
     print(f"Starting live dashboard (refresh every {args.interval}s) — Ctrl+C to stop")
@@ -337,13 +404,19 @@ def main() -> None:
     try:
         while True:
             kst, run, history = _fetch()
+            _append_log(kst, run, history)
             refresh_at = time.time() + args.interval
 
             sys.stdout.write("\033[H\033[J")  # clear screen
             sys.stdout.write(
                 _render(
-                    kernel=args.kernel, kst=kst, run=run, history=history,
-                    entity=args.entity, project=args.project, refresh_at=refresh_at,
+                    kernel=args.kernel,
+                    kst=kst,
+                    run=run,
+                    history=history,
+                    entity=args.entity,
+                    project=args.project,
+                    refresh_at=refresh_at,
                 )
             )
             sys.stdout.write("\n")

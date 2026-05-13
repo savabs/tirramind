@@ -1319,7 +1319,9 @@ class Trainer:
                             },
                             lambda_=_ewc_ckpt.get("ewc_lambda", cfg.ewc_lambda),
                             last_update_ts=_ewc_ckpt.get("ewc_last_update_ts", 0.0),
-                            obs_count_at_update=_ewc_ckpt.get("ewc_obs_count_at_update", 0),
+                            obs_count_at_update=_ewc_ckpt.get(
+                                "ewc_obs_count_at_update", 0
+                            ),
                         )
                         log.info(
                             "EWC sidecar loaded: %d Fisher params, lambda=%.1f "
@@ -1333,7 +1335,9 @@ class Trainer:
                             _ewc_exc,
                         )
                 else:
-                    log.info("No EWC sidecar found — first block, EWC will be computed after training.")
+                    log.info(
+                        "No EWC sidecar found — first block, EWC will be computed after training."
+                    )
             else:
                 raise FileNotFoundError(
                     f"[RESUME] Checkpoint not found: {ckpt_path}\n"
@@ -1631,6 +1635,11 @@ class Trainer:
                     )
                     valid_dt = dt_targets[valid_indices].clamp(0.0, 20.0)
                     dt_loss = F.huber_loss(dt_pred, valid_dt, delta=1.0)
+                    # Guard: zero out NaN/Inf from same-timestamp observations
+                    # (log1p(0)=0 paired with clamped preds can produce NaN via
+                    # Huber internals on some torch builds; seen every epoch in v15).
+                    if not torch.isfinite(dt_loss):
+                        dt_loss = torch.tensor(0.0, device=self._device)
 
                 # ── value prediction loss ────────────────
                 # Fix: clamp predictions to [-1e4, 1e4].  Raw financial values
@@ -2030,14 +2039,22 @@ class Trainer:
                 if cfg.checkpoint_dir:
                     _ewc_sidecar = os.path.join(cfg.checkpoint_dir, "ewc_state.pt")
                     _ewc_payload = {
-                        "ewc_fisher": {k: v.cpu() for k, v in self._ewc_state.fisher.items()},
-                        "ewc_anchor": {k: v.cpu() for k, v in self._ewc_state.anchor.items()},
+                        "ewc_fisher": {
+                            k: v.cpu() for k, v in self._ewc_state.fisher.items()
+                        },
+                        "ewc_anchor": {
+                            k: v.cpu() for k, v in self._ewc_state.anchor.items()
+                        },
                         "ewc_lambda": self._ewc_state.lambda_,
                         "ewc_last_update_ts": self._ewc_state.last_update_ts,
                         "ewc_obs_count_at_update": self._ewc_state.obs_count_at_update,
                     }
                     torch.save(_ewc_payload, _ewc_sidecar)
-                    log.info("EWC sidecar saved → %s (%d Fisher params).", _ewc_sidecar, len(self._ewc_state.fisher))
+                    log.info(
+                        "EWC sidecar saved → %s (%d Fisher params).",
+                        _ewc_sidecar,
+                        len(self._ewc_state.fisher),
+                    )
             else:
                 log.warning(
                     "Fisher computation skipped — last training window produced an empty graph (no nodes)."

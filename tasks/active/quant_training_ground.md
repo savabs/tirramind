@@ -1481,9 +1481,21 @@ Phases 0–44 ── ALL COMPLETE
 - Epochs 1–5 trained (1–3 local, 4–5 Kaggle T4). Checkpoint: `.tirra_pipeline/checkpoints/epoch_005.pt`. Active model: `.tirra_pipeline/gnn_model.pt`.
 - ✅ `get_memory()` off-by-one FIXED (`het_tgn.py`): clamp + zero-fill for out-of-range global_ids after entity count grew from 2450→2451.
 - ✅ `_contrastive_loss()` FIXED (`trainer.py`): embeddings were not L2-normalised before distance computation. Embedding magnitudes driven by MSE losses grew to ~166K scale, making margin=1.0 permanently inactive. Fix: normalise embeddings to unit sphere (`F.normalize`) before computing pairwise distances + use `random.sample` for negative indices. Verified: contrastive_loss now = 0.874 (was 0.0).
-- ⬜ Next training run: `--resume 5 --epochs 10` on Kaggle. Expect contrastive signal now active.
 - Loss at epoch 5: total=287.48, obs_type=5.46, time_delta=126.31, contrastive=0.0 (was broken), value=918.07
 - Attention: 5 STARVED edges (country↔country, topic→instrument, exchange_country, wallet→instrument, market_authorized_in). Fix via data depth, not model changes.
+
+**GNN training status (2026-05-26) — V16 READY:**
+- Kaggle v15 ran epochs 28–40 (~12hr, cancelled at limit). Best checkpoint: `epoch_040.pt` at `/tmp/hg_v15_out/tirramind_v1/.tirra_pipeline/checkpoints/h_g/epoch_040.pt`
+- IC at epoch_040 = −0.033 (GNN-EmbNorm), −0.0165 (GNN-ValueHead). WEAK, NOT SIGNIFICANT.
+- ✅ EWC sidecar fix committed (`5ba8b2c`): `ewc_state.pt` written after Fisher computation, loaded on resume. Eliminates 5-epoch loss spikes in multi-block training.
+- ✅ All 16 EWC tests pass: `PYTHONPATH=. ~/.local/bin/pytest tests/test_ewc.py`
+- ✅ `scripts/kaggle_watch.py` live terminal dashboard created.
+- ✅ Deep architecture review complete: `[[architecture_review_2026]]` — 12-section analysis, 8 risks ranked, all core components validated with sources.
+- ⬜ **NEXT: V16 Kaggle run** — `--resume 40 --epochs 50`, `use_listnet_return_loss=True`, target IC → +0.03–+0.07.
+- ⬜ Fix time_delta NaN before V16 (add NaN guard in trainer.py ~line 812).
+- ⬜ Complete Phase 17 entity linking before Phase 40 final evaluation run.
+- Return loss at ep40: ~91.4 (stable). time_delta: NaN every epoch (known, medium priority).
+- Known pytest workaround: `PYTHONPATH=. ~/.local/bin/pytest` (3.10.12); system `python3.11 -m pytest` BROKEN.
 
 **All phases are $0.** Every library is open source. Every data source is a free public API.
 
