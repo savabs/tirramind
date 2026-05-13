@@ -357,7 +357,9 @@ def main() -> None:
                 "run_name": (run or {}).get("displayName") or (run or {}).get("name"),
                 "run_state": (run or {}).get("state"),
                 "run_heartbeat": (run or {}).get("heartbeatAt"),
-                "epoch": summary.get("epoch", latest_row.get("epoch", latest_row.get("_step"))),
+                "epoch": summary.get(
+                    "epoch", latest_row.get("epoch", latest_row.get("_step"))
+                ),
                 "loss_total": _v(latest_row, "loss/total", "loss_total"),
                 "loss_return": _v(latest_row, "loss/return", "loss_return"),
                 "loss_obs_type": _v(latest_row, "loss/obs_type", "loss_obs_type"),

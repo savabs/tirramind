@@ -27,27 +27,26 @@ tags:
 
 ## Creating the Upload Zip
 
-### CRITICAL: The `-j` Flag BREAKS the Upload
+### CRITICAL: Two rules for the zip
 
-The notebook's `find_data_root()` function looks for a directory that contains **both**:
-- `pipeline.db` (file)
-- `checkpoints/` (subfolder)
+**Rule 1:** No `-j` flag. It strips paths and `find_data_root()` fails silently.
 
-**If you use `-j` (junk paths), the folder structure is stripped and `find_data_root()` will fail.**
+**Rule 2:** Checkpoints go at `.tirra_pipeline/checkpoints/epoch_NNN.pt` — **NOT** in a `h_g/` subfolder. Cell 5 does `ckpt_src.glob("epoch_*.pt")` on the flat `checkpoints/` dir. Cell 9 then seeds them into `checkpoints/h_g/`. If you put them in `h_g/` in the zip, Cell 5 asserts with "No epoch_*.pt files found" and the run errors immediately.
 
-### Correct Zip Command (preserves folder structure)
+### Correct Zip Command (use staging dir to get flat path)
 
 ```bash
 cd /home/becmachlean/2024/projects/tirramind_v1
 
-zip tirramind_data_upload.zip \
-  .tirra_pipeline/pipeline.db \
-  .tirra_pipeline/checkpoints/epoch_001.pt \
-  .tirra_pipeline/checkpoints/epoch_002.pt \
-  .tirra_pipeline/checkpoints/epoch_003.pt \
-  .tirra_pipeline/checkpoints/epoch_004.pt \
-  .tirra_pipeline/checkpoints/epoch_005.pt
-  # add more epoch_XXX.pt lines as training progresses
+# Stage with correct paths
+mkdir -p /tmp/staging/.tirra_pipeline/checkpoints
+cp .tirra_pipeline/checkpoints/h_g/epoch_028.pt /tmp/staging/.tirra_pipeline/checkpoints/epoch_028.pt
+cp .tirra_pipeline/pipeline.db /tmp/staging/.tirra_pipeline/pipeline.db
+
+# Zip from staging dir
+cd /tmp/staging
+zip -r /tmp/tirramind_data_upload.zip .tirra_pipeline/
+cd -
 ```
 
 Resulting zip structure (what Kaggle sees after extraction):
@@ -55,14 +54,13 @@ Resulting zip structure (what Kaggle sees after extraction):
 .tirra_pipeline/
   pipeline.db
   checkpoints/
-    epoch_001.pt
-    epoch_002.pt
-    ...
+    epoch_028.pt    ← FLAT, no h_g/ subfolder
 ```
 
-### Wrong (FLAT — will FAIL silently)
+### Wrong (two ways to break it)
 ```bash
-zip -j ...   # ← -j strips all paths — DO NOT USE
+zip -j ...                                    # ← strips all paths — FAIL
+zip ... .tirra_pipeline/checkpoints/h_g/*.pt  # ← h_g/ subdir — Cell 5 assert FAIL
 ```
 
 ---
@@ -248,17 +246,29 @@ Then rebuild `tirramind_data_upload.zip` including the new checkpoints for the n
 
 | Item | Value |
 |---|---|
-| **Production model** | `gnn_model.pt` = **H-G** (24MB, epoch 40, ICIR=+0.041 ReturnHead, +0.403 ValueHead CFTC) |
-| H-G backup | `gnn_model_h_g_backup.pt` (24MB) ✅ already in place |
-| H-G checkpoints | `checkpoints/h_g/epoch_031–040.pt` — all present locally |
-| **H-D result** | Evaluated epoch 18 locally: ReturnHead ICIR=-0.007 (NO SIGNAL). H-D LOSES. |
-| H-D status | Kaggle run timed out at epoch 29 (12h limit). epoch_029.pt NOT downloaded (flat return loss confirmed). |
-| **Next Kaggle run** | Phase 41b — ListNet retrain from epoch 20. Resume checkpoint: `epoch_020.pt`. |
-| Upload zip | `tirramind_listnet_upload.zip` (48MB) — ready at project root |
-| DB observations | 982,650 |
-| Entities | 2,502 |
-| Key code change | Phase 41b: ListNet ranking loss (`--listnet` flag). Committed at `6edbfb6`. |
-| Key change (AR.4) | Loss-component ratio validator added to trainer.py: warns if dt/return ratio >50× for 3+ epochs |
+| **Production model** | `gnn_model_h_g.pt` from Kaggle v15, epoch 40 — at `/tmp/hg_v15_out/tirramind_v1/.tirra_pipeline/gnn_model_h_g.pt` |
+| H-G checkpoints | epoch_028–040 at `/tmp/hg_v15_out/tirramind_v1/.tirra_pipeline/checkpoints/h_g/` (357MB total) |
+| **Kaggle v15 status** | CANCELLED at epoch 40/43 — 12hr limit hit. Ran epochs 28–40 in 3 blocks of 5. |
+| **EWC spike bug** | FIXED in git commit `5ba8b2c`. EWC sidecar `ewc_state.pt` now written after Fisher computation and loaded on --resume. All 16 EWC tests pass. |
+| **Kaggle v16 (next run)** | Needs: (1) upload epoch_040.pt to tirramind-data dataset (flat path), (2) upload updated code (trainer.py, kaggle_watch.py) to tirramind-code, (3) commit version. Resume from 40, target 50+. |
+| W&B status | NOT connected during v15 — WANDB_API_KEY secret failed. Needs fix before v16. Stale run `h-d-resume-ep18-40` at ep28 visible in dashboard — ignore. |
+| tirramind-code | Last uploaded 2026-05-12 — DOES NOT have EWC sidecar fix. MUST re-upload before v16. |
+| tirramind-data | Last version contains epoch_028.pt. MUST upload epoch_040.pt for v16 resume. |
+| Known issue | `time_delta` loss = NaN every epoch. Not yet investigated. |
+| GitHub | `savabs/tirramind` — `main` branch at commit `5ba8b2c` (EWC sidecar fix + kaggle_watch.py) |
+| DB observations | 339,164 (post-A1 filter) |
+| Entities | ~2,688 |
+
+### V16 Upload Checklist (before next Kaggle run)
+- [ ] Stage epoch_040.pt at flat path: `mkdir -p /tmp/staging_v16/.tirra_pipeline/checkpoints && cp /tmp/hg_v15_out/tirramind_v1/.tirra_pipeline/checkpoints/h_g/epoch_040.pt /tmp/staging_v16/.tirra_pipeline/checkpoints/epoch_040.pt`
+- [ ] Copy pipeline.db: `cp .tirra_pipeline/pipeline.db /tmp/staging_v16/.tirra_pipeline/pipeline.db`
+- [ ] Zip: `cd /tmp/staging_v16 && zip -r /tmp/tirramind_data_v16.zip .tirra_pipeline/`
+- [ ] Upload data: `kaggle datasets version -p /tmp/tirramind_upload_data -m "v16: epoch_040 checkpoint + EWC sidecar fix era"`
+- [ ] Re-zip code (includes EWC sidecar fix) and upload to tirramind-code dataset
+- [ ] Fix W&B secret in Kaggle → Settings → Secrets
+- [ ] Update Cell 11: `--epochs 50 --resume 40`
+- [ ] Update Cell 13: `if epoch_num > 40`
+- [ ] Push new notebook version (v16)
 
 ---
 
