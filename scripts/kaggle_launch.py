@@ -1,100 +1,157 @@
 #!/usr/bin/env python3
-"""kaggle_launch.py — one command to push code, run training on Kaggle, and download results.
+"""kaggle_launch.py — one command to run training on Kaggle and retrieve results.
+
+VERIFIED KAGGLE CLI COMMANDS (from `kaggle --help`):
+    kaggle kernels push -p <folder>          # push kernel, folder must have kernel-metadata.json
+    kaggle kernels status <owner>/<slug>     # get current run status
+    kaggle kernels logs -f <owner>/<slug>    # tail logs live (like tail -f)
+    kaggle kernels output -p <path> <slug>   # download all output files
+    kaggle kernels files <owner>/<slug>      # list output files
+    kaggle datasets version -p <folder> -m "msg" --dir-mode zip  # update dataset
 
 Usage:
-    python scripts/kaggle_launch.py [--epochs N] [--no-monitor] [--download-only]
+    python scripts/kaggle_launch.py                  # full flow: upload → push → tail logs → download → backtest
+    python scripts/kaggle_launch.py --push-only      # upload code + push kernel, then exit
+    python scripts/kaggle_launch.py --logs-only      # tail logs of currently running kernel
+    python scripts/kaggle_launch.py --download-only  # download outputs + run backtest
+    python scripts/kaggle_launch.py --backtest-only  # run local backtest on existing model
+    python scripts/kaggle_launch.py --status         # show what's currently running
 
-What it does:
-    1. Zips agent/ + scripts/ into tirramind-code dataset and uploads to Kaggle
-    2. Pushes the Phase 50 notebook as a new kernel version
-    3. Polls Kaggle every 60s until done / failed
-    4. Downloads gnn_model_phase50.pt and epoch checkpoints
-    5. Runs phase40_gnn_backtest.py locally and prints IC results
-    6. Tails W&B for live loss while waiting (if wandb is available)
+STATE FILE: .tirra_pipeline/kaggle_state.json
+    Always records the active kernel slug, version, epochs, and pushed_at.
+    Check it any time to know what's running.
 """
 
 import argparse
 import json
-import os
 import shutil
 import subprocess
 import sys
 import tempfile
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
+# ── constants ─────────────────────────────────────────────────────────────────
 ROOT = Path(__file__).resolve().parent.parent
-KERNEL_SLUG = "deeperisbetter/tirramind-phase50"
-CODE_DATASET_SLUG = "deeperisbetter/tirramind-code"
+KERNEL_SLUG = "deeperisbetter/tirramind-phase50"  # single canonical kernel
+NOTEBOOK_FILE = ROOT / "tirramind_kaggle_phase50.ipynb"
+CODE_DATASET = "deeperisbetter/tirramind-code"
+STATE_FILE = ROOT / ".tirra_pipeline" / "kaggle_state.json"
+DOWNLOAD_DIR = ROOT / ".tirra_pipeline" / "kaggle_downloads"
 MODEL_OUT = ROOT / ".tirra_pipeline" / "gnn_model_phase50.pt"
 CKPT_DIR = ROOT / ".tirra_pipeline" / "checkpoints" / "phase50"
 
-# ── helpers ──────────────────────────────────────────────────────────────────
+KAGGLE_URL = f"https://www.kaggle.com/code/{KERNEL_SLUG}"
 
-def run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
-    print(f"  $ {' '.join(str(c) for c in cmd)}")
-    return subprocess.run(cmd, check=True, **kw)
+# ── state file ────────────────────────────────────────────────────────────────
 
 
-def kaggle(*args) -> subprocess.CompletedProcess:
-    return run(["kaggle", *[str(a) for a in args]], capture_output=False)
+def write_state(extra: dict) -> None:
+    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    state = read_state()
+    state.update(extra)
+    STATE_FILE.write_text(json.dumps(state, indent=2))
+
+
+def read_state() -> dict:
+    if STATE_FILE.exists():
+        try:
+            return json.loads(STATE_FILE.read_text())
+        except Exception:
+            pass
+    return {}
+
+
+def show_status() -> None:
+    state = read_state()
+    if not state:
+        print("No active Kaggle run recorded.")
+        return
+    print("\n── Active Kaggle Run ─────────────────────────────")
+    print(f"  Kernel  : {state.get('kernel_slug')}")
+    print(f"  Epochs  : {state.get('epochs')}")
+    print(f"  Pushed  : {state.get('pushed_at')}")
+    print(f"  URL     : {KAGGLE_URL}")
+    result = subprocess.run(
+        ["kaggle", "kernels", "status", state.get("kernel_slug", KERNEL_SLUG)],
+        capture_output=True,
+        text=True,
+    )
+    print(f"  Status  : {result.stdout.strip()}")
+    print("──────────────────────────────────────────────────\n")
 
 
 # ── step 1: upload code dataset ───────────────────────────────────────────────
 
+
 def upload_code_dataset() -> None:
-    print("\n[1/5] Packaging and uploading tirramind-code dataset...")
+    print("\n[1/4] Packaging code → tirramind-code dataset...")
     with tempfile.TemporaryDirectory() as tmp:
-        tmp_path = Path(tmp)
-        code_dir = tmp_path / "tirramind-code"
-        code_dir.mkdir()
-
+        stage = Path(tmp) / "tirramind-code"
+        stage.mkdir()
         for folder in ("agent", "scripts"):
-            src = ROOT / folder
-            dst = code_dir / folder
-            shutil.copytree(src, dst, ignore=shutil.ignore_patterns(
-                "__pycache__", "*.pyc", "*.pyo", ".pytest_cache"
-            ))
-
-        meta = {
-            "title": "tirramind-code",
-            "id": CODE_DATASET_SLUG,
-            "licenses": [{"name": "proprietary"}],
-        }
-        (code_dir / "dataset-metadata.json").write_text(json.dumps(meta, indent=2))
-
-        subprocess.run(
-            ["kaggle", "datasets", "version", "-p", str(code_dir),
-             "-m", "Phase 50: price features + residual returns + deeper return head",
-             "--dir-mode", "zip"],
-            check=True,
+            shutil.copytree(
+                ROOT / folder,
+                stage / folder,
+                ignore=shutil.ignore_patterns(
+                    "__pycache__", "*.pyc", "*.pyo", ".pytest_cache"
+                ),
+            )
+        (stage / "dataset-metadata.json").write_text(
+            json.dumps(
+                {
+                    "title": "tirramind-code",
+                    "id": CODE_DATASET,
+                    "licenses": [{"name": "proprietary"}],
+                },
+                indent=2,
+            )
         )
 
+        # kaggle datasets version -p <folder> -m "message" --dir-mode zip
+        subprocess.run(
+            [
+                "kaggle",
+                "datasets",
+                "version",
+                "-p",
+                str(stage),
+                "-m",
+                f"Phase50 {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} UTC",
+                "--dir-mode",
+                "zip",
+            ],
+            check=True,
+        )
     print("  ✓ tirramind-code uploaded")
 
 
-# ── step 2: push notebook ─────────────────────────────────────────────────────
+# ── step 2: push kernel ───────────────────────────────────────────────────────
 
-def push_notebook(epochs: int) -> None:
-    print("\n[2/5] Pushing Phase 50 notebook to Kaggle...")
 
-    # Patch the epoch count in the notebook
-    nb_src = ROOT / "tirramind_kaggle_phase50.ipynb"
-    nb_data = json.loads(nb_src.read_text())
-    for cell in nb_data["cells"]:
+def push_kernel(epochs: int) -> None:
+    print(f"\n[2/4] Pushing kernel (epochs={epochs})...")
+
+    # Patch epochs in notebook
+    nb = json.loads(NOTEBOOK_FILE.read_text())
+    for cell in nb.get("cells", []):
         if cell.get("id") == "train-phase50":
-            src = cell["source"]
             cell["source"] = [
-                line.replace('"30"', f'"{epochs}"') if '"--epochs"' in prev or '"30"' in line else line
-                for prev, line in zip([""] + src, src)
+                (
+                    line
+                    if '"--epochs"' not in line
+                    else f'    "--epochs",              "{epochs}",\n'
+                )
+                for line in cell["source"]
             ]
-    nb_src.write_text(json.dumps(nb_data, indent=1))
+    NOTEBOOK_FILE.write_text(json.dumps(nb, indent=1))
 
-    meta_path = ROOT / "kernel-metadata.json"
-    meta_path.write_text(json.dumps({
+    # Write kernel-metadata.json (gitignored — generated each run)
+    meta = {
         "id": KERNEL_SLUG,
         "title": "tirramind-phase50",
-        "code_file": "tirramind_kaggle_phase50.ipynb",
+        "code_file": NOTEBOOK_FILE.name,
         "language": "python",
         "kernel_type": "notebook",
         "is_private": True,
@@ -102,142 +159,183 @@ def push_notebook(epochs: int) -> None:
         "enable_tpu": False,
         "enable_internet": True,
         "keywords": [],
-        "dataset_sources": [
-            "deeperisbetter/tirramind-data",
-            CODE_DATASET_SLUG,
-        ],
+        "dataset_sources": ["deeperisbetter/tirramind-data", CODE_DATASET],
         "kernel_sources": [],
         "competition_sources": [],
         "model_sources": [],
-    }, indent=2))
+    }
+    (ROOT / "kernel-metadata.json").write_text(json.dumps(meta, indent=2))
 
-    subprocess.run(["kaggle", "kernels", "push", "-p", str(ROOT)], check=True)
-    print("  ✓ Kernel pushed")
+    # kaggle kernels push -p <folder>
+    result = subprocess.run(
+        ["kaggle", "kernels", "push", "-p", str(ROOT)],
+        capture_output=True,
+        text=True,
+    )
+    print(f"  {result.stdout.strip()}")
+    if result.returncode != 0:
+        print(f"  ERROR: {result.stderr.strip()}")
+        sys.exit(1)
+
+    write_state(
+        {
+            "kernel_slug": KERNEL_SLUG,
+            "epochs": epochs,
+            "pushed_at": datetime.now(timezone.utc).isoformat(),
+            "url": KAGGLE_URL,
+        }
+    )
+    print(f"  ✓ Kernel pushed  →  {KAGGLE_URL}")
+    print(f"  ✓ State saved to {STATE_FILE}")
 
 
-# ── step 3: poll until done ───────────────────────────────────────────────────
+# ── step 3: tail logs ─────────────────────────────────────────────────────────
 
-def poll_until_done(interval: int = 60) -> str:
-    print(f"\n[3/5] Waiting for kernel to finish (polling every {interval}s)...")
-    print(f"      Kaggle URL: https://www.kaggle.com/code/{KERNEL_SLUG}")
 
-    _wandb_run_name = "phase50-ep1-30"
-    _shown_wandb = False
-    start = time.time()
+def tail_logs() -> str:
+    """Stream logs with `kaggle kernels logs -f`. Returns final status."""
+    slug = read_state().get("kernel_slug", KERNEL_SLUG)
+    print(f"\n[3/4] Tailing logs (Ctrl+C to stop and keep kernel running)...")
+    print(f"      {KAGGLE_URL}\n")
 
-    while True:
-        result = subprocess.run(
-            ["kaggle", "kernels", "status", KERNEL_SLUG],
-            capture_output=True, text=True,
-        )
-        line = result.stdout.strip()
-        elapsed = int(time.time() - start)
-        print(f"  [{elapsed//60:02d}m{elapsed%60:02d}s] {line}")
+    # kaggle kernels logs -f <slug>  — streams until kernel completes
+    proc = subprocess.run(
+        ["kaggle", "kernels", "logs", "-f", "--interval", "10", slug],
+    )
+    _ = proc  # logs -f blocks until kernel done or user Ctrl+C
 
-        if "COMPLETE" in line.upper():
-            return "complete"
-        if "ERROR" in line.upper() or "CANCEL" in line.upper():
-            print("  ✗ Kernel failed or was cancelled.")
-            return "failed"
+    # Check final status
+    result = subprocess.run(
+        ["kaggle", "kernels", "status", slug],
+        capture_output=True,
+        text=True,
+    )
+    status_line = result.stdout.strip()
+    print(f"\n  Final status: {status_line}")
 
-        # Print W&B latest metrics if available
-        if not _shown_wandb:
-            try:
-                import wandb
-                api = wandb.Api(timeout=10)
-                runs = list(api.runs("999-sbpatel/tirramind", per_page=5))
-                active = [r for r in runs if r.state == "running"]
-                if active:
-                    r = active[0]
-                    hist = list(r.scan_history(keys=["loss/total", "loss/return"], min_step=0, max_step=9999))
-                    if hist:
-                        last = hist[-1]
-                        print(f"      W&B [{r.name}] step={len(hist)} | total={last.get('loss/total', '?'):.4f} | ret={last.get('loss/return', '?'):.4f}")
-                    _shown_wandb = False  # keep refreshing
-            except Exception:
-                pass
-
-        time.sleep(interval)
+    if "COMPLETE" in status_line.upper():
+        return "complete"
+    if "ERROR" in status_line.upper() or "CANCEL" in status_line.upper():
+        return "failed"
+    return "unknown"
 
 
 # ── step 4: download outputs ──────────────────────────────────────────────────
 
-def download_outputs() -> None:
-    print("\n[4/5] Downloading outputs from Kaggle...")
-    out_dir = ROOT / ".tirra_pipeline" / "kaggle_downloads"
-    out_dir.mkdir(parents=True, exist_ok=True)
 
+def download_outputs() -> None:
+    slug = read_state().get("kernel_slug", KERNEL_SLUG)
+    print(f"\n[4/4] Downloading outputs from {slug}...")
+
+    DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+    # List files first
+    files_result = subprocess.run(
+        ["kaggle", "kernels", "files", slug],
+        capture_output=True,
+        text=True,
+    )
+    print(f"  Output files:\n{files_result.stdout.strip()}")
+
+    # kaggle kernels output -p <path> <slug>
     subprocess.run(
-        ["kaggle", "kernels", "output", KERNEL_SLUG, "-p", str(out_dir)],
+        ["kaggle", "kernels", "output", "-p", str(DOWNLOAD_DIR), slug],
         check=True,
     )
 
-    # Copy model
-    src_model = out_dir / "gnn_model_phase50.pt"
+    # Promote model
+    src_model = DOWNLOAD_DIR / "gnn_model_phase50.pt"
     if src_model.exists():
         shutil.copy2(src_model, MODEL_OUT)
         print(f"  ✓ Model → {MODEL_OUT}  ({MODEL_OUT.stat().st_size / 1e6:.1f} MB)")
     else:
-        print("  ✗ gnn_model_phase50.pt not found in output")
+        print(f"  ✗ gnn_model_phase50.pt not in output (check {DOWNLOAD_DIR})")
 
-    # Copy checkpoints
+    # Promote checkpoints
     CKPT_DIR.mkdir(parents=True, exist_ok=True)
-    ckpts = sorted(out_dir.glob("epoch_*.pt"))
+    ckpts = sorted(DOWNLOAD_DIR.glob("epoch_*.pt"))
     for ckpt in ckpts:
-        dst = CKPT_DIR / ckpt.name
-        shutil.copy2(ckpt, dst)
+        shutil.copy2(ckpt, CKPT_DIR / ckpt.name)
         print(f"  ✓ {ckpt.name}")
-    print(f"  {len(ckpts)} checkpoint(s) saved to {CKPT_DIR}")
 
 
 # ── step 5: local backtest ────────────────────────────────────────────────────
 
-def run_backtest() -> None:
-    print("\n[5/5] Running local IC backtest...")
-    if not MODEL_OUT.exists():
-        print(f"  ✗ Model not found at {MODEL_OUT}, skipping backtest.")
-        return
 
+def run_backtest() -> None:
+    print("\n[Backtest] Running local IC backtest...")
+    if not MODEL_OUT.exists():
+        print(f"  ✗ {MODEL_OUT} not found — download first.")
+        return
     result = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "phase40_gnn_backtest.py"),
-         "--model-path", str(MODEL_OUT),
-         "--out", str(ROOT / ".tirra_pipeline" / "ic_results_phase50.json")],
+        [
+            sys.executable,
+            "scripts/phase40_gnn_backtest.py",
+            "--model-path",
+            str(MODEL_OUT),
+            "--out",
+            str(ROOT / ".tirra_pipeline" / "ic_results_phase50.json"),
+        ],
         cwd=str(ROOT),
-        capture_output=False,
-        text=True,
     )
     if result.returncode != 0:
         print("  ✗ Backtest failed.")
     else:
-        print("  ✓ Backtest complete.")
+        print("  ✓ Backtest complete — check ic_results_phase50.json")
 
 
-# ── main ─────────────────────────────────────────────────────────────────────
+# ── main ──────────────────────────────────────────────────────────────────────
+
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Push Phase 50 to Kaggle, monitor, download, backtest.")
-    parser.add_argument("--epochs", type=int, default=30, help="Number of training epochs (default 30)")
-    parser.add_argument("--no-monitor", action="store_true", help="Push and exit without polling")
-    parser.add_argument("--download-only", action="store_true", help="Skip push, just download + backtest")
-    parser.add_argument("--backtest-only", action="store_true", help="Only run local backtest on existing model")
-    args = parser.parse_args()
+    p = argparse.ArgumentParser(
+        description="One-command Kaggle training: upload code → push kernel → tail logs → download → backtest",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__,
+    )
+    p.add_argument(
+        "--epochs", type=int, default=30, help="Training epochs (default 30)"
+    )
+    p.add_argument("--push-only", action="store_true", help="Upload + push, then exit")
+    p.add_argument("--logs-only", action="store_true", help="Tail logs of current run")
+    p.add_argument(
+        "--download-only", action="store_true", help="Download outputs + backtest"
+    )
+    p.add_argument(
+        "--backtest-only", action="store_true", help="Local backtest on existing model"
+    )
+    p.add_argument("--status", action="store_true", help="Show active run state")
+    args = p.parse_args()
+
+    if args.status:
+        show_status()
+        return
 
     if args.backtest_only:
         run_backtest()
         return
 
-    if not args.download_only:
-        upload_code_dataset()
-        push_notebook(args.epochs)
-        if args.no_monitor:
-            print("\nDone. Monitor at: https://www.kaggle.com/code/" + KERNEL_SLUG)
-            return
+    if args.logs_only:
+        tail_logs()
+        return
 
-    if not args.download_only:
-        status = poll_until_done()
-        if status == "failed":
-            print("\nTraining failed — check Kaggle for details.")
-            sys.exit(1)
+    if args.download_only:
+        download_outputs()
+        run_backtest()
+        return
+
+    # Full flow
+    upload_code_dataset()
+    push_kernel(args.epochs)
+
+    if args.push_only:
+        print(f"\nDone. To tail logs:\n  python scripts/kaggle_launch.py --logs-only")
+        return
+
+    status = tail_logs()
+    if status == "failed":
+        print("\nTraining failed. To check logs:\n  kaggle kernels logs", KERNEL_SLUG)
+        sys.exit(1)
 
     download_outputs()
     run_backtest()
