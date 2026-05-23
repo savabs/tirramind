@@ -26,7 +26,7 @@ import csv
 import io
 import logging
 import re
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone; UTC = timezone.utc
 from typing import TYPE_CHECKING, Any
 
 import defusedxml.ElementTree as ET

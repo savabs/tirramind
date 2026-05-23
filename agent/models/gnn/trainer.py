@@ -2580,6 +2580,68 @@ class Trainer:
         log.info("Model loaded from %s.", path)
         return trainer
 
+    @classmethod
+    def load_model_with_epoch_weights(
+        cls,
+        full_checkpoint_path: str | Path,
+        per_epoch_path: str | Path,
+        store: PipelineStore,
+    ) -> Trainer:
+        """Rebuild HetTGN from a full ``save_model`` checkpoint, then swap in
+        weights from ``epoch_NNN.pt``.
+
+        Per-epoch files only store ``model_state`` (plus optimizer/history);
+        they lack ``config`` / ``metadata_*`` / ``in_channels`` needed to
+        construct the graph and tensors.  Use this for IC/backtests when the
+        exported ``gnn_model_*.pt`` lags the last completed training epoch.
+
+        Args:
+            full_checkpoint_path: Path to ``save_model`` output (e.g. ``gnn_model_h_g.pt``).
+            per_epoch_path: Path to ``epoch_052.pt`` from the same training run.
+            store: Pipeline store for graph building.
+
+        Returns:
+            Trainer with architecture from ``full_checkpoint_path`` and weights
+            from ``per_epoch_path``.
+        """
+        full_checkpoint_path = Path(full_checkpoint_path)
+        per_epoch_path = Path(per_epoch_path)
+        if not full_checkpoint_path.exists():
+            raise FileNotFoundError(f"Full checkpoint not found: {full_checkpoint_path}")
+        if not per_epoch_path.exists():
+            raise FileNotFoundError(f"Per-epoch checkpoint not found: {per_epoch_path}")
+
+        trainer = cls.load_model(full_checkpoint_path, store)
+
+        ep = torch.load(per_epoch_path, map_location="cpu", weights_only=False)
+        if not isinstance(ep, dict):
+            raise RuntimeError(f"Unexpected checkpoint type in {per_epoch_path}")
+
+        state = ep.get("model_state") or ep.get("model_state_dict")
+        if state is None:
+            raise KeyError(
+                f"{per_epoch_path} has neither 'model_state' nor 'model_state_dict' "
+                "(not a per-epoch or full trainer checkpoint)."
+            )
+
+        missing, unexpected = trainer._model.load_state_dict(state, strict=False)
+        if missing or unexpected:
+            log.warning(
+                "load_model_with_epoch_weights: %d missing keys, %d unexpected keys "
+                "(strict=False).",
+                len(missing),
+                len(unexpected),
+            )
+        ep_num = ep.get("epoch", "?")
+        log.info(
+            "Overlayed per-epoch weights from %s (checkpoint epoch=%s) onto "
+            "architecture from %s.",
+            per_epoch_path,
+            ep_num,
+            full_checkpoint_path,
+        )
+        return trainer
+
 
 # ═══════════════════════════════════════════════════════════════
 # Walk-forward evaluation

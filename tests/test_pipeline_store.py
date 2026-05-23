@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import threading
 import time
-from datetime import UTC
+from datetime import timezone; UTC = timezone.utc
 
 import pytest
 

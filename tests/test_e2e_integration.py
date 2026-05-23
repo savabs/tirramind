@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import math
 import time
-from datetime import UTC, date, timedelta
+from datetime import date, timedelta, timezone; UTC = timezone.utc
 from pathlib import Path
 
 import numpy as np

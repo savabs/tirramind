@@ -23,7 +23,7 @@ import logging
 import time
 import zipfile
 from collections import Counter
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone; UTC = timezone.utc
 from typing import TYPE_CHECKING, Any
 
 import httpx

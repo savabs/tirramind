@@ -33,7 +33,7 @@ Market relevance:
 from __future__ import annotations
 
 import logging
-from datetime import UTC
+from datetime import timezone; UTC = timezone.utc
 from typing import Any
 
 import httpx

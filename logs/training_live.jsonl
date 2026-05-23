@@ -1,0 +1,1 @@
+{"ts": "2026-05-13T14:22:56.277229+00:00", "kernel_status": "running", "run_name": "h-d-resume-ep18-40", "run_state": "crashed", "run_heartbeat": "2026-05-05T21:31:50Z", "epoch": 28, "loss_total": null, "loss_return": null, "loss_obs_type": null, "loss_time_delta": null, "loss_value": null, "ic_emb_norm": null, "ic_value_head": null, "history_epochs": 0}

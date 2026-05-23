@@ -7,7 +7,7 @@ date helpers, format_doc normalization, cache interaction, HTTP errors (400/429/
 parameter clamping, URL encoding, output formatting, registry integration, bandit arm.
 """
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone; UTC = timezone.utc
 from unittest.mock import MagicMock, patch
 
 import httpx

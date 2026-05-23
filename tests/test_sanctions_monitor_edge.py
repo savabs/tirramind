@@ -13,7 +13,7 @@ cache interaction, tool metadata, output formatting, limit/bounds.
 
 from __future__ import annotations
 
-from datetime import UTC
+from datetime import timezone; UTC = timezone.utc
 from unittest.mock import MagicMock, patch
 
 import httpx

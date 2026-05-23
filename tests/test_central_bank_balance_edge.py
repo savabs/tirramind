@@ -18,7 +18,7 @@ Tests cover:
 from __future__ import annotations
 
 import unittest
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone; UTC = timezone.utc
 from unittest.mock import MagicMock, patch
 
 import httpx

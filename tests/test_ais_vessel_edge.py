@@ -6,7 +6,7 @@ filtering, named areas, vessel lookup, port calls, destination flow,
 cache integration, HTTP errors, schema validation, registry integration.
 """
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone; UTC = timezone.utc
 from unittest.mock import MagicMock, patch
 
 import pytest

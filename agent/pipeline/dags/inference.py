@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import logging
 import math
-from datetime import UTC, date, timedelta
+from datetime import date, timedelta, timezone; UTC = timezone.utc
 from pathlib import Path
 from typing import Any
 

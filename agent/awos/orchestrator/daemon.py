@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import signal
-from datetime import UTC
+from datetime import timezone; UTC = timezone.utc
 from pathlib import Path
 
 from apscheduler.schedulers.blocking import BlockingScheduler

@@ -17,7 +17,7 @@ integration of count assertions (32 tools, 21 arms).
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone; UTC = timezone.utc
 from typing import Any
 from unittest.mock import MagicMock, patch
 

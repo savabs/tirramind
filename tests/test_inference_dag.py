@@ -12,7 +12,7 @@ Covers:
 from __future__ import annotations
 
 import time
-from datetime import UTC, date
+from datetime import date, timezone; UTC = timezone.utc
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 

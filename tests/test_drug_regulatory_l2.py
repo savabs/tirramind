@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC
+from datetime import timezone; UTC = timezone.utc
 from unittest.mock import MagicMock, patch
 
 from agent.tools.drug_regulatory import DrugRegulatoryTool

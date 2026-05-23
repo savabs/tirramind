@@ -289,7 +289,7 @@ class JobPostingsTool(Tool):
         """JOLTS via BLS Public API (no key needed)."""
         import datetime
 
-        now = datetime.datetime.now(datetime.UTC)
+        now = datetime.datetime.now(UTC)
         end_year = now.year
         start_year = max(end_year - (months // 12) - 1, end_year - 10)
 
@@ -362,7 +362,7 @@ class JobPostingsTool(Tool):
 
         import datetime
 
-        now = datetime.datetime.now(datetime.UTC)
+        now = datetime.datetime.now(UTC)
         end_year = now.year
         start_year = max(end_year - (months // 12) - 1, end_year - 3)
 

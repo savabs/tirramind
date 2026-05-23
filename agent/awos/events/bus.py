@@ -16,7 +16,7 @@ import sqlite3
 import threading
 import time
 from collections.abc import Iterable
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone; UTC = timezone.utc
 from pathlib import Path
 from typing import Any
 

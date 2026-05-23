@@ -27,7 +27,7 @@ from __future__ import annotations
 import logging
 import os
 import time
-from datetime import UTC
+from datetime import timezone; UTC = timezone.utc
 from typing import TYPE_CHECKING, Any
 
 import httpx

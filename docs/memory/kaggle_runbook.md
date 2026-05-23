@@ -255,7 +255,7 @@ Then rebuild `tirramind_data_upload.zip` including the new checkpoints for the n
 | tirramind-code | Last uploaded 2026-05-12 — DOES NOT have EWC sidecar fix. MUST re-upload before v16. |
 | tirramind-data | Last version contains epoch_028.pt. MUST upload epoch_040.pt for v16 resume. |
 | Known issue | `time_delta` loss = NaN every epoch. Not yet investigated. |
-| GitHub | `savabs/tirramind` — `main` branch at commit `5ba8b2c` (EWC sidecar fix + kaggle_watch.py) |
+| GitHub | `savabs/tirramind` — `main` branch at commit `6199c61` (IC-gated triggers + per-entity-type loss + backtest CLI) |
 | DB observations | 339,164 (post-A1 filter) |
 | Entities | ~2,688 |
 
@@ -295,15 +295,16 @@ ls -lh .tirra_pipeline/gnn_model_h_d.pt   # expect ~27MB (vs 11MB stale version)
 
 ### Step 3 — Run H-D backtest
 
-⚠️ `phase40_gnn_backtest.py` has a **hardcoded** `MODEL_PATH = gnn_model.pt` (no `--model` flag).
-Swap temporarily:
+`phase40_gnn_backtest.py` now accepts `--model-path`:
 
 ```bash
-# H-G backup already at gnn_model_h_g_backup.pt — confirmed present
-cp .tirra_pipeline/gnn_model_h_d.pt .tirra_pipeline/gnn_model.pt
-
-python3 scripts/phase40_gnn_backtest.py
+python3 scripts/phase40_gnn_backtest.py \
+    --model-path .tirra_pipeline/gnn_model_h_d.pt \
+    --db-path .tirra_pipeline/pipeline.db \
+    --out .tirra_pipeline/ic_results.json
 ```
+
+IC results are written to `.tirra_pipeline/ic_results.json` — readable by `auto_improve.py`.
 
 Capture the ICIR line from stdout. Compare:
 

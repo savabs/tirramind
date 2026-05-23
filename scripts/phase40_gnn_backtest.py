@@ -625,13 +625,21 @@ def main() -> None:
 
     ap = argparse.ArgumentParser(description="Phase 40 GNN walk-forward backtest")
     ap.add_argument("--model-path", type=Path, default=MODEL_PATH,
-                    help="Path to GNN checkpoint .pt file")
+                    help="Path to full GNN checkpoint (.pt from save_model — graph metadata)")
+    ap.add_argument(
+        "--weights-from-epoch",
+        type=Path,
+        default=None,
+        help="Optional per-epoch file (e.g. epoch_052.pt): load architecture from "
+        "--model-path, then replace weights with this file (same run as the full ckpt).",
+    )
     ap.add_argument("--db-path", type=Path, default=DB_PATH,
                     help="Path to pipeline.db")
     ap.add_argument("--out", type=Path, default=None,
                     help="Write IC summary JSON so auto_improve.py can read it")
     args = ap.parse_args()
     _model_path: Path = args.model_path
+    _weights_epoch: Path | None = args.weights_from_epoch
     _db_path: Path = args.db_path
     _out_path: Path | None = args.out
 
@@ -641,6 +649,9 @@ def main() -> None:
         sys.exit(1)
     if not _model_path.exists():
         print(f"ERROR: Model not found at {_model_path}. Run retrain_gnn.py first.")
+        sys.exit(1)
+    if _weights_epoch is not None and not _weights_epoch.exists():
+        print(f"ERROR: --weights-from-epoch not found: {_weights_epoch}")
         sys.exit(1)
 
     # ── 2. Load store + instrument universe ──────────────────────────────────
@@ -676,8 +687,18 @@ def main() -> None:
         sys.exit(1)
 
     # ── 4. Load trained GNN model ─────────────────────────────────────────────
-    log.info("Loading GNN model from %s", _model_path)
-    trainer = Trainer.load_model(_model_path, store)
+    if _weights_epoch is not None:
+        log.info(
+            "Loading GNN: metadata from %s, weights from %s",
+            _model_path,
+            _weights_epoch,
+        )
+        trainer = Trainer.load_model_with_epoch_weights(
+            _model_path, _weights_epoch, store
+        )
+    else:
+        log.info("Loading GNN model from %s", _model_path)
+        trainer = Trainer.load_model(_model_path, store)
     log.info(
         "Model loaded: %d params", sum(p.numel() for p in trainer.model.parameters())
     )
@@ -736,8 +757,11 @@ def main() -> None:
     print(f"  Period:      {dates[0]} → {dates[-1]}")
     print(f"  Folds:       {len(results[strategies[0].name].folds)}")
     print(f"  Window:      {MIN_TRAIN}d train / {TEST_SIZE}d test / {STEP_SIZE}d step")
+    _gnn_desc = _model_path.name
+    if _weights_epoch is not None:
+        _gnn_desc = f"{_weights_epoch.name}  (metadata: {_model_path.name})"
     print(
-        f"  GNN:         {_model_path.name}  ({sum(p.numel() for p in trainer.model.parameters()):,} params)"
+        f"  GNN:         {_gnn_desc}  ({sum(p.numel() for p in trainer.model.parameters()):,} params)"
     )
 
     for strat in strategies:
@@ -770,7 +794,15 @@ def main() -> None:
     _print_ic_report(ic_results)
 
     # ── 10b. Write IC summary JSON (for auto_improve.py) ────
-    _ic_summary: dict = {"model_path": str(_model_path), "strategies": ic_results}
+    _ic_summary: dict = {
+        "model_path": str(_model_path),
+        "strategies": ic_results,
+    }
+    if _weights_epoch is not None:
+        _ic_summary["weights_from_epoch"] = str(_weights_epoch)
+        _ic_summary["note"] = (
+            "IC used weights from weights_from_epoch; graph/config from model_path."
+        )
     _best_strat = max(ic_results, key=lambda k: ic_results[k]["mean_ic"], default=None)
     if _best_strat:
         _ic_summary["best"] = {"strategy": _best_strat, **ic_results[_best_strat]}
@@ -813,17 +845,21 @@ def main() -> None:
     # Contains: data snapshot, IC results (with ICIR), stratified IC, model state.
     # Run 'python scripts/compare_experiments.py' to diff two runs.
     tracker = ExperimentTracker(_db_path, _model_path)
+    _manifest_extra: dict = {
+        "n_instruments": N,
+        "n_dates": T,
+        "date_range": [dates[0], dates[-1]],
+        "min_train": MIN_TRAIN,
+        "test_size": TEST_SIZE,
+        "step_size": STEP_SIZE,
+    }
+    if _weights_epoch is not None:
+        _manifest_extra["weights_from_epoch"] = str(_weights_epoch.resolve())
+        _manifest_extra["metadata_checkpoint"] = str(_model_path.resolve())
     manifest = tracker.build_manifest(
         ic_results=ic_results,
         stratified_ic=stratified,
-        extra={
-            "n_instruments": N,
-            "n_dates": T,
-            "date_range": [dates[0], dates[-1]],
-            "min_train": MIN_TRAIN,
-            "test_size": TEST_SIZE,
-            "step_size": STEP_SIZE,
-        },
+        extra=_manifest_extra,
     )
     manifest_path = tracker.save(manifest)
     print(f"\n  Manifest saved → {manifest_path}")

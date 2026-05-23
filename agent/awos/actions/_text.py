@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import re
 import tempfile
-from datetime import UTC, datetime
+from datetime import datetime, timezone; UTC = timezone.utc
 from pathlib import Path
 
 SELF_MARKER = "<!-- awos:self -->"

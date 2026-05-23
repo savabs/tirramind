@@ -30,7 +30,7 @@ Rate limits: None detected. Sub-second responses.
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone; UTC = timezone.utc
 from typing import TYPE_CHECKING, Any
 
 import httpx
