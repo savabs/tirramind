@@ -192,6 +192,39 @@ def push_kernel(epochs: int) -> None:
 # ── step 3: tail logs ─────────────────────────────────────────────────────────
 
 
+def get_logs_text() -> str:
+    """Fetch full log text from the last kernel run, decoded from JSON entries."""
+    result = subprocess.run(
+        ["kaggle", "kernels", "logs", KERNEL_SLUG],
+        capture_output=True,
+        text=True,
+    )
+    raw = result.stdout.strip()
+    if not raw:
+        return ""
+    lines = []
+    for l in raw.split("\n"):
+        try:
+            d = json.loads(l.strip())
+            t = d.get("data", "").rstrip()
+            if t:
+                lines.append(t)
+        except Exception:
+            pass
+    return "\n".join(lines)
+
+
+def classify_failure(log_text: str) -> str:
+    """Return a short failure category string for retry decisions."""
+    if "INCOMPATIBLE GPU" in log_text or "sm_60" in log_text or "P100" in log_text:
+        return "bad_gpu"
+    if "CUDA error" in log_text or "no kernel image" in log_text:
+        return "cuda_error"
+    if "Out of memory" in log_text or "CUDA out of memory" in log_text:
+        return "oom"
+    return "unknown"
+
+
 def tail_logs() -> str:
     """Stream logs with `kaggle kernels logs -f`. Returns final status."""
     slug = read_state().get("kernel_slug", KERNEL_SLUG)
@@ -324,17 +357,42 @@ def main() -> None:
         run_backtest()
         return
 
-    # Full flow
+    # Full flow  (auto-retry up to 3 times on bad GPU assignment)
+    MAX_RETRIES = 3
     upload_code_dataset()
-    push_kernel(args.epochs)
 
-    if args.push_only:
-        print(f"\nDone. To tail logs:\n  python scripts/kaggle_launch.py --logs-only")
-        return
+    for attempt in range(1, MAX_RETRIES + 1):
+        if attempt > 1:
+            print(f"\n  Retry {attempt}/{MAX_RETRIES} — repushing kernel...")
+        push_kernel(args.epochs)
 
-    status = tail_logs()
-    if status == "failed":
-        print("\nTraining failed. To check logs:\n  kaggle kernels logs", KERNEL_SLUG)
+        if args.push_only:
+            print(
+                f"\nDone. To tail logs:\n  python scripts/kaggle_launch.py --logs-only"
+            )
+            return
+
+        status = tail_logs()
+
+        if status == "complete":
+            break
+
+        # Diagnose the failure
+        log_text = get_logs_text()
+        failure = classify_failure(log_text)
+        print(f"\n  Failure category: {failure}")
+
+        if failure == "bad_gpu" and attempt < MAX_RETRIES:
+            print("  Kaggle assigned an incompatible GPU (P100 sm_60).")
+            print("  Repushing to get a different GPU assignment...")
+            time.sleep(10)
+            continue
+
+        # Non-retryable or out of retries
+        print(f"\nTraining failed ({failure}). Last logs:")
+        for line in log_text.splitlines()[-20:]:
+            print(" ", line)
+        print("\nFull logs:  kaggle kernels logs", KERNEL_SLUG)
         sys.exit(1)
 
     download_outputs()
