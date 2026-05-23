@@ -88,7 +88,9 @@ class AttentionCapturingHGTConv(HGTConv):
     ) -> dict[str, torch.Tensor | None]:
         if self.capture_attention:
             self._fwd_edge_types = list(edge_index_dict.keys())
-            self._fwd_edge_counts = [edge_index_dict[et].size(1) for et in self._fwd_edge_types]
+            self._fwd_edge_counts = [
+                edge_index_dict[et].size(1) for et in self._fwd_edge_types
+            ]
             self._captured_alpha = None
         return super().forward(x_dict, edge_index_dict)
 
@@ -185,7 +187,9 @@ class HeteroMemory(nn.Module):
         """
         if new_num_nodes <= self.num_nodes:
             return
-        new_memory = torch.zeros(new_num_nodes, self.memory_dim, device=self.memory.device)
+        new_memory = torch.zeros(
+            new_num_nodes, self.memory_dim, device=self.memory.device
+        )
         new_memory[: self.num_nodes] = self.memory
         new_last = torch.zeros(new_num_nodes, device=self.last_update.device)
         new_last[: self.num_nodes] = self.last_update
@@ -239,7 +243,9 @@ class HeteroMemory(nn.Module):
         time_feat = self.time_enc(dt)  # (B, time_dim)
 
         # GRU update
-        gru_input = torch.cat([messages, time_feat], dim=-1)  # (B, message_dim + time_dim)
+        gru_input = torch.cat(
+            [messages, time_feat], dim=-1
+        )  # (B, message_dim + time_dim)
         old_mem = self.memory[node_ids]
         new_mem = self.gru(gru_input, old_mem)
 
@@ -415,6 +421,8 @@ class HetTGN(nn.Module):
         # supervised exclusively on instrument_daily log_return targets without
         # dilution from other observation types.
         self.return_pred_head = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim // 2),
             nn.ReLU(),
             nn.Linear(hidden_dim // 2, 1),
@@ -454,7 +462,9 @@ class HetTGN(nn.Module):
             local_map = id_map.type_local.get(ntype, {})
             if local_map:
                 # Build global IDs in local order
-                global_ids = torch.zeros(len(local_map), dtype=torch.long, device=self.memory.memory.device)
+                global_ids = torch.zeros(
+                    len(local_map), dtype=torch.long, device=self.memory.memory.device
+                )
                 for eid, local_idx in local_map.items():
                     gid = id_map.global_id(ntype, eid)
                     if gid is not None:
@@ -638,7 +648,9 @@ class HetTGN(nn.Module):
         _msg_device = messages_list[0].device
         node_ids = torch.tensor(node_ids_list, dtype=torch.long, device=_msg_device)
         messages = torch.stack(messages_list)
-        timestamps = torch.tensor(timestamps_list, dtype=torch.float, device=_msg_device)
+        timestamps = torch.tensor(
+            timestamps_list, dtype=torch.float, device=_msg_device
+        )
 
         self.memory.update_memory(node_ids, messages, timestamps)
 

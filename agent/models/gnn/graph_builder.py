@@ -208,6 +208,7 @@ def _compute_obs_stats(
 #   value_iqr (1) + num_source_tools (1) + obs_type_dist (35) = 44
 ENRICHMENT_DIM = 55
 BASE_FEAT_DIM = len(ENTITY_TYPES) + 3  # one-hot type + count + recency + mean_val
+PRICE_FEAT_DIM = 9  # momentum(3) + volatility(2) + volume(2) + max_dd + sharpe
 
 
 def _compute_distributional_features(
@@ -287,6 +288,141 @@ def _compute_distributional_features(
     }
 
 
+def _compute_price_features(
+    entity_id: str,
+    observations: list[dict[str, Any]],
+    current_time: float,
+) -> list[float]:
+    """Compute price-derived features for an instrument from instrument_daily obs.
+
+    Features (9 dims, all computed from close prices / log_returns up to current_time):
+        momentum_1m, momentum_3m, momentum_6m,
+        volatility_20d, volatility_60d,
+        avg_volume_20d, volume_trend,
+        max_drawdown_60d, sharpe_60d
+
+    All features are computed without forward-looking bias — only observations
+    with observed_at <= current_time are used.  Returns zeros when insufficient data.
+    """
+    import math
+
+    # Extract instrument_daily data for this entity, sorted by time
+    daily_data: list[dict[str, float]] = []
+    for o in observations:
+        if o.get("entity_id") != entity_id:
+            continue
+        if o.get("observation_type") != "instrument_daily":
+            continue
+        ts = o.get("observed_at", 0.0)
+        if ts > current_time:
+            continue
+        v = o.get("value", {})
+        if not isinstance(v, dict):
+            continue
+        close = v.get("close")
+        volume = v.get("volume")
+        log_ret = v.get("log_return")
+        if close is None:
+            continue
+        try:
+            daily_data.append(
+                {
+                    "ts": float(ts),
+                    "close": float(close),
+                    "volume": float(volume) if volume is not None else 0.0,
+                    "log_return": float(log_ret) if log_ret is not None else 0.0,
+                }
+            )
+        except (TypeError, ValueError):
+            continue
+
+    if len(daily_data) < 2:
+        return [0.0] * PRICE_FEAT_DIM
+
+    daily_data.sort(key=lambda x: x["ts"])
+    closes = [d["close"] for d in daily_data]
+    log_rets = [d["log_return"] for d in daily_data]
+    volumes = [d["volume"] for d in daily_data]
+    n = len(closes)
+
+    def _momentum(lookback: int) -> float:
+        if n <= lookback:
+            return 0.0
+        past_close = closes[n - 1 - lookback]
+        if abs(past_close) < 1e-8:
+            return 0.0
+        return (closes[-1] - past_close) / abs(past_close)
+
+    def _volatility(lookback: int) -> float:
+        window = log_rets[-min(lookback, n) :]
+        if len(window) < 2:
+            return 0.0
+        mean = sum(window) / len(window)
+        var = sum((r - mean) ** 2 for r in window) / (len(window) - 1)
+        return math.sqrt(var) if var > 0 else 0.0
+
+    def _avg_volume(lookback: int) -> float:
+        window = volumes[-min(lookback, n) :]
+        if not window:
+            return 0.0
+        return sum(window) / len(window)
+
+    def _max_drawdown(lookback: int) -> float:
+        window = closes[-min(lookback, n) :]
+        if len(window) < 2:
+            return 0.0
+        peak = window[0]
+        max_dd = 0.0
+        for price in window[1:]:
+            if price > peak:
+                peak = price
+            dd = (price - peak) / peak if peak > 0 else 0.0
+            if dd < max_dd:
+                max_dd = dd
+        return max_dd
+
+    def _sharpe(lookback: int) -> float:
+        window = log_rets[-min(lookback, n) :]
+        if len(window) < 2:
+            return 0.0
+        mean = sum(window) / len(window)
+        var = sum((r - mean) ** 2 for r in window) / (len(window) - 1)
+        if var < 1e-12:
+            return 0.0
+        return mean / math.sqrt(var)
+
+    mom_1m = _momentum(21)
+    mom_3m = _momentum(63)
+    mom_6m = _momentum(126)
+    vol_20d = _volatility(20)
+    vol_60d = _volatility(60)
+    avg_vol_20d = _avg_volume(20)
+    avg_vol_60d = _avg_volume(60)
+    vol_trend = (avg_vol_20d / avg_vol_60d - 1.0) if avg_vol_60d > 0 else 0.0
+    max_dd_60d = _max_drawdown(60)
+    sharpe_60d = _sharpe(60)
+
+    features = [
+        mom_1m,
+        mom_3m,
+        mom_6m,
+        vol_20d,
+        vol_60d,
+        avg_vol_20d,
+        vol_trend,
+        max_dd_60d,
+        sharpe_60d,
+    ]
+    # Clamp extreme values and replace NaN/Inf with 0
+    result: list[float] = []
+    for f in features:
+        if not math.isfinite(f):
+            result.append(0.0)
+        else:
+            result.append(max(-100.0, min(100.0, f)))
+    return result
+
+
 def _build_node_features(
     entity_type: str,
     entity_ids: list[str],
@@ -308,7 +444,11 @@ def _build_node_features(
         log.warning("Unknown entity type %r — defaulting to index 0", entity_type)
         type_idx = 0
     type_dim = len(ENTITY_TYPES)
-    feat_dim = BASE_FEAT_DIM + (ENRICHMENT_DIM if enrichment is not None else 0)
+    _is_instrument = entity_type == "instrument"
+    _price_dim = PRICE_FEAT_DIM if _is_instrument else 0
+    feat_dim = (
+        BASE_FEAT_DIM + (ENRICHMENT_DIM if enrichment is not None else 0) + _price_dim
+    )
 
     if not entity_ids:
         return torch.zeros(0, feat_dim)
@@ -348,7 +488,18 @@ def _build_node_features(
             features[local_idx, offset + 8] = dist_feats["num_tools"]
             # Obs type distribution (18 dims)
             for ot_idx, ot_name in enumerate(OBSERVATION_TYPES):
-                features[local_idx, offset + 9 + ot_idx] = dist_feats["obs_type_dist"][ot_name]
+                features[local_idx, offset + 9 + ot_idx] = dist_feats["obs_type_dist"][
+                    ot_name
+                ]
+
+        # Price-derived features (instruments only — Phase 50)
+        if _is_instrument:
+            price_offset = BASE_FEAT_DIM + (
+                ENRICHMENT_DIM if enrichment is not None else 0
+            )
+            price_feats = _compute_price_features(eid, observations, current_time)
+            for pf_idx, pf_val in enumerate(price_feats):
+                features[local_idx, price_offset + pf_idx] = pf_val
 
     return features
 
@@ -399,7 +550,9 @@ def _build_edge_data(
             continue
 
         triplet = (type_a, ltype, type_b)
-        bucket = grouped.setdefault(triplet, {"src": [], "dst": [], "conf": [], "age": []})
+        bucket = grouped.setdefault(
+            triplet, {"src": [], "dst": [], "conf": [], "age": []}
+        )
         bucket["src"].append(local_a)
         bucket["dst"].append(local_b)
         bucket["conf"].append(link.get("confidence", 1.0))

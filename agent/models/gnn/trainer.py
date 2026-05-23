@@ -687,6 +687,12 @@ class TrainerConfig:
     """Holding period in TRADING DAYS for forward return computation.
     21 trading days ≈ 1 calendar month.  Aligns with the monthly rebalancing
     cadence assumed in the walk-forward backtest."""
+    use_residual_returns: bool = False
+    """When True, cross-sectionally demean the forward return targets before
+    computing the return loss.  This strips out the market-wide component
+    (which the model cannot predict from entity-level features) and forces
+    the model to learn only cross-sectional variation — exactly what
+    Spearman IC measures.  Has no effect when return_weight=0."""
 
     # ── Weights & Biases streaming (optional) ──────────────────────────────
     wandb_project: str | None = None
@@ -1711,6 +1717,13 @@ class Trainer:
                         _ret_tgt_t = torch.tensor(
                             _ret_targets, dtype=torch.float32, device=self._device
                         )
+                        # ── Phase 50: residual returns ──────────────────
+                        # Cross-sectionally demean targets so the model
+                        # learns only relative outperformance, not the
+                        # market-wide component.  This directly aligns the
+                        # training objective with Spearman IC evaluation.
+                        if cfg.use_residual_returns:
+                            _ret_tgt_t = _ret_tgt_t - _ret_tgt_t.mean()
                         # Guard: filter out any NaN/Inf targets that came from
                         # bad DB rows (stock splits, missing prices, etc.).
                         # A single NaN target propagates through huber_loss →
@@ -2607,7 +2620,9 @@ class Trainer:
         full_checkpoint_path = Path(full_checkpoint_path)
         per_epoch_path = Path(per_epoch_path)
         if not full_checkpoint_path.exists():
-            raise FileNotFoundError(f"Full checkpoint not found: {full_checkpoint_path}")
+            raise FileNotFoundError(
+                f"Full checkpoint not found: {full_checkpoint_path}"
+            )
         if not per_epoch_path.exists():
             raise FileNotFoundError(f"Per-epoch checkpoint not found: {per_epoch_path}")
 

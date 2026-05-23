@@ -263,6 +263,12 @@ def main() -> None:
         help="Weight for direction BCE loss when --direction-loss is active (default: 0.3).",
     )
     parser.add_argument(
+        "--residual-returns",
+        action="store_true",
+        help="Cross-sectionally demean forward return targets so the model "
+        "learns only relative outperformance (Phase 50).",
+    )
+    parser.add_argument(
         "--window-size",
         type=float,
         default=86400.0,
@@ -505,6 +511,7 @@ def main() -> None:
             max_windows=args.max_windows,
             use_direction_loss=args.direction_loss,
             direction_loss_weight=args.direction_loss_weight,
+            use_residual_returns=args.residual_returns,
             return_weight=args.return_weight,
             obs_type_weight=args.obs_type_weight,
             listnet_temperature=args.listnet_temperature,
