@@ -225,17 +225,41 @@ def classify_failure(log_text: str) -> str:
     return "unknown"
 
 
-def tail_logs() -> str:
-    """Stream logs with `kaggle kernels logs -f`. Returns final status."""
+def tail_logs() -> tuple[str, str]:
+    """Stream logs with `kaggle kernels logs -f`.
+    Returns (status, captured_log_text) so failure diagnosis uses the
+    same text we already streamed, avoiding the empty-log bug from a
+    secondary `kaggle kernels logs` call after `-f` exits.
+    """
     slug = read_state().get("kernel_slug", KERNEL_SLUG)
     print(f"\n[3/4] Tailing logs (Ctrl+C to stop and keep kernel running)...")
     print(f"      {KAGGLE_URL}\n")
 
-    # kaggle kernels logs -f <slug>  — streams until kernel completes
-    proc = subprocess.run(
+    proc = subprocess.Popen(
         ["kaggle", "kernels", "logs", "-f", "--interval", "10", slug],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
     )
-    _ = proc  # logs -f blocks until kernel done or user Ctrl+C
+    assert proc.stdout is not None
+
+    captured_lines: list[str] = []
+    for line in proc.stdout:
+        print(line, end="")
+        line = line.rstrip("\n")
+        if not line:
+            continue
+        try:
+            d = json.loads(line)
+            txt = d.get("data", "").rstrip()
+            if txt:
+                captured_lines.append(txt)
+        except Exception:
+            captured_lines.append(line)
+
+    proc.wait()
+    log_text = "\n".join(captured_lines)
 
     # Check final status
     result = subprocess.run(
@@ -247,10 +271,10 @@ def tail_logs() -> str:
     print(f"\n  Final status: {status_line}")
 
     if "COMPLETE" in status_line.upper():
-        return "complete"
+        return "complete", log_text
     if "ERROR" in status_line.upper() or "CANCEL" in status_line.upper():
-        return "failed"
-    return "unknown"
+        return "failed", log_text
+    return "unknown", log_text
 
 
 # ── step 4: download outputs ──────────────────────────────────────────────────
@@ -349,7 +373,8 @@ def main() -> None:
         return
 
     if args.logs_only:
-        tail_logs()
+        status, _ = tail_logs()
+        print(f"\n  Final status: {status}")
         return
 
     if args.download_only:
@@ -372,13 +397,12 @@ def main() -> None:
             )
             return
 
-        status = tail_logs()
+        status, log_text = tail_logs()
 
         if status == "complete":
             break
 
-        # Diagnose the failure
-        log_text = get_logs_text()
+        # Diagnose the failure using the captured log text
         failure = classify_failure(log_text)
         print(f"\n  Failure category: {failure}")
 
@@ -389,7 +413,7 @@ def main() -> None:
             continue
 
         # Non-retryable or out of retries
-        print(f"\nTraining failed ({failure}). Last logs:")
+        print(f"\nTraining failed ({failure}). Last 20 log lines:")
         for line in log_text.splitlines()[-20:]:
             print(" ", line)
         print("\nFull logs:  kaggle kernels logs", KERNEL_SLUG)
