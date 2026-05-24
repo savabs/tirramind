@@ -308,12 +308,20 @@ def download_outputs() -> None:
     else:
         print(f"  ✗ gnn_model_phase50.pt not in output (check {DOWNLOAD_DIR})")
 
-    # Promote checkpoints
+    # Promote checkpoints (written to phase50_ckpts/ inside the output)
     CKPT_DIR.mkdir(parents=True, exist_ok=True)
-    ckpts = sorted(DOWNLOAD_DIR.glob("epoch_*.pt"))
+    ckpt_subdir = DOWNLOAD_DIR / "phase50_ckpts"
+    search_dirs = [ckpt_subdir, DOWNLOAD_DIR]
+    ckpts: list[Path] = []
+    for d in search_dirs:
+        ckpts = sorted(d.glob("epoch_*.pt"))
+        if ckpts:
+            break
     for ckpt in ckpts:
         shutil.copy2(ckpt, CKPT_DIR / ckpt.name)
         print(f"  ✓ {ckpt.name}")
+    if not ckpts:
+        print(f"  ✗ No epoch_*.pt found in output (check {DOWNLOAD_DIR})")
 
 
 # ── step 5: local backtest ────────────────────────────────────────────────────
@@ -382,8 +390,8 @@ def main() -> None:
         run_backtest()
         return
 
-    # Full flow  (auto-retry up to 3 times on bad GPU assignment)
-    MAX_RETRIES = 3
+    # Full flow  (auto-retry up to 6 times on bad GPU assignment)
+    MAX_RETRIES = 6
     upload_code_dataset()
 
     for attempt in range(1, MAX_RETRIES + 1):
