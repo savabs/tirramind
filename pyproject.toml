@@ -32,6 +32,11 @@ quant = [
 ml = [
     "torch>=2.0",
     "torch-geometric>=2.5",
+    "torchdiffeq>=0.2",
+    "torchcde>=0.2",
+    "torchsde>=0.2",
+    "mambapy>=1.2",
+    "ts2vec>=0.1",
 ]
 dev = [
     "pytest>=7.0",
@@ -47,10 +52,17 @@ tirra-agent = "agent.cli:main"
 tirra-workflow-check = "agent.workflow_guard:main"
 tirra-wiki-catalog = "agent.wiki.catalog:main"
 tirra-awos = "agent.awos.cli:main"
+tirra-engine = "agent.app:engine"
+tirra-serve = "agent.app:serve"
+tirra-brief = "agent.app:brief"
 
 [build-system]
 requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["agent*"]
+namespaces = false
 
 # ---------------------------------------------------------------------------
 # Tool configuration

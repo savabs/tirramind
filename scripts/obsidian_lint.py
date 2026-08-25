@@ -58,6 +58,8 @@ SKIP_DIRS = {
     ".obsidian",
     ".venv",
     ".git",
+    ".cursor",  # Cursor hooks/rules/skills — not Obsidian vault artifacts
+    ".claude",  # Claude skills — not Obsidian vault artifacts
     "node_modules",
     "__pycache__",
     "tirramind_vault",

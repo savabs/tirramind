@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Comprehensive Checkpoint: 2026-06-01 — Math Stack & GNN Training Pipeline</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 2rem;
+            background-color: #f9f9f9;
+        }
+
+        header {
+            border-bottom: 3px solid #3182ce;
+            padding-bottom: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        h1 {
+            color: #2c5282;
+            margin-top: 0;
+            font-size: 2.2rem;
+        }
+
+        h2 {
+            color: #2b6cb0;
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 0.5rem;
+            margin-top: 2rem;
+            font-size: 1.5rem;
+        }
+
+        h3 {
+            color: #4a5568;
+            margin-top: 1.5rem;
+            font-size: 1.2rem;
+        }
+
+        .status-complete {
+            color: #276749;
+            font-weight: bold;
+        }
+
+        .status-pending {
+            color: #9c4221;
+            font-weight: bold;
+        }
+
+        .code {
+            background-color: #f7fafc;
+            border-left: 3px solid #3182ce;
+            padding: 0.8rem 1rem;
+            font-family: "Courier New", monospace;
+            font-size: 0.9rem;
+            margin: 1rem 0;
+            border-radius: 0 4px 4px 0;
+        }
+
+        .warning {
+            background-color: #fffaf0;
+            border-left: 3px solid #dd6b20;
+            padding: 0.8rem 1rem;
+            margin: 1rem 0;
+        }
+
+        .success {
+            background-color: #f0fff4;
+            border-left: 3px solid #38a169;
+            padding: 0.8rem 1rem;
+            margin: 1rem 0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+        }
+
+        th,
+        td {
+            border: 1px solid #e2e8f0;
+            padding: 0.5rem;
+            text-align: left;
+        }
+
+        th {
+            background-color: #edf2f7;
+        }
+    </style>
+</head>
+
+<body>
+
+    <header>
+        <h1>Comprehensive Checkpoint: 2026-06-01</h1>
+        <p><strong>Context:</strong> Unified checkpoint of both the Math Stack SVI/SABR/rough-Bergomi implementation and
+            the GNN training pipeline achievements. Essential reading for subsequent agents to resume without context
+            loss.</p>
+    </header>
+
+    <h2>PART 1: GNN TRAINING PIPELINE & KAGGLE MILESTONES</h2>
+
+    <h3>1. Critical Phase 50 GNN Architecture Resolving</h3>
+    <ul>
+        <li><strong>F-09 Zero-Initialization Dead Zone (Fixed):</strong> In previous runs (V38–V41), the last layer of
+            the return prediction head was zero-initialized. This completely blocked backpropagation, shielding the
+            HGT/GRU backbone from receiving any gradients from the return loss. We removed this and switched to standard
+            <strong>Kaiming Initialization</strong>, allowing active gradient flow from epoch 1.
+        </li>
+        <li><strong>HGT/GRU Alignment:</strong> GNN dimensional alignment was fixed at:
+            <ul>
+                <li><code>hidden_dim = 128</code></li>
+                <li><code>memory_dim = 128</code></li>
+                <li><code>time_dim = 16</code></li>
+                <li><code>message_dim = 128</code> (Input dimension to GRU = 144)</li>
+            </ul>
+        </li>
+        <li><strong>CSRC Loss Deployed:</strong> Cross-Subspace Representation Consistency loss was introduced to
+            maintain embedding diversity and prevent dimensional collapse across entity channels.</li>
+    </ul>
+
+    <h3>2. Historical Run Log & Breakthrough Results</h3>
+    <table>
+        <tr>
+            <th>Version</th>
+            <th>Epochs</th>
+            <th>IC Results / Performance</th>
+            <th>Key Changes & Discoveries</th>
+        </tr>
+        <tr>
+            <td>V38-V39</td>
+            <td>1 &rarr; 75</td>
+            <td>IC &approx; 0.00 (Collapse)</td>
+            <td>Entity-identity contrastive loss caused dimensional collapse. Backbone gradients were blocked.</td>
+        </tr>
+        <tr>
+            <td>V40-V41</td>
+            <td>63 &rarr; 75</td>
+            <td>Raw head baseline only</td>
+            <td>Added CSRC. Discovered and fixed history alignment bug (return column shifted 10 rows; padded NaN
+                front).</td>
+        </tr>
+        <tr>
+            <td>V42</td>
+            <td>75 &rarr; 90</td>
+            <td>+nan (Dead model)</td>
+            <td>Enabled Concat Head <code>[raw_price || GNN_emb] &rarr; return</code>. Discovered and fixed the F-09
+                zero-init block.</td>
+        </tr>
+        <tr>
+            <td><strong>V43 Quickrun</strong></td>
+            <td>0 &rarr; 10</td>
+            <td><strong>+0.3622 Local / +0.3597 Kaggle</strong></td>
+            <td>GNN trained from scratch. Confirmed weight std became non-zero (0.0653). Learned return features
+                immediately. Tested on final weekly cross-section of 89 instruments.</td>
+        </tr>
+        <tr>
+            <td><strong>V45 GPU Fix</strong></td>
+            <td>0 &rarr; 90</td>
+            <td><strong>+0.0369 Mean IC (ICIR=+0.236)</strong></td>
+            <td>Kaggle GPU fixed (was accidentally running on CPU). GNN-EmbNorm achieved stable convergence. CFTC
+                positioning feature contributed +0.0541 IC boost.</td>
+        </tr>
+        <tr>
+            <td><strong>V46 Unleashed</strong></td>
+            <td>0 &rarr; 90</td>
+            <td><strong>+0.0250 Mean IC (ValueHead=+40.64% Ret)</strong></td>
+            <td>100% GDELT news flood, unlimited windows, pure return loss. Checked decile spread.</td>
+        </tr>
+        <tr>
+            <td><strong>V47 Memory Update</strong></td>
+            <td>0 &rarr; 90</td>
+            <td><em>Running</em></td>
+            <td><strong>Recursive Chronological Step-Updates:</strong> Fixes F-11 intra-window blind spot by processing
+                multi-event sequences for duplicate nodes sequentially and recursively inside the training window.</td>
+        </tr>
+    </table>
+
+    <h3>3. Signal Ceiling & Evaluation Window Correction</h3>
+    <ul>
+        <li><strong>Evaluation Window Expansion (Critical):</strong> Discovered a critical evaluation flaw where
+            benchmark tools used only a 6-week lookback history. Because 60d lookback features (Sharpe, Volatility, Max
+            DD) require a minimum of 12 weeks of historical context, the evaluation window was fixed to a
+            <strong>26-week default</strong>, causing the walk-forward Ridge baseline ICIR to jump from 0.14 to
+            <strong>0.444</strong> (Sharpe = 0.80, Hit Rate = 71.5%).
+        </li>
+        <li><strong>Pre-Trained Head Baseline:</strong> <code>epoch_021_rawhead.pt</code> achieved a tradeable
+            <strong>IC of +0.090</strong> when trained standalone on cross-section normalization of price features.
+        </li>
+        <li><strong>Cross-Section Price Normalization:</strong> Added <code>xsnorm_price_feats()</code> in
+            <code>graph_builder.py</code> to z-score price levels cross-sectionally, preventing scale dominance in
+            features.
+        </li>
+    </ul>
+
+    <h3>4. Standing Run Orders (Verification Discipline)</h3>
+    <div class="warning">
+        <strong>IRON RULE:</strong> Before ANY Kaggle kernel push, run:
+        <div class="code">python3 scripts/smoke_test_gnn.py</div>
+        All 9 unit tests must pass. In particular:
+        - <strong>T4 (concat_head_grad_backbone):</strong> Ensures return gradients flow back to the HGT backbone.
+        - <strong>T9 (hgt_conv_grad_with_edges):</strong> Verifies edge message passing gradients.
+        - <strong>T7 (embedding_diversity):</strong> Verifies std of embeddings does not shrink after CSRC steps.
+    </div>
+
+    <h3>5. Latest Kaggle Deployment & GPU Environment Fixes</h3>
+    <ul>
+        <li><strong>Adaptive Window Sizing:</strong> Graph snapshot windows are adapted dynamically based on hardware
+            resources—200 windows on GPU, down to 80 windows on CPU—to prevent Out-Of-Memory (OOM) crashes while
+            maximizing GPU utilisation.</li>
+        <li><strong>P100 (sm_60) GPU Compatibility Resolved:</strong> Solved severe CUDA architectural mismatch issues
+            on Kaggle P100 GPUs by prepending the PyTorch import block with an automated PyTorch 2.5.1 installation
+            script. In the event of secondary failures, a graceful CPU fallback with logging is executed rather than
+            raising a hard exception.</li>
+        <li><strong>Autonomous Launcher (kaggle_launch.py):</strong> Rebuilt the automated execution script to support
+            robust, one-command push/monitor/download loops. Includes state persistence, 6-retry threshold for transient
+            server connections, and automated tailing (<code>logs -f</code>) of the execution process.</li>
+        <li><strong>Mid-Run Resuming:</strong> Added the ability to resume long-running kernels midway (e.g., resuming
+            V47 from epoch 14) by searching <code>/kaggle/input/</code> for the target checkpoint
+            (<code>epoch_014.pt</code>) and copying it to the local checkpoint directory with the
+            <code>--resume 14</code> flag.</li>
+    </ul>
+
+    <hr>
+
+    <h2>PART 2: MATH STACK STATUS (M1–M6 COMPLETE)</h2>
+
+    <h3>1. Implementation Matrix</h3>
+    <table>
+        <tr>
+            <th>Phase</th>
+            <th>Status</th>
+            <th>Tests</th>
+            <th>Mathematical Core</th>
+        </tr>
+        <tr>
+            <td>M1: SDE Foundation</td>
+            <td class="status-complete">COMPLETE</td>
+            <td>15/15 pass</td>
+            <td>Euler-Maruyama + Milstein SDE path generators in <code>torchsde</code>, GBM, and Heston.</td>
+        </tr>
+        <tr>
+            <td>M2: Options & Greeks</td>
+            <td class="status-complete">COMPLETE</td>
+            <td>11/11 pass</td>
+            <td>Analytical European Black-Scholes, Greeks via automatic differentiation, Barone-Adesi American,
+                Newton-Raphson implied vol.</td>
+        </tr>
+        <tr>
+            <td>M3: Advanced Pricing</td>
+            <td class="status-complete">COMPLETE</td>
+            <td>16/16 pass</td>
+            <td>Fourier-Cosine (COS) pricing of Heston (with Little Trap complex log), Bates, Merton Jump-Diffusion, and
+                Variance Gamma.</td>
+        </tr>
+        <tr>
+            <td>M5: Vol Surface</td>
+            <td class="status-complete">COMPLETE</td>
+            <td>7/7 pass</td>
+            <td>Gatheral SVI, SABR Hagan formula with ATM 0/0 Taylor guard, total-variance bilinear surface
+                interpolation, analytical skew/curvature extraction.</td>
+        </tr>
+        <tr>
+            <td>M6: Rough Volatility</td>
+            <td class="status-complete">COMPLETE</td>
+            <td>3/3 pass</td>
+            <td>rBergomi, BLP hybrid path simulation, and empirical Hurst exponent log-increment scaling estimator.
+                Validated exploding skew signature $\psi(T) \propto T^{H-1/2}$.</td>
+        </tr>
+    </table>
+
+    <h3>2. Critical Math Stack Bug Fixes & Corrections</h3>
+    <ul>
+        <li><strong>BLP Weight Scaling Corrected:</strong> The Bennedsen-Lunde-Pakkanen hybrid scheme for Volterra path
+            generation was overestimating weights by $1/\sqrt{dt}$ because variables were scaled by $dt^{H-1/2}$ instead
+            of $dt^H$. Corrected to:
+            <div class="code">
+                History Weights: b_j = (dt**H / (H + 0.5)) * ((j + 1.0)**(H + 0.5) - j**(H + 0.5))<br>
+                Local Part: Y_local = (dt**H / sqrt(2 * H)) * Z
+            </div>
+            This immediately resolved the <code>inf</code>/<code>nan</code> variance path collapse and allowed stable
+            rBergomi Monte Carlo pricing.
+        </li>
+        <li><strong>SABR ATM Division-by-Zero Guarded:</strong> Applied a second-order Taylor expansion on $z / \chi(z)$
+            inside SABR Hagan's formula for $|z| < 1e-4$ to ensure stable option Greeks backpropagation near-ATM.</li>
+    </ul>
+
+    <h3>3. Differentiable Option Features for GNN Nodes</h3>
+    <p>
+        We successfully unified the continuous volatility surface with GNN node inputs. By deriving exact analytical
+        expressions of total variance derivatives $w'$ and $w''$, the surface extracts:
+        <code>atm_vol</code>, <code>skew</code>, <code>curvature</code>, <code>term_slope</code>, and SVI parameters
+        <code>[a, b, rho, m, sigma]</code>.
+        Because these are fully algebraic and written in PyTorch, gradients from GNN backbones flow perfectly back into
+        the volatility surface parameter estimators.
+    </p>
+
+    <h2>PART 3: CANONICAL DIRECTORY STRUCTURE</h2>
+    <div class="code">
+        agent/quant/
+        ├── sde.py # M1 SDE foundation (GBM, Heston)
+        ├── options.py # BSM, BAW American, Newton IV, Fourier COS
+        ├── volatility.py # SVI, SABR, ImpliedVolatilitySurface (ModuleDict, GNN features)
+        └── rough.py # Rough Bergomi model, BLP scheme, Hurst estimator
+
+        tests/
+        ├── test_options.py # Fourier-COS + Greeks validation (16 tests)
+        ├── test_volatility_edge.py # SVI fitting, SABR ATM guards (7 tests)
+        └── test_rough_edge.py # rBergomi MC, Hurst scaling regressor, exploding skew (3 tests)
+    </div>
+
+    <h2>PART 4: CORE QUANT PROBLEMS INCURRED & NUMERICAL RESOLUTIONS</h2>
+
+    <h3>1. The Complex Log "Branch Cut" Issue in Heston (M3)</h3>
+    <ul>
+        <li><strong>The Problem:</strong> The Heston characteristic function involves a complex logarithm of the form
+            $\ln(d)$ or $\ln(1-g e^{-d T})$. In standard formulations, the complex logarithm has a "branch cut" along
+            the negative real axis. As the integration variable $u$ increases, the complex argument crosses this cut,
+            causing a jump of $2\pi$ in the phase. This discontinuity breaks option pricing and results in completely
+            incorrect (often negative or wildly fluctuating) prices and NaN gradients.</li>
+        <li><strong>The Resolution:</strong> We adopted Albrecher's "Little Trap" formulation of the complex logarithm.
+            By choosing the stable formulation:
+            <div class="code">
+                d = sqrt((kappa - 1j * rho * xi * u)**2 + xi**2 * (u**2 + 1j * u))<br>
+                g = (kappa - 1j * rho * xi * u - d) / (kappa - 1j * rho * xi * u + d)
+            </div>
+            and performing logarithmic calculations with terms that do not cross the branch cuts, we guaranteed
+            mathematical continuity and infinitely differentiable pathways across all parameter ranges.
+        </li>
+    </ul>
+
+    <h3>2. Martingale Drift in Merton Jump-Diffusion (M3)</h3>
+    <ul>
+        <li><strong>The Problem:</strong> Jumps introduce a discontinuous shift in asset prices. Under risk-neutral
+            pricing, the underlying asset's expected rate of return must equal the risk-free rate $r$. If we simply add
+            jumps, the asset will have a drift of $r + \text{average jump return}$, allowing arbitrage.</li>
+        <li><strong>The Resolution:</strong> We derived and applied the exact risk-neutral martingale drift correction
+            term inside the characteristic function:
+            <div class="code">
+                drift_correction = -0.5 * (sigma**2) * T - lambda_param * (exp(mu_J + 0.5 * sigma_J**2) - 1.0) * T
+            </div>
+            This corrects for the expected jump-size impact, guaranteeing that discounted stock prices are true
+            martingales.
+        </li>
+    </ul>
+
+    <h3>3. SABR Hagan ATM Singularity (M5)</h3>
+    <ul>
+        <li><strong>The Problem:</strong> In Hagan's asymptotic implied volatility expansion, the ratio $z / \chi(z)$
+            has a $0/0$ division-by-zero singularity when the strike $K$ is exactly equal to the forward price $F$
+            (at-the-money options). In floating-point arithmetic, computing this directly returns <code>NaN</code>,
+            breaking backpropagation and calibration gradients.</li>
+        <li><strong>The Resolution:</strong> We implemented a second-order Taylor series expansion guard around $z=0$:
+            <div class="code">
+                ratio_taylor = 1.0 - 0.5 * rho * z + ((2.0 - 3.0 * rho**2) / 12.0) * z**2
+            </div>
+            If $|z| < 1e-4$, the Taylor expansion is used, ensuring smooth, differentiable, and stable implied
+                volatility and Greek calculation around the ATM strike. </li>
+    </ul>
+
+    <h3>4. BLP Volterra Path Explosion in Rough Bergomi (M6)</h3>
+    <ul>
+        <li><strong>The Problem:</strong> The power-law kernel $(t-s)^{H-1/2}$ has a singularity at $s = t$. In our
+            initial implementation of Bennedsen-Lunde-Pakkanen (BLP) hybrid simulation, paths exploded to
+            <code>inf</code> or collapsed to <code>0</code> within 5 steps.
+        </li>
+        <li><strong>The Resolution:</strong> Discovered that both the local part $Y^L$ and the history weights $b_j$
+            must scale with $dt^H$ rather than $dt^{H-1/2}$. Correcting this scaling resolved the numerical explosion,
+            yielding stable, beautiful, and realistic rough variance paths.</li>
+    </ul>
+
+    <h2>PART 5: THE SIGNAL DEPTH DOCTRINE & THE DIFFERENTIABILITY INVARIANT</h2>
+
+    <h3>1. The Signal Depth Doctrine (L1 vs L2 vs L3)</h3>
+    <p>
+        Under the project's <strong>Signal Depth Doctrine</strong>, we design for <strong>L2 (entity-level)</strong>
+        feature extraction from day one. In our volatility surface implementation, rather than using market-wide
+        aggregate indices (L1), we construct independent, fitted SVI surfaces for each individual asset. SVI parameter
+        slices and analytical metrics (`atm_vol`, `skew`, `curvature`, `term_slope`) are treated as L2 local node
+        features for each asset in the HGT graph. Aggregate market conditioning (e.g., VIX, aggregate volume) acts as L1
+        graph-level inputs, but the local entity-level resolution is the primary driver of alpha.
+    </p>
+
+    <h3>2. The Differentiability Invariant (No Numpy Jumps)</h3>
+    <p>
+        A core invariant across Layer 2 (Feature Engineering) is <strong>strict PyTorch differentiability</strong>. The
+        forward passes of all models (including SDE simulation, Fourier-COS pricing, SABR pricing, SVI fitting, and
+        bilinear total variance interpolation) are written entirely in native PyTorch tensors and operators.
+    </p>
+    <div class="warning">
+        <strong>CRITICAL RUNTIME WARNING:</strong> Subsequent agents MUST NEVER introduce non-differentiable operations
+        (such as converting to NumPy arrays via <code>.numpy()</code>, using standard python control flow/indexing on
+        parameters, sorting, or using libraries like <code>scipy</code> or <code>cvxpy</code> within the forward
+        pathways). Doing so breaks the PyTorch autograd graph, severing the gradient highway. Maintaining this gradient
+        highway is what allows Layer 5 portfolio losses to propagate all the way back to SVI parameters in Layer 2,
+        enabling joint end-to-end learning.
+    </div>
+
+    <h2>PART 6: EXACT ANALYTICAL GNN NODE FEATURE DERIVATIONS</h2>
+    <p>
+        To prevent numerical instability in GNN feature extraction, we derived the exact analytical derivatives of the
+        SVI total variance function rather than using finite-difference approximations.
+    </p>
+
+    <h3>1. SVI Total Variance & First Derivative ($w'$)</h3>
+    <p>
+        The Gatheral SVI total variance function is defined as:
+        $$w(k) = a + b \left( \rho (k - m) + \sqrt{(k - m)^2 + \sigma^2} \right)$$
+        Letting $h = \sqrt{(k-m)^2 + \sigma^2}$, the first derivative of total variance with respect to log-moneyness
+        $k$ is:
+        $$w'(k) = \frac{\partial w}{\partial k} = b \left( \rho + \frac{k - m}{h} \right)$$
+    </p>
+
+    <h3>2. SVI Second Derivative ($w''$)</h3>
+    <p>
+        Differentiating again, we get the second derivative of SVI total variance:
+        $$w''(k) = \frac{\partial^2 w}{\partial k^2} = b \left( \frac{h - (k - m) \cdot \frac{k-m}{h}}{h^2} \right) = b
+        \left( \frac{h^2 - (k - m)^2}{h^3} \right) = b \left( \frac{\sigma^2}{h^3} \right)$$
+    </p>
+
+    <h3>3. Conversion to Implied Volatility Derivatives ($\sigma'$ and $\sigma''$)</h3>
+    <p>
+        Implied volatility $\sigma(k)$ is related to total variance by:
+        $$\sigma(k) = \sqrt{\frac{w(k)}{T}} \implies w(k) = T \sigma^2(k)$$
+        Differentiating both sides with respect to $k$:
+        $$w'(k) = 2 T \sigma(k) \sigma'(k) \implies \sigma'(k) = \frac{w'(k)}{2 T \sigma(k)}$$
+        This represents the <strong>ATM Volatility Skew</strong>.
+        <br><br>
+        Differentiating a second time:
+        $$w''(k) = 2 T \left( (\sigma'(k))^2 + \sigma(k) \sigma''(k) \right)$$
+        Solving for $\sigma''(k)$:
+        $$\sigma''(k) = \frac{w''(k) - 2 T (\sigma'(k))^2}{2 T \sigma(k)} = \frac{w''(k) - 2 T \left( \frac{w'(k)}{2 T
+        \sigma(k)} \right)^2}{2 T \sigma(k)} = \frac{2 w(k) w''(k) - (w'(k))^2}{4 T^2 \sigma^3(k)}$$
+        This represents the <strong>ATM Smile Curvature</strong>.
+    </p>
+
+    <h2>PART 7: WHAT WE GOT & WHAT'S NEXT</h2>
+
+    <h3>1. What We Built & Achieved</h3>
+    <ul>
+        <li><strong>Highly Stable Pricing Engine:</strong> Formulated and coded the analytical, Fourier, and Monte Carlo
+            models under a unified PyTorch <code>nn.Module</code> design.</li>
+        <li><strong>Complete Differentiability:</strong> All options, Greeks, SABR models, and rough Volterra path
+            simulations are 100% differentiable, enabling rapid GNN features and direct backprop from portfolio outcomes
+            to SVI calibration parameters.</li>
+        <li><strong>Arbitrage-Free Surface Interpolation:</strong> Built bilinear surface interpolation in
+            total-variance space ($w = \sigma^2 T$), completely eliminating calendar arbitrage.</li>
+        <li><strong>Validated Skew Power Law:</strong> Empirically proved our rough Bergomi engine by showing that
+            short-term ATM volatility skew explodes as $T \rightarrow 0$ while matching $\psi(T) \propto T^{H-1/2}$.
+        </li>
+    </ul>
+
+    <h3>2. What's Next in the Roadmap</h3>
+    <ul>
+        <li><strong>M7: Portfolio Optimization:</strong> Build differentiable Mean-Variance, Rockafellar-Uryasev CVaR
+            optimization, and Lopez de Prado Hierarchical Risk Parity (HRP) modules. Integrate these with GNN node
+            outputs to enable a fully differentiable portfolio head:
+            <code>GNN &rarr; asset parameters &rarr; portfolio optimization &rarr; target weights</code> (end-to-end
+            backprop).
+        </li>
+        <li><strong>M8: RL Derivative Hedging:</strong> Build a custom continuous Reinforcement Learning environment
+            (incorporating transaction costs, option Greeks, and margin limits) and train a Soft Actor-Critic (SAC)
+            agent to perform optimal multi-asset hedging.</li>
+    </ul>
+
+</body>
+
+</html>

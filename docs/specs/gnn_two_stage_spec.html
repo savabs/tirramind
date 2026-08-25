@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Spec: GNN Two-Stage Pipeline (Phase B)</title>
+</head>
+<body>
+  <h1>Spec: GNN Two-Stage Pipeline (Phase B)</h1>
+  <p>Research: [[gnn_architecture_overhaul]] &nbsp;|&nbsp; Task: [[gnn_architecture_overhaul_task]]</p>
+  <p><strong>Gate:</strong> Phase A full baseline — Momentum-Rank IC=+0.074, t=2.0 PASS on canonical 21d labels.</p>
+
+  <h2>Goal</h2>
+  <p>Decouple representation learning from return prediction. Stage 1 trains HetTGN on
+  self-supervised objectives only; Stage 2 fits a cross-sectional ranker on frozen embeddings
+  against canonical forward returns (or momentum residual).</p>
+
+  <h2>Stage 1 — Self-supervised HetTGN</h2>
+  <ul>
+    <li>Losses: obs_type CE + link prediction + time_delta (existing MTL heads minus return/CSRC)</li>
+    <li><code>return_weight=0</code>, <code>use_csrc_loss=False</code>, <code>use_concat_head=False</code></li>
+    <li>Training config mirrors V52 sampling: <code>gdelt_frac=0.05</code>, <code>max_windows=200</code></li>
+    <li>Export: per-fold instrument embeddings ℰ ∈ ℝ<sup>N×d</sup> at each walk-forward cutoff</li>
+  </ul>
+
+  <h2>Stage 2 — Cross-sectional ranker</h2>
+  <ul>
+    <li>Input: Stage-1 embeddings + optional raw price block (momentum feature index 0)</li>
+    <li>Model: Ridge (default) → RankNet if Ridge fails gate</li>
+    <li>Target: canonical 21d forward simple return via <code>forward_return_vector_for_date()</code></li>
+    <li>Eval: same purged walk-forward as <code>honest_baseline_audit.py</code> (IC-only, 40 folds)</li>
+    <li>Primary strategy name: <code>Stage2-RidgeRanker</code></li>
+  </ul>
+
+  <h2>Exit gate (unchanged)</h2>
+  <p>Mean IC &gt; 0.03 and t-stat &gt; 2.0 on 40-fold purged walk-forward.</p>
+
+  <h2>Implementation steps</h2>
+  <ol>
+    <li><strong>B.1</strong> — Notebook config preset <code>phase50_stage1_ssl</code> (zero return weights)</li>
+    <li><strong>B.2</strong> — <code>scripts/export_gnn_embeddings.py</code> — dump ℰ per fold date</li>
+    <li><strong>B.3</strong> — <code>scripts/stage2_ranker_eval.py</code> — Ridge walk-forward on exported ℰ</li>
+    <li><strong>B.4</strong> — Compare Stage2 vs Momentum-Rank baseline on same folds</li>
+  </ol>
+
+  <h2>References</h2>
+  <ul>
+    <li>THGNN (CIKM 2022) — temporal heterogeneous GNN, decoupled prediction</li>
+    <li>MDGNN (AAAI 2024) — multi-relational dynamic GNN for quant</li>
+    <li>Grinold &amp; Kahn (2000) — IC / ICIR interpretation</li>
+  </ul>
+
+  <h2>Related</h2>
+  <ul>
+    <li>[[gnn_architecture_overhaul]]</li>
+    <li>[[gnn_architecture_overhaul_spec]]</li>
+    <li>[[checkpoint_2026-06-08_data_fix_baseline_full]]</li>
+    <li>[[phase41b_gnn_signal_extraction_spec]]</li>
+  </ul>
+</body>
+</html>

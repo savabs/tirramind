@@ -1245,6 +1245,110 @@ def backfill_historical_prices(
     return summary
 
 
+# MP-1 ghost pattern readout instruments (forward-return resolution).
+MP1_READOUT_TICKERS: tuple[str, ...] = ("CL=F", "BZ=F", "NG=F")
+
+
+def backfill_recent_readout_prices(
+    store: PipelineStore,
+    tickers: tuple[str, ...] | list[str] | None = None,
+    lookback_days: int = 120,
+) -> dict[str, Any]:
+    """Store one ``instrument_daily`` row per trading day for readout tickers.
+
+    Ghost alert resolution needs contiguous trading sessions keyed by bar date.
+    ``ingest_daily_prices`` only stores the latest bar per ingest run; this
+    function fills the gap for MP-1 readout instruments.
+    """
+    import yfinance as yf
+
+    tickers = list(tickers or MP1_READOUT_TICKERS)
+    ticker_map = {i.ticker: i for i in tradeable_instruments()}
+    period = f"{lookback_days}d"
+    filled: list[str] = []
+    failed: list[str] = []
+    total_obs = 0
+
+    for ticker in tickers:
+        inst = ticker_map.get(ticker)
+        if inst is None:
+            failed.append(ticker)
+            continue
+        try:
+            raw = yf.download(
+                ticker,
+                period=period,
+                interval="1d",
+                progress=False,
+                threads=False,
+            )
+            if raw.empty:
+                failed.append(ticker)
+                continue
+            if hasattr(raw.columns, "levels"):
+                levels = raw.columns.get_level_values(-1)
+                if ticker in levels:
+                    df = raw.xs(ticker, axis=1, level=-1)
+                elif ticker in raw.columns.get_level_values(0):
+                    df = raw[ticker]
+                else:
+                    df = raw.droplevel(0, axis=1) if raw.columns.nlevels > 1 else raw
+            else:
+                df = raw
+            df = df.dropna(subset=["Close"])
+            if df.empty:
+                failed.append(ticker)
+                continue
+
+            eid = _entity_id(ticker)
+            store.register_entity(
+                entity_type=_ENTITY_TYPE,
+                canonical_name=inst.name,
+                entity_id=eid,
+                metadata={
+                    "ticker": ticker,
+                    "asset_class": inst.asset_class,
+                    "region": inst.region,
+                },
+            )
+
+            closes = df["Close"].values.astype(float)
+            log_returns = np.diff(np.log(closes)) if len(closes) >= 2 else np.array([])
+            obs_count = 0
+            for i, day in enumerate(df.index.tolist()):
+                if hasattr(day, "timestamp"):
+                    observed_at = day.timestamp()
+                else:
+                    observed_at = time.mktime(day.timetuple())
+                close = float(closes[i])
+                value: dict[str, Any] = {"close": close}
+                if i > 0 and i - 1 < len(log_returns):
+                    value["log_return"] = float(log_returns[i - 1])
+                store.store_entity_observation(
+                    entity_id=eid,
+                    source_tool=_SOURCE_TOOL,
+                    observed_at=observed_at,
+                    observation_type="instrument_daily",
+                    value=value,
+                    depth_level=1,
+                )
+                obs_count += 1
+
+            total_obs += obs_count
+            filled.append(ticker)
+            log.info("Readout backfill %s: %d daily bars", ticker, obs_count)
+        except Exception:
+            log.warning("Readout backfill failed for %s", ticker, exc_info=True)
+            failed.append(ticker)
+
+    return {
+        "tickers_filled": filled,
+        "tickers_failed": failed,
+        "observations_stored": total_obs,
+        "lookback_days": lookback_days,
+    }
+
+
 # ── DAG callback ───────────────────────────────────────────────
 
 

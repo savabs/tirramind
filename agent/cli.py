@@ -152,7 +152,7 @@ def build_tool_registry(config: AgentConfig | None = None) -> ToolRegistry:
     registry.register(InternetOutagesTool(cache=cache, pipeline_store=pipeline_store))
     registry.register(LaborDisruptionsTool(cache=cache))
     registry.register(MigrationFlowsTool(cache=cache, pipeline_store=pipeline_store))
-    registry.register(EnergySupplyTool(cache=cache))
+    registry.register(EnergySupplyTool(cache=cache, pipeline_store=pipeline_store))
     registry.register(TreasuryReceiptsTool(cache=cache))
     registry.register(DrugRegulatoryTool(cache=cache, pipeline_store=pipeline_store))
     registry.register(GlobalPmiTool(cache=cache, pipeline_store=pipeline_store))

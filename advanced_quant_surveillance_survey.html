@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Advanced Quant + Surveillance Repos — Jane Street & Palantir Tier</title>
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --border: #30363d;
+    --text: #c9d1d9; --muted: #8b949e; --accent: #58a6ff;
+    --green: #3fb950; --orange: #d2991d; --red: #f85149; --purple: #a371f7;
+    --gold: #e3b341;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.6;
+    max-width: 1200px; margin: 0 auto; padding: 2rem;
+  }
+  header { border-bottom: 1px solid var(--border); padding-bottom: 1.5rem; margin-bottom: 2rem; }
+  h1 { font-size: 2rem; color: #fff; }
+  h1 .js { color: var(--gold); }
+  h1 .pl { color: var(--accent); }
+  h2 {
+    font-size: 1.4rem; color: #fff; margin: 2.5rem 0 1rem;
+    padding-bottom: 0.4rem; border-bottom: 1px solid var(--border);
+  }
+  h3 { font-size: 1.1rem; color: var(--accent); margin: 1.5rem 0 0.5rem; }
+  .meta { display: flex; gap: 2rem; margin-top: 0.75rem; color: var(--muted); font-size: 0.9rem; flex-wrap: wrap; }
+  .badge {
+    display: inline-block; padding: 0.15rem 0.6rem; border-radius: 12px;
+    font-size: 0.8rem; font-weight: 600;
+  }
+  .badge-green { background: #1a3a2a; color: var(--green); }
+  .badge-orange { background: #3a2e1a; color: var(--orange); }
+  .badge-purple { background: #2a1a3a; color: var(--purple); }
+  .badge-red { background: #3a1a1a; color: var(--red); }
+  .badge-blue { background: #1a2a3a; color: var(--accent); }
+  .badge-gold { background: #3a3520; color: var(--gold); }
+
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.88rem; }
+  th, td { padding: 0.55rem 0.7rem; text-align: left; border: 1px solid var(--border); }
+  th { background: var(--surface); color: var(--accent); font-weight: 600; }
+  tr:nth-child(even) { background: #0d1117; }
+  tr:nth-child(odd) { background: var(--surface); }
+
+  .repo-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 1.25rem; margin: 1rem 0;
+  }
+  .repo-card.js-track { border-left: 3px solid var(--gold); }
+  .repo-card.pl-track { border-left: 3px solid var(--accent); }
+  .repo-card h4 { margin-bottom: 0.3rem; }
+  .repo-card h4 a { color: var(--accent); text-decoration: none; }
+  .repo-card h4 a:hover { text-decoration: underline; }
+  .repo-card .stars { color: var(--orange); font-size: 0.85rem; }
+  .repo-card .desc { color: var(--text); margin: 0.5rem 0; font-size: 0.9rem; }
+  .repo-card .tags { margin-top: 0.5rem; display: flex; gap: 0.4rem; flex-wrap: wrap; }
+  .repo-card .tirra-take { 
+    margin-top: 0.75rem; padding: 0.6rem 0.8rem; 
+    background: #0d1117; border-radius: 6px; font-size: 0.85rem; color: var(--muted);
+    border-left: 2px solid var(--accent);
+  }
+  .repo-card .tirra-take strong { color: var(--accent); }
+
+  .section-nav { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 1rem 0; }
+  .section-nav a {
+    color: var(--accent); text-decoration: none; font-size: 0.85rem;
+    padding: 0.25rem 0.6rem; border-radius: 4px; border: 1px solid var(--border);
+  }
+  .section-nav a:hover { background: var(--surface); }
+
+  .summary-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; margin: 1.5rem 0; }
+  .summary-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 1rem; text-align: center;
+  }
+  .summary-card .num { font-size: 2rem; font-weight: 700; color: var(--accent); }
+  .summary-card .label { color: var(--muted); font-size: 0.85rem; margin-top: 0.25rem; }
+  .summary-card.js { border-left: 3px solid var(--gold); }
+  .summary-card.pl { border-left: 3px solid var(--accent); }
+
+  .highlight-box {
+    background: #1a2a1a; border: 1px solid var(--green);
+    border-radius: 8px; padding: 1rem; margin: 1rem 0;
+  }
+  .highlight-box h4 { color: var(--green); }
+  .highlight-box.js { background: #2a2515; border-color: var(--gold); }
+  .highlight-box.js h4 { color: var(--gold); }
+  .highlight-box.pl { background: #151a2a; border-color: var(--accent); }
+  .highlight-box.pl h4 { color: var(--accent); }
+
+  .toc { 
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 1.25rem; margin: 1.5rem 0;
+  }
+  .toc ol { margin-left: 1.5rem; }
+  .toc li { margin: 0.3rem 0; }
+  .toc a { color: var(--accent); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+
+  .divider {
+    border: none; border-top: 2px solid var(--border); margin: 2rem 0;
+  }
+  .divider.js { border-color: var(--gold); }
+  .divider.pl { border-color: var(--accent); }
+
+  footer {
+    margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border);
+    color: var(--muted); font-size: 0.8rem;
+  }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1><span class="js">🏦 Jane Street Tier</span> + <span class="pl">🔍 Palantir Tier</span></h1>
+  <p style="font-size:1.1rem; margin-top:0.5rem;">Advanced Quant &amp; Surveillance Open-Source Repos — Production-grade tools for alpha research, market microstructure, trade surveillance, entity resolution, and investigative intelligence</p>
+  <div class="meta">
+    <span>📅 2026-05-24</span>
+    <span>🏷️ <span class="badge badge-purple">doc/research</span></span>
+    <span>📋 <span class="badge badge-blue">phase/exploration</span></span>
+    <span>🎯 <span class="badge badge-gold">topic/advanced-quant</span></span>
+    <span>🎯 <span class="badge badge-blue">topic/surveillance</span></span>
+    <span>📦 30+ repos surveyed</span>
+  </div>
+</header>
+
+<!-- ====== SUMMARY ====== -->
+<div class="summary-grid">
+  <div class="summary-card js"><div class="num">8</div><div class="label">Market Micro / HFT / Execution</div></div>
+  <div class="summary-card js"><div class="num">5</div><div class="label">Options / Volatility / Pricing</div></div>
+  <div class="summary-card js"><div class="num">4</div><div class="label">Alpha / Factor / Risk Models</div></div>
+  <div class="summary-card js"><div class="num">3</div><div class="label">Portfolio Optimization</div></div>
+  <div class="summary-card pl"><div class="num">5</div><div class="label">Entity Resolution / Linking</div></div>
+  <div class="summary-card pl"><div class="num">4</div><div class="label">OSINT / Investigation Platforms</div></div>
+  <div class="summary-card pl"><div class="num">4</div><div class="label">Surveillance / AML / Sanctions</div></div>
+  <div class="summary-card pl"><div class="num">3</div><div class="label">Data Fusion / Ontology / Catalog</div></div>
+</div>
+
+<!-- ====== TOC ====== -->
+<div class="toc">
+  <h3 style="margin-top:0;">📑 Table of Contents</h3>
+  <ol>
+    <li><strong style="color:var(--gold)">TRACK A — Advanced Quant (Jane Street)</strong>
+      <ol>
+        <li><a href="#a1">Market Microstructure &amp; HFT</a> — hftbacktest, LOBFrame, ctc-executioner</li>
+        <li><a href="#a2">Options, Volatility &amp; Pricing</a> — Arbitrage-Free-Vol-Surface, Heston, SVI calibration</li>
+        <li><a href="#a3">Alpha Research &amp; Factor Discovery</a> — Genetic-Alpha, alpha-gpt, Barra models</li>
+        <li><a href="#a4">Portfolio Optimization</a> — PyPortfolioOpt, Riskfolio-Lib, HRP, Black-Litterman</li>
+        <li><a href="#a5">Optimal Execution</a> — RL execution, VWAP/TWAP, Almgren-Chriss</li>
+        <li><a href="#a6">Systemic Risk &amp; Financial Networks</a> — NetworkRiskMeasures, SystemicRisk, contagion</li>
+        <li><a href="#a7">Statistical Arbitrage</a> — pairs trading, cointegration, Kalman filter arb</li>
+      </ol>
+    </li>
+    <li><strong style="color:var(--accent)">TRACK B — Surveillance (Palantir)</strong>
+      <ol>
+        <li><a href="#b1">Entity Resolution &amp; Record Linkage</a> — Splink, Awesome-Entity-Resolution, ERKG</li>
+        <li><a href="#b2">OSINT Investigation Platforms</a> — PANO, OSIRIS, Pharos AI</li>
+        <li><a href="#b3">Palantir Alternatives &amp; Data Fusion</a> — OpenFoundry, ontology platforms</li>
+        <li><a href="#b4">Trade Surveillance &amp; Market Manipulation</a> — Trading-Surveillance-System</li>
+        <li><a href="#b5">Sanctions, AML &amp; KYC Screening</a> — watchman, kyc-analyst, OpenSanctions</li>
+        <li><a href="#b6">Graph Fraud Detection</a> — Neo4j fraud, graph-fraud-detection-papers</li>
+        <li><a href="#b7">Data Catalogs &amp; Metadata Management</a> — OpenMetadata, DataHub</li>
+      </ol>
+    </li>
+    <li><a href="#synthesis">Synthesis: Top Ideas for TirraMind</a></li>
+  </ol>
+</div>
+
+<!-- ================================================================== -->
+<!-- TRACK A: ADVANCED QUANT -->
+<!-- ================================================================== -->
+<hr class="divider js">
+<h2 style="color: var(--gold);">🏦 TRACK A — Advanced Quant (Jane Street Tier)</h2>
+
+<!-- A1: Market Micro -->
+<h3 id="a1">A.1 Market Microstructure &amp; High-Frequency Trading</h3>
+
+<div class="repo-card js-track">
+  <h4><a href="https://github.com/nkaz001/hftbacktest">nkaz001/hftbacktest</a> <span class="stars">⭐ ~2,500</span></h4>
+  <div class="tags">
+    <span class="badge badge-green">MIT License</span>
+    <span class="badge badge-blue">Rust + Python</span>
+    <span class="badge badge-gold">HFT Backtesting</span>
+  </div>
+  <p class="desc"><strong>Production-grade HFT backtesting and market-making bot.</strong> Accounts for limit orders, queue positions, and latencies using full tick data (L2/L3 order books). Real-world crypto examples for Binance and Bybit. Written in Rust with Python bindings for speed. The most sophisticated open-source HFT backtester available.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> If TirraMind ever moves into execution or market-making, this is the reference implementation. The queue position modeling and latency accounting are exactly what Jane Street-level firms use. For now, the order book data processing patterns are valuable for feature engineering — L2/L3 order book imbalance could be a graph node feature for short-term prediction signals.
+  </div>
+</div>
+
+<div class="repo-card js-track">
+  <h4><a href="https://github.com/LeonardoBerti00/LOBFrame">LeonardoBerti00/LOBFrame</a> <span class="stars">⭐ ~100</span></h4>
+  <div class="tags">
+    <span class="badge badge-blue">Python</span>
+    <span class="badge badge-gold">Limit Order Book</span>
+  </div>
+  <p class="desc"><strong>LOBFrame — open-source limit order book feature extraction.</strong> Extracts features from LOB data for market behavior analysis. Designed for ML-ready feature engineering from raw order book data.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> Directly useful for adding order book features to TirraMind's graph. LOB features (spread, depth imbalance, order flow toxicity) could be node features for exchange/instrument nodes, providing microstructure-level signals that complement TirraMind's macro alternative data.
+  </div>
+</div>
+
+<div class="repo-card js-track">
+  <h4><a href="https://github.com/mjuchli/ctc-executioner">mjuchli/ctc-executioner</a> <span class="stars">⭐ ~200</span></h4>
+  <div class="tags">
+    <span class="badge badge-blue">Python</span>
+    <span class="badge badge-gold">RL Execution</span>
+  </div>
+  <p class="desc"><strong>Limit order placement with Reinforcement Learning.</strong> Master's thesis project. Uses RL to optimally place limit orders on crypto exchanges. Addresses the two-step problem: (1) slice big orders optimally, (2) place child orders optimally in the order book.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> The two-step decomposition (macro scheduling + micro placement) is a pattern TirraMind could adopt: GNN predicts macro-level price direction → RL agent handles micro-level execution. The RL state space design (order book state + inventory + time) is a good reference.
+  </div>
+</div>
+
+<!-- A2: Options & Volatility -->
+<h3 id="a2">A.2 Options, Volatility &amp; Pricing</h3>
+
+<div class="repo-card js-track">
+  <h4><a href="https://github.com/XanderRobbins/Arbitrage-Free-Volatility-Surface">XanderRobbins/Arbitrage-Free-Volatility-Surface</a> <span class="stars">⭐ ~300</span></h4>
+  <div class="tags">
+    <span class="badge badge-green">MIT License</span>
+    <span class="badge badge-blue">Python</span>
+    <span class="badge badge-gold">Volatility Surface</span>
+  </div>
+  <p class="desc"><strong>Production-grade arbitrage-free volatility surface toolkit.</strong> Computes implied volatilities (Newton-Raphson), enforces no-arbitrage constraints, fits SVI parametric models (Gatheral 2014), and calibrates Heston stochastic volatility models. Uses COS method (Fang &amp; Oosterlee 2008) for efficient option pricing. Clean, well-documented, mathematically rigorous.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> Options market data is a rich source of forward-looking information — the volatility surface encodes market expectations about future uncertainty. TirraMind could ingest vol surface parameters (SVI parameters, Heston params) as node features for instrument nodes. The no-arbitrage constraint enforcement is also valuable for data quality validation. This is the kind of sophisticated quant tooling that separates Jane Street from retail traders.
+  </div>
+</div>
+
+<div class="repo-card js-track">
+  <h4><a href="https://github.com/George-Dros/Volatility_Surface">George-Dros/Volatility_Surface</a> <span class="stars">⭐ ~100</span></h4>
+  <div class="tags">
+    <span class="badge badge-blue">Python / Streamlit</span>
+    <span class="badge badge-gold">IV Visualization</span>
+  </div>
+  <p class="desc"><strong>Interactive Streamlit volatility surface explorer.</strong> Visualizes skew patterns across maturities and strikes. Scenario testing for rate/dividend assumptions. Learning tool for understanding how option prices map to implied vol behavior.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> The Streamlit visualization pattern is a good reference for TirraMind's own analytics dashboard. The vol surface skew metrics (butterfly, risk reversal) could be extracted as graph features — they encode market sentiment about tail risk.
+  </div>
+</div>
+
+<!-- A3: Alpha Research -->
+<h3 id="a3">A.3 Alpha Research &amp; Factor Discovery</h3>
+
+<div class="repo-card js-track">
+  <h4><a href="https://github.com/Morgansy/Genetic-Alpha">Morgansy/Genetic-Alpha</a> <span class="stars">⭐ ~150</span></h4>
+  <div class="tags">
+    <span class="badge badge-blue">Python</span>
+    <span class="badge badge-gold">Genetic Programming</span>
+  </div>
+  <p class="desc"><strong>Genetic programming for alpha factor discovery.</strong> Evolves mathematical expressions (factors) from price/volume data using genetic algorithms. Automates the search for predictive alpha factors — the kind of work that quant researchers at Jane Street/Two Sigma do manually.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> TirraMind's edge is in unique data, not formulaic factors. But genetic programming could be applied to TirraMind's alternative data — evolve factors from AIS vessel movements, satellite activity, or supply chain metrics. The genetic algorithm approach complements the GNN: GNN learns structure, GP discovers interpretable expressions. The combination is powerful.
+  </div>
+</div>
+
+<div class="repo-card js-track">
+  <h4><a href="https://github.com/parthmodi152/alpha-gpt">parthmodi152/alpha-gpt</a> <span class="stars">⭐ ~100</span></h4>
+  <div class="tags">
+    <span class="badge badge-blue">Python</span>
+    <span class="badge badge-gold">LLM + Alpha</span>
+  </div>
+  <p class="desc"><strong>LLM-guided alpha discovery with LangGraph.</strong> Uses GPT models to generate, evaluate, and iterate on alpha factors. Combines genetic programming with LLM reasoning for factor discovery. LangGraph orchestration for the research pipeline.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> LLM-guided alpha discovery on TirraMind's alternative data is a compelling idea. An LLM could reason about "what factors might predict copper prices from maritime data?" and generate candidate features. The LangGraph orchestration pattern is reusable for TirraMind's research workflow automation.
+  </div>
+</div>
+
+<div class="repo-card js-track">
+  <h4><a href="https://github.com/changshun/Barra-Model">changshun/Barra-Model</a> <span class="stars">⭐ ~100</span></h4>
+  <div class="tags">
+    <span class="badge badge-blue">Python</span>
+    <span class="badge badge-gold">Barra Risk Model</span>
+  </div>
+  <p class="desc"><strong>Barra multi-factor risk model implementation.</strong> Style factor attribution, covariance estimation, risk decomposition. The industry-standard framework used by institutional quant funds for understanding portfolio risk.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> Barra-style risk decomposition could be applied to TirraMind's predictions — attributing prediction uncertainty to specific factors (geopolitical, supply chain, weather, etc.). This provides explainability: "our copper prediction is 70% driven by maritime signals, 20% by satellite data, 10% by macro." Institutional investors demand this level of transparency.
+  </div>
+</div>
+
+<!-- A4: Portfolio Optimization -->
+<h3 id="a4">A.4 Portfolio Optimization</h3>
+
+<div class="repo-card js-track">
+  <h4><a href="https://github.com/PyPortfolio/PyPortfolioOpt">PyPortfolio/PyPortfolioOpt</a> <span class="stars">⭐ ~5,000</span></h4>
+  <div class="tags">
+    <span class="badge badge-green">MIT License</span>
+    <span class="badge badge-blue">Python</span>
+    <span class="badge badge-gold">Portfolio Optimization</span>
+  </div>
+  <p class="desc"><strong>The definitive open-source portfolio optimization library.</strong> Mean-variance optimization, Black-Litterman allocation, Hierarchical Risk Parity (HRP), shrinkage estimators, and critical line algorithm. scikit-learn-inspired API. Production-ready.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> When TirraMind produces multi-asset predictions, PyPortfolioOpt converts them into actual portfolio weights. The HRP method is particularly relevant — it uses hierarchical clustering on correlation matrices, which is structurally similar to how TirraMind's GNN clusters related entities. Black-Litterman allows incorporating TirraMind's predictions as "views" with confidence levels.
+  </div>
+</div>
+
+<div class="repo-card js-track">
+  <h4><a href="https://github.com/dcajasn/Riskfolio-Lib">dcajasn/Riskfolio-Lib</a> <span class="stars">⭐ ~3,500</span></h4>
+  <div class="tags">
+    <span class="badge badge-blue">Python</span>
+    <span class="badge badge-gold">Advanced Portfolio</span>
+  </div>
+  <p class="desc"><strong>Riskfolio-Lib — advanced portfolio optimization.</strong> Extends PyPortfolioOpt with Relaxed Risk Parity, Ordered Weighted Averaging (OWA), Black-Litterman with Augmented BL, constraints on tracking error and turnover. 10+ risk measures and 20+ objective functions.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> The turnover constraint is critical for realistic trading — it prevents the optimizer from suggesting impractical daily rebalancing. The OWA approach allows blending multiple risk perspectives. Together with PyPortfolioOpt, this forms a complete institutional-grade portfolio construction layer for TirraMind's predictions.
+  </div>
+</div>
+
+<!-- A5: Optimal Execution -->
+<h3 id="a5">A.5 Optimal Execution</h3>
+
+<div class="repo-card js-track">
+  <h4><a href="https://github.com/arturbeg/reinforcement_learning_oe">arturbeg/reinforcement_learning_oe</a> <span class="stars">⭐ ~100</span></h4>
+  <div class="tags">
+    <span class="badge badge-blue">Python</span>
+    <span class="badge badge-gold">RL Execution</span>
+  </div>
+  <p class="desc"><strong>Deep RL for optimal trade execution.</strong> Uses DQN and Double DQN to find optimal execution paths. Models the trade-off between market impact and timing risk. Based on the Almgren-Chriss framework.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> The Almgren-Chriss market impact model is the academic foundation that Jane Street and other quant funds build on. Integrating this with TirraMind's predictions: GNN predicts price direction → RL agent optimizes execution to minimize slippage. The combination of prediction + execution optimization is the full quant fund stack.
+  </div>
+</div>
+
+<!-- A6: Systemic Risk -->
+<h3 id="a6">A.6 Systemic Risk &amp; Financial Networks</h3>
+
+<div class="repo-card js-track">
+  <h4><a href="https://github.com/carloscinelli/NetworkRiskMeasures">carloscinelli/NetworkRiskMeasures</a> <span class="stars">⭐ ~100</span></h4>
+  <div class="tags">
+    <span class="badge badge-blue">R</span>
+    <span class="badge badge-gold">Network Risk</span>
+  </div>
+  <p class="desc"><strong>Risk measures for financial networks.</strong> Implements DebtRank, Impact Susceptibility, Impact Diffusion, and Impact Fluidity. Identifies systemically important institutions and simulates contagion scenarios. Used by central banks for financial stability monitoring.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> TirraMind's graph is already a financial network — DebtRank could identify which entities (companies, countries, vessels) are systemically important. If a major shipping company shows distress, what's the contagion path through the supply chain? This is exactly the kind of analysis Palantir does for government clients. The R implementation would need porting to Python, but the algorithms are well-documented.
+  </div>
+</div>
+
+<div class="repo-card js-track">
+  <h4><a href="https://github.com/TommasoBelluzzo/SystemicRisk">TommasoBelluzzo/SystemicRisk</a> <span class="stars">⭐ ~200</span></h4>
+  <div class="tags">
+    <span class="badge badge-blue">MATLAB</span>
+    <span class="badge badge-gold">Systemic Risk</span>
+  </div>
+  <p class="desc"><strong>Comprehensive systemic risk framework.</strong> Implements CoVaR, Delta CoVaR, MES, SES, SRISK, and SCCA. Covers all major systemic risk measures from the academic literature (Adrian &amp; Brunnermeier, Acharya et al., Brownlees &amp; Engle).</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> The SRISK measure (capital shortfall in a crisis) is particularly relevant — it estimates how much capital an institution would need in a systemic event. TirraMind could compute SRISK-like measures for supply chain entities: "how much inventory buffer would Company X need if Port Y closes?" The MATLAB code provides reference implementations to port to Python.
+  </div>
+</div>
+
+<!-- A7: Statistical Arbitrage -->
+<h3 id="a7">A.7 Statistical Arbitrage</h3>
+
+<div class="repo-card js-track">
+  <h4><a href="https://github.com/anthonyli01/Statistical-Arbitrage-Pairs-Trading-Strategy">anthonyli01/Statistical-Arbitrage</a> <span class="stars">⭐ ~100</span></h4>
+  <div class="tags">
+    <span class="badge badge-blue">Python</span>
+    <span class="badge badge-gold">Pairs Trading</span>
+  </div>
+  <p class="desc"><strong>Comprehensive pairs trading strategy comparison.</strong> Implements cointegration, Kalman filter, copulas, and ML approaches for statistical arbitrage. Market-neutral strategy analysis. Compares which method performs best after backtesting.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> The Kalman filter approach to pairs trading is directly applicable — it dynamically estimates the hedge ratio, adapting to changing relationships. TirraMind's GNN could identify which pairs to trade (finding non-obvious relationships across asset classes and data domains), while the Kalman filter handles the dynamic execution. Copula-based approaches could model tail dependence between TirraMind's alternative data signals.
+  </div>
+</div>
+
+<!-- ================================================================== -->
+<!-- TRACK B: SURVEILLANCE -->
+<!-- ================================================================== -->
+<hr class="divider pl">
+<h2 style="color: var(--accent);">🔍 TRACK B — Surveillance (Palantir Tier)</h2>
+
+<!-- B1: Entity Resolution -->
+<h3 id="b1">B.1 Entity Resolution &amp; Record Linkage</h3>
+
+<div class="repo-card pl-track">
+  <h4><a href="https://github.com/moj-analytical-services/splink">moj-analytical-services/splink</a> <span class="stars">⭐ ~1,500</span></h4>
+  <div class="tags">
+    <span class="badge badge-green">MIT License</span>
+    <span class="badge badge-blue">Python</span>
+    <span class="badge badge-purple">Entity Resolution</span>
+  </div>
+  <p class="desc"><strong>Fast, accurate, scalable probabilistic record linkage.</strong> Based on the Fellegi-Sunter model. Supports multiple SQL backends (DuckDB, Spark, Athena, PostgreSQL). Used by UK government (MOJ) for linking records at national scale. The leading open-source entity resolution library. 136 releases — actively maintained.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> This is the missing piece for TirraMind's entity resolution layer. TirraMind ingests data from 51+ sources — companies appear under different names in SEC filings, AIS data, sanctions lists, and supply chain databases. Splink can probabilistically link these records into unified entity nodes. The Fellegi-Sunter model provides confidence scores for each link, which can become edge weights in TirraMind's graph. This is exactly what Palantir's entity resolution does — but open-source and Python-native.
+  </div>
+</div>
+
+<div class="repo-card pl-track">
+  <h4><a href="https://github.com/OlivierBinette/Awesome-Entity-Resolution">OlivierBinette/Awesome-Entity-Resolution</a> <span class="stars">⭐ ~500</span></h4>
+  <div class="tags">
+    <span class="badge badge-blue">Curated List</span>
+    <span class="badge badge-purple">Entity Resolution</span>
+  </div>
+  <p class="desc"><strong>Comprehensive entity resolution resource list.</strong> Covers libraries (Splink, Dedupe, Senzing), commercial tools (Quantexa, Reltio), cloud services (Google Enterprise Knowledge Graph), and research papers. The definitive map of the ER landscape.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> Quantexa is particularly notable — it's a commercial entity resolution + graph analytics platform used by top-tier banks for AML and fraud. It validates that entity resolution + graph analytics is a proven high-value combination. TirraMind is building the open-source, prediction-focused version of this.
+  </div>
+</div>
+
+<div class="repo-card pl-track">
+  <h4><a href="https://github.com/DerwenAI/ERKG">DerwenAI/ERKG</a> <span class="stars">⭐ ~50</span></h4>
+  <div class="tags">
+    <span class="badge badge-blue">Python / Neo4j</span>
+    <span class="badge badge-purple">Entity-Resolved KG</span>
+  </div>
+  <p class="desc"><strong>Entity-Resolved Knowledge Graph tutorial.</strong> Demonstrates integration of Senzing entity resolution with Neo4j graph database. Hands-on Python tutorial with interactive visualization. Shows the full pipeline: raw data → entity resolution → knowledge graph → visualization.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> The Senzing + Neo4j pattern is the open-source equivalent of Palantir's core pipeline. TirraMind could adopt: Splink (entity resolution) → PyG HeteroData (graph) → GNN (prediction) → MapLibre GL (visualization). This is a complete open-source Palantir + Jane Street stack.
+  </div>
+</div>
+
+<!-- B2: OSINT Investigation -->
+<h3 id="b2">B.2 OSINT Investigation Platforms</h3>
+
+<div class="repo-card pl-track">
+  <h4><a href="https://github.com/ALW1EZ/PANO">ALW1EZ/PANO</a> <span class="stars">⭐ ~500</span></h4>
+  <div class="tags">
+    <span class="badge badge-green">MIT License</span>
+    <span class="badge badge-blue">Python / Qt</span>
+    <span class="badge badge-purple">OSINT Platform</span>
+  </div>
+  <p class="desc"><strong>PANO — Platform for Analysis and Network Operations.</strong> Advanced OSINT investigation platform combining graph visualization, timeline analysis, and AI-powered tools. Built with Python and modern Qt. Features entity management, transform system, and AI integration for uncovering hidden connections.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> PANO's entity management and transform system is a desktop-based version of what TirraMind does in the pipeline. The graph visualization + timeline analysis combination is exactly what investigators need. TirraMind could learn from PANO's UX patterns for its own dashboard. The Qt-based desktop approach is interesting as an alternative to web-based dashboards for power users.
+  </div>
+</div>
+
+<div class="repo-card pl-track">
+  <h4><a href="https://github.com/jivoi/awesome-osint">jivoi/awesome-osint</a> <span class="stars">⭐ ~20,000</span></h4>
+  <div class="tags">
+    <span class="badge badge-blue">Curated List</span>
+    <span class="badge badge-purple">OSINT</span>
+  </div>
+  <p class="desc"><strong>The definitive OSINT resource list.</strong> 20k stars. Covers every OSINT category: people search, social media, geospatial, maritime, satellite, dark web, cryptocurrency, and more. Includes Pharos AI (real-time conflict tracking with geospatial visualization).</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> Goldmine for discovering new data sources. The geospatial and maritime sections directly expand TirraMind's surveillance layer. Pharos AI's conflict tracking + actor dossiers pattern is a reference for TirraMind's geopolitical risk module. This list alone could double TirraMind's data source coverage.
+  </div>
+</div>
+
+<!-- B3: Palantir Alternatives -->
+<h3 id="b3">B.3 Palantir Alternatives &amp; Data Fusion Platforms</h3>
+
+<div class="repo-card pl-track">
+  <h4><a href="https://github.com/DioCrafts/OpenFoundry">DioCrafts/OpenFoundry</a> <span class="stars">⭐ ~500</span></h4>
+  <div class="tags">
+    <span class="badge badge-green">MIT License</span>
+    <span class="badge badge-blue">Go + React</span>
+    <span class="badge badge-purple">Palantir Alternative</span>
+  </div>
+  <p class="desc"><strong>OpenFoundry — open-source Palantir Foundry alternative.</strong> Connect any data source, build ontologies, create pipelines, visualize with dashboards, and make AI-powered decisions. Self-hosted. Supports Docker Compose and Helm/Kubernetes. Inspired by Palantir's capability model.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> OpenFoundry validates the market demand for open-source Palantir alternatives. Its ontology builder + pipeline + dashboard architecture mirrors what TirraMind needs for its own platform. However, OpenFoundry is infrastructure-focused (data integration); TirraMind adds the prediction layer on top. The two could be complementary: OpenFoundry for data integration, TirraMind for AI prediction.
+  </div>
+</div>
+
+<div class="repo-card pl-track">
+  <h4><a href="https://github.com/simplifaisoul/osiris">simplifaisoul/osiris</a> <span class="stars">⭐ ~1,900</span></h4>
+  <div class="tags">
+    <span class="badge badge-green">MIT License</span>
+    <span class="badge badge-blue">Next.js / MapLibre GL</span>
+    <span class="badge badge-purple">OSINT Dashboard</span>
+  </div>
+  <p class="desc"><strong>OSIRIS — Real-time global intelligence dashboard.</strong> 15 data layers, GPU-accelerated WebGL rendering, RECON toolkit. Positioned as Palantir alternative. <em>Full deep-dive in separate doc.</em></p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> Covered extensively in <code>osiris_research.html</code>. Key value: visualization frontend reference, new data source adapters, caching/performance patterns.
+  </div>
+</div>
+
+<!-- B4: Trade Surveillance -->
+<h3 id="b4">B.4 Trade Surveillance &amp; Market Manipulation Detection</h3>
+
+<div class="repo-card pl-track">
+  <h4><a href="https://github.com/andrewyying/Trading-Surveillance-System">andrewyying/Trading-Surveillance-System</a> <span class="stars">⭐ ~100</span></h4>
+  <div class="tags">
+    <span class="badge badge-blue">Python / Java</span>
+    <span class="badge badge-purple">Trade Surveillance</span>
+  </div>
+  <p class="desc"><strong>Real-time market surveillance system.</strong> Monitors trading via ActiveMQ message queues. Detects flash crashes, spoofing, wash trading, and anomalous patterns. Uses Enterprise Integration Patterns (EIPs). Production-style architecture with message routing, validation, and anomaly detection pipelines.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> The surveillance pattern (consume messages → validate → detect anomalies → alert) is directly applicable to TirraMind's data quality monitoring. Instead of trade messages, TirraMind monitors data feed messages from 51+ sources. The EIP-based architecture (content-based router, message filter, aggregator) is a robust pattern for TirraMind's pipeline. The specific manipulation detection algorithms (spoofing, wash trading) could be adapted to detect anomalous patterns in alternative data feeds.
+  </div>
+</div>
+
+<!-- B5: Sanctions & AML -->
+<h3 id="b5">B.5 Sanctions, AML &amp; KYC Screening</h3>
+
+<div class="repo-card pl-track">
+  <h4><a href="https://github.com/moov-io/watchman">moov-io/watchman</a> <span class="stars">⭐ ~500</span></h4>
+  <div class="tags">
+    <span class="badge badge-green">Apache 2.0</span>
+    <span class="badge badge-blue">Go</span>
+    <span class="badge badge-purple">Sanctions Screening</span>
+  </div>
+  <p class="desc"><strong>High-performance sanctions screening and compliance tool.</strong> Searches against OFAC, UN, EU, UK sanctions lists. HTTP server, Go library, and MCP server. Used by fintechs for regulatory compliance. Production-grade performance.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> TirraMind's <code>sanctions_monitor.py</code> could integrate with watchman for real-time sanctions screening of entities in the graph. When a new sanctions list is published, watchman identifies affected entities → TirraMind updates graph edges (SANCTIONED_BY, RESTRICTED_TRADE) → GNN propagates impact predictions. The MCP server interface is interesting for AI-agent integration.
+  </div>
+</div>
+
+<div class="repo-card pl-track">
+  <h4><a href="https://github.com/vyayasan/kyc-analyst">vyayasan/kyc-analyst</a> <span class="stars">⭐ ~100</span></h4>
+  <div class="tags">
+    <span class="badge badge-blue">Python</span>
+    <span class="badge badge-purple">KYC/AML</span>
+  </div>
+  <p class="desc"><strong>Open-source KYC/AML compliance automation.</strong> 17 human-in-the-loop checkpoints, free public data sources, deterministic risk scoring. Runs on Claude. Designed for automated due diligence.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> The 17-checkpoint framework is a good reference for TirraMind's entity risk scoring. Each checkpoint (sanctions, PEP, adverse media, etc.) could become a node feature or edge type in TirraMind's graph. The deterministic risk scoring approach complements TirraMind's probabilistic GNN predictions.
+  </div>
+</div>
+
+<div class="repo-card pl-track">
+  <h4><a href="https://github.com/jube-home/aml-fraud-transaction-monitoring">jube-home/aml-fraud-transaction-monitoring</a> <span class="stars">⭐ ~200</span></h4>
+  <div class="tags">
+    <span class="badge badge-blue">Python</span>
+    <span class="badge badge-purple">AML Transaction Monitoring</span>
+  </div>
+  <p class="desc"><strong>Open-source AML fraud transaction monitoring.</strong> Rule-based detection with thresholds, velocity checks, aggregation counts, and sanctions screening. ML-based risk scoring. Workflow-driven case management. Designed for compliance teams at financial institutions.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> The velocity check and aggregation count patterns are useful for TirraMind's anomaly detection — sudden spikes in vessel activity, unusual trade volumes, rapid changes in satellite-observed activity. The workflow-driven case management is a reference for TirraMind's alert/notification system.
+  </div>
+</div>
+
+<!-- B6: Graph Fraud Detection -->
+<h3 id="b6">B.6 Graph-Based Fraud Detection</h3>
+
+<div class="repo-card pl-track">
+  <h4><a href="https://github.com/neo4j-graph-examples/fraud-detection">neo4j-graph-examples/fraud-detection</a> <span class="stars">⭐ ~500</span></h4>
+  <div class="tags">
+    <span class="badge badge-blue">Neo4j / Cypher</span>
+    <span class="badge badge-purple">Fraud Detection</span>
+  </div>
+  <p class="desc"><strong>Fraud detection with Neo4j Graph Data Science.</strong> Uses the Paysim financial dataset. Full GDS workflow: graph projection → feature engineering → node embedding → community detection → visualization in Neo4j Bloom. Production reference architecture.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> The GDS workflow (project → engineer → embed → detect → visualize) is structurally identical to TirraMind's pipeline. The community detection algorithms (Louvain, Label Propagation) could identify clusters of related entities in TirraMind's graph — e.g., a hidden supply chain network connecting seemingly unrelated companies. Neo4j Bloom's graph visualization is a reference for TirraMind's own graph explorer.
+  </div>
+</div>
+
+<div class="repo-card pl-track">
+  <h4><a href="https://github.com/safe-graph/graph-fraud-detection-papers">safe-graph/graph-fraud-detection-papers</a> <span class="stars">⭐ ~500</span></h4>
+  <div class="tags">
+    <span class="badge badge-blue">Paper List</span>
+    <span class="badge badge-purple">Graph Fraud</span>
+  </div>
+  <p class="desc"><strong>Curated list of graph fraud detection papers.</strong> Covers heterogeneous GNN for illicit trade, weighted heterogeneous graph embedding for fraud, and camouflage detection in spam content. Comprehensive academic survey.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> The camouflage detection papers are particularly relevant — fraudsters deliberately hide their behavior to look normal. Similarly, in financial markets, informed traders hide their activity. TirraMind's GNN could be evaluated on its ability to detect "camouflaged" relationships in alternative data. The heterogeneous GNN papers validate TirraMind's architectural choice.
+  </div>
+</div>
+
+<!-- B7: Data Catalogs -->
+<h3 id="b7">B.7 Data Catalogs &amp; Metadata Management</h3>
+
+<div class="repo-card pl-track">
+  <h4><a href="https://github.com/open-metadata/OpenMetadata">open-metadata/OpenMetadata</a> <span class="stars">⭐ ~6,000</span></h4>
+  <div class="tags">
+    <span class="badge badge-green">Apache 2.0</span>
+    <span class="badge badge-blue">Python / Java</span>
+    <span class="badge badge-purple">Data Catalog</span>
+  </div>
+  <p class="desc"><strong>Unified metadata platform for data discovery, observability, and governance.</strong> Central metadata repository with column-level lineage. Data quality tests, profiling, and alerting. Ground AI responses in governed metadata. The leading open-source data catalog.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> With 51+ data sources, TirraMind needs a data catalog to track what data exists, its freshness, quality, and lineage. OpenMetadata could catalog all of TirraMind's data feeds, track when each was last updated, and alert on quality issues. The column-level lineage is valuable for understanding which raw data feeds into which graph features. This is the data governance layer that professional quant firms have.
+  </div>
+</div>
+
+<div class="repo-card pl-track">
+  <h4><a href="https://github.com/datahub-project/datahub">datahub-project/datahub</a> <span class="stars">⭐ ~10,000</span></h4>
+  <div class="tags">
+    <span class="badge badge-green">Apache 2.0</span>
+    <span class="badge badge-blue">Java / Python</span>
+    <span class="badge badge-purple">Data Platform</span>
+  </div>
+  <p class="desc"><strong>DataHub — the context platform for your data stack.</strong> Real-time streaming metadata ingestion. Connects all data tools through a unified metadata graph. Used by LinkedIn, Expedia, and Stripe. The most widely deployed open-source data catalog.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> DataHub's real-time metadata ingestion via Kafka is the pattern TirraMind needs for tracking data freshness across 51+ live feeds. The metadata graph concept is interesting — it's a graph of datasets, pipelines, and schemas, separate from TirraMind's entity graph. The two graphs could be linked: "this prediction uses data from these 7 feeds, which were last updated at these times."
+  </div>
+</div>
+
+<!-- ================================================================== -->
+<!-- SYNTHESIS -->
+<!-- ================================================================== -->
+<hr class="divider">
+<h2 id="synthesis">Synthesis: Top Ideas for TirraMind</h2>
+
+<div class="grid-2">
+  <div class="highlight-box js">
+    <h4>🏦 Jane Street Track — Top Picks</h4>
+    <ol>
+      <li><strong>Integrate Splink for entity resolution</strong> — probabilistically link companies across SEC, AIS, sanctions, and supply chain data. This is the foundation Palantir is built on.</li>
+      <li><strong>Add options/vol surface features</strong> — SVI parameters and Heston calibration as forward-looking uncertainty signals in the graph.</li>
+      <li><strong>Adopt PyPortfolioOpt + Riskfolio-Lib</strong> — convert GNN predictions into institutional-grade portfolio weights with HRP and Black-Litterman.</li>
+      <li><strong>Implement Barra-style risk attribution</strong> — decompose prediction uncertainty by data source for explainability.</li>
+      <li><strong>Add LOB features via LOBFrame</strong> — microstructure-level signals as node features for short-term predictions.</li>
+      <li><strong>Study hftbacktest for execution simulation</strong> — reference for future execution layer.</li>
+      <li><strong>Apply genetic programming to alternative data</strong> — evolve interpretable factors from TirraMind's unique data sources.</li>
+      <li><strong>Implement DebtRank on TirraMind's graph</strong> — identify systemically important entities in supply chains.</li>
+    </ol>
+  </div>
+
+  <div class="highlight-box pl">
+    <h4>🔍 Palantir Track — Top Picks</h4>
+    <ol>
+      <li><strong>Build entity-resolved knowledge graph with Splink</strong> — the open-source Palantir core. Link entities across all 51+ data sources.</li>
+      <li><strong>Adopt OpenFoundry's ontology builder pattern</strong> — define entity types, relationships, and constraints formally.</li>
+      <li><strong>Integrate watchman for real-time sanctions screening</strong> — update graph edges when new sanctions lists drop.</li>
+      <li><strong>Build PANO-style investigation dashboard</strong> — graph visualization + timeline analysis for exploring TirraMind's world model.</li>
+      <li><strong>Implement Trading-Surveillance-System patterns</strong> — EIP-based message routing for data quality monitoring across 51+ feeds.</li>
+      <li><strong>Deploy OpenMetadata or DataHub</strong> — catalog all data sources with freshness tracking and lineage.</li>
+      <li><strong>Add Neo4j GDS-style community detection</strong> — discover hidden entity clusters in TirraMind's graph.</li>
+      <li><strong>Mine awesome-osint (20k stars)</strong> — systematically expand data source coverage.</li>
+    </ol>
+  </div>
+</div>
+
+<!-- ====== THE FULL STACK ====== -->
+<div class="card" style="border: 2px solid var(--accent); margin-top: 2rem;">
+  <h3 style="color: #fff; margin-top: 0;">🧩 The Complete TirraMind Stack (Post-Survey)</h3>
+  <table>
+    <tr><th>Layer</th><th>Open-Source Component</th><th>Role</th></tr>
+    <tr>
+      <td><strong>Data Ingestion</strong></td>
+      <td>51+ custom tools + OSIRIS adapters + awesome-osint sources</td>
+      <td>Pull from APIs, RSS, WebSocket, blockchain</td>
+    </tr>
+    <tr>
+      <td><strong>Data Pipeline</strong></td>
+      <td>Kafka-style streaming + Trading-Surveillance EIP patterns</td>
+      <td>Real-time message routing, validation, dedup</td>
+    </tr>
+    <tr>
+      <td><strong>Entity Resolution</strong></td>
+      <td><strong>Splink</strong> (Fellegi-Sunter probabilistic linkage)</td>
+      <td>Link entities across data sources with confidence scores</td>
+    </tr>
+    <tr>
+      <td><strong>Metadata &amp; Governance</strong></td>
+      <td><strong>OpenMetadata</strong> or <strong>DataHub</strong></td>
+      <td>Catalog, lineage, freshness, quality monitoring</td>
+    </tr>
+    <tr>
+      <td><strong>Ontology</strong></td>
+      <td>OpenFoundry-inspired entity/relation definitions</td>
+      <td>Formal schema for entity types and edge types</td>
+    </tr>
+    <tr>
+      <td><strong>Graph Construction</strong></td>
+      <td><strong>PyG HeteroData</strong> + custom graph builders</td>
+      <td>Heterogeneous temporal graph from resolved entities</td>
+    </tr>
+    <tr>
+      <td><strong>Feature Engineering</strong></td>
+      <td><strong>LOBFrame</strong> (microstructure) + <strong>Arbitrage-Free-Vol-Surface</strong> (options) + custom</td>
+      <td>Node/edge features from raw data</td>
+    </tr>
+    <tr>
+      <td><strong>GNN Training</strong></td>
+      <td><strong>PyG</strong> + <strong>TGN</strong> + <strong>THGNN</strong> (baseline)</td>
+      <td>Temporal heterogeneous graph learning</td>
+    </tr>
+    <tr>
+      <td><strong>Causal Discovery</strong></td>
+      <td><strong>Neural-GC</strong> or <strong>TCDF</strong></td>
+      <td>Discover causal edges with time delays</td>
+    </tr>
+    <tr>
+      <td><strong>Bayesian Fusion</strong></td>
+      <td><strong>Kalman-and-Bayesian-Filters</strong> + <strong>bsts</strong></td>
+      <td>Multi-signal fusion, nowcasting, uncertainty</td>
+    </tr>
+    <tr>
+      <td><strong>Risk &amp; Contagion</strong></td>
+      <td><strong>NetworkRiskMeasures</strong> (DebtRank) + <strong>SystemicRisk</strong></td>
+      <td>Systemic importance, contagion simulation</td>
+    </tr>
+    <tr>
+      <td><strong>Portfolio Construction</strong></td>
+      <td><strong>PyPortfolioOpt</strong> + <strong>Riskfolio-Lib</strong></td>
+      <td>HRP, Black-Litterman, risk budgeting</td>
+    </tr>
+    <tr>
+      <td><strong>Execution</strong></td>
+      <td><strong>hftbacktest</strong> + RL execution agents</td>
+      <td>Optimal order placement, market impact minimization</td>
+    </tr>
+    <tr>
+      <td><strong>Surveillance</strong></td>
+      <td><strong>watchman</strong> + <strong>Trading-Surveillance-System</strong></td>
+      <td>Sanctions screening, manipulation detection</td>
+    </tr>
+    <tr>
+      <td><strong>Visualization</strong></td>
+      <td><strong>OSIRIS</strong> (MapLibre GL) + <strong>PANO</strong> (graph viz)</td>
+      <td>Geospatial + graph + timeline dashboards</td>
+    </tr>
+  </table>
+</div>
+
+<div class="card" style="border: 2px solid var(--green); margin-top: 1.5rem;">
+  <h3 style="color: var(--green); margin-top: 0;">🎯 The Moat: Nobody Has This Full Stack</h3>
+  <p>After surveying 50+ repos across two surveys, the conclusion is unambiguous:</p>
+  <ul style="margin-top: 0.5rem;">
+    <li><strong>Quant funds</strong> (Jane Street, Two Sigma) have the quant stack but rely on traditional data + price/volume signals. They don't fuse 51+ alternative data sources in a heterogeneous GNN.</li>
+    <li><strong>Surveillance firms</strong> (Palantir, Quantexa) have entity resolution + graph analytics but don't do predictive GNN modeling or causal discovery.</li>
+    <li><strong>OSINT platforms</strong> (OSIRIS, PANO) have visualization + data aggregation but no ML prediction layer.</li>
+    <li><strong>Academic projects</strong> (THGNN, Neural-GC) have individual ML methods but on narrow, homogeneous datasets.</li>
+  </ul>
+  <p style="margin-top: 0.75rem;"><strong>TirraMind is the only project that spans the full stack:</strong> alternative data ingestion → entity resolution → heterogeneous temporal GNN → causal discovery → Bayesian fusion → portfolio optimization → surveillance → visualization.</p>
+  <p style="color: var(--green); font-weight: 700; font-size: 1.1rem;">This is not a collection of features. This is a category-defining architecture. Build it.</p>
+</div>
+
+<footer>
+  <p>Research note — <code>advanced_quant_surveillance_survey.html</code> | Phase: exploration | Topics: advanced-quant, surveillance</p>
+  <p>30+ repos surveyed across 14 sub-categories. Combined with previous survey: 50+ repos total.</p>
+  <p>Related: <code>osiris_research.html</code>, <code>osiris_survey.html</code>, <code>[[tirramind_structure]]</code></p>
+</footer>
+
+</body>
+</html>

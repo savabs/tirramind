@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Checkpoint 2026-06-02 — V53 Methodology Lock</title>
+</head>
+<body>
+  <h1>Checkpoint 2026-06-02 — V53 Methodology Lock</h1>
+
+  <p>
+    Decision recorded: adopt a strict, research-backed training loop for all
+    subsequent Phase 50 experiments. Do not run broad multi-knob retrains.
+  </p>
+
+  <h2>Baseline and objective</h2>
+  <ul>
+    <li><strong>Baseline:</strong> keep V45 as current reference model.</li>
+    <li><strong>Primary score:</strong> honest walk-forward <code>GNN-PurgedRanker</code> IC.</li>
+    <li><strong>Hard rule:</strong> if a new run does not beat V45 on honest IC, reject it.</li>
+  </ul>
+
+  <h2>Locked loop for V53+</h2>
+  <ol>
+    <li>Define one explicit hypothesis (one sentence, one variable to change).</li>
+    <li>Change one training knob only (all other settings fixed).</li>
+    <li>Run training notebook only.</li>
+    <li>Run evaluation/backtest in a separate eval notebook or eval-only script.</li>
+    <li>Compare against V45 and prior run, then accept/reject.</li>
+  </ol>
+
+  <h2>Architecture/training direction to research and implement</h2>
+  <ul>
+    <li>Shift objective toward rank alignment (RankIC/listwise-consistent target).</li>
+    <li>Keep multi-task weighting constrained to prevent task domination/collapse.</li>
+    <li>Retain collapse guards and monitor embedding-rank diagnostics every run.</li>
+  </ul>
+
+  <h2>Acceptance checklist (must pass)</h2>
+  <ul>
+    <li>Version/fingerprint synced and recorded before push.</li>
+    <li>Training reaches target epoch (or early-stop policy) and writes checkpoints.</li>
+    <li>Post-train eval completes (no notebook-only crash blocker).</li>
+    <li>Honest backtest result produced from same-run artifacts (matching fingerprint).</li>
+    <li>Decision logged in <code>VERSIONS.md</code> with pass/fail and reason.</li>
+  </ul>
+
+  <h2>Operational guardrails</h2>
+  <ul>
+    <li>Never rerun 90-minute training just to fix an eval cell.</li>
+    <li>If training completed but notebook errored later, download epoch/model and run eval-only.</li>
+    <li>Maintain train/eval split permanently for faster iteration.</li>
+  </ul>
+</body>
+</html>

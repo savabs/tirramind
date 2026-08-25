@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Checkpoint 2026-05-31: M2 Options Pricing & Greeks Complete</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 2rem;
+            background-color: #f9f9f9;
+        }
+
+        header {
+            border-bottom: 3px solid #e53e3e;
+            padding-bottom: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        h1 {
+            color: #e53e3e;
+            margin-top: 0;
+        }
+
+        .meta {
+            font-size: 0.9rem;
+            color: #666;
+        }
+
+        .section {
+            margin-bottom: 2rem;
+        }
+
+        .code {
+            background-color: #2d3748;
+            color: #f7fafc;
+            padding: 1rem;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 1rem 0;
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <h1>Checkpoint 2026-05-31</h1>
+        <div class="meta">
+            <div><strong>Phase:</strong> M2 Options Pricing & Greeks</div>
+            <div><strong>Status:</strong> COMPLETE</div>
+            <div><strong>Tests:</strong> 11/11 pass</div>
+        </div>
+    </header>
+
+    <div class="section">
+        <h2>What was done</h2>
+        <ul>
+            <li>Implemented <code>BlackScholes</code> class with vectorized, differentiable European pricing (calls,
+                puts, dividends).</li>
+            <li>Added <code>analytical_greeks</code> and <code>autograd_greeks</code> methods (delta, gamma, vega,
+                theta, rho).</li>
+            <li>Implemented <code>implied_volatility</code> solver using robust Newton-Raphson with clamping.</li>
+            <li>Implemented <code>BaroneAdesiWhaley</code> class for American options with iterative S* search.</li>
+            <li>Wrote comprehensive tests in <code>tests/test_options.py</code> covering pricing, Greeks, IV roundtrip,
+                and American vs European boundary conditions.</li>
+            <li>Refactored the standard/fallback GRU memory update in <code>HetTGN</code>
+                (<code>agent/models/gnn/het_tgn.py</code>) to process event sequences sequentially and recursively
+                within a window for nodes with duplicate entries, resolving a major parallel write-back collision bug
+                and eliminating the intra-window temporal blind spot.</li>
+            <li>Ran the full GNN smoke test (<code>scripts/smoke_test_gnn.py</code>) locally and verified that all 9/9
+                tests pass, including the critical backbone gradient flow tests.</li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h2>Key decisions</h2>
+        <ul>
+            <li>Used PyTorch <code>torch.autograd.grad</code> as ground truth for Greeks validation.</li>
+            <li>Fixed sign error in analytical theta formula (was <code>+ r*K*exp(-rT)*N(d2)</code>, should be
+                <code>-</code>).
+            </li>
+            <li>Masked BAW early-exercise premium with <code>torch.where(b &lt; r, ..., 0.0)</code> to avoid
+                <code>inf * 0 = NaN</code> when b = r.
+            </li>
+            <li>Clamped <code>S_star_put</code> to <code>min(K*0.1)</code> to avoid negative values causing NaN in
+                <code>log()</code>.
+            </li>
+            <li>Implemented a vectorized, step-local recurrence grouping by sequence index $k$ for fallback GRU memory
+                updates, maintaining optimal GPU parallelism across distinct active nodes while enforcing strict
+                chronological sequence and recursive memory propagation for each individual node's multi-event history.
+            </li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h2>Files modified</h2>
+        <ul>
+            <li><code>agent/quant/options.py</code> — Added Greeks, IV solver, BAW, FourierCOS, HestonCOS, BatesCOS,
+                MertonCOS, and VarianceGammaCOS.</li>
+            <li><code>tests/test_options.py</code> — Added 12 new tests (7 for M2, 5 for M3/M4.2).</li>
+            <li><code>tasks/active/math_stack_roadmap.md</code> — Marked M2, M3, and M4.2 complete.</li>
+            <li><code>tasks/active/m2_options_pricing_greeks_task.html</code> — Marked all steps complete.</li>
+            <li><code>LESSONS.md</code> — Added M2 and M3 numerical stability notes, F-11 Parallel Batching Write
+                Collisions
+                entry, and V47 table row.</li>
+            <li><code>VERSIONS.md</code> — Added V46 and V47 entries to the ACTIVE KERNEL VERSIONS table.</li>
+            <li><code>agent/models/gnn/het_tgn.py</code> — Refactored fallback GRU memory update to support sequential
+                chronological step-updates.</li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h2>Next step</h2>
+        <p>M5: Implied Volatility Surface (SVI parameterization, SABR model, surface features for GNN).</p>
+    </div>
+</body>
+
+</html>

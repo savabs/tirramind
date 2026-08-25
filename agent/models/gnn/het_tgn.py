@@ -38,7 +38,9 @@ from torch_geometric.data import HeteroData
 from torch_geometric.nn import HGTConv
 from torch_geometric.utils import softmax as pyg_softmax
 
+from agent.models.gnn.cde_encoder import CDEMemoryEncoder
 from agent.models.gnn.graph_builder import OBSERVATION_TYPES, IDMap
+from agent.models.gnn.mamba_encoder import MambaMemoryEncoder
 from agent.models.gnn.temporal import Time2Vec
 
 log = logging.getLogger(__name__)
@@ -130,6 +132,72 @@ class AttentionCapturingHGTConv(HGTConv):
                 result[etype] = chunk.mean(dim=-1)  # avg across heads
             offset += count
         return result
+
+
+# ═══════════════════════════════════════════════════════════════
+# ContraNorm — Dimensional Collapse Prevention (Guo et al. PKU 2023)
+# ═══════════════════════════════════════════════════════════════
+
+
+class ContraNorm(nn.Module):
+    """ContraNorm layer to prevent dimensional collapse in GNNs.
+
+    From "ContraNorm: A Contrastive Learning Perspective on Oversmoothing
+    and Beyond" (Guo et al., PKU 2023, arXiv:2303.06562).
+
+    Prevents embeddings from lying in a narrow cone (dimensional collapse)
+    by implicitly adding a contrastive uniformity pressure. Complements
+    VICReg loss-based regularization with an architectural fix.
+
+    Parameters
+    ----------
+    momentum : float
+        EMA momentum for running mean (default 0.9, paper standard).
+    strength : float
+        Uniformity term strength (default 0.01, paper standard).
+
+    References
+    ----------
+    * Guo et al. 2023, arXiv:2303.06562
+    * LESSONS.md R-01 — Embedding Collapse prevention strategy.
+    """
+
+    def __init__(self, momentum: float = 0.9, strength: float = 0.01) -> None:
+        super().__init__()
+        self.momentum = momentum
+        self.strength = strength
+        self.register_buffer("running_mean", None)
+
+    def forward(self, h: torch.Tensor) -> torch.Tensor:
+        """Apply ContraNorm to node embeddings.
+
+        Args:
+            h: Node embeddings [N, hidden_dim].
+
+        Returns:
+            Normalized embeddings [N, hidden_dim].
+        """
+        if h.size(0) < 2:
+            return h  # Skip for single-node batches
+
+        # Center features (zero mean per dimension)
+        batch_mean = h.mean(dim=0, keepdim=True)
+        h_centered = h - batch_mean
+
+        # Update running mean (EMA)
+        if self.running_mean is None:
+            self.running_mean = batch_mean.detach().clone()
+        else:
+            with torch.no_grad():
+                self.running_mean = (
+                    self.momentum * self.running_mean
+                    + (1.0 - self.momentum) * batch_mean.detach()
+                )
+
+        # Contrastive uniformity term: push away from running mean
+        # This implicitly shatters representations, preventing dimensional collapse
+        uniformity = self.strength * (h - self.running_mean.detach())
+        return h_centered + uniformity
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -349,6 +417,17 @@ class HetTGN(nn.Module):
         Total nodes across all types (for memory allocation).
     num_obs_types : int
         Number of distinct observation types for prediction head.
+    use_cde : bool
+        When True, replace per-window GRU memory updates with Neural CDE
+        integration (Kidger et al. NeurIPS 2020).  Requires torchcde and
+        torchdiffeq to be installed.  Falls back silently to GRU when those
+        libraries are unavailable.  Default False preserves existing behaviour.
+    use_mamba : bool
+        When True, replace the per-window GRU step with a Mamba selective
+        SSM block (Gu & Dao, NeurIPS 2023).  Requires mambapy (pure-PyTorch,
+        no CUDA kernels needed).  Falls back silently to GRU when mambapy is
+        unavailable.  Default False preserves existing behaviour.
+        Cannot be combined with use_cde — Mamba takes priority if both are set.
     """
 
     def __init__(
@@ -363,12 +442,20 @@ class HetTGN(nn.Module):
         num_layers: int = 2,
         num_nodes: int = 0,
         num_obs_types: int | None = None,
+        use_cde: bool = False,
+        use_mamba: bool = False,
+        instrument_raw_dim: int = 0,
+        use_concat_head: bool = False,
+        use_contranorm: bool = False,
     ) -> None:
         super().__init__()
         self.hidden_dim = hidden_dim
         self.memory_dim = memory_dim
         self.node_types = metadata[0]
         self.edge_types = metadata[1]
+        self.use_cde = use_cde
+        self.use_mamba = use_mamba
+        self.use_contranorm = use_contranorm
         _num_obs_types = num_obs_types or len(OBSERVATION_TYPES)
 
         # ── Per-type input projections ──────────────────────────
@@ -400,6 +487,15 @@ class HetTGN(nn.Module):
                 )
             )
 
+        # ── ContraNorm layers (anti-collapse, Guo et al. 2023) ────
+        # One ContraNorm per HGT layer, applied after message passing.
+        # Prevents dimensional collapse (embeddings in narrow cone).
+        self.contranorm_layers: nn.ModuleList | None = None
+        if use_contranorm:
+            self.contranorm_layers = nn.ModuleList()
+            for _ in range(num_layers):
+                self.contranorm_layers.append(ContraNorm(momentum=0.9, strength=0.01))
+
         # ── Event prediction head ──────────────────────────────
         # Predicts: which obs_type + time_delta + value (per-node)
         self.obs_type_head = nn.Linear(hidden_dim, _num_obs_types)
@@ -427,6 +523,72 @@ class HetTGN(nn.Module):
             nn.ReLU(),
             nn.Linear(hidden_dim // 2, 1),
         )
+
+        # ── Raw-feature return head (Phase 50 fix) ────────────────
+        # Bypasses backbone embedding collapse by scoring instruments
+        # directly from their raw node features (price momentum, volatility,
+        # Sharpe, drawdown etc.).  These features are always differentiated
+        # across instruments even when the GNN backbone collapses to a single
+        # cluster.  Output layer zero-initialised so it starts as a no-op
+        # and the existing return_pred_head weights load cleanly from
+        # any prior checkpoint.
+        self.instrument_raw_dim = instrument_raw_dim
+        if instrument_raw_dim > 0:
+            self.return_raw_head: nn.Sequential | None = nn.Sequential(
+                nn.Linear(instrument_raw_dim, hidden_dim // 2),
+                nn.ReLU(),
+                nn.Linear(hidden_dim // 2, 1),
+            )
+            nn.init.zeros_(self.return_raw_head[-1].weight)
+            nn.init.zeros_(self.return_raw_head[-1].bias)
+        else:
+            self.return_raw_head = None
+
+        # ── Concat head: [raw_feats || gnn_emb] → return (Option B) ──
+        # Bridges raw price features with GNN embeddings so backbone
+        # training can improve return prediction IC.
+        # Only instantiated when use_concat_head=True AND instrument_raw_dim > 0.
+        self.use_concat_head = use_concat_head
+        self.return_concat_head: nn.Sequential | None = None
+        if use_concat_head and instrument_raw_dim > 0:
+            concat_in = instrument_raw_dim + hidden_dim
+            self.return_concat_head = nn.Sequential(
+                nn.Linear(concat_in, hidden_dim),
+                nn.ReLU(),
+                nn.Linear(hidden_dim, hidden_dim // 2),
+                nn.ReLU(),
+                nn.Linear(hidden_dim // 2, 1),
+            )
+            # NOTE: intentionally NOT zero-initialised.
+            # Zero-init on the last layer blocks gradient:
+            #   dL/d_hidden = dL/d_scores @ weight_last.T = dL/d_scores @ 0 = 0
+            # This severs the backbone from the return loss entirely until weight_last
+            # accidentally grows non-zero from its own gradient update (may take
+            # tens of epochs, during which ghost patterns contribute nothing to IC).
+            # Unlike return_raw_head (which loads from old checkpoints and needs
+            # a stable no-op start), concat_head is always freshly initialised —
+            # use Kaiming default so gradient flows from epoch 1.
+
+        # ── CDE memory encoder (Idea 1 — optional) ───────────────
+        # Replaces per-window GRU update with continuous-time CDE integration.
+        # Only instantiated when use_cde=True to avoid the import overhead and
+        # extra parameters when running in legacy GRU mode.
+        self.cde_encoder: CDEMemoryEncoder | None = None
+        if use_cde:
+            self.cde_encoder = CDEMemoryEncoder(
+                memory_dim=memory_dim,
+                message_dim=message_dim,
+            )
+
+        # ── Mamba memory encoder (Idea 4 — optional) ─────────────
+        # Replaces GRU step with a selective SSM block for long-range history.
+        self.mamba_encoder: MambaMemoryEncoder | None = None
+        if use_mamba:
+            self.mamba_encoder = MambaMemoryEncoder(
+                memory_dim=memory_dim,
+                message_dim=message_dim,
+                time_dim=time_dim,
+            )
 
         # ── Entity-pair score for link prediction ──────────────
         # Score(u, v) = u^T W v
@@ -489,7 +651,7 @@ class HetTGN(nn.Module):
 
         # HGT layers
         if edge_index_dict:
-            for hgt in self.hgt_layers:
+            for layer_idx, hgt in enumerate(self.hgt_layers):
                 x_dict_new = hgt(x_dict, edge_index_dict)
                 # Preserve node types not returned by HGTConv
                 # (e.g. types that only appear as edge sources)
@@ -497,6 +659,14 @@ class HetTGN(nn.Module):
                     if ntype not in x_dict_new:
                         x_dict_new[ntype] = x_dict[ntype]
                 x_dict = x_dict_new
+
+                # Apply ContraNorm after each HGT layer (anti-collapse)
+                if self.contranorm_layers is not None:
+                    for ntype in x_dict:
+                        if x_dict[ntype] is not None:
+                            x_dict[ntype] = self.contranorm_layers[layer_idx](
+                                x_dict[ntype]
+                            )
 
         return x_dict
 
@@ -586,21 +756,58 @@ class HetTGN(nn.Module):
         events: list[dict[str, Any]],
         embeddings: dict[str, torch.Tensor],
         id_map: IDMap,
+        t_start: float | None = None,
+        t_end: float | None = None,
     ) -> None:
         """Push event information into HeteroMemory.
+
+        When ``use_cde=True`` and ``t_start``/``t_end`` are provided, delegates
+        to ``CDEMemoryEncoder`` which integrates a Neural CDE over each node's
+        event path within the window.  Nodes with fewer than 2 events and all
+        nodes when CDE libraries are unavailable fall back to the GRU update.
 
         For each event, take the current embedding of the involved entity
         as the message and update its memory cell.
 
         Args:
-            events: Observation dicts with entity_id, entity_type,
-                    observed_at, observation_type.
+            events:     Observation dicts with entity_id, entity_type,
+                        observed_at, observation_type.
             embeddings: Current node embeddings from forward().
-            id_map: Entity → global ID mapping.
+            id_map:     Entity → global ID mapping.
+            t_start:    Window start timestamp (required for CDE mode).
+            t_end:      Window end timestamp (required for CDE mode).
         """
         if not events:
             return
 
+        # ── Mamba path (Idea 4): selective SSM over event sequence ──────
+        if self.use_mamba and self.mamba_encoder is not None:
+            self.mamba_encoder.update_memory_from_events(
+                events=events,
+                embeddings=embeddings,
+                id_map=id_map,
+                memory=self.memory,
+            )
+            return
+
+        # ── CDE path: group events by node and integrate continuously ──
+        if (
+            self.use_cde
+            and self.cde_encoder is not None
+            and t_start is not None
+            and t_end is not None
+        ):
+            self.cde_encoder.update_memory_from_events(
+                events=events,
+                embeddings=embeddings,
+                id_map=id_map,
+                memory=self.memory,
+                t_start=t_start,
+                t_end=t_end,
+            )
+            return
+
+        # ── GRU path (default): process events sequentially ────────────
         node_ids_list: list[int] = []
         messages_list: list[torch.Tensor] = []
         timestamps_list: list[float] = []
@@ -645,14 +852,39 @@ class HetTGN(nn.Module):
         if not node_ids_list:
             return
 
-        _msg_device = messages_list[0].device
-        node_ids = torch.tensor(node_ids_list, dtype=torch.long, device=_msg_device)
-        messages = torch.stack(messages_list)
-        timestamps = torch.tensor(
-            timestamps_list, dtype=torch.float, device=_msg_device
-        )
+        # Group events by global node ID and process sequentially step-by-step
+        # to prevent parallel in-place write collisions on duplicates.
+        from collections import defaultdict
 
-        self.memory.update_memory(node_ids, messages, timestamps)
+        node_to_events = defaultdict(list)
+        for gid, msg, t in zip(node_ids_list, messages_list, timestamps_list):
+            node_to_events[gid].append((msg, t))
+
+        # Sort each node's event sequence chronologically
+        for gid in node_to_events:
+            node_to_events[gid].sort(key=lambda x: x[1])
+
+        max_events = max(len(evs) for evs in node_to_events.values())
+        _msg_device = messages_list[0].device
+
+        for k in range(max_events):
+            step_gids = []
+            step_msgs = []
+            step_ts = []
+
+            for gid, evs in node_to_events.items():
+                if k < len(evs):
+                    step_gids.append(gid)
+                    step_msgs.append(evs[k][0])
+                    step_ts.append(evs[k][1])
+
+            if step_gids:
+                step_gids_t = torch.tensor(
+                    step_gids, dtype=torch.long, device=_msg_device
+                )
+                step_msgs_t = torch.stack(step_msgs)
+                step_ts_t = torch.tensor(step_ts, dtype=torch.float, device=_msg_device)
+                self.memory.update_memory(step_gids_t, step_msgs_t, step_ts_t)
 
     def reset_memory(self) -> None:
         """Reset all temporal memory (e.g. between training episodes)."""

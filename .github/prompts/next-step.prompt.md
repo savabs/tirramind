@@ -1,3 +1,5 @@
+> Legacy reference. Use Cursor skill `/next-step` — canonical: `.cursor/skills/next-step/SKILL.md`
+
 ---
 description: "Execute the next atomic step from the active task file, write edge case tests, and update the task file."
 ---

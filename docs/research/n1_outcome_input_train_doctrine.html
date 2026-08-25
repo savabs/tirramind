@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>Doctrine: N1 Outcome vs Input (Train Architecture)</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 960px; margin: 2rem auto; line-height: 1.55; }
+    h1, h2, h3 { color: #1a1a2e; }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: 0.92rem; }
+    th, td { border: 1px solid #ccc; padding: 0.4rem 0.6rem; text-align: left; vertical-align: top; }
+    th { background: #f0f0f8; }
+    pre { background: #f4f4f8; padding: 1rem; overflow-x: auto; font-size: 0.88rem; }
+    .canon { background: #e3f2fd; border-left: 4px solid #1565c0; padding: 0.75rem 1rem; }
+    .warn { background: #fff8e6; border-left: 4px solid #e6a800; padding: 0.75rem 1rem; }
+  </style>
+</head>
+<body>
+
+<h1>Doctrine: N1 Outcome vs Input (Train Architecture)</h1>
+<p><strong>Date:</strong> 2026-06-04 &nbsp;|&nbsp; <strong>Status:</strong> Canonical train doctrine &nbsp;|&nbsp; <strong>Owner:</strong> This file (all others link here)</p>
+
+<div class="canon">
+  <strong>One line:</strong> <em>Commodity futures return is the outcome (the exam). Raw linked intelligence is the input (the moat). Commoditized controls are proof-of-concept hygiene — not the product.</em>
+</div>
+
+<p>Aligns with [[agent_playground_doctrine]] (edge in construction + linkage, not bare series) and [[full_quant_base_model]] (base ℰ → niche readout). Approved founder direction 2026-06-04.</p>
+
+<h2>1. Three roles (do not conflate)</h2>
+<table>
+  <tr><th>Role</th><th>What it is</th><th>Examples</th></tr>
+  <tr>
+    <td><strong>Outcome</strong></td>
+    <td>What we predict and grade</td>
+    <td>N-day <strong>forward return</strong> (or cross-sectional <strong>residual return</strong>) on N1 commodity futures; Spearman IC, decile spread, walk-forward</td>
+  </tr>
+  <tr>
+    <td><strong>Input / edge</strong></td>
+    <td>What HetTGN conditions on via ℰ</td>
+    <td>Raw L1/L2 sensors: CFTC positioning, AIS, energy_supply, GDELT (entity-linked), sanctions, capital flows, comtrade, country/sovereign links, M9 micro <em>as sensor</em>, rates curve on country nodes</td>
+  </tr>
+  <tr>
+    <td><strong>POC shell</strong></td>
+    <td>Controlled lab so the exam is honest</td>
+    <td>[[l1_l2_pretrain_signoff]] gates A–C; mask options; cap GDELT; cap/skip DeFi TVL; <code>max_windows</code>; enrichment OFF for first run</td>
+  </tr>
+</table>
+
+<pre>
+RAW INPUTS (L1/L2, entity-linked on graph)
+  AIS, energy, CFTC, geo, rates, micro, country links, …
+           │
+           ▼
+      HetTGN → ℰ
+           │
+           ▼
+OUTCOME (POC): forward / residual return on commodity futures
+           │
+           ▼
+METRIC: IC, decile spread, gates as preflight only
+</pre>
+
+<h2>2. What is <em>not</em> the edge</h2>
+<ul>
+  <li><strong>Past-price momentum block</strong> (PRICE_FEAT 9 dims on instrument nodes) — table stakes; minimize as <em>input</em> for N1 edge runs.</li>
+  <li><strong>Options IV</strong> — deferred; masked via <code>TIRRA_MASK_M15_OPTIONS=1</code> until paid/historical chains exist.</li>
+  <li><strong>DeFi TVL</strong> — high row count, low N1 edge; cap or exclude from commodity POC prefetch (N3 playground).</li>
+  <li><strong>GDELT at 100%</strong> — noise flood (V46 lesson); cap at train time, do not eliminate entirely (N4 geo input).</li>
+</ul>
+
+<p><code>instrument_daily</code> remains in the pipeline for <strong>label construction</strong>, backtests, and gate freshness — not as the primary intelligence story on instrument nodes.</p>
+
+<h2>3. POC controls (useful for outcome, not the thesis)</h2>
+<table>
+  <tr><th>Control</th><th>Setting</th><th>Purpose</th></tr>
+  <tr><td>Commodity gates A–B–C</td><td>Pass before Kaggle</td><td>Certify graph + math + data for N1 <em>exam</em></td></tr>
+  <tr><td><code>TIRRA_MASK_M15_OPTIONS</code></td><td><code>1</code> (default)</td><td>No fake vol input</td></tr>
+  <tr><td><code>--gdelt-frac</code></td><td><code>0.05</code>–<code>0.15</code> (never <code>1.0</code>)</td><td>Noise cap; keep some geo input</td></tr>
+  <tr><td><code>--defi-frac</code> / <code>defi_subsample_frac</code></td><td><code>0.05</code> with <code>--n1-doctrine</code></td><td>Stop N3 TVL dominating N1 prefetch</td></tr>
+  <tr><td><code>--max-windows</code></td><td><code>200</code></td><td>Recent windows; bound RAM</td></tr>
+  <tr><td><code>resume_epoch</code></td><td><code>0</code> on dim change</td><td>49-dim scratch; no 34-dim checkpoints</td></tr>
+  <tr><td><code>use_residual_returns</code></td><td><code>true</code></td><td>Outcome = relative outperformance (IC-aligned)</td></tr>
+</table>
+
+<div class="warn">
+  <strong>DB row counts ≠ train exposure.</strong> DeFi + GDELT can dominate SQL; subsampling and entity-type graph structure determine what biases ℰ. Verify training log: <code>GDELT subsample frac=…</code> before trusting a run.
+</div>
+
+<h2>4. Raw intelligence inputs (N1 + N4 priority)</h2>
+<p>Per [[niche_competition_scorecard]] and Deep Surveillance doctrine — inputs should be <strong>L2-active</strong> (entity-resolved, time-stamped), not aggregate-only.</p>
+<table>
+  <tr><th>Niche</th><th>Raw input tools (grow these)</th><th>Status in DB (2026-06)</th></tr>
+  <tr><td>N1</td><td><code>cftc</code>, <code>ais_vessel</code>, <code>energy_supply</code>, <code>weather_alerts</code>, <code>comtrade</code>, <code>transport_throughput</code>, <code>satellite_activity</code>, <code>food_security</code></td><td>CFTC ✅; AIS/energy thin; others sparse/missing</td></tr>
+  <tr><td>N4</td><td><code>gdelt</code>, <code>sovereign_debt</code>, <code>sanctions_monitor</code>, <code>political_risk</code>, <code>capital_flows</code>, <code>disease_surveillance</code></td><td>GDELT mass; several tools sparse</td></tr>
+</table>
+<p><strong>Commoditized helpers</strong> (OK as plumbing, not moat): <code>instrument_universe</code> daily bars, US curve, dividends.</p>
+
+<h2>5. Implementation gaps (honest)</h2>
+<table>
+  <tr><th>Gap</th><th>Today</th><th>Target</th></tr>
+  <tr><td>Price as input</td><td><code>--n1-doctrine</code> → <code>zero_price_feats</code> + <code>embedding_only_return</code></td><td>✅ Implemented 2026-06-04</td></tr>
+  <tr><td>DeFi in prefetch</td><td><code>apply_training_obs_subsample</code> + <code>--defi-frac</code></td><td>✅ Implemented 2026-06-04</td></tr>
+  <tr><td>Raw tool depth</td><td>One-off backfill on AIS/energy</td><td>Daily DAG capture → time series</td></tr>
+  <tr><td>Success criterion</td><td>IC on 20 futures</td><td>IC uplift vs <strong>price-only</strong> baseline with same POC shell</td></tr>
+</table>
+
+<h2>6. Phase A commodity train (POC checklist)</h2>
+<ul>
+  <li>☑ Gates A–B–C pass — [[l1_l2_pretrain_signoff]]</li>
+  <li>☑ Options masked — <code>TIRRA_MASK_M15_OPTIONS=1</code></li>
+  <li>☐ Kaggle: <code>gdelt_frac=0.05</code>, <code>max_windows=200</code>, <code>resume_epoch=0</code></li>
+  <li>☐ Log confirms GDELT subsample line at train start</li>
+  <li>☐ Report IC on <strong>20 commodity futures only</strong></li>
+  <li>☑ Raw-source floor in <code>obs_subsample.py</code> + <code>scripts/training_mix_report.py</code></li>
+</ul>
+
+<h2>7. Related artifacts</h2>
+<ul>
+  <li>Task: [[full_quant_base_model_task]]</li>
+  <li>Strategy: [[full_quant_base_model]]</li>
+  <li>POC signoff: [[l1_l2_pretrain_signoff]]</li>
+  <li>Trainer: <code>agent/models/gnn/trainer.py</code> (<code>gdelt_subsample_frac</code>, forward returns)</li>
+  <li>Mask: <code>agent/quant/gnn_quant_features.py</code> (<code>m15_options_masked()</code>)</li>
+</ul>
+
+<p><em>Canonical owner for outcome-vs-input train doctrine. Do not copy tables elsewhere — link [[n1_outcome_input_train_doctrine]].</em></p>
+</body>
+</html>

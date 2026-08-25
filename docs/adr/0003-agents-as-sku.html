@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-0003: Agents as SKU — Finance as Playground</title>
+  <style>
+    body { font-family: system-ui, sans-serif; line-height: 1.6; max-width: 800px; margin: 0 auto; padding: 2rem; color: #1a202c; }
+    h1 { color: #2c5282; border-bottom: 3px solid #3182ce; padding-bottom: 0.5rem; }
+    h2 { color: #2b6cb0; margin-top: 1.5rem; }
+    .canonical { background: #ebf8ff; border-left: 4px solid #3182ce; padding: 1rem; margin: 1rem 0; }
+    table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.92rem; }
+    th, td { border: 1px solid #e2e8f0; padding: 0.5rem; text-align: left; vertical-align: top; }
+    th { background: #edf2f7; }
+    pre { background: #f7fafc; padding: 1rem; overflow-x: auto; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+
+<h1>ADR-0003: Agents as SKU — Finance as Playground</h1>
+<p><strong>Status:</strong> accepted<br>
+<strong>Date:</strong> 2026-06-09<br>
+<strong>Deciders:</strong> Founder<br>
+<strong>Extends:</strong> [[agent_playground_doctrine]] · <strong>Supersedes:</strong> trading-signal / brief-first GTM ([[ghost_pattern_income_plan]] commercial track, [[0002-ghost-pattern-gtm-pause]])</p>
+
+<div class="canonical">
+  <strong>Decision:</strong> TirraMind sells <em>agents</em> (self-improving runtimes on domain playgrounds). Finance is playground #1 for proof, not the product we ship to customers as trade calls or newsletters.
+</div>
+
+<h2>Context</h2>
+<ul>
+  <li>Founder identity: systems / ML / low-level agent builder (Carmack), not trader or salesperson (Simons + Substack).</li>
+  <li>Ghost-pattern brief GTM paused — product felt fake; no sales appetite; no trading capital.</li>
+  <li>Long-term vision unchanged: agent company, ℰ, playground #1 = markets.</li>
+  <li>Prior doctrine (§6b) said customers buy “readouts” — revised: buyers buy <strong>agent capability</strong>; readouts are optional outputs of a deployed agent, not the SKU.</li>
+</ul>
+
+<h2>Ideology (formulation)</h2>
+
+<h3>Three layers — never confuse them</h3>
+<table>
+  <tr><th>Layer</th><th>What it is</th><th>Analogy</th></tr>
+  <tr><td><strong>Engine</strong></td><td>Pipeline, store, DAG, trainer, agent loop, eval harness</td><td>id Tech engine / Carmack runtime</td></tr>
+  <tr><td><strong>Playground</strong></td><td>Finance (MP-1…): sensors, ontology, tasks, benchmarks</td><td>Game level that stress-tests the engine</td></tr>
+  <tr><td><strong>Product</strong></td><td>Packaged <em>agent</em> for a domain (deploy + prove + operate)</td><td>Licensed engine + reference game</td></tr>
+</table>
+
+<h3>What we say publicly</h3>
+<ul>
+  <li><strong>Say:</strong> “We build self-improving agents on market playgrounds — ingest multi-domain data, maintain world state, detect structure, log outcomes, get better.”</li>
+  <li><strong>Say:</strong> “Finance is our first arena because it’s measurable and brutal — not because we sell stock picks.”</li>
+  <li><strong>Never say:</strong> “We called crude,” “alpha as a service,” “subscribe for trade alerts,” “our AI is bullish.”</li>
+</ul>
+
+<h3>Agent definition (minimum viable)</h3>
+<pre>
+while running:
+  observations = perceive(tools, dag)       # deterministic fetch
+  state        = represent(graph, ℰ)        # learned + structured
+  signals      = detect(chains, rankers)    # falsifiable flags
+  actions      = act(tools, exports, log)   # no required brokerage
+  learn        = update(memory, checkpoints) # from logged outcomes
+</pre>
+
+<h3>Moat</h3>
+<p>Not one z-score. The <strong>closed loop</strong>: heterogeneous sensors → entity graph → temporal ℰ → cross-domain detectors → auditable outcomes → continual update. Competitors sell single-source dashboards or static models.</p>
+
+<h3>Money path (aligned with identity)</h3>
+<ol>
+  <li><strong>Proof:</strong> reproducible benchmark beats baselines on playground tasks</li>
+  <li><strong>Package:</strong> deployable agent + docs + eval (B2B license, managed runtime, or infra hire)</li>
+  <li><strong>Optional:</strong> domain partner sells readouts; founder stays engine</li>
+</ol>
+<p>Personal trading without capital is <strong>not</strong> year-1 monetization. Bridge income (contract ML/systems) is allowed without changing SKU.</p>
+
+<h2>Consequences</h2>
+<ul>
+  <li>[[agent_playground_doctrine]] §6b–6e updated — canonical commercial wording</li>
+  <li>Priority work: agent loop hardening, B.4-style eval verdicts, not brief polish or X</li>
+  <li>Concrete benefits + proof pass lines: [[finance_playground_proof_ladder]]</li>
+  <li>Ghost archive = demo / training labels for detector module</li>
+  <li>New features must pass agent-loop decision filter (doctrine §7)</li>
+</ul>
+
+<h2>Related</h2>
+<ul>
+  <li>[[agent_playground_doctrine]]</li>
+  <li>[[long_term_vision]]</li>
+  <li>[[0002-ghost-pattern-gtm-pause]]</li>
+  <li>[[ghost_pattern_income_plan]]</li>
+  <li>[[gnn_architecture_overhaul_task]]</li>
+</ul>
+
+</body>
+</html>

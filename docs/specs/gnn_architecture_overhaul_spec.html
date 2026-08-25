@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Spec: GNN Architecture Overhaul — Phase A Honest Baselines</title>
+</head>
+<body>
+  <h1>Spec: GNN Architecture Overhaul — Phase A Honest Baselines</h1>
+  <p>Research: [[gnn_architecture_overhaul]]</p>
+
+  <h2>Goal</h2>
+  <p>Before any new GNN architecture work, run a unified honest-baseline audit that answers:</p>
+  <ol>
+    <li>What is the post-backfill forward-return label distribution? (H1)</li>
+    <li>What IC do raw price features achieve with purged walk-forward Ridge? (ceiling without GNN)</li>
+    <li>What IC does a single momentum factor achieve? (classical sanity check)</li>
+    <li>Does frozen GNN ℰ beat raw features on the same folds? (graph value-add test)</li>
+  </ol>
+
+  <h2>Deliverable</h2>
+  <p><code>scripts/honest_baseline_audit.py</code> — single entry point, JSON output, gate verdict.</p>
+
+  <h2>Implementation steps</h2>
+
+  <h3>A.1 — Label distribution audit</h3>
+  <ul>
+    <li>Load all observations via <code>GraphBuilder.prefetch_observations()</code></li>
+    <li>Call <code>_build_forward_return_lookup(obs, horizon_days=21)</code></li>
+    <li>Log: n, mean, std, min, max, pct_finite, pct_zero</li>
+    <li>Also log daily log_return cross-section std (for comparison)</li>
+  </ul>
+
+  <h3>A.2 — RawPrice-PurgedRanker strategy</h3>
+  <ul>
+    <li>Reuse phase40 walk-forward constants: min_train=252, test=21, step=21 (smoke: 126/21/21, last 400d)</li>
+    <li>Per fold: build instrument price features (dims <code>BASE_FEAT_DIM:BASE_FEAT_DIM+PRICE_FEAT_DIM</code>) at fold cutoff via <code>build_from_cached</code></li>
+    <li>Fit Ridge(alpha) on train-fold samples only (same logic as <code>GNNFoldPurgedRankerStrategy</code>)</li>
+    <li>Score test fold; compute Spearman IC vs 21d forward return</li>
+  </ul>
+
+  <h3>A.3 — Momentum-Rank strategy</h3>
+  <ul>
+    <li>Rank instruments by momentum feature (price block index 0 = 21d momentum)</li>
+    <li>Softmax rank → weights; compute fold IC</li>
+  </ul>
+
+  <h3>A.4 — GNN-PurgedRanker (optional, --checkpoint)</h3>
+  <ul>
+    <li>Reuse existing <code>GNNFoldPurgedRankerStrategy</code> from <code>phase40_gnn_backtest.py</code></li>
+    <li>Default checkpoint: latest V72 epoch weights if available</li>
+  </ul>
+
+  <h3>A.5 — Gate report + JSON output</h3>
+  <ul>
+    <li>Write <code>.tirra_pipeline/honest_baseline_audit.json</code></li>
+    <li>Gate: mean IC &gt; 0.03 AND t &gt; 2.0 per strategy</li>
+    <li>Emit recommendation: DATA_FIX | TWO_STAGE | CONTINUE_TUNING (should never be last)</li>
+  </ul>
+
+  <h2>Files affected</h2>
+  <table border="1" cellpadding="6">
+    <tr><th>File</th><th>Change</th></tr>
+    <tr><td><code>scripts/honest_baseline_audit.py</code></td><td>New — unified baseline runner</td></tr>
+    <tr><td><code>Makefile</code></td><td>Add <code>honest-baseline</code> target</td></tr>
+  </table>
+
+  <h2>Usage</h2>
+  <pre>
+python scripts/honest_baseline_audit.py --smoke
+python scripts/honest_baseline_audit.py --checkpoint .tirra_pipeline/gnn_model_phase50.pt
+  </pre>
+
+  <h2>Phase B (deferred until A completes)</h2>
+  <p>Two-stage pipeline spec will be written after Phase A gate results are recorded in checkpoint.</p>
+
+  <h2>Related</h2>
+  <ul>
+    <li>[[gnn_architecture_overhaul]]</li>
+    <li>[[gnn_architecture_overhaul_task]]</li>
+    <li>[[phase41b_gnn_signal_extraction_spec]]</li>
+  </ul>
+</body>
+</html>

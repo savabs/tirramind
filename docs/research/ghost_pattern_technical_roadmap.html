@@ -1,0 +1,1061 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ghost Pattern Detection: Technical Roadmap & Research Foundation</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            line-height: 1.6;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #0d1117;
+            color: #c9d1d9;
+        }
+        h1 {
+            color: #58a6ff;
+            border-bottom: 2px solid #21262d;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #79c0ff;
+            margin-top: 30px;
+            border-bottom: 1px solid #21262d;
+            padding-bottom: 5px;
+        }
+        h3 {
+            color: #8b949e;
+            margin-top: 20px;
+        }
+        h4 {
+            color: #8b949e;
+            margin-top: 15px;
+        }
+        code {
+            background-color: #161b22;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+            color: #79c0ff;
+        }
+        pre {
+            background-color: #161b22;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+            border: 1px solid #21262d;
+        }
+        pre code {
+            background-color: transparent;
+            padding: 0;
+        }
+        .section {
+            margin-bottom: 30px;
+            background-color: #0d1117;
+            padding: 20px;
+            border-radius: 6px;
+            border: 1px solid #21262d;
+        }
+        .phase {
+            background-color: #161b22;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 6px;
+            border-left: 4px solid #58a6ff;
+        }
+        .paper-ref {
+            background-color: #1c2128;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            border-left: 3px solid #3fb950;
+        }
+        .impl-note {
+            background-color: #1c2128;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            border-left: 3px solid #d29922;
+        }
+        .warning {
+            background-color: #1c2128;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            border-left: 3px solid #f85149;
+        }
+        ul, ol {
+            padding-left: 30px;
+        }
+        li {
+            margin: 8px 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+            background-color: #161b22;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid #21262d;
+        }
+        th {
+            background-color: #1c2128;
+            font-weight: 600;
+            color: #58a6ff;
+        }
+        a {
+            color: #58a6ff;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+        .meta {
+            color: #8b949e;
+            font-size: 0.9em;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+
+<h1>🔬 Ghost Pattern Detection: Technical Roadmap & Research Foundation</h1>
+
+<div class="meta">
+<strong>Purpose:</strong> Deep technical plan for implementing cross-domain anomaly detection for MP-1 (Atlantic energy supply chain)<br>
+<strong>Research Scope:</strong> Pure mathematics, arXiv (2024-2026), production GitHub repos<br>
+<strong>Target:</strong> Joint trajectory anomalies invisible to single-source analysis<br>
+<strong>Created:</strong> 2026-06-08
+</div>
+
+<div class="section">
+<h2>🎯 Executive Summary</h2>
+
+<p><strong>Ghost patterns</strong> are joint trajectory anomalies across entities and domains — signals that only emerge when you fuse heterogeneous data sources (COT positioning, AIS vessel movements, weather, port congestion, prices). The technical challenge is building a system that:</p>
+
+<ol>
+    <li><strong>Ingests multi-domain time series</strong> (COT, AIS, USDA, weather, prices)</li>
+    <li><strong>Resolves entities</strong> across disparate schemas (ship → commodity → future contract → producer)</li>
+    <li><strong>Detects changepoints</strong> in each domain independently</li>
+    <li><strong>Discovers causal chains</strong> across domains (Granger causality, PCMCI+)</li>
+    <li><strong>Matches temporal graph patterns</strong> against known alert templates</li>
+    <li><strong>Scores anomalies</strong> using heterogeneous GNN fusion</li>
+</ol>
+
+<p>This document lays out the <strong>technical foundation</strong> — papers, repos, algorithms — for each component.</p>
+</div>
+
+<div class="section">
+<h2>📚 Research Foundation: State-of-the-Art (2024-2026)</h2>
+
+<h3>1. Multivariate Time Series Anomaly Detection</h3>
+
+<div class="paper-ref">
+<h4>OWLEYE: Zero-Shot Cross-Domain Graph Anomaly Detection (ICLR 2026)</h4>
+<p><strong>arXiv:</strong> <a href="https://arxiv.org/abs/2601.19102">2601.19102</a><br>
+<strong>Key Innovation:</strong> Cross-domain feature alignment module + multi-domain pattern dictionary learning<br>
+<strong>Why It Matters:</strong> We need to detect anomalies in NEW commodity niches (MP-2, MP-3) without retraining from scratch. OWLEYE's zero-shot transfer is crucial for scaling across micro-playgrounds.</p>
+<p><strong>Algorithm Components:</strong></p>
+<ul>
+    <li>SVD-based feature alignment across domains</li>
+    <li>Meta-pattern dictionary (stores normal behavior templates)</li>
+    <li>Truncated attention-based reconstruction for unseen graphs</li>
+</ul>
+</div>
+
+<div class="paper-ref">
+<h4>CGSTA: Cross-Scale Graph Contrast with Stability-Aware Alignment (Feb 2026)</h4>
+<p><strong>arXiv:</strong> <a href="https://arxiv.org/abs/2602.20468">2602.20468</a><br>
+<strong>Key Innovation:</strong> Dynamic Layered Graph Construction (DLGC) — builds local/regional/global views of variable relations per sliding window<br>
+<strong>Why It Matters:</strong> Commodity chains have multi-scale structure (local = port congestion, regional = Baltic routes, global = OPEC policy). CGSTA's hierarchical contrast learns features at each scale.</p>
+<p><strong>Algorithm Components:</strong></p>
+<ul>
+    <li>DLGC: 3-layer graph per time window (local, regional, global)</li>
+    <li>Contrastive Discrimination across Scales (CDS)</li>
+    <li>Stability-Aware Alignment (SAA) — EMA-anchored regularization to suppress noise</li>
+</ul>
+</div>
+
+<div class="paper-ref">
+<h4>PMGC: Prospective Multi-Graph Cohesion (Sep 2025)</h4>
+<p><strong>arXiv:</strong> <a href="https://arxiv.org/abs/2509.17235">2509.17235</a><br>
+<strong>Key Innovation:</strong> Long-term static graph + short-term dynamic graphs with cohesion loss<br>
+<strong>Why It Matters:</strong> Some commodity relationships are stable (crude → gasoline refining), others fluctuate (shipping routes during storms). PMGC balances both.</p>
+</div>
+
+<h3>2. Changepoint & Regime Detection</h3>
+
+<div class="paper-ref">
+<h4>Bayesian Online Changepoint Detection (BOCPD) for Financial Time Series (ACM 2025)</h4>
+<p><strong>Paper:</strong> <a href="https://dl.acm.org/doi/10.1145/3795154.3795291">ACM DL</a><br>
+<strong>Key Innovation:</strong> Real-time probabilistic changepoint detection with hazard-rate parameter λ<br>
+<strong>Why It Matters:</strong> COT positioning extremes (z-score > 2σ) need automated regime labeling (Long Build-Up, Short Covering). BOCPD identifies structural breaks aligned with macro events.</p>
+<p><strong>Optimal Configuration (from paper):</strong></p>
+<ul>
+    <li>maxCPs method with λ = 100</li>
+    <li>Successfully detected COVID-19, monetary policy shifts, pandemic phases</li>
+</ul>
+</div>
+
+<div class="paper-ref">
+<h4>PELT (Pruned Exact Linear Time) Algorithm (ACM 2025)</h4>
+<p><strong>Paper:</strong> <a href="https://dl.acm.org/doi/full/10.1145/3773365.3773532">ACM DL</a><br>
+<strong>Key Innovation:</strong> Linear-complexity globally optimal changepoint detection via dynamic programming<br>
+<strong>Why It Matters:</strong> Need to detect supply disruptions (e.g., Suez Canal blockage) with exact timing. PELT is fastest for large-scale commodity price series.</p>
+<p><strong>Best Cost Function:</strong> Normal cost function for financial/commodity data</p>
+</div>
+
+<div class="paper-ref">
+<h4>Topological Data Analysis for Changepoint Detection (MDPI 2025)</h4>
+<p><strong>Paper:</strong> <a href="https://www.mdpi.com/2079-8954/13/10/875">MDPI</a><br>
+<strong>Key Innovation:</strong> Persistence homology features (L1, L2 norms) for long-term/short-term volatility indicators<br>
+<strong>Why It Matters:</strong> Detects "shape shifts" in multivariate commodity data. Identified Brexit, COVID-19, Russia-Ukraine war with 98% significance threshold.</p>
+</div>
+
+<h3>3. Causal Discovery & Chain Detection</h3>
+
+<div class="paper-ref">
+<h4>Tigramite: Causal Inference for Time Series (GitHub)</h4>
+<p><strong>Repo:</strong> <a href="https://github.com/jakobrunge/tigramite">jakobrunge/tigramite</a><br>
+<strong>Key Algorithms:</strong></p>
+<ul>
+    <li><strong>PCMCI+</strong> — Directed lagged + contemporaneous links</li>
+    <li><strong>ParCorr</strong> — Partial correlation CI test</li>
+    <li><strong>CMIknn</strong> — Conditional mutual information for nonlinear dependencies</li>
+</ul>
+<p><strong>Why It Matters:</strong> Discovers causal chains like <code>CFTC net long → AIS cargo departures → port congestion → price spike</code>. PCMCI+ handles both lagged (ship departs 7 days after COT report) and contemporaneous (price & volume spike together) links.</p>
+</div>
+
+<div class="paper-ref">
+<h4>DoWhy: Causal Inference with Graphical Models (Microsoft Research)</h4>
+<p><strong>Repo:</strong> <a href="https://github.com/py-why/dowhy">py-why/dowhy</a><br>
+<strong>Key Feature:</strong> Root-cause analysis for supply chain shifts (week-over-week changes in received quantity)<br>
+<strong>Why It Matters:</strong> When MP-1 fires an alert ("Baltic crude shipments down 15%"), DoWhy can answer: "Why did received quantity change?" by tracing back through POs → vendor confirmations → logistics disruptions.</p>
+</div>
+
+<h3>4. Heterogeneous Graph Neural Networks & Cross-Domain Fusion</h3>
+
+<div class="paper-ref">
+<h4>CrossHGL: Text-Free Cross-Domain Heterogeneous Graph Learning (arXiv Mar 2026)</h4>
+<p><strong>arXiv:</strong> <a href="https://arxiv.org/abs/2603.27685">2603.27685</a><br>
+<strong>Key Innovation:</strong> Tri-Prompt system (feature, edge, structure prompts) + semantic-preserving graph transformation<br>
+<strong>Why It Matters:</strong> Commodity entities are heterogeneous (ships, contracts, ports, producers, weather zones). CrossHGL aligns them into a shared embedding space without external text labels.</p>
+</div>
+
+<div class="paper-ref">
+<h4>MUG: Meta-path-aware Universal Heterogeneous Graph Pre-Training (Feb 2026)</h4>
+<p><strong>arXiv:</strong> <a href="https://arxiv.org/abs/2602.22645">2602.22645</a><br>
+<strong>Key Innovation:</strong> Input unification module — encodes heterogeneous types into unified representation via contextual structural information<br>
+<strong>Why It Matters:</strong> Meta-paths like <code>Ship → Port → Producer → Future Contract → COT Report</code> carry semantic meaning. MUG captures high-order relationships without LLM dependency.</p>
+</div>
+
+<h3>5. Multi-View Contrastive Learning for Time Series</h3>
+
+<div class="paper-ref">
+<h4>Multi-View Contrastive Learning for Domain Adaptation (arXiv Sep 2025)</h4>
+<p><strong>arXiv:</strong> <a href="https://arxiv.org/abs/2506.22393">2506.22393</a><br>
+<strong>Key Innovation:</strong> Integrates temporal, derivative, and frequency features via hierarchical fusion<br>
+<strong>Why It Matters:</strong> COT data has temporal patterns (weekly cycles), derivatives (positioning momentum), and frequency signatures (seasonal grain demand). Multi-view learning captures all three.</p>
+</div>
+
+<div class="paper-ref">
+<h4>MoST: Mode-Specific Tensor Time Series (Feb 2026)</h4>
+<p><strong>arXiv:</strong> <a href="https://arxiv.org/abs/2602.23663">2602.23663</a><br>
+<strong>Key Innovation:</strong> Disentangled mode-specific representations via tensor slicing<br>
+<strong>Why It Matters:</strong> Ghost patterns live in the interaction between modes (time × entity × domain). MoST learns disentangled features that can be recombined to detect cross-mode anomalies.</p>
+</div>
+
+<h3>6. Temporal Graph Pattern Matching</h3>
+
+<div class="paper-ref">
+<h4>TemporalRI: Temporal Subgraph Isomorphism with Multiple Contacts</h4>
+<p><strong>Paper:</strong> <a href="https://appliednetsci.springeropen.com/articles/10.1007/s41109-021-00397-0">Applied Network Science</a><br>
+<strong>Key Innovation:</strong> Temporal flow filtering for subgraph matching<br>
+<strong>Why It Matters:</strong> Chain templates are temporal patterns: <code>COT extreme(t) → AIS gap(t+3) → port loiter(t+5) → price(t+7)</code>. TemporalRI finds all instances of this template across historical data.</p>
+</div>
+
+<div class="paper-ref">
+<h4>Raphtory: Temporal Graph Engine (Rust + Python)</h4>
+<p><strong>Repo:</strong> <a href="https://github.com/Pometry/Raphtory">Pometry/Raphtory</a><br>
+<strong>Key Feature:</strong> Temporal motif discovery, time-respecting paths<br>
+<strong>Why It Matters:</strong> Production-grade temporal graph engine. Can query: "Find all 3-node motifs where Ship → Port → Producer edges occurred within 7-day windows over 2022-2025."</p>
+</div>
+
+</div>
+
+<div class="section">
+<h2>🛠️ Production Implementations: GitHub Repos</h2>
+
+<h3>COT Analysis (CFTC Positioning)</h3>
+
+<table>
+<thead>
+<tr>
+    <th>Repo</th>
+    <th>Features</th>
+    <th>Why Use It</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+    <td><a href="https://github.com/Mcamin/cot-analysis">Mcamin/cot-analysis</a></td>
+    <td>52-week z-scores, percentile ranks, regime labels (Long Build-Up, Short Covering)</td>
+    <td>Professional-grade feature engineering. Ready-made bias scoring for positioning extremes.</td>
+</tr>
+<tr>
+    <td><a href="https://github.com/kustex/CFTC-COT-Report">kustex/CFTC-COT-Report</a></td>
+    <td>Dash dashboard, 1-year & 3-year z-scores, automated ZIP ingestion</td>
+    <td>Production pipeline for keeping COT data up-to-date with email alerts.</td>
+</tr>
+<tr>
+    <td><a href="https://github.com/NDelventhal/cot_reports">NDelventhal/cot_reports</a></td>
+    <td>Python library for fetching all COT report types (Legacy, Disaggregated, TFF)</td>
+    <td>Data fetching abstraction. Plug-and-play for pipeline ingestion.</td>
+</tr>
+</tbody>
+</table>
+
+<div class="impl-note">
+<strong>Implementation Note:</strong> Start with <code>Mcamin/cot-analysis</code> for regime detection. Their <code>build_features()</code> pipeline calculates positioning extremes (z > 2σ) and labels regimes automatically. This becomes Layer 1 (Surveillance) input.
+</div>
+
+<h3>AIS Vessel Tracking & Anomaly Detection</h3>
+
+<table>
+<thead>
+<tr>
+    <th>Repo</th>
+    <th>Features</th>
+    <th>Why Use It</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+    <td><a href="https://github.com/radiancefleet/radiancefleet">RadianceFleet/RadianceFleet</a></td>
+    <td>AIS gap detection, spoofing (anchor/circle/MMSI reuse), loitering, STS transfers, GeoJSON export</td>
+    <td>Comprehensive maritime anomaly toolkit. Rule-based risk scoring ready for production.</td>
+</tr>
+<tr>
+    <td><a href="https://github.com/federicomarra/kattegat-vessel-anomaly-detector">kattegat-vessel-anomaly-detector</a></td>
+    <td>LSTM Autoencoder for trajectory reconstruction, PyTorch implementation</td>
+    <td>Deep learning baseline. High reconstruction error = anomalous movement.</td>
+</tr>
+<tr>
+    <td><a href="https://github.com/deringeorge-nebula/thalweg">thalweg</a></td>
+    <td>Dark fleet detection (0-100 risk score), sanctions matching, spill risk, port congestion, live vessel globe</td>
+    <td>Real-time maritime intelligence platform. AISStream.io integration, Deno edge functions.</td>
+</tr>
+<tr>
+    <td><a href="https://github.com/sandialabs/maritime-trajectory-anomaly-detection">sandialabs/maritime-trajectory-anomaly-detection</a></td>
+    <td>Benchmarking suite with synthetic anomaly generation</td>
+    <td>Validation framework. Generate synthetic "overspeed" or "route deviation" events to test detectors.</td>
+</tr>
+</tbody>
+</table>
+
+<div class="impl-note">
+<strong>Implementation Note:</strong> Use <code>RadianceFleet</code> for AIS gap/loitering detection (Layer 1). Their "velocity plausibility ratio" and "rotated ellipse movement envelopes" are production-hardened. Pair with <code>kattegat</code> LSTM-AE for learning-based anomaly scores on top of rule-based filters.
+</div>
+
+<h3>Supply Chain Anomaly Detection</h3>
+
+<table>
+<thead>
+<tr>
+    <th>Repo</th>
+    <th>Features</th>
+    <th>Why Use It</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+    <td><a href="https://github.com/aliivaezii/kpi-lens">aliivaezii/kpi-lens</a></td>
+    <td>Ensemble detectors (Z-score, IQR, CUSUM, Isolation Forest), Claude root-cause analysis, FastAPI + MCP</td>
+    <td>Best reference for MP-1 architecture. Shows how to wire anomaly detection → LLM explanation → MCP tools.</td>
+</tr>
+<tr>
+    <td><a href="https://github.com/hsinnearth7/ChainCommand">hsinnearth7/ChainCommand</a></td>
+    <td>Isolation Forest + Z-score, demand spike detection, BOM tree analysis, RL inventory policy</td>
+    <td>Full supply chain optimization platform. Demonstrates constraint optimization + ML.</td>
+</tr>
+<tr>
+    <td><a href="https://github.com/tejagudla1252/supply-chain-intelligence">tejagudla1252/supply-chain-intelligence</a></td>
+    <td>Random Forest late-delivery classifier, ARIMA 3-month forecast, Isolation Forest (5% contamination)</td>
+    <td>DuckDB-based data engineering, MLflow tracking, Streamlit dashboard.</td>
+</tr>
+</tbody>
+</table>
+
+<div class="impl-note">
+<strong>Implementation Note:</strong> <code>kpi-lens</code> is the closest to our target architecture. Their ensemble voting (Z-score + IQR + CUSUM + IsolationForest) is more robust than any single detector. Adapt their FastAPI + MCP structure for MP-1.
+</div>
+
+<h3>Causal Discovery Libraries</h3>
+
+<table>
+<thead>
+<tr>
+    <th>Library</th>
+    <th>Algorithms</th>
+    <th>Use Case</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+    <td><a href="https://github.com/jakobrunge/tigramite">tigramite</a></td>
+    <td>PCMCI+, ParCorr, CMIknn, GPDC</td>
+    <td>Discover lagged causal links: <code>COT(t) → AIS(t+3) → Price(t+7)</code></td>
+</tr>
+<tr>
+    <td><a href="https://github.com/py-why/dowhy">DoWhy</a></td>
+    <td>Graphical causal models, do-calculus, root-cause analysis</td>
+    <td>Explain: "Why did supply chain metric X shift week-over-week?"</td>
+</tr>
+<tr>
+    <td><a href="https://github.com/mckinsey/causalnex">CausalNex</a></td>
+    <td>Bayesian Network structure learning, intervention analysis</td>
+    <td>Learn causal DAG from observational data, evaluate "what-if" scenarios.</td>
+</tr>
+<tr>
+    <td><a href="https://github.com/lcastri/causalflow">CausalFlow</a></td>
+    <td>F-PCMCI, CAnDOIT (observational + interventional)</td>
+    <td>Unified framework for benchmarking causal discovery methods.</td>
+</tr>
+</tbody>
+</table>
+
+</div>
+
+<div class="section">
+<h2>🏗️ Technical Architecture: 7-Layer Stack Implementation</h2>
+
+<div class="phase">
+<h3>Layer 1: Surveillance (Multi-Domain Data Ingestion)</h3>
+
+<h4>Data Sources for MP-1 (Atlantic Energy)</h4>
+<ul>
+    <li><strong>CFTC COT Reports:</strong> Weekly positioning for WTI, Brent, RBOB, Heating Oil</li>
+    <li><strong>AIS Vessel Tracking:</strong> Tanker movements in Atlantic Basin (North Sea, Gulf, Caribbean)</li>
+    <li><strong>Weather:</strong> Hurricane tracks, North Atlantic storm patterns (NOAA)</li>
+    <li><strong>Port Congestion:</strong> Houston, Rotterdam, Singapore vessel density</li>
+    <li><strong>Prices:</strong> ICE Brent, NYMEX WTI, futures term structure</li>
+    <li><strong>News/Events:</strong> OPEC meetings, refinery outages, pipeline disruptions (optional for Phase 1)</li>
+</ul>
+
+<h4>Implementation Steps</h4>
+<ol>
+    <li><strong>COT Ingestion:</strong> Use <code>NDelventhal/cot_reports</code> to fetch weekly reports → <code>Mcamin/cot-analysis</code> for regime detection → Store as <code>cot_features.parquet</code></li>
+    <li><strong>AIS Ingestion:</strong> Stream from AISHub or MarineTraffic API → Filter tankers (MMSI vessel type = 80-89) → Run <code>RadianceFleet</code> gap detection → Store as <code>ais_anomalies.parquet</code></li>
+    <li><strong>Price Data:</strong> Yahoo Finance or EOD Historical Data API → Daily OHLCV for WTI, Brent → Store as <code>prices.parquet</code></li>
+    <li><strong>Entity Resolution:</strong> Map <code>vessel_name → IMO → flag_state → cargo_type → futures_contract</code> using Lloyd's List or Clarksons research data.</li>
+</ol>
+
+<div class="impl-note">
+<strong>Technical Debt Note:</strong> Don't try to build perfect entity resolution in Phase 1. Use fuzzy string matching (RapidFuzz) + manual lookup tables for top 50 tankers. Automate later.
+</div>
+</div>
+
+<div class="phase">
+<h3>Layer 2: Feature Engineering (Signal Extraction)</h3>
+
+<h4>Per-Domain Features</h4>
+
+<p><strong>COT Features (from Mcamin/cot-analysis):</strong></p>
+<ul>
+    <li><code>net_position_zscore_52w</code> — Standard deviations from 52-week mean</li>
+    <li><code>net_position_percentile_52w</code> — Percentile rank [0, 100]</li>
+    <li><code>regime_label</code> — {Long Build-Up, Short Covering, Long Liquidation, Short Build-Up}</li>
+    <li><code>bias_score</code> — Directional bias [0, 10] with confidence</li>
+</ul>
+
+<p><strong>AIS Features (from RadianceFleet + custom):</strong></p>
+<ul>
+    <li><code>gap_duration_hours</code> — AIS transmission gap length</li>
+    <li><code>loitering_flag</code> — Binary: vessel stationary near load/discharge point</li>
+    <li><code>sts_transfer_flag</code> — Ship-to-ship transfer detected</li>
+    <li><code>route_deviation_score</code> — Distance from historical route cluster centroid</li>
+    <li><code>cargo_capacity_utilization</code> — Estimated from draft (if available)</li>
+</ul>
+
+<p><strong>Price Features (custom):</strong></p>
+<ul>
+    <li><code>return_volatility_20d</code> — Rolling 20-day standard deviation</li>
+    <li><code>contango_magnitude</code> — (Future 3M - Spot) / Spot</li>
+    <li><code>volume_spike_flag</code> — Volume > 2σ above 60-day mean</li>
+</ul>
+
+<h4>Cross-Domain Feature Fusion</h4>
+
+<p>Use <strong>CrossHGL</strong> (arXiv 2603.27685) approach:</p>
+<ol>
+    <li><strong>SVD-based feature alignment:</strong> Project COT z-scores, AIS anomaly scores, price returns into shared 64-dim space</li>
+    <li><strong>Temporal binning:</strong> Align all features to weekly timestamps (COT publication Friday 3:30 PM ET)</li>
+    <li><strong>Lagged features:</strong> Create <code>cot_zscore_lag7</code>, <code>ais_gap_lag3</code> to capture temporal dependencies</li>
+</ol>
+
+<div class="impl-note">
+<strong>Math Note:</strong> For SVD alignment, stack all domain features into matrix <code>X ∈ ℝ^(T×D)</code> where T = time steps, D = total features. Compute <code>U, Σ, V = SVD(X)</code>. Project each domain's features via <code>X_domain @ V[:, :k]</code> where k = 64 (aligned dims). This is dimension reduction + domain alignment in one step.
+</div>
+</div>
+
+<div class="phase">
+<h3>Layer 3: World Model (Temporal Graph Construction)</h3>
+
+<h4>Graph Schema</h4>
+
+<p><strong>Node Types:</strong></p>
+<ul>
+    <li><code>Vessel</code> — IMO, name, flag, capacity</li>
+    <li><code>Port</code> — UN/LOCODE, lat/lon, congestion index</li>
+    <li><code>Producer</code> — Country/company (e.g., Saudi Aramco, Shell)</li>
+    <li><code>FutureContract</code> — Symbol (CLZ24), exchange, settlement date</li>
+    <li><code>COTReport</code> — Date, commodity, net positioning by trader type</li>
+    <li><code>Event</code> — OPEC meeting, hurricane landfall, refinery outage</li>
+</ul>
+
+<p><strong>Edge Types:</strong></p>
+<ul>
+    <li><code>Vessel --[departed_from]--> Port</code> (timestamp)</li>
+    <li><code>Vessel --[loaded_cargo]--> Producer</code> (timestamp, volume)</li>
+    <li><code>FutureContract --[tracks]--> Producer</code> (static)</li>
+    <li><code>COTReport --[positions_in]--> FutureContract</code> (timestamp)</li>
+    <li><code>Event --[impacts]--> Port/Producer/FutureContract</code> (timestamp, severity)</li>
+</ul>
+
+<h4>Implementation: DuckDB + Raphtory</h4>
+
+<ol>
+    <li><strong>Store nodes/edges in DuckDB:</strong> Tables <code>nodes</code>, <code>edges</code> with columns <code>(id, type, timestamp, properties)</code></li>
+    <li><strong>Load into Raphtory:</strong> Python bindings for temporal graph queries</li>
+    <li><strong>Sliding windows:</strong> For each week W, construct graph G_W containing all nodes/edges in [W-4weeks, W]</li>
+</ol>
+
+<pre><code>import raphtory as rp
+
+g = rp.Graph()
+g.add_vertex(timestamp=t1, id="V_IMO9999999", v_type="Vessel")
+g.add_vertex(timestamp=t1, id="P_USHOU", v_type="Port")
+g.add_edge(timestamp=t2, src="V_IMO9999999", dst="P_USHOU", layer="departed_from")
+
+# Query: vessels that departed Houston in last 7 days
+window = g.window(start=now-7days, end=now)
+departures = window.edges(layer="departed_from", dst="P_USHOU")</code></pre>
+
+<div class="impl-note">
+<strong>Scale Note:</strong> MP-1 will have ~200 tankers, ~50 ports, ~20 contracts → ~10K nodes, ~100K edges over 2 years. This fits in memory. For MP-2/3/4, shard by commodity or use DuckDB's external storage.
+</div>
+</div>
+
+<div class="phase">
+<h3>Layer 4: Fusion (Heterogeneous GNN)</h3>
+
+<h4>Architecture: MUG (Meta-path-aware Universal GNN)</h4>
+
+<p>Based on <strong>arXiv 2602.22645</strong> (MUG paper):</p>
+
+<ol>
+    <li><strong>Input Unification:</strong> Each node type gets a learnable embedding + contextual structural info (degree, neighbor type distribution)</li>
+    <li><strong>Meta-path Attention:</strong> Define semantic paths:
+        <ul>
+            <li><code>Vessel → Port → Producer → FutureContract → COTReport</code> (supply chain path)</li>
+            <li><code>COTReport → FutureContract → Producer</code> (positioning-to-production path)</li>
+        </ul>
+    </li>
+    <li><strong>Message Passing:</strong> For each meta-path, aggregate messages along the path using attention weights</li>
+    <li><strong>Readout:</strong> Node embeddings → global graph embedding via sum/mean pooling</li>
+</ol>
+
+<h4>PyTorch Implementation Sketch</h4>
+
+<pre><code>import torch
+import torch.nn as nn
+from torch_geometric.nn import HeteroConv, GCNConv, Linear
+
+class MetaPathGNN(nn.Module):
+    def __init__(self, node_types, edge_types, hidden_dim=64, num_layers=3):
+        super().__init__()
+        # Input unification: learnable embeddings per node type
+        self.node_embeddings = nn.ModuleDict({
+            ntype: nn.Embedding(num_nodes[ntype], hidden_dim)
+            for ntype in node_types
+        })
+        
+        # Heterogeneous graph convolutions
+        self.convs = nn.ModuleList()
+        for _ in range(num_layers):
+            conv_dict = {}
+            for etype in edge_types:
+                src, rel, dst = etype
+                conv_dict[etype] = GCNConv(hidden_dim, hidden_dim)
+            self.convs.append(HeteroConv(conv_dict, aggr='mean'))
+        
+        # Readout
+        self.readout = Linear(hidden_dim, 1)  # Anomaly score
+    
+    def forward(self, x_dict, edge_index_dict):
+        # Unify inputs
+        for ntype in x_dict.keys():
+            x_dict[ntype] = self.node_embeddings[ntype](x_dict[ntype])
+        
+        # Message passing
+        for conv in self.convs:
+            x_dict = conv(x_dict, edge_index_dict)
+            x_dict = {k: v.relu() for k, v in x_dict.items()}
+        
+        # Global readout (sum over all nodes)
+        graph_emb = torch.stack([x.mean(dim=0) for x in x_dict.values()]).mean(dim=0)
+        score = self.readout(graph_emb)
+        return score</code></pre>
+
+<div class="impl-note">
+<strong>Training Strategy:</strong> Use <strong>PMGC</strong> (arXiv 2509.17235) cohesion loss — balance long-term static graph (e.g., Brent always tracks North Sea production) with short-term dynamic graphs (e.g., hurricane disrupts Gulf Coast this week).
+</div>
+</div>
+
+<div class="phase">
+<h3>Layer 5: RL Policy (Chain Template Matching)</h3>
+
+<h4>Objective</h4>
+
+<p>Given a library of chain templates (manually curated or mined from historical data), find all instances in the current temporal graph where the template fires.</p>
+
+<h4>Chain Template Example</h4>
+
+<p><strong>Template: "Bullish Build-Up with Supply Disruption"</strong></p>
+<pre><code>Pattern:
+1. COTReport(t=T, net_zscore > 2.0, regime="Long Build-Up")
+2. AIS gap(t=T+3d, vessel_type=Tanker, route=Gulf→Rotterdam)
+3. Port congestion(t=T+5d, port=USHOU, density > 1.5σ)
+4. Price spike(t=T+7d, return > 2σ)
+
+Expected Outcome: Brent +5% over next 2 weeks
+Historical Hit Rate: 68% (n=23 instances since 2020)</code></pre>
+
+<h4>Implementation: TemporalRI + Raphtory</h4>
+
+<ol>
+    <li><strong>Template as Query Graph:</strong> Encode template as a 4-node temporal graph with time constraints</li>
+    <li><strong>Subgraph Matching:</strong> Use <code>TemporalRI</code> algorithm to find all isomorphic matches in G_W (current window)</li>
+    <li><strong>Scoring:</strong> For each match, retrieve historical outcome distribution → compute P(price_up | pattern_match)</li>
+</ol>
+
+<pre><code># Pseudo-code for template matching
+from temporalri import TemporalSubgraphMatcher
+
+template = TemporalGraph()
+template.add_node("COT", constraint=lambda n: n['zscore'] > 2.0)
+template.add_node("AIS", constraint=lambda n: n['gap_hours'] > 12)
+template.add_edge("COT", "AIS", time_delta=(2, 5))  # 2-5 days later
+
+matcher = TemporalSubgraphMatcher(template)
+matches = matcher.find_all(G_current_window)
+
+for match in matches:
+    historical_outcomes = lookup_historical_outcomes(match.pattern_id)
+    prob_up = len([o for o in historical_outcomes if o.price_change > 0]) / len(historical_outcomes)
+    if prob_up > 0.6:
+        fire_alert(match, confidence=prob_up)</code></pre>
+
+<div class="warning">
+<strong>Cold Start Problem:</strong> In Phase 1, we won't have historical outcomes for every template. Mitigation: Start with 3-5 high-conviction templates based on domain research (e.g., COT extremes → reversals is well-documented). Log all template matches in production → accumulate outcomes → update hit rates quarterly.
+</div>
+</div>
+
+<div class="phase">
+<h3>Layer 6: Adversarial (Robustness & Validation)</h3>
+
+<h4>Techniques</h4>
+
+<ol>
+    <li><strong>Synthetic Anomaly Injection:</strong> Use <code>sandialabs/maritime-trajectory-anomaly-detection</code> to generate synthetic "overspeed" or "route deviation" events → Verify detector fires</li>
+    <li><strong>Historical Backtesting:</strong> Run chain templates on 2020-2024 data → Calculate precision/recall for known events (COVID demand collapse, Suez blockage, Russia-Ukraine war)</li>
+    <li><strong>Adversarial Augmentation:</strong> Perturb input features (add Gaussian noise to COT z-scores) → Ensure GNN embeddings remain stable</li>
+</ol>
+
+<div class="impl-note">
+<strong>Benchmark Events for MP-1:</strong>
+<ul>
+    <li>2021-03: Suez Canal blockage (Expected: AIS congestion spike, Brent contango widening)</li>
+    <li>2022-02: Russia-Ukraine invasion (Expected: COT speculator longs → all-time high, Brent $139)</li>
+    <li>2020-04: COVID demand collapse (Expected: COT commercials extreme shorts, WTI negative)</li>
+</ul>
+If the system fires alerts 3-5 days before these events, we have a validated ghost pattern detector.
+</div>
+</div>
+
+<div class="phase">
+<h3>Layer 7: LLM Support (Alert Narrative Generation)</h3>
+
+<h4>Architecture</h4>
+
+<p>When a chain template match fires:</p>
+<ol>
+    <li><strong>Retrieve Context:</strong> Pull all graph nodes/edges involved in the match</li>
+    <li><strong>Format as Structured Prompt:</strong>
+        <pre><code>You are a commodity intelligence analyst. A ghost pattern has been detected:
+
+Pattern: Bullish Build-Up with Supply Disruption
+Triggered: 2026-06-08 14:23 UTC
+
+Evidence Chain:
+1. CFTC COT Report (2026-06-04): WTI net longs by Asset Managers at 2.3σ above 52-week mean (regime: Long Build-Up)
+2. AIS Gap (2026-06-07): Tanker "Nordic Explorer" (IMO 9234567) had 18-hour transmission gap in Gulf of Mexico
+3. Port Congestion (2026-06-08): Houston vessel density 1.8σ above normal (23 tankers waiting)
+4. Price Action: WTI futures (CLN24) up 3.2% today, volume 2.1σ above 60-day average
+
+Historical Context: This pattern has occurred 23 times since 2020. In 68% of cases, Brent rallied 5%+ over the next 2 weeks.
+
+Write a 2-paragraph brief for a physical hedger explaining:
+- What is happening (supply chain bottleneck)
+- Why it matters (price risk)
+- What to watch next (vessel departures, refinery runs)</code></pre>
+    </li>
+    <li><strong>LLM Generation:</strong> Use Claude or GPT-4 to generate narrative</li>
+    <li><strong>Append to Alert:</strong> Send to user as "Chain Brief"</li>
+</ol>
+
+<div class="impl-note">
+<strong>Cost Control:</strong> Only generate LLM narratives for high-confidence alerts (prob > 0.6, historical n > 10). For low-confidence patterns, send structured JSON only.
+</div>
+</div>
+
+</div>
+
+<div class="section">
+<h2>📋 Implementation Roadmap: Phase-by-Phase Build</h2>
+
+<div class="phase">
+<h3>Phase 0: Foundation (Weeks 1-2)</h3>
+
+<h4>Goals</h4>
+<ul>
+    <li>Set up data pipeline infrastructure</li>
+    <li>Validate access to all data sources</li>
+    <li>Build entity resolution lookup tables</li>
+</ul>
+
+<h4>Deliverables</h4>
+<ol>
+    <li><strong>COT Pipeline:</strong> <code>scripts/ingest_cot.py</code> → Fetches weekly reports, runs <code>Mcamin/cot-analysis</code> feature engineering → Writes to <code>data/cot_features.parquet</code></li>
+    <li><strong>AIS Pipeline:</strong> <code>scripts/ingest_ais.py</code> → Fetches AISHub data for Atlantic tankers → Writes to <code>data/ais_raw.parquet</code></li>
+    <li><strong>Price Pipeline:</strong> <code>scripts/ingest_prices.py</code> → Yahoo Finance API → <code>data/prices.parquet</code></li>
+    <li><strong>Entity Mapping:</strong> <code>data/entity_map.csv</code> — Manual lookup: vessel IMO → flag → typical cargo → relevant futures contract</li>
+</ol>
+
+<h4>Tech Stack</h4>
+<ul>
+    <li>Python 3.11+</li>
+    <li>DuckDB for storage (zero-config embedded DB)</li>
+    <li>Polars for data wrangling (faster than pandas)</li>
+</ul>
+</div>
+
+<div class="phase">
+<h3>Phase 1: Single-Domain Anomaly Detection (Weeks 3-4)</h3>
+
+<h4>Goals</h4>
+<ul>
+    <li>Implement COT regime detection (Layer 1 → Layer 2)</li>
+    <li>Implement AIS anomaly detection (gaps, loitering)</li>
+    <li>Baseline: Two independent alert streams</li>
+</ul>
+
+<h4>Deliverables</h4>
+<ol>
+    <li><strong>COT Alerts:</strong> <code>scripts/detect_cot_regimes.py</code> → Flags when any tracked commodity hits z > 2.0 → Writes to <code>alerts/cot_alerts.json</code></li>
+    <li><strong>AIS Alerts:</strong> <code>scripts/detect_ais_anomalies.py</code> → Uses <code>RadianceFleet</code> gap detection → Writes to <code>alerts/ais_alerts.json</code></li>
+    <li><strong>Dashboard:</strong> Streamlit app showing both alert feeds side-by-side (no fusion yet)</li>
+</ol>
+
+<h4>Validation</h4>
+<ul>
+    <li>Backtest on 2022 Russia-Ukraine invasion: COT alerts should fire Feb 10-20, 2022 (before invasion)</li>
+    <li>Backtest on 2021 Suez blockage: AIS congestion alerts should fire Mar 23-29, 2021</li>
+</ul>
+</div>
+
+<div class="phase">
+<h3>Phase 2: Cross-Domain Feature Fusion (Weeks 5-6)</h3>
+
+<h4>Goals</h4>
+<ul>
+    <li>Align COT and AIS features into shared timeline</li>
+    <li>Train simple ML model to predict price moves from fused features</li>
+</ul>
+
+<h4>Deliverables</h4>
+<ol>
+    <li><strong>Feature Alignment:</strong> <code>scripts/align_features.py</code> → Weekly binning, lagged features, SVD projection → <code>data/fused_features.parquet</code></li>
+    <li><strong>Baseline Model:</strong> XGBoost classifier → Predict <code>price_up_2w</code> (binary: WTI +3% over next 2 weeks) → Train on 2020-2023, test on 2024</li>
+    <li><strong>Metric:</strong> Precision @ 60% recall (we care about high-confidence signals, not catching everything)</li>
+</ol>
+
+<h4>Expected Performance</h4>
+<ul>
+    <li>Baseline (COT only): Precision ~55%, Recall ~50%</li>
+    <li>With fusion: Target Precision ~65%, Recall ~55%</li>
+</ul>
+
+<div class="impl-note">
+<strong>If fusion doesn't beat baseline:</strong> Debug feature engineering. Check if AIS features have predictive power in isolation. If not, AIS might be too noisy for MP-1 (pivot to MP-2 soft grains where USDA reports are cleaner).
+</div>
+</div>
+
+<div class="phase">
+<h3>Phase 3: Temporal Graph + GNN (Weeks 7-10)</h3>
+
+<h4>Goals</h4>
+<ul>
+    <li>Build temporal knowledge graph (Layer 3)</li>
+    <li>Train heterogeneous GNN (Layer 4)</li>
+    <li>Beat XGBoost baseline with graph-based model</li>
+</ul>
+
+<h4>Deliverables</h4>
+<ol>
+    <li><strong>Graph Construction:</strong> <code>scripts/build_graph.py</code> → DuckDB tables → Raphtory graph → <code>data/graph_snapshots/</code> (weekly pickles)</li>
+    <li><strong>GNN Training:</strong> <code>models/metagnn.py</code> → PyTorch Geometric implementation of MUG → Train with PMGC cohesion loss</li>
+    <li><strong>Evaluation:</strong> Same binary classification task (price_up_2w) → Target Precision ~70%, Recall ~60%</li>
+</ol>
+
+<h4>Ablation Studies</h4>
+<ul>
+    <li>GNN vs. XGBoost on same features</li>
+    <li>With/without meta-paths (do semantic paths help?)</li>
+    <li>With/without temporal edges (are lagged relationships critical?)</li>
+</ul>
+</div>
+
+<div class="phase">
+<h3>Phase 4: Chain Template Engine (Weeks 11-12)</h3>
+
+<h4>Goals</h4>
+<ul>
+    <li>Define 3-5 high-conviction chain templates</li>
+    <li>Implement temporal subgraph matching (Layer 5)</li>
+    <li>Fire structured alerts when patterns match</li>
+</ul>
+
+<h4>Deliverables</h4>
+<ol>
+    <li><strong>Template Library:</strong> <code>templates/mp1_chains.yaml</code> — YAML definitions of patterns</li>
+    <li><strong>Matcher:</strong> <code>scripts/match_chains.py</code> → Raphtory queries + TemporalRI → <code>alerts/chain_matches.json</code></li>
+    <li><strong>Outcome Logger:</strong> For each match, log: pattern_id, timestamp, matched_entities, predicted_outcome → Wait 2 weeks → Log actual outcome → Update hit rates</li>
+</ol>
+
+<h4>Template Examples</h4>
+<ul>
+    <li><strong>T1: Bullish Build-Up + Supply Shock:</strong> COT long extreme → AIS gap → Price spike</li>
+    <li><strong>T2: Commercial Hedging Surge:</strong> COT commercials net short extreme (producers hedging) → Port congestion → Contango widening</li>
+    <li><strong>T3: Speculator Unwind:</strong> COT speculators at 3-year high net long → Sudden AIS STS transfers (floating storage release) → Price crash</li>
+</ul>
+</div>
+
+<div class="phase">
+<h3>Phase 5: LLM Narrative + MVP Launch (Weeks 13-14)</h3>
+
+<h4>Goals</h4>
+<ul>
+    <li>Wire LLM narrative generation (Layer 7)</li>
+    <li>Build user-facing alert delivery (email, webhook, dashboard)</li>
+    <li>Launch MP-1 to first 5 beta users</li>
+</ul>
+
+<h4>Deliverables</h4>
+<ol>
+    <li><strong>Narrative Generator:</strong> <code>scripts/generate_brief.py</code> → Claude API → Structured prompt with chain evidence → 2-paragraph brief</li>
+    <li><strong>Alert Delivery:</strong>
+        <ul>
+            <li>Email: SendGrid or Resend for transactional emails</li>
+            <li>Webhook: POST to user-specified URL with JSON payload</li>
+            <li>Dashboard: Streamlit app with "Ghost Pattern Archive" (all historical alerts + outcomes)</li>
+        </ul>
+    </li>
+    <li><strong>Pricing Tier (MVP):</strong> $29/month, email alerts only, max 10 alerts/month</li>
+</ol>
+
+<h4>Success Metrics</h4>
+<ul>
+    <li>5 paying users by end of Week 14</li>
+    <li>Alert precision > 60% (measured 2 weeks after each alert)</li>
+    <li>Users open >80% of alert emails (indicates relevance)</li>
+</ul>
+</div>
+
+</div>
+
+<div class="section">
+<h2>🧪 Validation & Benchmarking Plan</h2>
+
+<h3>Historical Event Benchmarks</h3>
+
+<table>
+<thead>
+<tr>
+    <th>Event</th>
+    <th>Date</th>
+    <th>Expected Signals</th>
+    <th>Validation Criteria</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+    <td>Suez Canal Blockage</td>
+    <td>Mar 23-29, 2021</td>
+    <td>AIS congestion spike (Red Sea), Brent contango widening</td>
+    <td>Alert fires Mar 23 (day of blockage) or earlier if buildup detected</td>
+</tr>
+<tr>
+    <td>Russia-Ukraine Invasion</td>
+    <td>Feb 24, 2022</td>
+    <td>COT spec longs > 3σ (Jan-Feb 2022), Brent rally to $139</td>
+    <td>Alert fires Feb 10-20 (before invasion), pattern: Bullish Build-Up</td>
+</tr>
+<tr>
+    <td>COVID Demand Collapse</td>
+    <td>Apr 20, 2020</td>
+    <td>COT commercials extreme shorts, WTI negative, Cushing storage full</td>
+    <td>Alert fires Apr 15-18 (before negative prices), pattern: Storage Crisis</td>
+</tr>
+<tr>
+    <td>Hurricane Ida (Gulf Disruption)</td>
+    <td>Aug 29, 2021</td>
+    <td>AIS vessels evacuate Gulf, Port congestion (Houston, Louisiana), RBOB spike</td>
+    <td>Alert fires Aug 27-28 (as vessels evacuate), pattern: Weather Disruption</td>
+</tr>
+</tbody>
+</table>
+
+<h3>Metrics</h3>
+
+<ul>
+    <li><strong>Precision:</strong> Of all alerts fired, what % had favorable outcomes (price moved in predicted direction)?</li>
+    <li><strong>Lead Time:</strong> How many days before the event did the alert fire?</li>
+    <li><strong>False Positive Rate:</strong> Of all weeks with no major event, what % had false alerts?</li>
+</ul>
+
+<div class="impl-note">
+<strong>Target Performance (Phase 5 MVP):</strong>
+<ul>
+    <li>Precision > 60% (6 out of 10 alerts are correct)</li>
+    <li>Lead Time: 3-7 days median</li>
+    <li>False Positive Rate < 10% (no more than 1 false alert per 10 weeks)</li>
+</ul>
+</div>
+
+</div>
+
+<div class="section">
+<h2>🚧 Known Risks & Mitigation</h2>
+
+<h3>Risk 1: Data Quality (AIS Gaps are Noise, Not Signal)</h3>
+
+<p><strong>Problem:</strong> AIS transmission gaps might be due to technical issues (transponder malfunction) rather than intentional dark activity or supply disruption.</p>
+
+<p><strong>Mitigation:</strong></p>
+<ul>
+    <li>Use <code>RadianceFleet</code> "velocity plausibility ratio" — If vessel reappears 500 miles away after 12-hour gap, it's likely spoofing/dark activity. If it reappears at the same location, it's likely technical.</li>
+    <li>Correlate AIS gaps with port congestion or weather events (gap during hurricane = probably sheltering, not dark fleet).</li>
+    <li>If AIS proves too noisy for MP-1, pivot to satellite-based vessel detection (Planet Labs or Capella Space SAR imagery) — more expensive but higher signal.</li>
+</ul>
+
+<h3>Risk 2: Cold Start (No Historical Outcomes for New Templates)</h3>
+
+<p><strong>Problem:</strong> In Phase 4, we define chain templates but don't have historical outcome data for every pattern.</p>
+
+<p><strong>Mitigation:</strong></p>
+<ul>
+    <li>Start with 3 templates backed by domain research (e.g., COT extremes → reversals is well-documented in academic lit).</li>
+    <li>For new templates, use lower confidence scores initially (prob = 0.5 instead of 0.7).</li>
+    <li>Log ALL template matches in production → Wait 2 weeks → Label outcome → Retrain outcome predictor quarterly.</li>
+    <li>After 6 months, we'll have ~50-100 labeled instances per template → Sufficient for ML.</li>
+</ul>
+
+<h3>Risk 3: Overfitting to Historical Regime Changes</h3>
+
+<p><strong>Problem:</strong> 2020-2022 had unprecedented events (COVID, Russia-Ukraine). Models trained on this data might not generalize to normal market conditions.</p>
+
+<p><strong>Mitigation:</strong></p>
+<ul>
+    <li>Train on 2015-2019 (pre-COVID) and test on 2023-2024 (post-COVID normalization).</li>
+    <li>Use adversarial validation: Check if features in test set are out-of-distribution vs. train set.</li>
+    <li>Prioritize robust features (z-scores, percentiles) over absolute values (raw COT net positions).</li>
+</ul>
+
+<h3>Risk 4: Entity Resolution Failure</h3>
+
+<p><strong>Problem:</strong> If we can't reliably map <code>vessel_name → IMO → cargo_type → futures_contract</code>, the graph will have missing links.</p>
+
+<p><strong>Mitigation:</strong></p>
+<ul>
+    <li>Phase 1: Manual lookup tables for top 50 tankers (covers ~70% of Atlantic crude volume).</li>
+    <li>Phase 2: Use Lloyd's List API or Clarksons data for automated entity resolution.</li>
+    <li>If resolution < 80% accuracy, downgrade graph-based features and rely more on time-series features (COT z-scores, price momentum).</li>
+</ul>
+
+</div>
+
+<div class="section">
+<h2>📖 References & Further Reading</h2>
+
+<h3>Academic Papers (2024-2026)</h3>
+
+<ol>
+    <li>Zheng et al. (2026). <em>OWLEYE: Zero-Shot Learner for Cross-Domain Graph Data Anomaly Detection</em>. ICLR. <a href="https://arxiv.org/abs/2601.19102">arXiv:2601.19102</a></li>
+    <li>Chen et al. (2026). <em>CGSTA: Cross-Scale Graph Contrast with Stability-Aware Alignment</em>. <a href="https://arxiv.org/abs/2602.20468">arXiv:2602.20468</a></li>
+    <li>Li & Passino (2025). <em>Prospective Multi-Graph Cohesion for Multivariate Time Series Anomaly Detection</em>. <a href="https://arxiv.org/abs/2509.17235">arXiv:2509.17235</a></li>
+    <li>Wang et al. (2026). <em>CrossHGL: Text-Free Foundation Model for Cross-Domain Heterogeneous Graph Learning</em>. <a href="https://arxiv.org/abs/2603.27685">arXiv:2603.27685</a></li>
+    <li>Tang et al. (2026). <em>MUG: Meta-path-aware Universal Heterogeneous Graph Pre-Training</em>. <a href="https://arxiv.org/abs/2602.22645">arXiv:2602.22645</a></li>
+    <li>Zhang et al. (2025). <em>Bayesian Online Changepoint Detection for Financial Time Series</em>. ACM CSM. <a href="https://dl.acm.org/doi/10.1145/3795154.3795291">ACM DL</a></li>
+    <li>Liu et al. (2025). <em>Change-Point Detection Using PELT Algorithm</em>. ACM CISAI. <a href="https://dl.acm.org/doi/full/10.1145/3773365.3773532">ACM DL</a></li>
+    <li>Sharma et al. (2025). <em>Change Point Detection in Financial Markets Using Topological Data Analysis</em>. Mathematics. <a href="https://www.mdpi.com/2079-8954/13/10/875">MDPI</a></li>
+    <li>Xu et al. (2025). <em>Multi-View Contrastive Learning for Robust Domain Adaptation</em>. <a href="https://arxiv.org/abs/2506.22393">arXiv:2506.22393</a></li>
+    <li>Kim et al. (2026). <em>MoST: Mode-Specific Tensor Time Series via Contrastive Learning</em>. <a href="https://arxiv.org/abs/2602.23663">arXiv:2602.23663</a></li>
+</ol>
+
+<h3>GitHub Repositories</h3>
+
+<ol>
+    <li><a href="https://github.com/Mcamin/cot-analysis">Mcamin/cot-analysis</a> — COT feature engineering, regime detection</li>
+    <li><a href="https://github.com/radiancefleet/radiancefleet">RadianceFleet/RadianceFleet</a> — AIS anomaly detection (gaps, spoofing, STS)</li>
+    <li><a href="https://github.com/jakobrunge/tigramite">jakobrunge/tigramite</a> — Causal discovery (PCMCI+)</li>
+    <li><a href="https://github.com/py-why/dowhy">py-why/dowhy</a> — Causal inference, root-cause analysis</li>
+    <li><a href="https://github.com/Pometry/Raphtory">Pometry/Raphtory</a> — Temporal graph engine</li>
+    <li><a href="https://github.com/aliivaezii/kpi-lens">aliivaezii/kpi-lens</a> — Supply chain anomaly detection + LLM explanation</li>
+    <li><a href="https://github.com/hsinnearth7/ChainCommand">hsinnearth7/ChainCommand</a> — Supply chain optimization + anomaly detection</li>
+</ol>
+
+<h3>Data Sources</h3>
+
+<ul>
+    <li><strong>CFTC COT Reports:</strong> <a href="https://www.cftc.gov/MarketReports/CommitmentsofTraders/index.htm">www.cftc.gov/MarketReports/CommitmentsofTraders</a></li>
+    <li><strong>AIS Data:</strong> AISHub (free), MarineTraffic API (paid), AISStream.io (paid)</li>
+    <li><strong>Price Data:</strong> Yahoo Finance (free), EOD Historical Data (paid), Quandl (paid)</li>
+    <li><strong>Weather:</strong> NOAA National Hurricane Center, ECMWF</li>
+    <li><strong>Port Congestion:</strong> Lloyd's List, Clarksons Research</li>
+</ul>
+
+</div>
+
+<div class="section">
+<h2>✅ Next Actions</h2>
+
+<ol>
+    <li><strong>Read paper:</strong> OWLEYE (arXiv 2601.19102) — Understand zero-shot cross-domain transfer</li>
+    <li><strong>Clone repo:</strong> <code>Mcamin/cot-analysis</code> — Study their feature engineering pipeline</li>
+    <li><strong>Set up DuckDB:</strong> Install, create <code>data/tirramind.duckdb</code>, define schema for <code>cot_features</code>, <code>ais_raw</code>, <code>prices</code></li>
+    <li><strong>Write Phase 0 ingest scripts:</strong> <code>scripts/ingest_cot.py</code>, <code>scripts/ingest_prices.py</code></li>
+    <li><strong>Manual entity mapping:</strong> Research top 50 Atlantic crude tankers → Create <code>data/entity_map.csv</code></li>
+</ol>
+
+<p><strong>Time to first alert:</strong> 14 weeks (Phase 5 completion)</p>
+
+</div>
+
+</body>
+</html>

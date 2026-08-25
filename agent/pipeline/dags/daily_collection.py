@@ -423,7 +423,7 @@ def build_daily_collection_dag(
         "fetch_ais_vessel",
         operator="ais_vessel_tracking",
         table_name="ais_vessel_tracking",
-        params={"mode": "area", "area": "full_baltic", "limit": 500},
+        params={"mode": "area_daily_snapshot", "area_name": "full_baltic", "ship_type": "tanker"},
         timeout=180,
         retries=2,
     )
@@ -551,6 +551,56 @@ def build_daily_collection_dag(
         params={"db_path": db_path},
         timeout=300,
         retries=1,
+    )
+
+    # ── M15 quant data (options, dividends, US yield curve) ─────
+    from agent.tools.dividend_data import run_dividend_ingest
+    from agent.tools.options_chain import run_options_chain_ingest
+
+    def run_us_yield_curve_ingest(
+        params: dict[str, Any],
+        upstream_results: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        from datetime import datetime, timezone
+
+        from agent.pipeline.store import PipelineStore
+        from agent.tools.sovereign_debt import SovereignDebtTool
+
+        db_path = params.get("db_path", ".tirra_pipeline/pipeline.db")
+        month = params.get("month") or datetime.now(tz=timezone.utc).strftime(
+            "%Y-%m"
+        )
+        store = PipelineStore(db_path)
+        try:
+            tool = SovereignDebtTool(pipeline_store=store)
+            result = tool.execute(mode="us_yields", month=month)
+            n = 0
+            if result.success and result.data:
+                n = len(result.data.get("records", []))
+            return {"success": result.success, "month": month, "days_persisted": n}
+        finally:
+            store.close()
+
+    dag.add(
+        "fetch_options_chains",
+        operator=run_options_chain_ingest,
+        params={"db_path": db_path, "include_should": True},
+        timeout=180,
+        retries=1,
+    )
+    dag.add(
+        "fetch_dividends",
+        operator=run_dividend_ingest,
+        params={"db_path": db_path, "include_should": True},
+        timeout=180,
+        retries=1,
+    )
+    dag.add(
+        "fetch_us_yield_curve",
+        operator=run_us_yield_curve_ingest,
+        params={"db_path": db_path},
+        timeout=120,
+        retries=2,
     )
 
     # ═══════════════════════════════════════════════════════════════

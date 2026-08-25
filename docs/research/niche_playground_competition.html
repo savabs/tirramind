@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Research: Playground Niche Competition</title>
+  <style>
+    body { font-family: system-ui, sans-serif; line-height: 1.6; max-width: 960px; margin: 0 auto; padding: 2rem; }
+    h1 { color: #2c5282; }
+    table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.9rem; }
+    th, td { border: 1px solid #e2e8f0; padding: 0.4rem; text-align: center; }
+    th { background: #edf2f7; }
+    td:first-child, th:first-child { text-align: left; }
+    .winner { background: #f0fff4; font-weight: bold; }
+    .note { background: #ebf8ff; border-left: 4px solid #3182ce; padding: 1rem; margin: 1rem 0; }
+    .warn { background: #fffaf0; border-left: 4px solid #dd6b20; padding: 1rem; margin: 1rem 0; }
+  </style>
+</head>
+<body>
+
+<h1>Research: Playground Niche Competition</h1>
+<p><strong>Status:</strong> <strong>COMPLETE</strong> — winner declared 2026-06-02<br>
+<strong>Spec:</strong> [[niche_playground_competition_spec]]<br>
+<strong>DB:</strong> <code>.tirra_pipeline/pipeline.db</code> (339,164 obs, 2,688 entities)<br>
+<strong>Script:</strong> <code>python scripts/niche_competition_scorecard.py</code></p>
+
+<div class="note">
+  <strong>Playground (final): N1 + N4 fused + microstructure at every scale.</strong><br>
+  Competition day-1 pick: N1 (monetization-first). Founder refinement same session:
+  N4 is co-equal in product; microstructure is cross-cutting (not optional). Mathematical-field
+  positioning — no sentiment SKU. See [[n1_n4_playground_spec]].
+</div>
+
+<h2>Final scoreboard</h2>
+<p>Weights: Money 35%, Density 25%, Integration 20%, Moat 15%, Agent 5%.<br>
+Money/Moat = plan-aligned provisional scores (2026-06-02 session); override via founder.</p>
+
+<table>
+  <tr>
+    <th>ID</th><th>Niche</th><th>Money</th><th>Density</th><th>Integration</th><th>Moat</th><th>Agent</th><th>Weighted</th><th>Rank</th>
+  </tr>
+  <tr class="winner">
+    <td>N1</td><td>Commodity &amp; energy macro</td><td>5</td><td>3</td><td>3</td><td>5</td><td>5</td><td><strong>4.10</strong></td><td>1*</td>
+  </tr>
+  <tr>
+    <td>N4</td><td>Geopolitical / sovereign stress</td><td>3</td><td>5</td><td>5</td><td>5</td><td>5</td><td>4.30</td><td>—</td>
+  </tr>
+  <tr>
+    <td>N5</td><td>Cross-asset liquidity &amp; rates</td><td>3</td><td>5</td><td>5</td><td>3</td><td>4</td><td>3.95</td><td>3</td>
+  </tr>
+  <tr>
+    <td>N6</td><td>Equity microstructure</td><td>3</td><td>4</td><td>4</td><td>2</td><td>3</td><td>3.30</td><td>4</td>
+  </tr>
+  <tr>
+    <td>N3</td><td>Crypto on-chain bridge</td><td>3</td><td>3</td><td>3</td><td>3</td><td>4</td><td>3.05</td><td>5</td>
+  </tr>
+  <tr>
+    <td>N2</td><td>Vol / options regime</td><td>2</td><td>3</td><td>3</td><td>3</td><td>4</td><td>2.70</td><td>6</td>
+  </tr>
+</table>
+<p>*N1 ranked #1 on <strong>decision criterion</strong> (monetization-first), not raw weighted total. N4 raw total is higher (4.30).</p>
+
+<h2>Objective metrics (from scorecard)</h2>
+<table>
+  <tr><th>ID</th><th>Obs</th><th>Entities</th><th>Obs/Ent</th><th>Span (d)</th><th>Tools hit</th><th>Density obj</th></tr>
+  <tr><td>N1</td><td>74,504</td><td>129</td><td>577.6</td><td>4,123</td><td>2/9</td><td>3</td></tr>
+  <tr><td>N2</td><td>74,504</td><td>129</td><td>577.6</td><td>4,123</td><td>2/2</td><td>3</td></tr>
+  <tr><td>N3</td><td>69,546</td><td>122</td><td>570.0</td><td>1,102</td><td>2/4</td><td>3</td></tr>
+  <tr><td>N4</td><td>90,753</td><td>219</td><td>414.4</td><td>38,833</td><td>5/9</td><td>5</td></tr>
+  <tr><td>N5</td><td>69,493</td><td>108</td><td>643.5</td><td>1,106</td><td>5/5</td><td>5</td></tr>
+  <tr><td>N6</td><td>70,154</td><td>547</td><td>128.3</td><td>1,101</td><td>3/5</td><td>4</td></tr>
+</table>
+
+<div class="warn">
+  <strong>N1 gap:</strong> Physical sensors (weather, AIS, food_security, etc.) not yet in DB for commodity entities —
+  moat is <em>architectural</em> today, not fully populated. Priority backfill: wire L0 tools into entity_observations
+  for producer countries + commodity instruments.
+</div>
+
+<h2>Phase 40 IC by asset class</h2>
+<p>Not available in repo (<code>ic_results.json</code> absent). GNN IC from Kaggle/checkpoint (Part 1) applies globally, not per niche.</p>
+
+<h2>Hero readouts (N1+N4 + micro)</h2>
+<ul>
+  <li>CFTC positioning extremes + <strong>positioning velocity</strong> (Δ net spec)</li>
+  <li>Regime / changepoint on futures and country stress composites</li>
+  <li>Sovereign/geopolitical fusion (N4) tied to tradeable hooks (FX, commodities, spreads)</li>
+  <li>Microstructure alerts: OFI/VPIN when tick data exists; else flow proxies + vol-of-vol</li>
+  <li>GTM: mathematical brief + archive — see [[n1_n4_playground_spec]]</li>
+</ul>
+
+<h2>Notes log</h2>
+<ul>
+  <li><strong>2026-06-01:</strong> Competition opened.</li>
+  <li><strong>2026-06-02:</strong> Ran scorecard; N1 monetization-first. Founder fused <strong>N1+N4</strong> + microstructure priority; mathematical-field doctrine. [[n1_n4_playground_spec]].</li>
+</ul>
+
+<h2>Related</h2>
+<ul>
+  <li>[[agent_playground_doctrine]]</li>
+  <li>[[niche_playground_competition_spec]]</li>
+  <li>[[revenue_plan_2026-05-08]]</li>
+  <li>[[chat_checkpoint_2026-06-02_niche_competition]]</li>
+</ul>
+
+</body>
+</html>

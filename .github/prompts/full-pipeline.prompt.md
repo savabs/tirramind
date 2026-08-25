@@ -1,3 +1,5 @@
+> Legacy reference. Use Cursor skill `/full-pipeline` — canonical: `.cursor/skills/full-pipeline/SKILL.md`
+
 ---
 description: "Full pipeline: research → spec → implement → test → review → checkpoint. Automates the entire optimal workflow for a new feature."
 ---

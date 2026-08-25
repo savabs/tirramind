@@ -1,3 +1,5 @@
+> Legacy reference. Use Cursor skill `/spec-to-task` — canonical: `.cursor/skills/spec-to-task/SKILL.md`
+
 ---
 description: "Convert a completed spec into an active task file with atomic, verifiable steps."
 ---

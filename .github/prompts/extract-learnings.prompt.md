@@ -1,3 +1,5 @@
+> Legacy reference. Use Cursor skill `/extract-learnings` — canonical: `.cursor/skills/extract-learnings/SKILL.md`
+
 ---
 description: "Extract and consolidate learnings from completed tasks and checkpoints into project memory."
 ---

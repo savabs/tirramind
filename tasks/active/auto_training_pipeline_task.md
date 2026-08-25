@@ -149,7 +149,7 @@ without human action. The human's only interaction is:
 
 ### Phase 5: Update runbook
 
-- [x] **AP.5.1** — Update `docs/memory/kaggle_runbook.md` ✅
+- [x] **AP.5.1** — Update `[[kaggle_runbook]]` ✅
   - Add new section: "Automated Pipeline Workflow"
   - Document: which secrets are needed, what to do on structural halt GitHub Issues,
     how to manually trigger if GitHub Actions fails, how to override orchestrator flags

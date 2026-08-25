@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>Task: Full-Quant Base Model</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; line-height: 1.55; }
+    h1, h2 { color: #1a1a2e; }
+    .done { color: #2e7d32; } .pending { color: #666; }
+    li { margin: 0.35rem 0; }
+  </style>
+</head>
+<body>
+
+<h1>Task: Full-Quant Base Model</h1>
+<p><strong>Research:</strong> [[full_quant_base_model]] &nbsp;|&nbsp; <strong>Spec:</strong> [[full_quant_base_model_spec]] (draft)</p>
+<p><strong>Goal:</strong> Build a strong quant-conditioned HetTGN base (full Layer-2 on graph), then finetune for N1+N4 niche.</p>
+
+<h2>Canonical train doctrine — [[n1_outcome_input_train_doctrine]]</h2>
+<p><strong>Outcome:</strong> forward / residual return on N1 commodity futures (IC, walk-forward). <strong>Input:</strong> raw L1/L2 intelligence on the graph (CFTC, AIS, energy, geo, …). <strong>POC shell:</strong> commodity gates, mask options, cap GDELT, cap DeFi — hygiene for the exam, not the moat.</p>
+<ul>
+  <li>Options: <code>TIRRA_MASK_M15_OPTIONS=1</code> (default) — no paid/free options campaign until funded</li>
+  <li>Train: <code>--n1-doctrine</code> (defi 0.05, zero price feats, embedding-only return) or individual flags</li>
+  <li>Preflight: <code>python scripts/training_mix_report.py --n1-doctrine</code></li>
+  <li>Success: IC uplift vs price-only baseline under same POC shell</li>
+</ul>
+
+<h2>Phase A — Baseline (optional, can run now)</h2>
+<ul>
+  <li class="done">☑ L1/L2 commodity gates — [[l1_l2_pretrain_signoff]]</li>
+  <li class="pending">☐ <strong>Next:</strong> Commodity GNN POC train (phase50) → IC baseline JSON — per [[n1_outcome_input_train_doctrine]]</li>
+</ul>
+
+<h2>Phase B — M15 data (rates + dividends active; options deferred)</h2>
+<ul>
+  <li class="done">☑ M15.1 <code>agent/tools/options_chain.py</code> + <code>options_chain_eod</code> (yfinance: SPY, ^VIX, QQQ, IWM, GLD, SLV, ^SPX, CL)</li>
+  <li class="done">☑ M15.3 US curve — full-month <code>sovereign_yield</code> with <code>yields</code> dict; <code>scripts/backfill_m15_quant_data.py</code></li>
+  <li class="done">☑ M15.4 <code>agent/tools/dividend_data.py</code> + <code>dividend</code> obs (SPY + equity ETFs)</li>
+  <li class="done">☑ DAG nodes: <code>fetch_options_chains</code>, <code>fetch_dividends</code>, <code>fetch_us_yield_curve</code></li>
+  <li class="done">☑ Initial M15 backfill run (12mo US curve, 8 options snapshots, 502 dividends)</li>
+  <li class="done">☑ <strong>Wave 2 batch backfill</strong> — instruments 2yr, M15 36mo US, EU/JP 24mo, ghost tools (2026-06-04)</li>
+</ul>
+
+<h2>Wave 2 — batch backfill (do once, before quant base train)</h2>
+<p>Code next (M14.1 wiring) does <em>not</em> require Wave 2. <strong>GNN train with options on graph does.</strong></p>
+<table>
+  <tr><th>Item</th><th>Why</th><th>Script / action</th></tr>
+  <tr><td>Instrument daily refresh</td><td>yfinance cap ~2026-04-17 for futures; gap fill run</td><td class="done">☑ <code>backfill_instruments.py --years 2</code></td></tr>
+  <tr><td>Options <em>history</em></td><td>Deferred — masked in train; paid API when funded</td><td class="pending">☐ On hold (policy 2026-06-04)</td></tr>
+  <tr><td>US rates depth</td><td>36mo US curve in DB</td><td class="done">☑ <code>backfill_m15_quant_data.py --months 36</code></td></tr>
+  <tr><td>Ghost tools</td><td>Fixed AIS cache + energy_supply L2 persist</td><td class="done">☑ ais_vessel + energy_supply via <code>backfill.py</code></td></tr>
+  <tr><td>EU/JP curves</td><td>24mo DE/FR/IT + JP</td><td class="done">☑ <code>backfill_m15_quant_data.py --only eu_jp</code></td></tr>
+  <tr><td>CME commodity options</td><td>CL=F has no Yahoo chain</td><td>New tool + license — later</td></tr>
+</table>
+<p><strong>Already done (Phase 47):</strong> GDELT, CFTC years, most Group A tools — see <code>.tirra_pipeline/backfill_checkpoint.json</code>. No need to re-run whole Phase 47 unless fixing ghost tools.</p>
+
+<h2>Phase C — M14 graph wiring</h2>
+<ul>
+  <li class="done">☑ M14.1 v0 — <code>agent/quant/gnn_quant_features.py</code> → graph_builder (dim 49 = 34 + 15 M15)</li>
+  <li class="done">☑ Options/rate/dividend masks in first dim of each 7/5/3 block</li>
+  <li class="done">☑ Gate C updated for dim=49; <code>tests/test_gnn_m15_features.py</code></li>
+  <li class="pending">☐ M14.1b — full SVI surface — <em>blocked on options data policy</em></li>
+  <li class="pending">☐ Gate D parity: M15 vector vs standalone recompute</li>
+</ul>
+
+<h2>Phase D — Quant base train</h2>
+<ul>
+  <li class="pending">☐ Modal balance: GDELT cap ✅; add <code>defi_subsample_frac</code> + raw-source floor (doctrine §3)</li>
+  <li class="pending">☐ Multi-task losses (return + vol + surprise)</li>
+  <li class="pending">☐ Checkpoint <code>gnn_model_quant_base.pt</code> + IC report</li>
+</ul>
+
+<h2>Phase E — N1+N4 finetune</h2>
+<ul>
+  <li class="pending">☐ Load base + EWC/LoRA on commodity/country subset</li>
+  <li class="pending">☐ Compare IC vs Phase A baseline</li>
+</ul>
+
+<p><em>Created 2026-06-03</em></p>
+</body>
+</html>

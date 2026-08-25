@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Task: Ghost Pattern Income — MP-1 Launch (Paused)</title>
+  <style>
+    body { font-family: system-ui, sans-serif; line-height: 1.6; max-width: 800px; margin: 0 auto; padding: 2rem; }
+    h1 { color: #2c5282; }
+    .paused { background: #fffaf0; border-left: 4px solid #dd6b20; padding: 1rem; margin: 1rem 0; }
+    ul { list-style: none; padding-left: 0; }
+    li { margin: 0.4rem 0; }
+    .done { color: #38a169; }
+    .cancelled { color: #a0aec0; text-decoration: line-through; }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+    th, td { border: 1px solid #e2e8f0; padding: 0.5rem; text-align: left; }
+    th { background: #edf2f7; }
+  </style>
+</head>
+<body>
+  <h1>Task: Ghost Pattern Income — MP-1 Launch</h1>
+  <div class="paused">
+    <strong>Status: PAUSED</strong> (2026-06-09) — [[0002-ghost-pattern-gtm-pause]]<br>
+    Founder role = <strong>ML/backend only</strong>. No sales track.
+  </div>
+
+  <h2>Output (revised)</h2>
+  <p>Detector + alert JSON + scorecard. Archive is a <em>demo / training-label source</em>, not a product sold to traders.</p>
+
+  <h2>Role split</h2>
+  <table>
+    <tr><th>In scope</th><th>Cancelled</th></tr>
+    <tr>
+      <td>Scanner, pipeline, scorecard, optional daily cron</td>
+      <td>X, paid tier, Telegram pings, MP-2+ commercial</td>
+    </tr>
+  </table>
+
+  <h2>Completed</h2>
+  <ul>
+    <li class="done">☑ Phase 0–1 — archive, templates, 3 alerts, scorecard, scanner</li>
+    <li class="done">☑ Phase 2.1–2.2 — automation, brief workflow (demo)</li>
+    <li class="done">☑ AIS daily backfill — 72d proxy + live snapshot</li>
+  </ul>
+
+  <h2>Cancelled (GTM)</h2>
+  <ul>
+    <li class="cancelled">☒ 2.3 — Paid tier $29/mo</li>
+    <li class="cancelled">☒ 3.1 — MP-2 commercial</li>
+    <li class="cancelled">☒ 3.2 — Telegram/email paid alerts</li>
+  </ul>
+
+  <h2>Optional backend</h2>
+  <ul>
+    <li>☐ 3.3 — <code>embedding_snapshots</code> (when GNN track needs it)</li>
+    <li>☐ B.1 — Cron <code>ghost-pattern-daily</code> for label/archive growth</li>
+  </ul>
+
+  <h2>Related</h2>
+  <ul>
+    <li>[[0002-ghost-pattern-gtm-pause]]</li>
+    <li>[[checkpoint_2026-06-09_ghost_gtm_pause]]</li>
+    <li>[[ghost_pattern_income_plan]]</li>
+    <li>[[long_term_vision]]</li>
+    <li>[[scorecard]]</li>
+  </ul>
+</body>
+</html>

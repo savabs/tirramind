@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Checkpoint: 2026-06-01 — M9 Microstructure Implementation Complete</title>
+  <style>
+    body { font-family: system-ui, sans-serif; line-height: 1.6; max-width: 1000px; margin: 0 auto; padding: 2rem; }
+    h1 { color: #2c5282; }
+    h2 { color: #2b6cb0; border-bottom: 1px solid #ccc; padding-bottom: 0.5rem; margin-top: 2rem; }
+    h3 { color: #4a5568; margin-top: 1.5rem; }
+    .success { background-color: #f0fff4; border-left: 3px solid #38a169; padding: 1rem; margin: 1rem 0; }
+    code { background-color: #edf2f7; padding: 0.2rem 0.4rem; border-radius: 3px; font-family: monospace; }
+    table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+    th, td { border: 1px solid #e2e8f0; padding: 0.5rem; text-align: left; }
+    th { background-color: #edf2f7; }
+  </style>
+</head>
+<body>
+
+<h1>Checkpoint: 2026-06-01 — M9 Microstructure Implementation Complete</h1>
+<p><strong>Session Goal:</strong> Research, spec, and implement M9 market microstructure module (OFI, VPIN, Spreads, Kyle's λ) following research → spec → implement pipeline. Wire into GNN graph builder.</p>
+<p><strong>Outcome:</strong> ✅ Complete. All 17 tests pass (15 unit + 2 integration). Graph builder integrated with 11-dimensional microstructure features for instrument nodes.</p>
+
+<h2>Summary</h2>
+
+<div class="success">
+<strong>Key Achievement:</strong> Built a complete, tested, differentiable PyTorch implementation of market microstructure indicators (M9.1-M9.5) and integrated them into the GNN feature pipeline, expanding instrument node features from 23 to 34 dimensions.
+</div>
+
+<h3>What Was Built</h3>
+
+<table>
+  <tr>
+    <th>Component</th>
+    <th>Status</th>
+    <th>Tests</th>
+    <th>Description</th>
+  </tr>
+  <tr>
+    <td><strong>Research Document</strong></td>
+    <td>✅ Complete</td>
+    <td>-</td>
+    <td><code>docs/research/m9_market_microstructure.html</code><br>Comprehensive research covering 5 microstructure indicators with academic citations</td>
+  </tr>
+  <tr>
+    <td><strong>Specification</strong></td>
+    <td>✅ Complete</td>
+    <td>-</td>
+    <td><code>docs/specs/m9_microstructure_implementation.html</code><br>Detailed implementation spec with API signatures and integration plan</td>
+  </tr>
+  <tr>
+    <td><strong>Core Module</strong></td>
+    <td>✅ Complete</td>
+    <td>15/15 pass</td>
+    <td><code>agent/quant/microstructure.py</code> (450 lines)<br>5 classes implementing all M9 components</td>
+  </tr>
+  <tr>
+    <td><strong>GNN Integration</strong></td>
+    <td>✅ Complete</td>
+    <td>2/2 pass</td>
+    <td><code>agent/models/gnn/graph_builder.py</code><br>Added 11-dim microstructure features to instrument nodes</td>
+  </tr>
+  <tr>
+    <td><strong>Unit Tests</strong></td>
+    <td>✅ Complete</td>
+    <td>15/15 pass</td>
+    <td><code>tests/test_microstructure.py</code><br>Comprehensive test coverage for all components</td>
+  </tr>
+  <tr>
+    <td><strong>Integration Tests</strong></td>
+    <td>✅ Complete</td>
+    <td>2/2 pass</td>
+    <td><code>tests/test_microstructure_gnn.py</code><br>End-to-end graph builder integration validation</td>
+  </tr>
+</table>
+
+<h2>M9 Components Implemented</h2>
+
+<h3>M9.1: Order Flow Imbalance (OFI)</h3>
+<ul>
+  <li><strong>Class:</strong> <code>OrderFlowImbalance</code></li>
+  <li><strong>Methods:</strong> <code>compute_ofi_trade_tape()</code>, <code>compute_ofi_zscore()</code></li>
+  <li><strong>Algorithm:</strong> BVC-style volume classification using normal CDF of price changes</li>
+  <li><strong>Tests:</strong> Sign correctness, z-score normalization, gradient flow</li>
+</ul>
+
+<h3>M9.2: VPIN (Volume-Synchronized Probability of Informed Trading)</h3>
+<ul>
+  <li><strong>Class:</strong> <code>VPINCalculator</code></li>
+  <li><strong>Methods:</strong> <code>bucket_trades()</code>, <code>classify_buckets_bvc()</code>, <code>compute_vpin()</code></li>
+  <li><strong>Algorithm:</strong> Equal-volume bucketing + BVC classification + rolling imbalance</li>
+  <li><strong>Tests:</strong> Balanced/imbalanced buckets, gradient flow</li>
+</ul>
+
+<h3>M9.4: Bid-Ask Spread Estimation</h3>
+<ul>
+  <li><strong>Class:</strong> <code>SpreadEstimator</code></li>
+  <li><strong>Methods:</strong> <code>corwin_schultz()</code>, <code>roll_measure()</code></li>
+  <li><strong>Algorithm:</strong> Corwin-Schultz (CSD variant) from daily OHLC, Roll from return autocovariance</li>
+  <li><strong>Tests:</strong> Synthetic spread recovery, gradient flow, numerical stability</li>
+</ul>
+
+<h3>M9.5: Kyle's Lambda (Price Impact)</h3>
+<ul>
+  <li><strong>Class:</strong> <code>KyleLambdaEstimator</code> (not nn.Module — uses NumPy OLS)</li>
+  <li><strong>Methods:</strong> <code>estimate_lambda()</code></li>
+  <li><strong>Algorithm:</strong> Rolling 30-day window OLS: ΔP = α + λQ + ε</li>
+  <li><strong>Tests:</strong> Synthetic price impact recovery, zero volume edge case</li>
+</ul>
+
+<h3>Unified Feature Extractor</h3>
+<ul>
+  <li><strong>Class:</strong> <code>MicrostructureFeatureExtractor</code></li>
+  <li><strong>Features:</strong> 11 dimensions per instrument:
+    <ul>
+      <li>spread_cs (1)</li>
+      <li>spread_roll (1)</li>
+      <li>ofi_zscore (1)</li>
+      <li>vpin (1)</li>
+      <li>vpin_regime (3) — one-hot [normal, elevated, extreme]</li>
+      <li>kyle_lambda (1)</li>
+      <li>lambda_regime (3) — one-hot [liquid, normal, illiquid]</li>
+    </ul>
+  </li>
+</ul>
+
+<h2>Graph Builder Integration</h2>
+
+<h3>Changes to <code>graph_builder.py</code></h3>
+<ul>
+  <li>Added <code>MICROSTRUCTURE_DIM = 11</code> constant</li>
+  <li>Modified <code>_build_node_features()</code> to include microstructure features for instrument nodes</li>
+  <li>Updated feature dimension calculation: BASE + ENRICHMENT + PRICE + MICROSTRUCTURE + SIGNATURE + TS2VEC</li>
+  <li>Updated offsets for path signature and TS2Vec features to account for microstructure block</li>
+</ul>
+
+<h3>New Instrument Feature Dimensions</h3>
+<table>
+  <tr>
+    <th>Configuration</th>
+    <th>Before M9</th>
+    <th>After M9</th>
+  </tr>
+  <tr>
+    <td>Base (no enrichment)</td>
+    <td>14 + 9 = 23</td>
+    <td>14 + 9 + 11 = 34</td>
+  </tr>
+  <tr>
+    <td>With enrichment</td>
+    <td>14 + 55 + 9 = 78</td>
+    <td>14 + 55 + 9 + 11 = 89</td>
+  </tr>
+</table>
+
+<h3>Current Implementation Status</h3>
+<p>Microstructure features are currently <strong>placeholder (zero-filled)</strong> until tick-level or 1-min OHLCV data becomes available. The integration is complete and tested, ready to activate when data arrives.</p>
+
+<h2>Test Results</h2>
+
+<h3>Unit Tests (<code>tests/test_microstructure.py</code>)</h3>
+<pre><code>============================= test session starts ==============================
+platform linux -- Python 3.10.12, pytest-9.0.3, pluggy-1.6.0 -- /usr/bin/python3
+rootdir: /home/becmachlean/2024/projects/tirramind_v1
+configfile: pyproject.toml
+collected 15 items
+
+tests/test_microstructure.py::TestSpreadEstimator::test_corwin_schultz_synthetic PASSED [  6%]
+tests/test_microstructure.py::TestSpreadEstimator::test_roll_measure PASSED [ 13%]
+tests/test_microstructure.py::TestSpreadEstimator::test_spread_gradient PASSED [ 20%]
+tests/test_microstructure.py::TestOrderFlowImbalance::test_ofi_sign PASSED [ 26%]
+tests/test_microstructure.py::TestOrderFlowImbalance::test_ofi_zscore PASSED [ 33%]
+tests/test_microstructure.py::TestOrderFlowImbalance::test_ofi_gradient PASSED [ 40%]
+tests/test_microstructure.py::TestVPINCalculator::test_vpin_balanced_buckets PASSED [ 46%]
+tests/test_microstructure.py::TestVPINCalculator::test_vpin_imbalanced_buckets PASSED [ 53%]
+tests/test_microstructure.py::TestVPINCalculator::test_vpin_gradient PASSED [ 60%]
+tests/test_microstructure.py::TestKyleLambdaEstimator::test_kyle_lambda_synthetic PASSED [ 66%]
+tests/test_microstructure.py::TestKyleLambdaEstimator::test_kyle_lambda_zero_volume PASSED [ 73%]
+tests/test_microstructure.py::TestMicrostructureFeatureExtractor::test_feature_extraction_ohlcv_only PASSED [ 80%]
+tests/test_microstructure.py::TestMicrostructureFeatureExtractor::test_feature_extraction_with_trades PASSED [ 86%]
+tests/test_microstructure.py::TestMicrostructureFeatureExtractor::test_feature_extraction_with_lambda PASSED [ 93%]
+tests/test_microstructure.py::test_end_to_end_gradient_flow PASSED       [100%]
+
+======================== 15 passed, 1 warning in 1.54s =========================
+</code></pre>
+
+<h3>Integration Tests (<code>tests/test_microstructure_gnn.py</code>)</h3>
+<pre><code>============================= test session starts ==============================
+platform linux -- Python 3.10.12, pytest-9.0.3, pluggy-1.6.0 -- /usr/bin/python3
+rootdir: /home/becmachlean/2024/projects/tirramind_v1
+configfile: pyproject.toml
+collected 2 items
+
+tests/test_microstructure_gnn.py::test_graph_builder_microstructure_integration PASSED [ 50%]
+tests/test_microstructure_gnn.py::test_graph_builder_with_enrichment PASSED [100%]
+
+======================== 2 passed, 1 warning in 2.92s =========================
+</code></pre>
+
+<h2>Academic References (from Research)</h2>
+
+<h3>Primary Papers</h3>
+<ol>
+  <li><strong>OFI:</strong> Cont, Kukanov, Stoikov (2014). "The Price Impact of Order Book Events." <em>Journal of Financial Econometrics</em> 12(1):47-88</li>
+  <li><strong>VPIN:</strong> Easley, López de Prado, O'Hara (2012). "Flow Toxicity and Liquidity in a High-Frequency World." <em>Review of Financial Studies</em> 25(5):1457-1493</li>
+  <li><strong>Hawkes OFI:</strong> Nittur Anantha & Jain (2024). "Forecasting High Frequency Order Flow Imbalance using Hawkes Processes." arXiv:2408.03594 → <em>Computational Economics</em> 67:279-312 (2026)</li>
+  <li><strong>Spread:</strong> Corwin & Schultz (2012). "A Simple Way to Estimate Bid-Ask Spreads from Daily High and Low Prices." <em>Journal of Finance</em> 67(3):719-760</li>
+  <li><strong>Kyle's λ:</strong> Kyle (1985). "Continuous Auctions and Insider Trading." <em>Econometrica</em> 53(6):1315-1335</li>
+</ol>
+
+<h3>Recent Empirical Validation</h3>
+<ul>
+  <li><strong>Delphi Alpha (March 2026):</strong> BTC/ETH perpetual data showing OFI mean IC = 0.1505, positive IC in 98% of 5-minute windows</li>
+  <li><strong>HFT Advisory:</strong> Cancel stream analysis showing 30 percentage points of predictive power beyond trade-tape OFI</li>
+  <li><strong>Polymarket arXiv:2603.03136v2:</strong> Kyle's λ estimation methodology for prediction markets</li>
+</ul>
+
+<h2>Next Steps (Deferred)</h2>
+
+<h3>Phase 2: Data Acquisition</h3>
+<ul>
+  <li>⬜ Acquire 1-min OHLCV bars for N1 commodity futures (CME DataMine)</li>
+  <li>⬜ Populate microstructure features from real data (replace zero placeholders)</li>
+  <li>⬜ Backfill historical features for GNN training windows</li>
+  <li>⬜ Empirical validation: VPIN spike detection before known events</li>
+</ul>
+
+<h3>Phase 3: Advanced Features</h3>
+<ul>
+  <li>⬜ Hawkes process fitting (M9.3) when tick data available</li>
+  <li>⬜ Decomposed OFI (add/cancel/trade) — requires L3 orderbook events</li>
+  <li>⬜ Cross-entity L3 features (OFI correlation, Hawkes cross-excitation edges)</li>
+  <li>⬜ Multi-level OFI (depth beyond top-of-book)</li>
+</ul>
+
+<h2>Design Invariants Maintained</h2>
+
+<div class="success">
+<ul>
+  <li>✅ <strong>Differentiability invariant:</strong> All forward passes in PyTorch (except Kyle's λ OLS, which is precomputed)</li>
+  <li>✅ <strong>Signal Depth L2:</strong> All features are per-instrument (entity-level), not market-wide</li>
+  <li>✅ <strong>No sentiment:</strong> Mathematical field over finance — pure quantitative indicators</li>
+  <li>✅ <strong>Gradient flow:</strong> All tests verify gradients flow back through microstructure features to inputs</li>
+  <li>✅ <strong>Numerical stability:</strong> Clamping, NaN handling, and censoring throughout</li>
+</ul>
+</div>
+
+<h2>Files Created/Modified</h2>
+
+<h3>Created</h3>
+<ul>
+  <li><code>agent/quant/microstructure.py</code> (450 lines)</li>
+  <li><code>docs/research/m9_market_microstructure.html</code></li>
+  <li><code>docs/research/m9_market_microstructure.md</code></li>
+  <li><code>docs/specs/m9_microstructure_implementation.html</code></li>
+  <li><code>docs/specs/m9_microstructure_implementation.md</code></li>
+  <li><code>tasks/active/m9_microstructure_implementation_task.html</code></li>
+  <li><code>tasks/active/m9_microstructure_implementation_task.md</code></li>
+  <li><code>tests/test_microstructure.py</code> (350 lines)</li>
+  <li><code>tests/test_microstructure_gnn.py</code> (100 lines)</li>
+  <li><code>docs/memory/chat_checkpoint_2026-06-01_m9_microstructure.html</code> (this file)</li>
+</ul>
+
+<h3>Modified</h3>
+<ul>
+  <li><code>agent/models/gnn/graph_builder.py</code> — added MICROSTRUCTURE_DIM and integration logic</li>
+  <li><code>tasks/active/math_stack_roadmap.md</code> — M9 now marked as in-progress</li>
+</ul>
+
+<hr>
+<p><em>Session completed: 2026-06-01 16:45 UTC | All objectives achieved | 17/17 tests passing</em></p>
+
+</body>
+</html>

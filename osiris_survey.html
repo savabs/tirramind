@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Open-Source Repository Survey — AI + Quantitative Finance for TirraMind</title>
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --border: #30363d;
+    --text: #c9d1d9; --muted: #8b949e; --accent: #58a6ff;
+    --green: #3fb950; --orange: #d2991d; --red: #f85149; --purple: #a371f7;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.6;
+    max-width: 1200px; margin: 0 auto; padding: 2rem;
+  }
+  header {
+    border-bottom: 1px solid var(--border); padding-bottom: 1.5rem; margin-bottom: 2rem;
+  }
+  h1 { font-size: 2rem; color: #fff; }
+  h1 span { color: var(--accent); }
+  h2 {
+    font-size: 1.4rem; color: #fff; margin: 2.5rem 0 1rem;
+    padding-bottom: 0.4rem; border-bottom: 1px solid var(--border);
+  }
+  h3 { font-size: 1.1rem; color: var(--accent); margin: 1.5rem 0 0.5rem; }
+  .meta {
+    display: flex; gap: 2rem; margin-top: 0.75rem; color: var(--muted); font-size: 0.9rem;
+    flex-wrap: wrap;
+  }
+  .badge {
+    display: inline-block; padding: 0.15rem 0.6rem; border-radius: 12px;
+    font-size: 0.8rem; font-weight: 600;
+  }
+  .badge-green { background: #1a3a2a; color: var(--green); }
+  .badge-orange { background: #3a2e1a; color: var(--orange); }
+  .badge-purple { background: #2a1a3a; color: var(--purple); }
+  .badge-red { background: #3a1a1a; color: var(--red); }
+  .badge-blue { background: #1a2a3a; color: var(--accent); }
+
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.88rem; }
+  th, td { padding: 0.55rem 0.7rem; text-align: left; border: 1px solid var(--border); }
+  th { background: var(--surface); color: var(--accent); font-weight: 600; }
+  tr:nth-child(even) { background: #0d1117; }
+  tr:nth-child(odd) { background: var(--surface); }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 1.25rem; margin: 1rem 0;
+  }
+  .card h4 { color: #fff; margin-bottom: 0.5rem; }
+  .card.relevance-high { border-left: 3px solid var(--green); }
+  .card.relevance-med  { border-left: 3px solid var(--orange); }
+  .card.relevance-low  { border-left: 3px solid var(--muted); }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; }
+
+  .repo-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 1.25rem; margin: 1rem 0;
+  }
+  .repo-card h4 { margin-bottom: 0.3rem; }
+  .repo-card h4 a { color: var(--accent); text-decoration: none; }
+  .repo-card h4 a:hover { text-decoration: underline; }
+  .repo-card .stars { color: var(--orange); font-size: 0.85rem; }
+  .repo-card .desc { color: var(--text); margin: 0.5rem 0; font-size: 0.9rem; }
+  .repo-card .tags { margin-top: 0.5rem; display: flex; gap: 0.4rem; flex-wrap: wrap; }
+  .repo-card .tirra-take { 
+    margin-top: 0.75rem; padding: 0.6rem 0.8rem; 
+    background: #0d1117; border-radius: 6px; font-size: 0.85rem; color: var(--muted);
+    border-left: 2px solid var(--accent);
+  }
+  .repo-card .tirra-take strong { color: var(--accent); }
+
+  .section-nav {
+    display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 1rem 0;
+  }
+  .section-nav a {
+    color: var(--accent); text-decoration: none; font-size: 0.85rem;
+    padding: 0.25rem 0.6rem; border-radius: 4px; border: 1px solid var(--border);
+  }
+  .section-nav a:hover { background: var(--surface); }
+
+  .summary-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1rem; margin: 1.5rem 0;
+  }
+  .summary-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 1rem; text-align: center;
+  }
+  .summary-card .num { font-size: 2rem; font-weight: 700; color: var(--accent); }
+  .summary-card .label { color: var(--muted); font-size: 0.85rem; margin-top: 0.25rem; }
+
+  .toc { 
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 1.25rem; margin: 1.5rem 0;
+  }
+  .toc ol { margin-left: 1.5rem; }
+  .toc li { margin: 0.3rem 0; }
+  .toc a { color: var(--accent); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+
+  footer {
+    margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border);
+    color: var(--muted); font-size: 0.8rem;
+  }
+
+  .highlight-box {
+    background: #1a2a1a; border: 1px solid var(--green);
+    border-radius: 8px; padding: 1rem; margin: 1rem 0;
+  }
+  .highlight-box h4 { color: var(--green); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1><span>📊</span> Open-Source Repository Survey</h1>
+  <p style="font-size:1.1rem; margin-top:0.5rem;">AI + Quantitative Finance — Repos relevant to TirraMind's mission of building a predictive world model from heterogeneous alternative data</p>
+  <div class="meta">
+    <span>📅 2026-05-24</span>
+    <span>🏷️ <span class="badge badge-purple">doc/research</span></span>
+    <span>📋 <span class="badge badge-blue">phase/exploration</span></span>
+    <span>🎯 <span class="badge badge-green">topic/osint-survey</span></span>
+    <span>📦 20+ repos surveyed</span>
+  </div>
+</header>
+
+<!-- ====== SUMMARY ====== -->
+<div class="summary-grid">
+  <div class="summary-card">
+    <div class="num">6</div>
+    <div class="label">GNN / Graph Learning for Finance</div>
+  </div>
+  <div class="summary-card">
+    <div class="num">4</div>
+    <div class="label">Causal Discovery &amp; Inference</div>
+  </div>
+  <div class="summary-card">
+    <div class="num">4</div>
+    <div class="label">Alternative Data / OSINT</div>
+  </div>
+  <div class="summary-card">
+    <div class="num">3</div>
+    <div class="label">Financial LLMs &amp; NLP</div>
+  </div>
+  <div class="summary-card">
+    <div class="num">3</div>
+    <div class="label">Bayesian / State Space Models</div>
+  </div>
+  <div class="summary-card">
+    <div class="num">3</div>
+    <div class="label">Prediction Markets</div>
+  </div>
+  <div class="summary-card">
+    <div class="num">3</div>
+    <div class="label">Anomaly / Regime Detection</div>
+  </div>
+  <div class="summary-card">
+    <div class="num">2</div>
+    <div class="label">Supply Chain AI</div>
+  </div>
+</div>
+
+<!-- ====== TOC ====== -->
+<div class="toc">
+  <h3 style="margin-top:0;">📑 Table of Contents</h3>
+  <ol>
+    <li><a href="#cat1">Graph Neural Networks for Finance</a> — THGNN, GNN4Fintech, SP100-GNN, Correlation-GNN, TGN</li>
+    <li><a href="#cat2">Causal Discovery &amp; Inference</a> — Neural-GC, TCDF, CausalImpact, pydlm</li>
+    <li><a href="#cat3">Alternative Data &amp; OSINT Platforms</a> — OSIRIS, osint-tools, satellite-image-deep-learning</li>
+    <li><a href="#cat4">Financial LLMs &amp; NLP</a> — FinGPT, edgartools, FinBERT</li>
+    <li><a href="#cat5">Bayesian &amp; State Space Models</a> — bsts, pydlm, Kalman-and-Bayesian-Filters</li>
+    <li><a href="#cat6">Prediction Markets &amp; Crowd Intelligence</a> — prediction-market-analysis, polymarket-ai-trading, awesome-prediction-market-tools</li>
+    <li><a href="#cat7">Anomaly &amp; Regime Detection</a> — StreamAD, market-regime-detection, awesome-TS-anomaly-detection</li>
+    <li><a href="#cat8">Supply Chain &amp; Physical-World AI</a> — AI-Supply-Chain-Simulator, ChaosChain-AI</li>
+    <li><a href="#cat9">Quantitative Finance Platforms &amp; Curated Lists</a> — firmai/financial-machine-learning, awesome-quant, nautilus_trader</li>
+    <li><a href="#synthesis">Synthesis: Top Ideas for TirraMind</a></li>
+  </ol>
+</div>
+
+<!-- ================================================================== -->
+<!-- CATEGORY 1: GNN FOR FINANCE -->
+<!-- ================================================================== -->
+<h2 id="cat1">1. Graph Neural Networks for Finance</h2>
+<p>These repos apply GNNs to financial data — the closest technical relatives to TirraMind's heterogeneous graph world model.</p>
+
+<div class="repo-card">
+  <h4><a href="https://github.com/TongjiFinLab/THGNN">TongjiFinLab/THGNN</a> <span class="stars">⭐ ~230</span></h4>
+  <div class="tags">
+    <span class="badge badge-green">MIT License</span>
+    <span class="badge badge-blue">PyTorch</span>
+    <span class="badge badge-purple">CIKM 2022</span>
+  </div>
+  <p class="desc"><strong>Temporal and Heterogeneous Graph Neural Network for Financial Time Series Prediction.</strong> Models stocks as a dynamic heterogeneous graph where nodes are stocks and edges encode price correlations, sector relationships, and temporal dependencies. Uses a Heterogeneous Graph Attention Network (HeteGAT) with temporal encoding. Published at CIKM 2022.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> Direct architectural parallel. THGNN's heterogeneous graph construction (price correlation + sector edges) mirrors TirraMind's multi-relational graph but is limited to stocks only. TirraMind extends this to vessels, commodities, countries, infrastructure — a superset. The temporal encoding mechanism and relation generation pipeline (<code>generate_relation.py</code>) are directly reusable patterns. The HeteGAT architecture could serve as a baseline to beat.
+  </div>
+</div>
+
+<div class="repo-card">
+  <h4><a href="https://github.com/jwwthu/GNN4Fintech">jwwthu/GNN4Fintech</a> <span class="stars">⭐ ~350</span></h4>
+  <div class="tags">
+    <span class="badge badge-blue">Survey / Paper List</span>
+    <span class="badge badge-purple">Comprehensive</span>
+  </div>
+  <p class="desc"><strong>Curated collection of GNN papers for Financial Technology.</strong> Covers stock prediction (2016–2022), anti-money laundering, credit scoring, default prediction, financial event prediction, risk analysis, and fraud detection. The definitive literature map for GNN-in-finance.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> Essential reference for positioning TirraMind's GNN against published work. Confirms that no existing paper combines all of TirraMind's data domains (maritime + satellite + supply chain + regulatory + prediction markets + infrastructure) into a single heterogeneous temporal graph. This is TirraMind's unique moat — and this repo proves it's genuinely novel.
+  </div>
+</div>
+
+<div class="repo-card">
+  <h4><a href="https://github.com/timothewt/SP100AnalysisWithGNNs">timothewt/SP100AnalysisWithGNNs</a> <span class="stars">⭐ ~30</span></h4>
+  <div class="tags">
+    <span class="badge badge-blue">PyTorch Geometric</span>
+    <span class="badge badge-green">Temporal GNN</span>
+  </div>
+  <p class="desc"><strong>S&P100 stock analysis with GNNs.</strong> Builds graphs from sector membership and fundamental correlations. Uses PyG custom datasets and Temporal Graph Neural Networks for stock prediction. Practical, well-documented implementation.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> Clean reference implementation for graph construction from fundamental data. The PyG custom dataset pattern is directly applicable to TirraMind's pipeline. Small but well-structured — good for studying how to productionize GNN-on-finance.
+  </div>
+</div>
+
+<div class="repo-card">
+  <h4><a href="https://github.com/JunwenBai/correlation-gnn">JunwenBai/correlation-gnn</a> <span class="stars">⭐ ~15</span></h4>
+  <div class="tags">
+    <span class="badge badge-blue">PyTorch</span>
+    <span class="badge badge-purple">Research</span>
+  </div>
+  <p class="desc"><strong>Correlated Graph Neural Networks.</strong> Models label correlations as a multivariate Gaussian, learning the correlation structure in O(m) per optimization step. Addresses the problem of outcome correlation in GNN predictions.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> The multivariate Gaussian correlation structure is relevant to TirraMind's fusion layer — when multiple assets/predictions are correlated, this approach provides a principled way to model joint uncertainty. Could improve the calibration of multi-asset predictions.
+  </div>
+</div>
+
+<div class="repo-card">
+  <h4><a href="https://github.com/twitter-research/tgn">twitter-research/tgn</a> <span class="stars">⭐ ~1,200</span></h4>
+  <div class="tags">
+    <span class="badge badge-green">Apache 2.0</span>
+    <span class="badge badge-blue">PyTorch</span>
+    <span class="badge badge-purple">ICML 2020</span>
+  </div>
+  <p class="desc"><strong>Temporal Graph Networks (TGN).</strong> The canonical framework for deep learning on dynamic graphs. Introduces a generic encoder architecture for graphs that evolve over time. Used by TirraMind's <code>agent/models/gnn/het_tgn.py</code>.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> Already integrated into TirraMind's architecture. The upstream repo is worth monitoring for improvements, but the core contribution is already absorbed. Key insight: TGN's memory module + message function pattern is exactly what TirraMind needs for streaming graph updates from live data feeds.
+  </div>
+</div>
+
+<div class="repo-card">
+  <h4><a href="https://github.com/pyg-team/pytorch_geometric">pyg-team/pytorch_geometric</a> <span class="stars">⭐ ~22,000</span></h4>
+  <div class="tags">
+    <span class="badge badge-green">MIT License</span>
+    <span class="badge badge-blue">PyTorch</span>
+    <span class="badge badge-purple">Core Dependency</span>
+  </div>
+  <p class="desc"><strong>PyTorch Geometric (PyG).</strong> The primary GNN library. Includes TGN, HGT, GAT, and heterogeneous graph support. TirraMind's core GNN dependency.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> Core dependency — already used. Key features to leverage more: PyG's <code>HeteroData</code> for multi-relational graphs, <code>TemporalData</code> for snapshots, and the new <code>torch_geometric.nn.models.tgn</code> module. Monitor PyG releases for heterogeneous temporal graph improvements.
+  </div>
+</div>
+
+<!-- ================================================================== -->
+<!-- CATEGORY 2: CAUSAL DISCOVERY -->
+<!-- ================================================================== -->
+<h2 id="cat2">2. Causal Discovery &amp; Inference</h2>
+<p>TirraMind's architecture includes causal chain detection. These repos provide state-of-the-art methods for discovering causal structure in time series.</p>
+
+<div class="repo-card">
+  <h4><a href="https://github.com/iancovert/Neural-GC">iancovert/Neural-GC</a> <span class="stars">⭐ ~450</span></h4>
+  <div class="tags">
+    <span class="badge badge-green">MIT License</span>
+    <span class="badge badge-blue">PyTorch</span>
+    <span class="badge badge-purple">TPAMI 2021</span>
+  </div>
+  <p class="desc"><strong>Neural Granger Causality.</strong> Uses neural networks (cMLP, cLSTM, cRNN) with sparse penalties on input weights to discover Granger causal relationships in multivariate time series. Group lasso, hierarchical, and group sparse group lasso penalties. Proximal gradient descent (ISTA) for optimization.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> Directly applicable to TirraMind's causal discovery layer. The cLSTM/cRNN models could replace or augment TirraMind's current Granger causality approach. The sparse penalty mechanism is elegant — it discovers causal structure as a byproduct of prediction, not as a separate step. Could be integrated into <code>agent/discovery/</code> or the convergence module. Key limitation: assumes all time series are at same frequency — would need adaptation for TirraMind's mixed-frequency data (daily prices + hourly AIS + quarterly filings).
+  </div>
+</div>
+
+<div class="repo-card">
+  <h4><a href="https://github.com/M-Nauta/TCDF">M-Nauta/TCDF</a> <span class="stars">⭐ ~280</span></h4>
+  <div class="tags">
+    <span class="badge badge-green">MIT License</span>
+    <span class="badge badge-blue">PyTorch</span>
+    <span class="badge badge-purple">CNN-based</span>
+  </div>
+  <p class="desc"><strong>Temporal Causal Discovery Framework.</strong> Uses CNNs with attention to discover causal relationships AND time delays between time series. Plots temporal causal graphs. Unlike Neural-GC, TCDF explicitly discovers <em>time delay</em> between cause and effect — critical for financial applications where lead-lag relationships matter.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> The time-delay discovery is uniquely valuable for TirraMind. Knowing that AIS vessel movements lead commodity prices by 3 days (not just "are correlated") is actionable. TCDF's CNN attention mechanism could complement Neural-GC's sparse penalties. Both should be evaluated as causal discovery backends for <code>agent/convergence/</code>.
+  </div>
+</div>
+
+<div class="repo-card">
+  <h4><a href="https://github.com/tcassou/causal_impact">tcassou/causal_impact</a> <span class="stars">⭐ ~400</span></h4>
+  <div class="tags">
+    <span class="badge badge-green">MIT License</span>
+    <span class="badge badge-blue">Python</span>
+    <span class="badge badge-purple">BSTS</span>
+  </div>
+  <p class="desc"><strong>Python port of Google's CausalImpact R package.</strong> Uses Bayesian structural time-series models to estimate the causal effect of an intervention on a time series. Builds a synthetic counterfactual from control time series.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> Useful for event studies — e.g., "what was the causal impact of the Red Sea shipping disruption on European energy prices?" The counterfactual construction is a natural complement to TirraMind's event detection. Could be used to validate GNN-predicted causal edges with a Bayesian method.
+  </div>
+</div>
+
+<div class="repo-card">
+  <h4><a href="https://github.com/wwrechard/pydlm">wwrechard/pydlm</a> <span class="stars">⭐ ~500</span></h4>
+  <div class="tags">
+    <span class="badge badge-green">BSD License</span>
+    <span class="badge badge-blue">Python</span>
+  </div>
+  <p class="desc"><strong>Bayesian dynamic linear model library.</strong> Based on Harrison &amp; West (1999). Optimized for fast model fitting and inference. Supports trend, seasonality, and dynamic regression components.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> Could serve as a lightweight Bayesian layer for time series components that don't need full GNN treatment. The dynamic regression component is particularly useful — it allows regression coefficients to evolve over time, which matches how financial relationships change across regimes.
+  </div>
+</div>
+
+<!-- ================================================================== -->
+<!-- CATEGORY 3: ALTERNATIVE DATA & OSINT -->
+<!-- ================================================================== -->
+<h2 id="cat3">3. Alternative Data &amp; OSINT Platforms</h2>
+<p>These repos aggregate non-traditional data sources — the "unique observation" layer that gives TirraMind its edge.</p>
+
+<div class="repo-card">
+  <h4><a href="https://github.com/simplifaisoul/osiris">simplifaisoul/osiris</a> <span class="stars">⭐ ~1,900</span></h4>
+  <div class="tags">
+    <span class="badge badge-green">MIT License</span>
+    <span class="badge badge-blue">Next.js / MapLibre GL</span>
+    <span class="badge badge-purple">OSINT Dashboard</span>
+  </div>
+  <p class="desc"><strong>OSIRIS — Open Source Intelligence &amp; Reconnaissance Integrated System.</strong> Real-time global intelligence dashboard with 15 data layers (flights, maritime, earthquakes, wildfires, satellites, CCTV, news, conflict zones). GPU-accelerated WebGL rendering. RECON toolkit for cyber intelligence. Positioned as a Palantir alternative. <em>Full analysis in separate doc: <code>osiris_research.html</code>.</em></p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> (1) New data adapters for flights, wildfires, CCTV, conflict zones. (2) MapLibre GL visualization frontend for TirraMind's world model. (3) RECON toolkit patterns for infrastructure monitoring enrichment. (4) Viewport-aware loading and aggressive caching patterns for the pipeline.
+  </div>
+</div>
+
+<div class="repo-card">
+  <h4><a href="https://github.com/atlas-bear/osint-tools">atlas-bear/osint-tools</a> <span class="stars">⭐ ~200</span></h4>
+  <div class="tags">
+    <span class="badge badge-green">MIT License</span>
+    <span class="badge badge-blue">Curated List</span>
+    <span class="badge badge-purple">Maritime + Supply Chain</span>
+  </div>
+  <p class="desc"><strong>Maritime and supply chain OSINT tools.</strong> Comprehensive directory of ship tracking, container/cargo tracking, geolocation, supply chain risk management, maritime data/analysis, vessel registration, maritime infrastructure, and crew management tools.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> Goldmine for expanding <code>agent/tools/ais_vessel.py</code>. Lists dozens of data sources beyond AIS: port congestion APIs, container tracking, maritime infrastructure databases, crew change monitoring. Many are free/public. Could double TirraMind's maritime data coverage. The supply chain risk management section directly maps to TirraMind's supply chain disruption prediction use case.
+  </div>
+</div>
+
+<div class="repo-card">
+  <h4><a href="https://github.com/SpaceNetLab/satellite-image-deep-learning">SpaceNetLab/satellite-image-deep-learning</a> <span class="stars">⭐ ~9,000</span></h4>
+  <div class="tags">
+    <span class="badge badge-blue">Resource List</span>
+    <span class="badge badge-purple">Satellite + Deep Learning</span>
+  </div>
+  <p class="desc"><strong>Comprehensive resource list for satellite image deep learning.</strong> Covers techniques for predicting economic activity, poverty, crop yields, and infrastructure changes from satellite imagery. Links to datasets, models, and papers.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> TirraMind's <code>satellite_activity.py</code> currently focuses on satellite orbits/activity, not imagery analysis. This repo opens the door to <em>satellite imagery as a direct economic signal</em> — nightlight intensity for GDP nowcasting, parking lot fullness for retail activity, crop health for agricultural commodity prediction. A major expansion opportunity for the surveillance layer.
+  </div>
+</div>
+
+<div class="repo-card">
+  <h4><a href="https://github.com/dgunning/edgartools">dgunning/edgartools</a> <span class="stars">⭐ ~1,500</span></h4>
+  <div class="tags">
+    <span class="badge badge-green">MIT License</span>
+    <span class="badge badge-blue">Python</span>
+    <span class="badge badge-purple">SEC Filings</span>
+  </div>
+  <p class="desc"><strong>The only open-source toolkit for SEC EDGAR.</strong> Supports all SEC form types: 10-K, 10-Q, 8-K, 13F (institutional holdings), Form 4 (insider transactions), proxy statements, S-1, N-CSR, N-PORT. Extracts both text and XBRL-structured financial data.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> TirraMind has <code>insider_filings.py</code> and <code>form144.py</code> but lacks comprehensive SEC filing extraction. EdgarTools could replace/supplement these with richer data: 13F institutional holdings as graph edges (institution → stock), 8-K event detection for real-time material event signals, XBRL financials as node features. High-value, low-effort integration.
+  </div>
+</div>
+
+<!-- ================================================================== -->
+<!-- CATEGORY 4: FINANCIAL LLMs & NLP -->
+<!-- ================================================================== -->
+<h2 id="cat4">4. Financial LLMs &amp; NLP</h2>
+<p>LLMs fine-tuned for financial text — sentiment, event extraction, and narrative understanding from unstructured data.</p>
+
+<div class="repo-card">
+  <h4><a href="https://github.com/AI4Finance-Foundation/FinGPT">AI4Finance-Foundation/FinGPT</a> <span class="stars">⭐ ~15,000</span></h4>
+  <div class="tags">
+    <span class="badge badge-green">MIT License</span>
+    <span class="badge badge-blue">Python / PyTorch</span>
+    <span class="badge badge-purple">LLM + Finance</span>
+  </div>
+  <p class="desc"><strong>Open-Source Financial Large Language Models.</strong> Full-stack framework with 5 layers: data source, data engineering, LLMs, task, and application. Covers sentiment analysis, financial news classification, market prediction, and robo-advisor. Instruction-tuned on financial data. 92% F1 on financial text classification.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> FinGPT's sentiment and event extraction could feed into TirraMind's graph as <em>text-derived edges and node features</em>. For example: FinGPT detects "supply chain disruption" in a 10-Q → creates a RISK edge in TirraMind's graph. The data source layer's real-time news capture is also valuable. However, FinGPT is LLM-centric; TirraMind's edge is in structured heterogeneous data. The two are complementary — FinGPT for unstructured → structured conversion, TirraMind for structured → prediction.
+  </div>
+</div>
+
+<div class="repo-card">
+  <h4><a href="https://github.com/stefanoamorelli/sec-edgar-toolkit">stefanoamorelli/sec-edgar-toolkit</a> <span class="stars">⭐ ~200</span></h4>
+  <div class="tags">
+    <span class="badge badge-blue">Python / TypeScript</span>
+    <span class="badge badge-purple">SEC EDGAR</span>
+  </div>
+  <p class="desc"><strong>Modern, type-safe, multi-language SEC EDGAR toolkit.</strong> Alternative to edgartools with TypeScript support. Focuses on modern API design.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> Secondary option to edgartools. The TypeScript support is less relevant since TirraMind is Python. Prefer edgartools for Python-native integration.
+  </div>
+</div>
+
+<!-- ================================================================== -->
+<!-- CATEGORY 5: BAYESIAN & STATE SPACE -->
+<!-- ================================================================== -->
+<h2 id="cat5">5. Bayesian &amp; State Space Models</h2>
+<p>TirraMind uses Bayesian belief propagation and Kalman signal fusion. These repos provide production-grade implementations.</p>
+
+<div class="repo-card">
+  <h4><a href="https://github.com/Focus/bsts">Focus/bsts</a> <span class="stars">⭐ ~200</span></h4>
+  <div class="tags">
+    <span class="badge badge-blue">Python</span>
+    <span class="badge badge-purple">Bayesian</span>
+  </div>
+  <p class="desc"><strong>Bayesian structural time series in Python.</strong> Variation on "Bayesian Variable Selection for Nowcasting Economic Time Series" (Scott &amp; Varian). Includes spike-and-slab priors for variable selection — automatically chooses which predictors matter.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> The spike-and-slab prior for automatic predictor selection is directly applicable to TirraMind's feature engineering. With 51+ data sources, knowing which ones actually predict a given target is crucial. BSTS provides a principled Bayesian approach. Could serve as a lightweight nowcasting layer alongside the heavier GNN.
+  </div>
+</div>
+
+<div class="repo-card">
+  <h4><a href="https://github.com/rlabbe/Kalman-and-Bayesian-Filters-in-Python">rlabbe/Kalman-and-Bayesian-Filters-in-Python</a> <span class="stars">⭐ ~17,000</span></h4>
+  <div class="tags">
+    <span class="badge badge-blue">Jupyter Book</span>
+    <span class="badge badge-purple">Educational + Practical</span>
+  </div>
+  <p class="desc"><strong>The definitive Kalman filter resource.</strong> Jupyter notebooks covering Kalman filters, extended KF, unscented KF, particle filters, and sensor fusion. Focuses on intuition, not proofs. All exercises include solutions.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> Reference implementation for TirraMind's Kalman signal fusion layer. The sensor fusion chapters are directly applicable to combining signals from multiple data sources (e.g., fusing AIS vessel speed + satellite position + port authority schedule into a single vessel ETA estimate). The particle filter section is relevant for non-Gaussian financial distributions.
+  </div>
+</div>
+
+<div class="repo-card">
+  <h4><a href="https://github.com/henryzhangzhy/pykffusion">henryzhangzhy/pykffusion</a> <span class="stars">⭐ ~50</span></h4>
+  <div class="tags">
+    <span class="badge badge-blue">Python</span>
+    <span class="badge badge-purple">Multi-Sensor Fusion</span>
+  </div>
+  <p class="desc"><strong>Multi-sensor fusion with Kalman filters.</strong> Python implementation of multi-sensor Kalman filter fusion for object detection and tracking in urban driving environments.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> The multi-sensor fusion pattern is analogous to TirraMind's multi-source signal fusion. Tracking a "financial object" (e.g., a commodity shipment) across multiple data sources (AIS → port camera → trucking data → warehouse inventory) is structurally identical to tracking a physical object across sensors. The fusion architecture is reusable.
+  </div>
+</div>
+
+<!-- ================================================================== -->
+<!-- CATEGORY 6: PREDICTION MARKETS -->
+<!-- ================================================================== -->
+<h2 id="cat6">6. Prediction Markets &amp; Crowd Intelligence</h2>
+<p>Prediction markets aggregate dispersed knowledge into probabilities. TirraMind already ingests Polymarket data — these repos extend that capability.</p>
+
+<div class="repo-card">
+  <h4><a href="https://github.com/jon-becker/prediction-market-analysis">Jon-Becker/prediction-market-analysis</a> <span class="stars">⭐ ~400</span></h4>
+  <div class="tags">
+    <span class="badge badge-green">MIT License</span>
+    <span class="badge badge-blue">Python</span>
+    <span class="badge badge-purple">Polymarket + Kalshi</span>
+  </div>
+  <p class="desc"><strong>Largest publicly available dataset of Polymarket and Kalshi data.</strong> 36 GiB compressed dataset. Collects market metadata, trade history via API and blockchain. Parquet-based storage with automatic progress saving. Extensible analysis framework.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> TirraMind has <code>polymarket.py</code> and <code>polymarket_whales.py</code> but this repo provides a much richer historical dataset (36 GiB) and blockchain-level trade data. Could significantly deepen TirraMind's prediction market signals. The trade-level data enables whale detection, informed trader identification, and market efficiency analysis — all valuable graph features.
+  </div>
+</div>
+
+<div class="repo-card">
+  <h4><a href="https://github.com/b1rdmania/polymarket-ai-trading">b1rdmania/polymarket-ai-trading</a> <span class="stars">⭐ ~150</span></h4>
+  <div class="tags">
+    <span class="badge badge-green">MIT License</span>
+    <span class="badge badge-blue">Python</span>
+    <span class="badge badge-purple">AI Trading</span>
+  </div>
+  <p class="desc"><strong>AI-powered trading system for Polymarket.</strong> Built on 40+ years of research. Uses mean reversion, GPT-4o analysis, and multi-model paper trading. Live dashboard at vercel.app.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> The mean reversion + LLM analysis combination is interesting — LLMs extract narrative from news, mean reversion provides the statistical edge. TirraMind could adopt a similar pattern: GNN provides the structural prediction, LLM provides narrative context, and the two are fused. The paper trading dashboard is a good reference for TirraMind's own backtesting UI.
+  </div>
+</div>
+
+<div class="repo-card">
+  <h4><a href="https://github.com/aarora4/Awesome-Prediction-Market-Tools">aarora4/Awesome-Prediction-Market-Tools</a> <span class="stars">⭐ ~200</span></h4>
+  <div class="tags">
+    <span class="badge badge-blue">Curated List</span>
+    <span class="badge badge-purple">Prediction Markets</span>
+  </div>
+  <p class="desc"><strong>Curated list of prediction market tools.</strong> Includes PolyIntel (whale detection Telegram bot), Polytrackerbot (Twitter bot), and various analysis tools. Covers Polymarket, Kalshi, Metaculus, Manifold Markets.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> Directory of tools and data sources beyond Polymarket. Metaculus and Manifold Markets provide different crowd structures (continuous vs binary, different user bases) — aggregating across platforms could improve signal quality. The whale detection tools validate TirraMind's existing <code>polymarket_whales.py</code> approach.
+  </div>
+</div>
+
+<!-- ================================================================== -->
+<!-- CATEGORY 7: ANOMALY & REGIME DETECTION -->
+<!-- ================================================================== -->
+<h2 id="cat7">7. Anomaly &amp; Regime Detection</h2>
+<p>Detecting when market behavior changes is critical for avoiding prediction in wrong regimes.</p>
+
+<div class="repo-card">
+  <h4><a href="https://github.com/Fengrui-Liu/StreamAD">Fengrui-Liu/StreamAD</a> <span class="stars">⭐ ~150</span></h4>
+  <div class="tags">
+    <span class="badge badge-green">MIT License</span>
+    <span class="badge badge-blue">Python</span>
+    <span class="badge badge-purple">Online / Streaming</span>
+  </div>
+  <p class="desc"><strong>Online anomaly detection for data streams.</strong> Detectors process univariate or multivariate time series in real-time. Includes statistical, ML, and deep learning methods. Designed for streaming environments.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> TirraMind's pipeline processes streaming data from 51+ sources. StreamAD's online detectors could identify when a data feed goes anomalous (API failure, regime change, data quality issue) before it corrupts the GNN training. The streaming architecture matches TirraMind's real-time ingestion pattern.
+  </div>
+</div>
+
+<div class="repo-card">
+  <h4><a href="https://github.com/Sakeeb91/market-regime-detection">Sakeeb91/market-regime-detection</a> <span class="stars">⭐ ~100</span></h4>
+  <div class="tags">
+    <span class="badge badge-blue">Python</span>
+    <span class="badge badge-purple">HMM</span>
+  </div>
+  <p class="desc"><strong>Market regime detection with Hidden Markov Models.</strong> Identifies bull, bear, and high-volatility states. Adapts investment strategies accordingly. Clean, well-structured implementation.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> TirraMind has <code>agent/pipeline/regime_gate.py</code> — this repo provides a cleaner HMM implementation that could replace or augment the current regime detection. The strategy adaptation pattern (different behavior in different regimes) is exactly what TirraMind's regime gate should do: suppress predictions in regimes where the model has no edge.
+  </div>
+</div>
+
+<div class="repo-card">
+  <h4><a href="https://github.com/rob-med/awesome-TS-anomaly-detection">rob-med/awesome-TS-anomaly-detection</a> <span class="stars">⭐ ~3,500</span></h4>
+  <div class="tags">
+    <span class="badge badge-blue">Curated List</span>
+    <span class="badge badge-purple">Time Series Anomaly</span>
+  </div>
+  <p class="desc"><strong>Comprehensive list of time series anomaly detection tools.</strong> Includes ruptures (change point detection), Skyline (real-time anomaly monitoring), NAB (benchmark), and dozens of papers and libraries.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> The <code>ruptures</code> library for offline change point detection is particularly relevant — it could identify structural breaks in financial relationships that signal when to retrain the GNN. Skyline's real-time monitoring architecture is a reference for TirraMind's own data quality monitoring.
+  </div>
+</div>
+
+<!-- ================================================================== -->
+<!-- CATEGORY 8: SUPPLY CHAIN AI -->
+<!-- ================================================================== -->
+<h2 id="cat8">8. Supply Chain &amp; Physical-World AI</h2>
+<p>TirraMind's Layer 0 (physical reality) includes supply chain monitoring. These repos model physical flows with AI.</p>
+
+<div class="repo-card">
+  <h4><a href="https://github.com/AquarlisPrime/AI-Driven-Forecast-Resilience-Simulator-for-Supply-Chain">AquarlisPrime/AI-Driven-Forecast-Resilience-Simulator</a> <span class="stars">⭐ ~50</span></h4>
+  <div class="tags">
+    <span class="badge badge-blue">Python / Streamlit</span>
+    <span class="badge badge-purple">Supply Chain Digital Twin</span>
+  </div>
+  <p class="desc"><strong>AI-driven supply chain resilience simulator.</strong> Models complex supply networks, predicts demand, runs disruption scenarios, visualizes downstream risks, and performs cost-emissions-risk tradeoffs. Interactive Streamlit interface.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> The disruption scenario simulation is directly relevant — it shows what happens when a node (port, factory, shipping lane) fails. TirraMind's graph could feed into such a simulator: GNN predicts disruption probability → simulator estimates downstream impact → combined signal for trading. The Streamlit interface is a good reference for TirraMind's own visualization.
+  </div>
+</div>
+
+<div class="repo-card">
+  <h4><a href="https://github.com/igetint3000/ChaosChain-AI">igetint3000/ChaosChain-AI</a> <span class="stars">⭐ ~20</span></h4>
+  <div class="tags">
+    <span class="badge badge-blue">Python</span>
+    <span class="badge badge-purple">Monte Carlo + Chaos</span>
+  </div>
+  <p class="desc"><strong>ChaosChain-AI — supply chain simulator with chaotic demand modeling.</strong> Combines chaotic demand models with Monte Carlo simulations. Real-time monitoring and predictive analytics.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> The chaotic demand modeling is interesting — financial markets exhibit chaotic behavior, and methods for modeling chaotic supply chains may transfer to modeling chaotic price dynamics. Niche but conceptually valuable.
+  </div>
+</div>
+
+<!-- ================================================================== -->
+<!-- CATEGORY 9: QUANT PLATFORMS & CURATED LISTS -->
+<!-- ================================================================== -->
+<h2 id="cat9">9. Quantitative Finance Platforms &amp; Curated Lists</h2>
+<p>Meta-resources that map the broader quant finance open-source landscape.</p>
+
+<div class="repo-card">
+  <h4><a href="https://github.com/firmai/financial-machine-learning">firmai/financial-machine-learning</a> <span class="stars">⭐ ~7,000</span></h4>
+  <div class="tags">
+    <span class="badge badge-blue">Curated List</span>
+    <span class="badge badge-purple">Comprehensive</span>
+  </div>
+  <p class="desc"><strong>Curated list of practical financial ML tools.</strong> Covers trading (deep learning, RL, other models, data processing), portfolio management (selection, optimization, factor/risk analysis), techniques (unsupervised, textual), derivatives, fixed income, and alternative finance. Extensive wiki.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> The "Alternative Finance" section is most relevant — it covers non-traditional data sources and methods. The data processing techniques section has useful patterns for financial time series. Overall, this list confirms TirraMind's positioning: most tools focus on price/volume data; almost none combine physical-world data (maritime, satellite, supply chain) with financial data in a GNN.
+  </div>
+</div>
+
+<div class="repo-card">
+  <h4><a href="https://github.com/wilsonfreitas/awesome-quant">wilsonfreitas/awesome-quant</a> <span class="stars">⭐ ~19,000</span></h4>
+  <div class="tags">
+    <span class="badge badge-blue">Curated List</span>
+    <span class="badge badge-purple">Comprehensive Quant</span>
+  </div>
+  <p class="desc"><strong>The definitive curated list of quantitative finance.</strong> Covers data sources, trading frameworks, backtesting, risk management, derivatives pricing, and more. 19k stars — the standard reference.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> Essential reference for the broader quant ecosystem. The data sources section lists APIs and datasets TirraMind may not yet cover. The backtesting frameworks section is useful for building TirraMind's strategy evaluation layer. Confirms that most quant tools are price-data-centric — TirraMind's alternative data focus is genuinely differentiated.
+  </div>
+</div>
+
+<div class="repo-card">
+  <h4><a href="https://github.com/nautechsystems/nautilus_trader">nautechsystems/nautilus_trader</a> <span class="stars">⭐ ~4,500</span></h4>
+  <div class="tags">
+    <span class="badge badge-blue">Rust + Python</span>
+    <span class="badge badge-purple">Production Trading</span>
+  </div>
+  <p class="desc"><strong>Production-grade, Rust-native event-driven trading framework.</strong> Spans research, deterministic simulation, and live execution. Python for control, Rust for performance. High-frequency capable.</p>
+  <div class="tirra-take">
+    <strong>🎯 TirraMind Take:</strong> If/when TirraMind moves from prediction to execution, NautilusTrader is the leading open-source execution framework. Its event-driven architecture and deterministic simulation are gold-standard. For now, it's aspirational — TirraMind should focus on prediction quality first. But the architecture is worth studying for the pipeline design.
+  </div>
+</div>
+
+<!-- ================================================================== -->
+<!-- SYNTHESIS -->
+<!-- ================================================================== -->
+<h2 id="synthesis">10. Synthesis: Top Ideas for TirraMind</h2>
+
+<div class="highlight-box">
+  <h4>🥇 Tier 1 — High Impact, Low Effort (Do Now)</h4>
+  <ol>
+    <li><strong>Integrate edgartools</strong> for SEC filing extraction → replace/augment <code>insider_filings.py</code> and <code>form144.py</code> with 13F holdings, 8-K events, XBRL financials as graph features.</li>
+    <li><strong>Adopt Neural-GC or TCDF</strong> as causal discovery backends → replace or augment current Granger causality in <code>agent/convergence/</code>. TCDF's time-delay discovery is uniquely valuable.</li>
+    <li><strong>Mine atlas-bear/osint-tools</strong> for new maritime/supply chain data sources → expand <code>ais_vessel.py</code> with port congestion, container tracking, crew change data.</li>
+    <li><strong>Adopt OSIRIS's viewport-aware loading + layerFetchedRef caching</strong> → reduce pipeline API calls by 60-80%.</li>
+  </ol>
+</div>
+
+<div class="highlight-box">
+  <h4>🥈 Tier 2 — High Impact, Medium Effort (Plan Next)</h4>
+  <ol start="5">
+    <li><strong>Build a MapLibre GL visualization frontend</strong> for TirraMind's world model → render entity nodes, edge relationships, attention weights, and conflict zones on a GPU-accelerated map. Borrow OSIRIS's architecture.</li>
+    <li><strong>Integrate Jon-Becker/prediction-market-analysis dataset</strong> (36 GiB) → deepen Polymarket signals with blockchain-level trade data and cross-platform aggregation (Kalshi, Metaculus).</li>
+    <li><strong>Add satellite imagery analysis capability</strong> → nightlight intensity for GDP nowcasting, crop health for agricultural commodities, parking lot analysis for retail. Use satellite-image-deep-learning as reference.</li>
+    <li><strong>Implement BSTS spike-and-slab nowcasting</strong> → lightweight Bayesian layer for automatic predictor selection across 51+ data sources.</li>
+  </ol>
+</div>
+
+<div class="highlight-box">
+  <h4>🥉 Tier 3 — Strategic, Longer-Term (Research &amp; Evaluate)</h4>
+  <ol start="9">
+    <li><strong>Evaluate FinGPT for unstructured→structured conversion</strong> → LLM extracts events/sentiment from news/filings → feeds into TirraMind's graph as edges and node features.</li>
+    <li><strong>Study THGNN as a baseline</strong> → implement their HeteGAT architecture on TirraMind's data to establish a published-method baseline. TirraMind should beat it given richer data.</li>
+    <li><strong>Adopt StreamAD for data quality monitoring</strong> → detect anomalous data feeds before they corrupt GNN training.</li>
+    <li><strong>Study NautilusTrader architecture</strong> for future execution layer → event-driven design, deterministic simulation, Rust performance.</li>
+    <li><strong>Build supply chain disruption simulator</strong> → GNN predicts disruption probability → simulator estimates downstream impact → combined trading signal.</li>
+  </ol>
+</div>
+
+<!-- ================================================================== -->
+<h2>Key Insight: TirraMind's Moat Is Real</h2>
+
+<div class="card relevance-high">
+  <p>After surveying 20+ open-source repos across GNN-for-finance, alternative data, causal discovery, and quant platforms, one finding stands out:</p>
+  <p style="font-size:1.1rem; margin:1rem 0;"><strong>No existing open-source project combines all of TirraMind's data domains into a single heterogeneous temporal graph.</strong></p>
+  <ul>
+    <li>THGNN does heterogeneous GNN on stocks only — no maritime, no satellite, no supply chain, no regulatory.</li>
+    <li>OSIRIS does real-time OSINT visualization — but no prediction, no graph learning, no causal discovery.</li>
+    <li>FinGPT does financial NLP — but no structured heterogeneous data fusion.</li>
+    <li>Neural-GC/TCDF do causal discovery — but on homogeneous time series, not heterogeneous graphs.</li>
+    <li>Prediction market tools analyze crowd probabilities — but don't fuse them with physical-world data.</li>
+  </ul>
+  <p>The integration of <strong>51+ heterogeneous data sources × temporal GNN × Bayesian fusion × causal discovery × continuous learning</strong> is genuinely novel in the open-source landscape. The individual components exist. The integration does not.</p>
+  <p style="color: var(--green); font-weight: 600;">This is TirraMind's moat. Build it.</p>
+</div>
+
+<footer>
+  <p>Research note — <code>osiris_survey.html</code> | Phase: exploration | Topic: osint-survey | Layer: surveillance</p>
+  <p>Part of the open-source repository survey for TirraMind enhancement. 20+ repos surveyed across 9 categories.</p>
+  <p>Related: <code>osiris_research.html</code> (deep-dive on OSIRIS), <code>[[tirramind_structure]]</code> (project metrics)</p>
+</footer>
+
+</body>
+</html>

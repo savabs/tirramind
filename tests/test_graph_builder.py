@@ -600,3 +600,19 @@ class TestGraphBuilder:
         assert isinstance(edge_types, list)
         assert all(isinstance(t, str) for t in node_types)
         assert all(isinstance(t, tuple) and len(t) == 3 for t in edge_types)
+
+
+def test_reference_time_ignores_corrupt_future_timestamps():
+    import time
+
+    from agent.models.gnn.graph_builder import _reference_time
+
+    now = time.time()
+    obs = [
+        {"observed_at": now - 86400},
+        {"observed_at": now - 3600},
+        {"observed_at": 222462959400.0},  # year ~9019 gov_contracts bug
+    ]
+    ref = _reference_time(obs)
+    assert ref <= now + 86400
+    assert abs(ref - (now - 3600)) < 5.0

@@ -332,9 +332,9 @@ class TestDailyCollectionStructure:
         n = dag.nodes["fetch_ais_vessel"]
         assert n.operator == "ais_vessel_tracking"
         assert n.table_name == "ais_vessel_tracking"
-        assert n.params["mode"] == "area"
-        assert n.params["area"] == "full_baltic"
-        assert n.params["limit"] == 500
+        assert n.params["mode"] == "area_daily_snapshot"
+        assert n.params["area_name"] == "full_baltic"
+        assert n.params["ship_type"] == "tanker"
         assert n.timeout == 180
         assert n.retries == 2
 

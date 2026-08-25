@@ -1,0 +1,31 @@
+# MP-1: EIA inventory regime shift + CFTC commercial/speculator divergence
+id: eia_regime_cftc
+micro_playground: MP-1
+description: >
+  US petroleum inventory build/draw regime change combined with CFTC
+  managed-money positioning extreme on Brent (Atlantic benchmark).
+readout_instrument: CL=F
+evaluation_window_days: 5
+max_chain_lag_days: 21
+min_chain_score: 1.5
+nodes:
+  - id: eia_inventory_regime
+    label: US crude stocks weekly change
+    source_tool: energy_supply
+    observation_type: petroleum_inventory
+    metric: weekly_change
+    value_filter:
+      series: crude_excl_spr
+    min_zscore: 1.5
+    lag_days: [0, 14]
+    source_url: https://www.eia.gov/petroleum/supply/weekly/
+  - id: cftc_wti_extreme
+    label: WTI-PHYSICAL managed-money net positioning
+    source_tool: cftc
+    observation_type: futures_positioning
+    metric: mm_net
+    instrument_ticker: CL=F
+    direction: below
+    min_zscore: 1.2
+    lag_days: [0, 21]
+    source_url: https://www.cftc.gov/MarketReports/CommitmentsofTraders/index.htm

@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Checkpoint 2026-06-08 — DATA_FIX + Full Baseline Audit</title>
+</head>
+<body>
+  <h1>Checkpoint 2026-06-08 — DATA_FIX + Full Baseline Audit</h1>
+  <p><strong>Session:</strong> Canonical forward-return labels, full honest baseline (IC-only), data label audit.</p>
+
+  <h2>DATA_FIX changes landed</h2>
+  <ul>
+    <li><code>agent/quant/forward_returns.py</code> — canonical 21d label owner</li>
+    <li><code>forward_return_vector_for_date()</code> — calendar-date ↔ observation-timestamp alignment</li>
+    <li><code>scripts/data_label_audit.py</code> — backfill shift, label mismatch, leakage, shuffled-label</li>
+    <li><code>scripts/honest_baseline_audit.py</code> — IC-only mode + feature cache (4 min full run)</li>
+    <li><code>scripts/phase40_gnn_backtest.py</code> — IC targets aligned to trainer labels</li>
+  </ul>
+
+  <h2>Data label audit (full)</h2>
+  <table border="1" cellpadding="6">
+    <tr><th>Check</th><th>Result</th></tr>
+    <tr><td>H1 backfill shift (current vs bak_20260512)</td><td><strong>NO SHIFT</strong> — Spearman=1.0, 66,361 shared keys, mean|diff|=0</td></tr>
+    <tr><td>Label mismatch (simple vs mean-daily)</td><td>ρ=0.944 — old phase40 IC used wrong target</td></tr>
+    <tr><td>Temporal leakage (H6)</td><td>0% in sampled 168h windows</td></tr>
+    <tr><td>Shuffled-label (initial)</td><td>False positive — in-sample Ridge bug; fixed to OOS holdout</td></tr>
+  </table>
+
+  <h2>Full honest baseline (canonical labels, 40 folds, IC-only)</h2>
+  <table border="1" cellpadding="6">
+    <tr><th>Strategy</th><th>Mean IC</th><th>t-stat</th><th>Folds</th><th>Gate</th></tr>
+    <tr><td>RawPrice-PurgedRanker</td><td><strong>-0.0325</strong></td><td>-1.15</td><td>35</td><td>FAIL</td></tr>
+    <tr><td>Momentum-Rank</td><td><strong>+0.0741</strong></td><td>+2.00</td><td>39</td><td><strong>PASS</strong></td></tr>
+  </table>
+  <p>Artifacts: <code>.tirra_pipeline/honest_baseline_audit_full.json</code>,
+  <code>.tirra_pipeline/data_label_audit_full.json</code></p>
+
+  <h2>Interpretation</h2>
+  <ul>
+    <li><strong>H1 refuted</strong> for May-12→Jun-4 backup: forward-return labels identical. V52 regression is not from this backup delta.</li>
+    <li><strong>Label alignment mattered:</strong> smoke IC +0.022 (mean-daily) vs full canonical momentum IC +0.074.</li>
+    <li><strong>Signal exists</strong> in simple momentum factor (1m price feature) — passes Phase 41b gate on canonical labels.</li>
+    <li><strong>Ridge on 9 price features</strong> does not extract signal (IC negative) — multivariate raw head ≠ momentum alone.</li>
+    <li><strong>Next:</strong> Phase B two-stage OR momentum-centric return head; re-eval V72 GNN on aligned phase40 IC.</li>
+  </ul>
+
+  <h2>Runtime notes</h2>
+  <ul>
+    <li>Full walk-forward backtest: &gt;56 min stuck (killed). Use <code>--ic-only</code> (default) + feature cache → ~4 min local CPU.</li>
+    <li>Kaggle CPU fallback: <code>scripts/kaggle_honest_baseline.py</code> if local too heavy.</li>
+  </ul>
+
+  <h2>Related</h2>
+  <ul>
+    <li>[[gnn_architecture_overhaul]]</li>
+    <li>[[checkpoint_2026-06-07_v72_architecture_handoff]]</li>
+    <li>[[training_stagnation_root_cause]]</li>
+    <li>[[gnn_architecture_overhaul_task]]</li>
+  </ul>
+</body>
+</html>

@@ -1,3 +1,5 @@
+> Legacy reference. Use Cursor skill `/session-start` — canonical: `.cursor/skills/session-start/SKILL.md`
+
 ---
 description: "Cold-start a new session: load context from the knowledge graph without re-reading the entire codebase."
 ---

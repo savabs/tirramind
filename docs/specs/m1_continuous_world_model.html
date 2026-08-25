@@ -1,0 +1,397 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<title>M1: Continuous-Time Heterogeneous World Model</title>
+<style>
+:root{--bg:#0d1117;--s:#161b22;--b:#30363d;--t:#c9d1d9;--m:#8b949e;--a:#58a6ff;--g:#3fb950;--o:#d2991d;--p:#a371f7;--r:#f85149}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,sans-serif;background:var(--bg);color:var(--t);line-height:1.7;max-width:1080px;margin:0 auto;padding:2rem}
+h1{font-size:1.7rem;color:#fff;margin-bottom:.4rem}
+h2{font-size:1.1rem;color:var(--a);margin:2rem 0 .7rem;border-bottom:1px solid var(--b);padding-bottom:.3rem}
+h3{font-size:.97rem;color:var(--g);margin:1.2rem 0 .4rem}
+h4{font-size:.9rem;color:var(--o);margin:.9rem 0 .3rem}
+p{margin:.4rem 0;font-size:.88rem}
+code{font-family:monospace;font-size:.82rem;background:#1c2128;padding:.1rem .3rem;border-radius:3px}
+pre{background:#0a0e14;border:1px solid var(--b);border-radius:5px;padding:.9rem;overflow-x:auto;font-size:.78rem;line-height:1.5;margin:.7rem 0;white-space:pre}
+.math{background:#0a1020;border-left:3px solid var(--a);padding:.7rem .9rem;font-family:monospace;font-size:.8rem;margin:.7rem 0;border-radius:0 4px 4px 0;white-space:pre}
+.comp{border-left:3px solid var(--g);background:#0d1a10;padding:.7rem .9rem;margin:.4rem 0;border-radius:0 4px 4px 0}
+.blk{background:var(--s);border:1px solid var(--b);border-radius:6px;padding:.9rem 1.1rem;margin:.7rem 0}
+.warn{background:#1a1a08;border:1px solid #e3b341;border-radius:4px;padding:.6rem .9rem;margin:.5rem 0;font-size:.84rem}
+table{width:100%;border-collapse:collapse;font-size:.82rem;margin:.7rem 0}
+th,td{padding:.45rem .65rem;border:1px solid var(--b);text-align:left}
+th{background:var(--s);color:var(--a)}
+tr:nth-child(odd){background:#0d1117}tr:nth-child(even){background:var(--s)}
+ol,ul{margin:.4rem 0 .4rem 1.4rem;font-size:.87rem}li{margin:.2rem 0}
+footer{margin-top:2.5rem;padding-top:.8rem;border-top:1px solid var(--b);color:var(--m);font-size:.76rem}
+</style></head><body>
+<header style="border-bottom:1px solid var(--b);padding-bottom:1rem;margin-bottom:1.3rem">
+<h1>&#127769; M1 Spec: Continuous-Time Heterogeneous World Model</h1>
+<p style="color:var(--m);font-size:.86rem">TirraMind Moonshot &mdash; Neural SDE on a Heterogeneous Event Graph &mdash; 2026-05-27</p>
+<div style="margin-top:.6rem">
+<span style="background:#1a1a3a;color:var(--p);border:1px solid var(--p);padding:.1rem .5rem;border-radius:9px;font-size:.72rem;font-weight:700">MOONSHOT</span>
+<span style="background:#1a2a3a;color:var(--a);padding:.1rem .5rem;border-radius:9px;font-size:.72rem;font-weight:700">RES effort</span>
+<span style="background:#2a1a3a;color:var(--p);padding:.1rem .5rem;border-radius:9px;font-size:.72rem;font-weight:700">PhD-novel synthesis</span>
+</div></header>
+
+<h2>1. Problem Statement</h2>
+<p>TirraMind currently processes the world in discrete snapshots: events are bucketed into fixed windows,
+processed by HetTGN, and embeddings used for return prediction. Three structural limits:</p>
+<div class="blk">
+<h4>Limitation 1 &mdash; Discretization Error</h4>
+<p>AIS pings arrive every 5 min; PMI arrives monthly. Both are forced into the same 86400-second window.
+Two events at t=0 and t=86399 are treated as simultaneous. The model cannot learn from event <em>timing</em>.</p>
+<h4>Limitation 2 &mdash; Deterministic Point Embeddings</h4>
+<p>HetTGN produces point embeddings with no uncertainty. When a ship goes dark, there is no mechanism to
+represent growing positional uncertainty &mdash; the last known embedding is used unchanged forever.</p>
+<h4>Limitation 3 &mdash; Phase 9 World Model Sees Only Aggregates</h4>
+<p>The Phase 9 Bayesian world model (<code>docs/specs/world_model_spec.md</code>) operates on daily/weekly
+EngineeredFeatures. It cannot represent entity-level dynamics at sub-daily resolution.</p>
+</div>
+<p><strong>M1 solves all three</strong> by replacing the discretized GNN pass with a Neural SDE that
+evolves continuously, conditioned on the heterogeneous graph, with explicit uncertainty via the diffusion term.</p>
+
+<h2>2. Relationship to Phase 9</h2>
+<div class="blk">
+<table>
+<tr><th>Dimension</th><th>Phase 9 (Bayesian DAG + Kalman)</th><th>M1 (Neural SDE)</th></tr>
+<tr><td>Abstraction</td><td>Aggregate economic variables (PMI, credit spreads)</td><td>Entity-level continuous dynamics (vessel, company, port)</td></tr>
+<tr><td>Math</td><td>DAG belief propagation + Kalman filter</td><td>Neural SDE: dX = f(X,G)dZ + g(X)dW</td></tr>
+<tr><td>Uncertainty</td><td>Gaussian posteriors (Kalman covariance matrix)</td><td>Stochastic trajectories from diffusion term</td></tr>
+<tr><td>Inputs</td><td>EngineeredFeatures table (daily aggregates)</td><td>Raw event stream (timestamped, entity-level)</td></tr>
+<tr><td>Outputs</td><td>Regime probs + continuous latent state vector</td><td>Entity embedding distributions X(t) ~ p(X)</td></tr>
+<tr><td>Time resolution</td><td>Daily / weekly</td><td>Continuous (event-driven)</td></tr>
+</table>
+<p style="margin-top:.7rem"><strong>Composition (long-term):</strong> M1 entity embedding distributions
+replace hand-crafted EngineeredFeatures as inputs to the Phase 9 Kalman filter. M1 is not a replacement
+&mdash; it is the entity-level foundation that Phase 9 aggregates over.</p>
+</div>
+
+<h2>3. Mathematical Formulation</h2>
+<h3>3.1 The Core Equation</h3>
+<div class="math">dX_i(t) = f_theta( X_i(t), {X_j(t)}_{j in N(i)}, Z(t) ) dZ(t)    [CDE drift]
+         + g_phi( X_i(t) ) dW_i(t)                                [SDE diffusion]
+
+X_i(t) in R^d    -- latent state of entity i at continuous time t
+N(i)             -- heterogeneous neighbours of entity i in graph G(t)
+Z(t)             -- control path: built from event stream via Hawkes + signatures
+f_theta          -- drift network: HGT attention + Mamba SSM
+g_phi            -- diffusion network: diagonal MLP (start simple)
+W_i(t)           -- independent Brownian motion per entity
+d = 64           -- matches existing TrainerConfig hidden_dim</div>
+
+<h3>3.2 The Control Path Z(t): Three-Stage Construction</h3>
+<p>Z(t) is the driver of the CDE. Built from the event stream in three stages:</p>
+<div class="blk">
+<h4>Stage A &mdash; Temporal Skeleton via Neural Hawkes</h4>
+<p>The LSTM decay state h_hawkes(t_k) from <code>neural_hawkes.py</code> encodes how excited
+the system is at each event time. This replaces naive linear interpolation with a learned temporal process.</p>
+<div class="math">lambda*_k(t) = softplus( W_out * h(t) + b_out )_k
+h(t) = h_n * exp( -softplus(w_decay) * (t - t_n) )     [decay between events]
+h_n  = LSTM( concat(TypeEmb[k_n], delta_t_n), h_{n-1} )
+
+h_hawkes(t_k) becomes a knot in Z(t).</div>
+
+<h4>Stage B &mdash; Path Shape via Log-Signatures</h4>
+<p>Project each event message to R^4, then compute the depth-3 log-signature of the projected path.
+Log-signatures encode area, curvature, and third-order path texture &mdash; invariant to time
+reparametrization, invisible to RNNs.</p>
+<div class="math">LogSig depth-3 for d=4 input: 4 + 16 + 64 = 84 features per knot
+(iisignature C extension; fallback to depth-2 = 20 features if unavailable)
+
+Signatures capture: did the path loop? oscillate? monotone? asymmetric?
+Two identical arrival/departure times but different intermediate paths
+produce different signatures -- this is the information RNNs miss.</div>
+
+<h4>Stage C &mdash; Cubic Spline Interpolation (torchcde)</h4>
+<div class="math">knot_k = cat( [h_hawkes(t_k), log_sig_k] )    shape: (d_hawkes + 84,) = (148,)
+Z(t)   = CubicHermiteSpline( knots, times )   continuous, differentiable
+dZ/dt  = Z'(t)                                available analytically from spline coefficients
+d_z    = 148                                  control path dimension</div>
+</div>
+
+<h3>3.3 The Drift Network f_theta</h3>
+<div class="math">Step 1  Graph aggregation (HGT attention):
+        m_i(t) = HGT_Attention( X_i(t), {X_j(t)}_{j in N(i)} )    --> R^d
+
+Step 2  Token construction:
+        tok_i(t) = Linear( [X_i(t) || m_i(t) || dZ/dt] )           --> R^{d_mamba}
+
+Step 3  Mamba sequential drift (long-range memory):
+        out = Mamba( [tok_i(t_0), ..., tok_i(t_k)] )[-1]           --> R^{d_mamba}
+
+Step 4  Project to drift matrix:
+        F = Linear(out)                                             --> R^{d x d_z}
+        dX_drift = F @ (Z(t+h) - Z(t))                             [CDE increment]</div>
+
+<h3>3.4 The Diffusion Network g_phi</h3>
+<table>
+<tr><th>Option</th><th>Form</th><th>Params</th><th>When</th></tr>
+<tr><td><strong>A &mdash; Diagonal (start)</strong></td><td>g_phi(X) = diag(softplus(MLP(X)))</td><td>O(d)</td><td>Phase E of curriculum. Independent noise per entity dim.</td></tr>
+<tr><td><strong>B &mdash; Low-rank</strong></td><td>g_phi(X) = L(X) in R^{d x r}, r&lt;&lt;d</td><td>O(d*r)</td><td>Correlated noise within entity. After A is stable.</td></tr>
+<tr><td><strong>C &mdash; Graph-conditional</strong></td><td>g_phi(X, G) uses neighbour states</td><td>O(d^2)</td><td>Crisis contagion modelling. Future extension only.</td></tr>
+</table>
+
+<h3>3.5 Euler-Maruyama Solver (Implementation)</h3>
+<div class="math">X_{t+h} = X_t  +  F(X_t, G_t, Z) @ (Z(t+h) - Z(t))    [CDE drift]
+                +  diag(g_phi(X_t)) * sqrt(h) * eps_t         [SDE noise: eps ~ N(0,I)]
+
+Step size h = 0.1 * median_inter_event_time   (adaptive)
+Milstein correction (second implementation):
+  adds 0.5 * g * (dg/dX) * (eps^2 - 1) * h    reduces bias from O(h) to O(h^2)</div>
+
+<h2>4. Prior Art and Novelty Analysis</h2>
+<table>
+<tr><th>Paper</th><th>Venue</th><th>Contribution</th><th>Gap vs M1</th></tr>
+<tr><td>Neural ODEs &mdash; Chen et al.</td><td>NeurIPS 2018</td><td>dX = f(X,t)dt, continuous depth/time, adjoint method</td><td>No graph, no stochasticity, no event control path</td></tr>
+<tr><td>Neural CDEs &mdash; Kidger et al.</td><td>NeurIPS 2020</td><td>dX = f(X)dZ, handles irregular time series natively</td><td>No graph structure, no stochasticity, deterministic Z(t)</td></tr>
+<tr><td>Neural SDEs &mdash; Li et al.</td><td>AISTATS 2020</td><td>dX = f(X)dt + g(X)dW, scalable adjoint gradients</td><td>No graph, no CDE control path, no event timing</td></tr>
+<tr><td>Latent Neural SDEs &mdash; Kidger et al.</td><td>ICML 2021</td><td>SDE as latent variable model, ELBO training, torchsde</td><td>Homogeneous graphs only, no Hawkes, no path signatures</td></tr>
+<tr><td>Graph Neural SDE &mdash; Ma et al.</td><td>ICLR 2023</td><td>SDE drift parameterized by GCN on homogeneous graph</td><td>GCN not HGT; no CDE; no Hawkes; no heterogeneous types</td></tr>
+<tr><td>TGN &mdash; Rossi et al.</td><td>NeurIPS 2020</td><td>Temporal graph network with GRU memory, event stream</td><td>Discrete time windows, no SDE, GRU bottleneck</td></tr>
+<tr><td>Neural Hawkes &mdash; Mei &amp; Eisner</td><td>NeurIPS 2017</td><td>LSTM-based multivariate temporal point process</td><td>No graph conditioning; used standalone not as CDE driver</td></tr>
+<tr><td>Path Signatures &mdash; Chevyrev &amp; Kormilitzin</td><td>arXiv 2016</td><td>Universal feature map for sequential paths (rough paths)</td><td>Feature extraction only; not combined with SDE or graph</td></tr>
+<tr><td>Mamba &mdash; Gu &amp; Dao</td><td>ICLR 2024</td><td>Selective SSM, linear-time sequence modeling</td><td>Standalone sequence model; not used as SDE drift parameterizer</td></tr>
+<tr><td><strong>M1 &mdash; TirraMind</strong></td><td>2026</td><td>Neural SDE on <em>heterogeneous</em> event graph: Hawkes control path, path signature features, Mamba drift, HGT attention</td><td><strong>All four combinations are new. No known prior work.</strong></td></tr>
+</table>
+<p style="margin-top:.7rem"><strong>Four specific novelty claims:</strong></p>
+<ol>
+<li><strong>Heterogeneous node types in a Neural SDE:</strong> All prior graph SDE work uses homogeneous GCN. HGT with type-specific multi-head attention inside the SDE drift function is genuinely new.</li>
+<li><strong>Hawkes process as control path driver:</strong> Prior Neural CDEs interpolate observed values deterministically. In M1, the control path Z(t) timing is a <em>learned</em> probabilistic process driven by event excitation patterns.</li>
+<li><strong>Path signatures as the control path feature map:</strong> Combining rough path theory (Lyons 1998) with Neural CDEs: signatures encode path shape; the CDE integrates against the shape-enriched path rather than raw values.</li>
+<li><strong>Mamba as in-solver drift parameterizer:</strong> Mamba's selective state transitions give the drift function long-range event memory (O(n) cost) at each solver step, instead of truncated attention O(n^2).</li>
+</ol>
+
+<h2>5. Component Integration Map</h2>
+<p>All five components already exist. M1 is the synthesis layer that wires them:</p>
+<div class="comp">
+<h4>Component 1 &mdash; Neural Hawkes &mdash; <code>agent/convergence/neural_hawkes.py</code></h4>
+<p><strong>M1 role:</strong> Produces h_hawkes(t_k) at each event time &mdash; the temporal skeleton of Z(t).
+Encodes how excited the system is at each moment.</p>
+<p><strong>Current state:</strong> _predict() returns intensity predictions. The LSTM hidden state h(t)
+is computed internally but not exported to callers.</p>
+<p><strong>Delta:</strong> Add <code>get_hidden_sequence(events) -> Tensor(n, d_hawkes)</code> that
+exports h(t_k) for each event k without running the intensity head. ~15 lines.</p>
+</div>
+<div class="comp">
+<h4>Component 2 &mdash; Path Signatures &mdash; new <code>agent/models/gnn/signature_path.py</code></h4>
+<p><strong>M1 role:</strong> Encodes shape of the event path between Hawkes knots. Two ships with
+identical event times but different intermediate trajectories have different signatures.</p>
+<p><strong>Current state:</strong> Signatory/iisignature referenced in TS2Vec but no standalone path
+signature builder exists in the codebase.</p>
+<p><strong>Delta:</strong> New <code>SignaturePathBuilder</code> class (~100 lines): project messages
+to R^4, compute depth-3 log-signature via iisignature, return (n, 84) tensor. Manual depth-2
+fallback (20 features) if iisignature not installed.</p>
+</div>
+<div class="comp">
+<h4>Component 3 &mdash; Neural CDE &mdash; <code>agent/models/gnn/cde_encoder.py</code></h4>
+<p><strong>M1 role:</strong> Integration engine. torchcde.cdeint(Z, f_theta, X_0, t_span) performs
+the CDE solve. Returns X(T) &mdash; the updated entity state.</p>
+<p><strong>Current state:</strong> CDEMemoryEncoder wraps torchcde with a self-contained CDEFunc
+that only sees X_i. No graph context, no Mamba.</p>
+<p><strong>Delta:</strong> New <code>HeterogeneousCDEFunc(nn.Module)</code> (~80 lines) that accepts
+(X_i, graph_message, Z_derivative) and calls Mamba drift inside the solver loop.</p>
+</div>
+<div class="comp">
+<h4>Component 4 &mdash; Mamba Encoder &mdash; <code>agent/models/gnn/mamba_encoder.py</code></h4>
+<p><strong>M1 role:</strong> Parameterizes drift matrix F at each solver step. Selective state allows
+the drift to ignore routine pings and amplify signal events across arbitrarily long histories.</p>
+<p><strong>Current state:</strong> MambaMemoryEncoder returns a scalar memory vector. No drift matrix
+output format exists.</p>
+<p><strong>Delta:</strong> Add <code>get_drift_matrix(token_seq) -> Tensor(d, d_z)</code> method (~25 lines).
+Reuses existing Mamba forward pass; changes only the output projection shape.</p>
+</div>
+<div class="comp">
+<h4>Component 5 &mdash; HetTGN + HGT &mdash; <code>agent/models/gnn/het_tgn.py</code></h4>
+<p><strong>M1 role:</strong> Graph-conditioned neighbourhood message m_i(t) = HGT(X_i, {X_j}). This
+is the G(t) term &mdash; which neighbours matter now, and how much.</p>
+<p><strong>Current state:</strong> AttentionCapturingHGTConv already exports attention weights. Can be
+called with arbitrary X(t) node features at any time t.</p>
+<p><strong>Delta: None for correctness.</strong> Performance optimization later: cache m_i between
+events; only recompute when a neighbour fires a new event.</p>
+</div>
+<div class="comp">
+<h4>New Component &mdash; Diffusion Head &mdash; <code>agent/models/gnn/diffusion_head.py</code></h4>
+<p><strong>M1 role:</strong> g_phi(X_i) = diag(softplus(MLP(X_i))). Per-dimension noise scale.
+During training: noise eps ~ N(0,I) scaled by g output and sqrt(dt). During inference: g output
+used as uncertainty estimate only; noise is zero for point prediction.</p>
+<p><strong>Delta:</strong> New file ~60 lines. Simple 2-layer MLP, softplus output, minimum floor 0.001.</p>
+</div>
+
+<h2>6. Training Strategy</h2>
+<h3>6.1 Multi-Task Loss</h3>
+<div class="math">L_total = lambda_ret * L_return    +  lambda_evt * L_hawkes
+        + lambda_kl  * KL_term      +  lambda_obs  * L_obs
+
+L_return  = Huber( predict_return(X_i(T)), y_i )              [existing head]
+L_hawkes  = CrossEntropy( lambda*_k(t_i), k_i )               [existing NHP]
+KL_term   = 0.5 * sum( sigma^2 + mu^2 - log(sigma^2) - 1 )   [diagonal Gaussian KL]
+L_obs     = MSE( predict_value(X_i(t)), obs_value )           [reconstruction]
+
+Weights: lambda_ret=1.0, lambda_evt=0.3, lambda_kl=0->0.01 (anneal), lambda_obs=0.5</div>
+
+<h3>6.2 Gradient Method: Adjoint SDE</h3>
+<div class="blk">
+<table>
+<tr><th>Method</th><th>Memory cost</th><th>Bias</th><th>Verdict</th></tr>
+<tr><td>Backprop through solver (BPTT)</td><td>O(n * d^2)</td><td>None</td><td>Only for &lt;50 events per entity per window</td></tr>
+<tr><td><strong>Adjoint method &mdash; Li et al. 2020</strong></td><td>O(d)</td><td>Float32 rounding only</td><td><strong>Use this. torchdiffeq already a dependency.</strong></td></tr>
+<tr><td>Score function / ELBO &mdash; Kidger 2021</td><td>O(d)</td><td>High variance</td><td>Add later when diffusion term dominates</td></tr>
+</table>
+<p>Adjoint method stores only the final state and re-integrates backwards to compute gradients.
+O(d) memory vs O(n*d) for BPTT. The SDE noise is added as a Euler-Maruyama correction on top of
+the ODE adjoint &mdash; valid approximation when sigma &lt;&lt; mu (early training).</p>
+</div>
+
+<h3>6.3 Five-Phase Training Curriculum (Mandatory for Stability)</h3>
+<div class="warn"><strong>Warning:</strong> Training all components simultaneously from scratch will
+diverge. The CDE solver gradient is extremely sensitive to drift function initialisation.
+Starting from the existing trained HetTGN checkpoint is mandatory.</div>
+<table>
+<tr><th>Phase</th><th>Active / unfrozen components</th><th>Epochs</th><th>Goal</th></tr>
+<tr><td><strong>A &mdash; Baseline</strong></td><td>HetTGN only (existing Kaggle checkpoint)</td><td>Pre-trained</td><td>Stable embeddings. lambda_kl = 0 throughout.</td></tr>
+<tr><td><strong>B &mdash; CDE Integration</strong></td><td>+ HeterogeneousCDEFunc (HetTGN frozen)</td><td>5&ndash;10</td><td>CDE learns to integrate HGT messages continuously between events.</td></tr>
+<tr><td><strong>C &mdash; Mamba Drift</strong></td><td>+ Mamba drift head (HetTGN + CDE frozen)</td><td>5&ndash;10</td><td>Mamba learns long-range event history for drift parameterization.</td></tr>
+<tr><td><strong>D &mdash; Hawkes Control Path</strong></td><td>Unfreeze all; add Hawkes + signature Z(t)</td><td>10&ndash;20</td><td>Full joint training. Event timing enters through the control path.</td></tr>
+<tr><td><strong>E &mdash; Diffusion Term</strong></td><td>+ DiffusionHead; anneal lambda_kl 0 to 0.01</td><td>5&ndash;10</td><td>Add stochasticity slowly to prevent KL collapse (beta-VAE schedule).</td></tr>
+</table>
+
+<h2>7. What Needs to Be Built (Delta)</h2>
+<h3>7.1 New Files</h3>
+<table>
+<tr><th>File</th><th>Purpose</th><th>Est. size</th></tr>
+<tr><td><code>agent/models/gnn/continuous_world_model.py</code></td><td>Main synthesis class: ContinuousWorldModel. Wires Hawkes, SignaturePathBuilder, HeterogeneousCDEFunc, MambaDrift, HGT, DiffusionHead into one forward(). Owns the Euler-Maruyama solver loop and curriculum-phase switching.</td><td>~350 lines</td></tr>
+<tr><td><code>agent/models/gnn/signature_path.py</code></td><td>SignaturePathBuilder: project messages to R^4, depth-3 log-signature via iisignature. Manual depth-2 fallback. Returns (n, 84) or (n, 20) tensor.</td><td>~100 lines</td></tr>
+<tr><td><code>agent/models/gnn/heterogeneous_cde_func.py</code></td><td>HeterogeneousCDEFunc(nn.Module): subclasses CDEFunc. Accepts (X_i, graph_messages, Z_deriv). Calls Mamba drift matrix. Used inside torchcde.cdeint().</td><td>~80 lines</td></tr>
+<tr><td><code>agent/models/gnn/diffusion_head.py</code></td><td>DiagonalDiffusionHead: 2-layer MLP with softplus + floor(0.001) output. Returns per-dimension noise scale g_phi(X).</td><td>~60 lines</td></tr>
+<tr><td><code>tests/test_continuous_world_model.py</code></td><td>Unit + integration tests: forward pass shapes, EM solver step, control path construction, gradient flow to Hawkes + Mamba, KL non-negativity, deterministic inference (noise=0).</td><td>~220 lines</td></tr>
+</table>
+
+<h3>7.2 Modifications to Existing Files</h3>
+<table>
+<tr><th>File</th><th>Change</th><th>Lines added</th></tr>
+<tr><td><code>agent/convergence/neural_hawkes.py</code></td><td>Add <code>get_hidden_sequence(events) -> Tensor(n, d_hawkes)</code> to NeuralHawkesEncoder. Exports LSTM h(t_k) for each event without running intensity head.</td><td>~15</td></tr>
+<tr><td><code>agent/models/gnn/mamba_encoder.py</code></td><td>Add <code>get_drift_matrix(token_seq) -> Tensor(d, d_z)</code> to MambaMemoryEncoder. Output projection shape changes from (d,) to (d * d_z,) then reshape.</td><td>~25</td></tr>
+<tr><td><code>agent/models/gnn/trainer.py</code></td><td>Add TrainerConfig fields: use_continuous_world_model (bool, default False), curriculum_phase (Literal["A","B","C","D","E"]), lambda_kl (float, annealed). Add ContinuousWorldModel instantiation and phase curriculum logic.</td><td>~60</td></tr>
+<tr><td><code>pyproject.toml</code></td><td>Add: torchsde&gt;=0.2, iisignature&gt;=0.24 (optional dep with fallback), ripser&gt;=0.6 (for Idea 15 TDA).</td><td>3</td></tr>
+</table>
+
+<h3>7.3 What Does NOT Need to Change</h3>
+<ul>
+<li><code>cde_encoder.py</code> &mdash; CDEMemoryEncoder reused as-is; only CDEFunc is replaced by HeterogeneousCDEFunc</li>
+<li><code>het_tgn.py</code> &mdash; AttentionCapturingHGTConv reused as-is; called from inside HeterogeneousCDEFunc</li>
+<li>HeteroMemory, prediction heads, graph builder &mdash; all unchanged</li>
+<li>Phase 9 world model &mdash; untouched in this implementation phase</li>
+<li>All existing tools, extractors, pipeline DAGs &mdash; untouched</li>
+</ul>
+
+<h2>8. Risks and Mitigations</h2>
+<div class="blk">
+<h4 style="color:var(--r)">Risk 1 &mdash; CDE Solver Instability (HIGH)</h4>
+<p>Drift function gradients explode when poorly initialised. The adjoint re-integration amplifies this.</p>
+<p><strong>Mitigations:</strong> (a) Mandatory Phase A start from pre-trained HetTGN checkpoint.
+(b) Clip drift matrix column norms to 1.0. (c) Five-phase curriculum &mdash; never train all
+components simultaneously. (d) Monitor solver step rejection rate; halt if &gt;30%.</p>
+
+<h4 style="color:var(--r)">Risk 2 &mdash; HGT Call at Every Solver Step is Slow (HIGH for wall-clock)</h4>
+<p>With 100 Euler steps per window and 5ms per HGT call: 500ms per entity per window &rarr; 10x slowdown.</p>
+<p><strong>Mitigations:</strong> (a) Cache m_i(t) between events &mdash; only recompute when a
+neighbour fires a new event. (b) During solver sub-steps between event times: use cached m_i.
+(c) Pre-aggregate top-K neighbours once per window with frozen embeddings for sub-step interpolation.</p>
+
+<h4 style="color:var(--o)">Risk 3 &mdash; KL Collapse in Diffusion Term (MEDIUM)</h4>
+<p>g_phi collapses to zero &rarr; SDE degenerates to CDE, KL provides no gradient signal.</p>
+<p><strong>Mitigations:</strong> (a) Anneal lambda_kl 0 to 0.01 over 10 epochs (beta-VAE schedule).
+(b) Minimum noise floor: softplus(MLP) + 0.001. (c) Alert if mean KL &lt; 0.01 after Phase E epoch 5.</p>
+
+<h4 style="color:var(--o)">Risk 4 &mdash; Signature Dimension Explosion (MEDIUM)</h4>
+<p>Depth-3 signatures for d=8 projection: 8 + 64 + 512 = 584 features. Cubic growth with depth.</p>
+<p><strong>Mitigations:</strong> (a) Project messages to R^4 before signature (4+16+64=84 features).
+(b) Use log-signature (much smaller than full). (c) iisignature C extension is ~100x faster than
+pure Python. (d) Fallback to depth-2 (20 features) if iisignature unavailable.</p>
+
+<h4 style="color:var(--g)">Risk 5 &mdash; Memory Footprint per Entity (LOW)</h4>
+<p>Per entity: X_i (64 floats) + Mamba state (64/layer) + Hawkes h (64) = ~192 floats.
+5000 entities: 192 * 5000 * 4 bytes = 3.7 MB. Acceptable on T4 (15 GB VRAM).</p>
+<p><strong>No mitigation needed at current scale.</strong> Quantise Hawkes state to float16 if entities exceed 50k.</p>
+</div>
+
+<h3>Open Research Questions</h3>
+<ul>
+<li><strong>Q1:</strong> Does Hawkes-driven Z(t) give strictly better gradients than cubic spline
+interpolation of raw messages? (Ablation: Phase D with vs without Hawkes Z construction.)</li>
+<li><strong>Q2:</strong> Does the path signature add information beyond the Hawkes state alone?
+(Ablation: drop log_sig from Z knots, compare validation IC.)</li>
+<li><strong>Q3:</strong> What is the optimal d_mamba for the drift vs. for memory? Both currently
+use 64. The drift might benefit from d_mamba=128 (more expressive matrix F).</li>
+<li><strong>Q4:</strong> Should g_phi be entity-type-specific? Vessels may warrant higher noise
+scale than macro indicators (PMI, credit spreads).</li>
+<li><strong>Q5:</strong> Can M1 entity distributions entirely replace the Kalman filter in Phase 9?
+M1 is non-linear and non-Gaussian; Phase 9 Kalman is linear-Gaussian. These are complementary,
+not redundant &mdash; but the boundary is an empirical question.</li>
+</ul>
+
+<h2>9. Test Strategy</h2>
+<table>
+<tr><th>Test name</th><th>What it verifies</th><th>Category</th></tr>
+<tr><td>test_signature_path_shape</td><td>SignaturePathBuilder returns (n, 84) for d=4, depth-3</td><td>Unit</td></tr>
+<tr><td>test_signature_fallback_depth2</td><td>Fallback to (n, 20) when iisignature unavailable</td><td>Unit</td></tr>
+<tr><td>test_hawkes_hidden_export</td><td>get_hidden_sequence() returns Tensor(n, d_hawkes), finite values</td><td>Unit</td></tr>
+<tr><td>test_mamba_drift_matrix_shape</td><td>get_drift_matrix() returns Tensor(d, d_z) with correct dims</td><td>Unit</td></tr>
+<tr><td>test_control_path_construction</td><td>Z(t) is continuous; Z.derivative(t) has shape (d_z,)</td><td>Unit</td></tr>
+<tr><td>test_het_cde_func_shape</td><td>HeterogeneousCDEFunc forward returns (batch, d) finite tensor</td><td>Unit</td></tr>
+<tr><td>test_euler_maruyama_step_finite</td><td>Single EM step produces finite X_{t+h} with correct shape</td><td>Unit</td></tr>
+<tr><td>test_diffusion_head_positive</td><td>DiagonalDiffusionHead output is strictly positive (floor enforced)</td><td>Unit</td></tr>
+<tr><td>test_kl_divergence_non_negative</td><td>KL term is always &ge; 0 for any X, sigma</td><td>Unit</td></tr>
+<tr><td>test_full_forward_pass_shape</td><td>ContinuousWorldModel.forward() returns (n_entities, d) tensor</td><td>Integration</td></tr>
+<tr><td>test_gradient_flows_to_hawkes</td><td>Loss gradient reaches NeuralHawkes LSTM parameters (grad != 0)</td><td>Integration</td></tr>
+<tr><td>test_gradient_flows_to_mamba</td><td>Loss gradient reaches Mamba SSM parameters (grad != 0)</td><td>Integration</td></tr>
+<tr><td>test_inference_is_deterministic</td><td>With training=False, two forward() calls produce identical output</td><td>Unit</td></tr>
+<tr><td>test_curriculum_phase_B_freezes_hettgn</td><td>HetTGN params have requires_grad=False in Phase B</td><td>Integration</td></tr>
+<tr><td>test_memory_update_persists</td><td>After forward(), HeteroMemory contains updated X_i(T)</td><td>Integration</td></tr>
+</table>
+
+<h2>10. Implementation Execution Order (When Ready)</h2>
+<div class="warn"><strong>Not now &mdash; research/spec phase only. This section is for reference when
+implementation begins in a future session.</strong></div>
+<ol>
+<li>Add torchsde, iisignature to pyproject.toml. Verify installs on Kaggle T4.</li>
+<li>Write signature_path.py + tests (fully isolated, no model dependencies).</li>
+<li>Add get_hidden_sequence() to NeuralHawkesEncoder + tests.</li>
+<li>Add get_drift_matrix() to MambaMemoryEncoder + tests.</li>
+<li>Write diffusion_head.py + tests.</li>
+<li>Write heterogeneous_cde_func.py + tests (mock HGT messages, mock Mamba).</li>
+<li>Write continuous_world_model.py (main synthesis) + integration tests.</li>
+<li>Add TrainerConfig fields + curriculum logic to trainer.py.</li>
+<li>Phase B run on Kaggle T4: CDE only, verify validation loss decreases vs Phase A.</li>
+<li>Phase C run: add Mamba drift. Compare IC vs Phase B.</li>
+<li>Phase D run: add Hawkes Z(t). Full joint training. This is the main experiment.</li>
+<li>Phase E run: add diffusion term. Monitor KL divergence per epoch.</li>
+<li>Ablations: Q1 (no Hawkes Z), Q2 (no signatures), Q3 (d_mamba sweep).</li>
+</ol>
+
+<h2>11. References</h2>
+<div class="blk">
+<p><strong>Core neural differential equations:</strong></p>
+<p>Chen, R.T.Q., Rubanova, Y., Bettencourt, J., Duvenaud, D. (2018). "Neural Ordinary Differential Equations." NeurIPS 2018. <em>Foundational: establishes adjoint method for continuous-depth networks. torchdiffeq library.</em></p>
+<p>Kidger, P., Morrill, J., Foster, J., Lyons, T. (2020). "Neural Controlled Differential Equations for Irregular Time Series." NeurIPS 2020 Spotlight. <em>Direct foundation for the CDE component. torchcde library.</em></p>
+<p>Li, X., Wong, T.L., Chen, R.T.Q., Duvenaud, D. (2020). "Scalable Gradients for Stochastic Differential Equations." AISTATS 2020. <em>Adjoint method for SDEs &mdash; the gradient backbone of M1.</em></p>
+<p>Kidger, P., Foster, J., Li, X., Lyons, T. (2021). "Neural SDEs as Infinite-Dimensional GANs." ICML 2021. <em>Latent SDE framework; ELBO training; torchsde library.</em></p>
+
+<p style="margin-top:.7rem"><strong>Architecture components:</strong></p>
+<p>Gu, A., Dao, T. (2024). "Mamba: Linear-Time Sequence Modeling with Selective State Spaces." ICLR 2024. <em>Selective SSM used as drift parameterizer in M1.</em></p>
+<p>Mei, H., Eisner, J. (2017). "The Neural Hawkes Process: A Neurally Self-Modulating Multivariate Point Process." NeurIPS 2017. <em>Foundation for the control path timing model.</em></p>
+<p>Hu, Z., Dong, Y., Wang, K., Sun, Y. (2020). "Heterogeneous Graph Transformer." WWW 2020. <em>HGT attention used inside the CDE drift function for graph conditioning.</em></p>
+<p>Rossi, E., Chamberlain, B., Frasca, F., Eynard, D., Monti, F., Bronstein, M. (2020). "Temporal Graph Networks for Deep Learning on Dynamic Graphs." NeurIPS 2020 Workshop. <em>TGN baseline that M1 replaces.</em></p>
+
+<p style="margin-top:.7rem"><strong>Path signatures (rough path theory):</strong></p>
+<p>Lyons, T. (1998). "Differential Equations Driven by Rough Signals." Revista Matematica Iberoamericana, 14(2). <em>Foundational rough paths theory underpinning path signatures.</em></p>
+<p>Chevyrev, I., Kormilitzin, A. (2016). "A Primer on the Signature Method in Machine Learning." arXiv:1603.03788. <em>Accessible introduction to path signatures as ML features.</em></p>
+<p>Morrill, J., Salvi, C., Kidger, P., Foster, J., Lyons, T. (2021). "Neural Rough Differential Equations for Long Time Series." ICML 2021. <em>Log-signatures for Neural CDEs on long sequences &mdash; directly applicable to M1 Stage B.</em></p>
+
+<p style="margin-top:.7rem"><strong>Graph SDEs (prior art):</strong></p>
+<p>Ma, J., Zhu, J., Dong, Y., Tang, J. (2023). "Graph Inductive Biases in Transformers without Message Passing." ICLR 2023. <em>Graph SDE prior art; homogeneous GCN drift &mdash; gap identified in novelty analysis.</em></p>
+</div>
+
+<footer>
+TirraMind M1 Moonshot Spec &mdash; 2026-05-27 &mdash; Research phase only. No implementation until spec is reviewed.
+Companion stub: <code>docs/specs/m1_continuous_world_model.md</code>
+</footer>
+</body></html>

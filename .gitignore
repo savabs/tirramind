@@ -14,6 +14,12 @@ venv/
 # VS Code MCP config (contains API keys)
 .vscode/mcp.json
 
+# Cursor MCP config (copy from .cursor/mcp.json.example via make mcp-setup)
+.cursor/mcp.json
+
+# Cursor hook runtime logs (hooks.json is tracked)
+.cursor/logs/
+
 # TirraMind memory persistence
 .tirra_memory/
 
@@ -33,9 +39,9 @@ Thumbs.db
 .tirra_pipeline/
 
 # Documentation and workflow artifacts
-*.md
-docs/
-tasks/
+# NOTE: *.md, docs/, tasks/ are intentionally NOT excluded — they are the
+# project knowledge base and must be readable by AI coding assistants.
+# Only secrets and runtime artifacts belong in .gitignore.
 # .github/ excluded from ignore — workflows must be tracked for GitHub Actions to run
 !.github/
 !.github/**
@@ -54,6 +60,12 @@ tasks/
 *.csv
 *.pkl
 *.txt
+
+# Kaggle-downloaded DB snapshot — exceeds GitHub's 100MB hard file-size limit
+# and isn't the live app's database anyway (that's the separate, already-
+# ignored .tirra_pipeline/pipeline.db). Removed from history in this commit.
+kaggle_downloads/tirramind-data/pipeline.db
+
 # AWOS runtime state
 .awos/
 tirramind_data_upload.zip
@@ -62,3 +74,17 @@ tirramind_code.zip
 # Auto-research paper cache
 knowledge/*.tar.gz
 knowledge/*.tar
+
+# Test SQLite leakage (MagicMock db_path files that land in project root)
+<MagicMock*
+# Root-level log files (use logs/ dir instead)
+*.log
+# Old upload zips (tirramind_data_upload.zip and tirramind_code.zip tracked explicitly)
+tirramind_hg_upload.zip
+tirramind_listnet_upload.zip
+# Nested project copy (from Kaggle output extraction)
+tirramind_v1/
+
+# Runtime state (brief delivery + learned probabilities)
+.tirra_delivery/
+.tirra_opportunities/

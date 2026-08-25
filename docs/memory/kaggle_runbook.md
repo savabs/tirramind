@@ -242,33 +242,35 @@ Then rebuild `tirramind_data_upload.zip` including the new checkpoints for the n
 
 ## Current Training State
 
-*(Update this section after every run)*
+*(Last updated: 2026-05-27)*
 
 | Item | Value |
 |---|---|
-| **Production model** | `gnn_model_h_g.pt` from Kaggle v15, epoch 40 — at `/tmp/hg_v15_out/tirramind_v1/.tirra_pipeline/gnn_model_h_g.pt` |
-| H-G checkpoints | epoch_028–040 at `/tmp/hg_v15_out/tirramind_v1/.tirra_pipeline/checkpoints/h_g/` (357MB total) |
-| **Kaggle v15 status** | CANCELLED at epoch 40/43 — 12hr limit hit. Ran epochs 28–40 in 3 blocks of 5. |
-| **EWC spike bug** | FIXED in git commit `5ba8b2c`. EWC sidecar `ewc_state.pt` now written after Fisher computation and loaded on --resume. All 16 EWC tests pass. |
-| **Kaggle v16 (next run)** | Needs: (1) upload epoch_040.pt to tirramind-data dataset (flat path), (2) upload updated code (trainer.py, kaggle_watch.py) to tirramind-code, (3) commit version. Resume from 40, target 50+. |
-| W&B status | NOT connected during v15 — WANDB_API_KEY secret failed. Needs fix before v16. Stale run `h-d-resume-ep18-40` at ep28 visible in dashboard — ignore. |
-| tirramind-code | Last uploaded 2026-05-12 — DOES NOT have EWC sidecar fix. MUST re-upload before v16. |
-| tirramind-data | Last version contains epoch_028.pt. MUST upload epoch_040.pt for v16 resume. |
-| Known issue | `time_delta` loss = NaN every epoch. Not yet investigated. |
-| GitHub | `savabs/tirramind` — `main` branch at commit `6199c61` (IC-gated triggers + per-entity-type loss + backtest CLI) |
-| DB observations | 339,164 (post-A1 filter) |
-| Entities | ~2,688 |
+| **Active kernel** | `deeperisbetter/tirramind-phase50` — last run 2026-05-26 (v33), CANCELLED at epoch ~21 |
+| **Active notebook** | `tirramind_kaggle_phase50.ipynb` (root of repo) |
+| **Best local checkpoint** | `epoch_021.pt` at `.tirra_pipeline/kaggle_downloads/phase50_ckpts/phase50_ckpts/epoch_021.pt` |
+| **H-G checkpoint** | `epoch_040.pt` at `.tirra_pipeline/tirramind-data/checkpoints/epoch_040.pt` (H-G run, IC = −0.033) |
+| **GNN full-pipeline IC** | −0.033 at epoch 40 — WEAK. Target: >+0.03 |
+| **return_raw_head ICIR** | **+0.467** (26-week history, corrected eval) — TRADEABLE but independent of GNN |
+| **EWC sidecar bug** | FIXED — commit `5ba8b2c`. All 16 EWC tests pass. |
+| **time_delta NaN bug** | ✅ FIXED 2026-05-27 — `torch.isfinite()` guard in both main training path and EWC `_loss_from_window` |
+| **xsnorm_price_feats** | ✅ ADDED 2026-05-27 — cross-sectional z-score of price features [14:23] in `graph_builder.py`; applied in `trainer.py`, `ic_check.py`, `quant_benchmark.py` |
+| **freeze_backbone** | ✅ ADDED — `TrainerConfig.freeze_backbone` flag + separate optimizer/clip in `trainer.py`; `--freeze-backbone` in `retrain_gnn.py` |
+| **kernel-metadata.json** | Still points to `tirramind-phase50-ep13` dataset — needs update to ep40 before next push |
+| **tirramind-code dataset** | Needs re-upload — last upload does not include time_delta/xsnorm/freeze_backbone fixes |
+| **W&B status** | Not connected — `WANDB_API_KEY` secret issue |
+| **DB observations** | 339,164 (post-A1 filter) |
+| **Entities** | ~2,688 |
 
-### V16 Upload Checklist (before next Kaggle run)
-- [ ] Stage epoch_040.pt at flat path: `mkdir -p /tmp/staging_v16/.tirra_pipeline/checkpoints && cp /tmp/hg_v15_out/tirramind_v1/.tirra_pipeline/checkpoints/h_g/epoch_040.pt /tmp/staging_v16/.tirra_pipeline/checkpoints/epoch_040.pt`
-- [ ] Copy pipeline.db: `cp .tirra_pipeline/pipeline.db /tmp/staging_v16/.tirra_pipeline/pipeline.db`
-- [ ] Zip: `cd /tmp/staging_v16 && zip -r /tmp/tirramind_data_v16.zip .tirra_pipeline/`
-- [ ] Upload data: `kaggle datasets version -p /tmp/tirramind_upload_data -m "v16: epoch_040 checkpoint + EWC sidecar fix era"`
-- [ ] Re-zip code (includes EWC sidecar fix) and upload to tirramind-code dataset
-- [ ] Fix W&B secret in Kaggle → Settings → Secrets
-- [ ] Update Cell 11: `--epochs 50 --resume 40`
-- [ ] Update Cell 13: `if epoch_num > 40`
-- [ ] Push new notebook version (v16)
+### Next Kaggle Push Checklist (phase50 V34)
+- [ ] Stage `epoch_040.pt` at flat path: `mkdir -p /tmp/staging_v34/.tirra_pipeline/checkpoints && cp .tirra_pipeline/tirramind-data/checkpoints/epoch_040.pt /tmp/staging_v34/.tirra_pipeline/checkpoints/epoch_040.pt`
+- [ ] Copy `pipeline.db`: `cp .tirra_pipeline/pipeline.db /tmp/staging_v34/.tirra_pipeline/pipeline.db`
+- [ ] Zip data: `cd /tmp/staging_v34 && zip -r /tmp/tirramind_data_v34.zip .tirra_pipeline/`
+- [ ] Upload data: `kaggle datasets version -p /tmp/tirramind_upload_data -m "phase50-v34: epoch_040 + time_delta/xsnorm/freeze_backbone fixes"`
+- [ ] Re-zip code and upload to `tirramind-code` (must include today's trainer.py, graph_builder.py, retrain_gnn.py fixes)
+- [ ] Update `kernel-metadata.json` dataset_sources: replace `tirramind-phase50-ep13` → new data dataset slug
+- [ ] Update notebook `kernel_version` → 34, `resume_epoch` → 40, add `--use-listnet-return-loss` to training command
+- [ ] Push: `~/.kaggle-venv/bin/kaggle kernels push --path .`
 
 ---
 

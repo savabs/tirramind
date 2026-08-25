@@ -1,0 +1,37 @@
+# MP-1: AIS flow + producer-country GDELT stress + CFTC positioning velocity
+id: ais_gdelt_cftc_velocity
+micro_playground: MP-1
+description: >
+  Physical flow anomaly plus producer-country geopolitical stress and
+  rapid managed-money positioning change (velocity, not level).
+readout_instrument: CL=F
+evaluation_window_days: 5
+max_chain_lag_days: 14
+min_chain_score: 1.3
+nodes:
+  - id: ais_activity
+    label: Baltic/Atlantic tanker activity
+    source_tool: ais_vessel
+    observation_type: vessel_position
+    metric: daily_count
+    min_zscore: 1.0
+    lag_days: [0, 30]
+    source_url: https://meri.digitraffic.fi/
+  - id: gdelt_producer_stress
+    label: Energy producer country event stress
+    source_tool: gdelt
+    observation_type: geopolitical_event
+    metric: producer_goldstein_z
+    producer_countries: [RUSSIA, SAUDI, IRAQ, UAE, NIGERIA, NORWAY]
+    min_zscore: 1.2
+    lag_days: [0, 30]
+    source_url: https://www.gdeltproject.org/
+  - id: cftc_velocity
+    label: WTI-PHYSICAL managed-money weekly flow
+    source_tool: cftc
+    observation_type: futures_positioning
+    metric: mm_weekly_flow
+    instrument_ticker: CL=F
+    min_zscore: 1.5
+    lag_days: [0, 14]
+    source_url: https://www.cftc.gov/MarketReports/CommitmentsofTraders/index.htm

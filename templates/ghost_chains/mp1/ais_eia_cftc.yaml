@@ -1,0 +1,40 @@
+# MP-1: AIS tanker activity + EIA crude draw + CFTC positioning extreme
+id: ais_eia_cftc
+micro_playground: MP-1
+description: >
+  Atlantic energy supply chain — vessel activity spike, US crude inventory draw,
+  and managed-money positioning extreme on WTI.
+readout_instrument: CL=F
+evaluation_window_days: 5
+max_chain_lag_days: 14
+min_chain_score: 1.4
+nodes:
+  - id: ais_activity
+    label: Baltic/Atlantic tanker activity
+    source_tool: ais_vessel
+    observation_type: vessel_position
+    metric: daily_count
+    min_zscore: 1.0
+    lag_days: [0, 30]
+    source_url: https://meri.digitraffic.fi/
+  - id: eia_crude_draw
+    label: US crude stocks ex-SPR
+    source_tool: energy_supply
+    observation_type: petroleum_inventory
+    metric: value
+    value_filter:
+      series: crude_excl_spr
+    direction: below
+    min_zscore: 1.2
+    lag_days: [0, 14]
+    source_url: https://www.eia.gov/petroleum/supply/weekly/
+  - id: cftc_wti_extreme
+    label: WTI-PHYSICAL managed-money net positioning
+    source_tool: cftc
+    observation_type: futures_positioning
+    metric: mm_net
+    instrument_ticker: CL=F
+    direction: below
+    min_zscore: 1.2
+    lag_days: [0, 14]
+    source_url: https://www.cftc.gov/MarketReports/CommitmentsofTraders/index.htm

@@ -23,7 +23,9 @@ STATE FILE: .tirra_pipeline/kaggle_state.json
 """
 
 import argparse
+import hashlib
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -36,6 +38,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 KERNEL_SLUG = "deeperisbetter/tirramind-phase50"  # single canonical kernel
 NOTEBOOK_FILE = ROOT / "tirramind_kaggle_phase50.ipynb"
+VERSIONS_FILE = ROOT / "VERSIONS.md"
+
+# Single source of truth for the *next* push. Must match:
+#   tirramind_kaggle_phase50.ipynb → _NOTEBOOK_CONFIG["kernel_version"]
+#   VERSIONS.md → "Current notebook target" line
+#   Kaggle UI "Version N" on deeperisbetter/tirramind-phase50 (increment before each push)
+CANONICAL_KERNEL_VERSION = 73
 CODE_DATASET = "deeperisbetter/tirramind-code"
 STATE_FILE = ROOT / ".tirra_pipeline" / "kaggle_state.json"
 DOWNLOAD_DIR = ROOT / ".tirra_pipeline" / "kaggle_downloads"
@@ -43,6 +52,133 @@ MODEL_OUT = ROOT / ".tirra_pipeline" / "gnn_model_phase50.pt"
 CKPT_DIR = ROOT / ".tirra_pipeline" / "checkpoints" / "phase50"
 
 KAGGLE_URL = f"https://www.kaggle.com/code/{KERNEL_SLUG}"
+
+# ── kernel version sync (notebook ↔ launcher ↔ VERSIONS.md) ─────────────────
+
+
+def read_notebook_kernel_version() -> int:
+    """Parse kernel_version from _NOTEBOOK_CONFIG in the Phase 50 notebook."""
+    text = NOTEBOOK_FILE.read_text()
+    match = re.search(r'kernel_version\\":\s*(\d+)', text)
+    if not match:
+        raise SystemExit(
+            f"kernel_version not found in {NOTEBOOK_FILE.name} — add to _NOTEBOOK_CONFIG"
+        )
+    return int(match.group(1))
+
+
+def read_versions_md_target() -> int | None:
+    """Read 'Current notebook target: V47' from VERSIONS.md if present."""
+    if not VERSIONS_FILE.exists():
+        return None
+    match = re.search(
+        r"Current notebook target:\s*\*\*V(\d+)\*\*",
+        VERSIONS_FILE.read_text(),
+    )
+    return int(match.group(1)) if match else None
+
+
+def require_kernel_version_sync() -> int:
+    """Abort if notebook, CANONICAL_KERNEL_VERSION, and VERSIONS.md disagree."""
+    nb_ver = read_notebook_kernel_version()
+    versions_ver = read_versions_md_target()
+
+    errors: list[str] = []
+    if nb_ver != CANONICAL_KERNEL_VERSION:
+        errors.append(
+            f"notebook kernel_version={nb_ver} != "
+            f"CANONICAL_KERNEL_VERSION={CANONICAL_KERNEL_VERSION} in kaggle_launch.py"
+        )
+    if versions_ver is not None and versions_ver != nb_ver:
+        errors.append(
+            f"VERSIONS.md target V{versions_ver} != notebook kernel_version={nb_ver}"
+        )
+    if versions_ver is not None and versions_ver != CANONICAL_KERNEL_VERSION:
+        errors.append(
+            f"VERSIONS.md target V{versions_ver} != "
+            f"CANONICAL_KERNEL_VERSION={CANONICAL_KERNEL_VERSION}"
+        )
+
+    if errors:
+        print("KERNEL VERSION MISMATCH — fix before push:\n")
+        for err in errors:
+            print(f"  • {err}")
+        print(
+            "\nSync checklist:\n"
+            f"  1. tirramind_kaggle_phase50.ipynb → kernel_version: {CANONICAL_KERNEL_VERSION}\n"
+            f"  2. scripts/kaggle_launch.py → CANONICAL_KERNEL_VERSION = {CANONICAL_KERNEL_VERSION}\n"
+            f"  3. VERSIONS.md → Current notebook target: **V{CANONICAL_KERNEL_VERSION}**\n"
+        )
+        sys.exit(1)
+
+    print(f"✓ Kernel version sync OK: V{nb_ver} (notebook = launcher = VERSIONS.md)")
+    return nb_ver
+
+
+# ── notebook config fingerprint (sha256 of sorted JSON, same as notebook cell) ─
+
+
+def read_notebook_config() -> dict:
+    """Parse _NOTEBOOK_CONFIG from the Phase 50 notebook banner cell."""
+    nb = json.loads(NOTEBOOK_FILE.read_text())
+    for cell in nb.get("cells", []):
+        src = "".join(cell.get("source", []))
+        if "_NOTEBOOK_CONFIG" not in src:
+            continue
+        ns: dict = {}
+        config_block = src.split("_cfg_str")[0]
+        exec(config_block, ns)  # noqa: S102
+        cfg = ns.get("_NOTEBOOK_CONFIG")
+        if isinstance(cfg, dict):
+            return cfg
+    raise SystemExit(
+        f"_NOTEBOOK_CONFIG not found in {NOTEBOOK_FILE.name} — add banner cell"
+    )
+
+
+def compute_config_fingerprint(config: dict) -> str:
+    """12-char hex fingerprint; identical logic to tirramind_kaggle_phase50.ipynb."""
+    payload = json.dumps(config, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode()).hexdigest()[:12]
+
+
+def read_notebook_fingerprint() -> tuple[str, dict]:
+    """Return (fingerprint, config) for the current notebook."""
+    cfg = read_notebook_config()
+    return compute_config_fingerprint(cfg), cfg
+
+
+def update_versions_md_fingerprint(
+    kernel_version: int, fingerprint: str, fix_label: str
+) -> None:
+    """Append fingerprint to VERSIONS.md known table if not already present."""
+    if not VERSIONS_FILE.exists():
+        return
+    text = VERSIONS_FILE.read_text()
+    if fingerprint in text:
+        return
+    row = f"| `{fingerprint}` | V{kernel_version} | {fix_label} |"
+    marker = "**Known fingerprints:**"
+    if marker not in text:
+        return
+    insert_at = text.index(marker) + len(marker)
+    # Skip header row + separator if present
+    rest = text[insert_at:]
+    text = text[:insert_at] + "\n" + row + rest
+    VERSIONS_FILE.write_text(text)
+
+
+def stamp_versions_md_pushed(kernel_version: int, fingerprint: str) -> None:
+    """Set pushed_at on the V{N} row in VERSIONS.md if still blank."""
+    if not VERSIONS_FILE.exists():
+        return
+    text = VERSIONS_FILE.read_text()
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    pattern = rf"(\| \*\*V{kernel_version}\*\* \| )—( \| —)"
+    new_text, n = re.subn(pattern, rf"\g<1>{now}\g<2>", text, count=1)
+    if n:
+        VERSIONS_FILE.write_text(new_text)
+
 
 # ── state file ────────────────────────────────────────────────────────────────
 
@@ -70,7 +206,19 @@ def show_status() -> None:
         return
     print("\n── Active Kaggle Run ─────────────────────────────")
     print(f"  Kernel  : {state.get('kernel_slug')}")
+    state_ver = state.get("kernel_version", "?")
+    print(f"  Version : V{state_ver}  (repo canonical V{CANONICAL_KERNEL_VERSION})")
+    fp = state.get("fingerprint")
+    if fp:
+        print(f"  Fingerprint : {fp}  (fix: {state.get('fix', '?')})")
+    if state_ver != "?" and state_ver != CANONICAL_KERNEL_VERSION:
+        print(
+            f"  ⚠ state kernel_version={state_ver} != CANONICAL_KERNEL_VERSION={CANONICAL_KERNEL_VERSION}"
+        )
     print(f"  Epochs  : {state.get('epochs')}")
+    gpu = state.get("enable_gpu")
+    if gpu is not None:
+        print(f"  Accel   : {'GPU' if gpu else 'CPU'}")
     print(f"  Pushed  : {state.get('pushed_at')}")
     print(f"  URL     : {KAGGLE_URL}")
     result = subprocess.run(
@@ -109,6 +257,16 @@ def upload_code_dataset() -> None:
             )
         )
 
+        retrain = stage / "scripts" / "retrain_gnn.py"
+        if not retrain.exists():
+            raise FileNotFoundError(f"Packaged dataset missing {retrain}")
+        retrain_text = retrain.read_text()
+        for marker in ("--preset", "_apply_training_preset"):
+            if marker not in retrain_text:
+                raise RuntimeError(
+                    f"tirramind-code package stale: scripts/retrain_gnn.py missing {marker!r}"
+                )
+
         # kaggle datasets version -p <folder> -m "message" --dir-mode zip
         subprocess.run(
             [
@@ -118,7 +276,7 @@ def upload_code_dataset() -> None:
                 "-p",
                 str(stage),
                 "-m",
-                f"Phase50 {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} UTC",
+                f"V{CANONICAL_KERNEL_VERSION} Phase50 {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} UTC",
                 "--dir-mode",
                 "zip",
             ],
@@ -129,11 +287,24 @@ def upload_code_dataset() -> None:
 
 # ── step 2: push kernel ───────────────────────────────────────────────────────
 
+_GPU_QUOTA_MARKERS = (
+    "maximum batch gpu",
+    "gpu session count",
+    "gpu quota",
+    "no gpu available",
+    "insufficient gpu",
+    "gpu limit",
+)
 
-def push_kernel(epochs: int) -> None:
-    print(f"\n[2/4] Pushing kernel (epochs={epochs})...")
 
-    # Patch epochs in notebook
+def _is_gpu_quota_error(text: str) -> bool:
+    """True when Kaggle rejected the push due to GPU capacity / session limits."""
+    lower = text.lower()
+    return any(m in lower for m in _GPU_QUOTA_MARKERS)
+
+
+def _prepare_and_push(epochs: int, *, enable_gpu: bool) -> tuple[int, str]:
+    """Write kernel-metadata and run `kaggle kernels push`. Returns (rc, output)."""
     nb = json.loads(NOTEBOOK_FILE.read_text())
     for cell in nb.get("cells", []):
         if cell.get("id") == "train-phase50":
@@ -147,7 +318,6 @@ def push_kernel(epochs: int) -> None:
             ]
     NOTEBOOK_FILE.write_text(json.dumps(nb, indent=1))
 
-    # Write kernel-metadata.json (gitignored — generated each run)
     meta = {
         "id": KERNEL_SLUG,
         "title": "tirramind-phase50",
@@ -155,38 +325,97 @@ def push_kernel(epochs: int) -> None:
         "language": "python",
         "kernel_type": "notebook",
         "is_private": True,
-        "enable_gpu": True,
+        "enable_gpu": enable_gpu,
         "enable_tpu": False,
         "enable_internet": True,
         "keywords": [],
-        "dataset_sources": ["deeperisbetter/tirramind-data", CODE_DATASET],
+        "dataset_sources": [
+            "deeperisbetter/tirramind-data",
+            CODE_DATASET,
+        ],
         "kernel_sources": [],
         "competition_sources": [],
         "model_sources": [],
     }
     (ROOT / "kernel-metadata.json").write_text(json.dumps(meta, indent=2))
 
-    # kaggle kernels push -p <folder>
     result = subprocess.run(
         ["kaggle", "kernels", "push", "-p", str(ROOT)],
         capture_output=True,
         text=True,
     )
-    print(f"  {result.stdout.strip()}")
-    if result.returncode != 0:
-        print(f"  ERROR: {result.stderr.strip()}")
-        sys.exit(1)
+    combined = f"{result.stdout or ''}\n{result.stderr or ''}".strip()
+    return result.returncode, combined
 
-    write_state(
-        {
-            "kernel_slug": KERNEL_SLUG,
-            "epochs": epochs,
-            "pushed_at": datetime.now(timezone.utc).isoformat(),
-            "url": KAGGLE_URL,
-        }
-    )
-    print(f"  ✓ Kernel pushed  →  {KAGGLE_URL}")
-    print(f"  ✓ State saved to {STATE_FILE}")
+
+def push_kernel(
+    epochs: int,
+    kernel_version: int,
+    *,
+    enable_gpu: bool = True,
+    fallback_cpu: bool = True,
+) -> bool:
+    """Push kernel. On GPU quota errors, automatically retries with CPU."""
+    fingerprint, cfg = read_notebook_fingerprint()
+    fix_label = str(cfg.get("fix", ""))
+
+    accelerators: list[tuple[bool, str]] = []
+    if enable_gpu:
+        accelerators.append((True, "GPU"))
+        if fallback_cpu:
+            accelerators.append((False, "CPU"))
+    else:
+        accelerators.append((False, "CPU"))
+
+    last_output = ""
+    for use_gpu, label in accelerators:
+        print(f"\n[2/4] Pushing kernel V{kernel_version} (epochs={epochs}, {label})...")
+        print(f"  Config fingerprint: {fingerprint}  fix={fix_label}")
+
+        rc, last_output = _prepare_and_push(epochs, enable_gpu=use_gpu)
+        print(f"  {last_output}")
+
+        gpu_blocked = _is_gpu_quota_error(last_output)
+        if rc != 0 or gpu_blocked:
+            if use_gpu and fallback_cpu and len(accelerators) > 1:
+                print("  ⚠ GPU push blocked (quota/limit) — falling back to CPU...")
+                continue
+            print(f"  ERROR: push failed (rc={rc})")
+            if last_output:
+                print(f"  {last_output}")
+            sys.exit(1)
+
+        write_state(
+            {
+                "kernel_slug": KERNEL_SLUG,
+                "kernel_version": kernel_version,
+                "kaggle_ui_version": kernel_version,
+                "epochs": epochs,
+                "enable_gpu": use_gpu,
+                "pushed_at": datetime.now(timezone.utc).isoformat(),
+                "completed_at": None,
+                "fingerprint": fingerprint,
+                "fix": fix_label,
+                "config": cfg,
+                "url": KAGGLE_URL,
+                "kernel_status": "RUNNING",
+                "kernel_status_note": (
+                    "cpu_fallback_after_gpu_quota" if not use_gpu and enable_gpu else None
+                ),
+                "log_path": None,
+            }
+        )
+        update_versions_md_fingerprint(kernel_version, fingerprint, fix_label)
+        stamp_versions_md_pushed(kernel_version, fingerprint)
+        if not use_gpu and enable_gpu:
+            print("  ✓ Kernel pushed on CPU (GPU quota fallback)")
+        else:
+            print(f"  ✓ Kernel pushed  →  {KAGGLE_URL}")
+        print(f"  ✓ Fingerprint {fingerprint} → {STATE_FILE}")
+        return use_gpu
+
+    print(f"  ERROR: push failed after all accelerators tried.\n  {last_output}")
+    sys.exit(1)
 
 
 # ── step 3: tail logs ─────────────────────────────────────────────────────────
@@ -370,7 +599,23 @@ def main() -> None:
         "--backtest-only", action="store_true", help="Local backtest on existing model"
     )
     p.add_argument("--status", action="store_true", help="Show active run state")
+    p.add_argument(
+        "--verify-version",
+        action="store_true",
+        help="Check notebook ↔ launcher ↔ VERSIONS.md version sync and exit",
+    )
+    p.add_argument(
+        "--no-gpu",
+        action="store_true",
+        help="Push kernel with enable_gpu=false (CPU-only; notebook auto-selects device)",
+    )
     args = p.parse_args()
+
+    if args.verify_version:
+        require_kernel_version_sync()
+        fp, cfg = read_notebook_fingerprint()
+        print(f"✓ Config fingerprint: {fp}  fix={cfg.get('fix', '?')}")
+        return
 
     if args.status:
         show_status()
@@ -390,14 +635,17 @@ def main() -> None:
         run_backtest()
         return
 
+    kernel_version = require_kernel_version_sync()
+
     # Full flow  (auto-retry up to 6 times on bad GPU assignment)
-    MAX_RETRIES = 6
+    enable_gpu = not args.no_gpu
+    MAX_RETRIES = 1 if not enable_gpu else 6
     upload_code_dataset()
 
     for attempt in range(1, MAX_RETRIES + 1):
         if attempt > 1:
             print(f"\n  Retry {attempt}/{MAX_RETRIES} — repushing kernel...")
-        push_kernel(args.epochs)
+        push_kernel(args.epochs, kernel_version, enable_gpu=enable_gpu)
 
         if args.push_only:
             print(

@@ -1,3 +1,5 @@
+> Legacy reference. Use Cursor skill `/research` — canonical: `.cursor/skills/research/SKILL.md`
+
 ---
 description: "Research a new feature: read relevant files, analyze architecture, write research doc. No code changes."
 ---

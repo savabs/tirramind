@@ -383,14 +383,27 @@ class SatelliteActivityTool(Tool):
         return key if key else None
 
     def execute(self, **kwargs: Any) -> ToolResult:
+        from agent.preflight import FeaturePreflight  # noqa: PLC0415
+
         mode = (kwargs.get("mode") or "").strip().lower()
         if mode not in VALID_MODES:
             return ToolResult(
                 success=False,
                 output=f"Invalid mode '{mode}'. Use: {', '.join(sorted(VALID_MODES))}",
             )
+
+        # Fire mode requires NASA FIRMS key — check before dispatch
         if mode == "fire":
+            ok, pf = FeaturePreflight.for_api_key(
+                key_value=self._firms_key,
+                env_var="TIRRA_NASA_FIRMS_KEY",
+                tool_name="SatelliteActivityTool (fire mode)",
+                signup_url="https://firms.modaps.eosdis.nasa.gov/api/map_key/",
+            )
+            if not ok:
+                return ToolResult(success=False, output=pf.user_message)
             return self._fire(**kwargs)
+
         if mode == "vegetation":
             return self._vegetation(**kwargs)
         return self._events(**kwargs)
@@ -400,11 +413,6 @@ class SatelliteActivityTool(Tool):
     # ------------------------------------------------------------------
 
     def _fire(self, **kwargs: Any) -> ToolResult:
-        if not self._firms_key:
-            return ToolResult(
-                success=False,
-                output="NASA FIRMS API key required. Set TIRRA_NASA_FIRMS_KEY.",
-            )
 
         area = (kwargs.get("area") or "").strip()
         if not area:
@@ -511,7 +519,9 @@ class SatelliteActivityTool(Tool):
                 "source": source,
                 "days": days,
                 "hotspot_count": len(hotspots),
-                "frp_avg": (round(sum(frps_valid) / len(frps_valid), 2) if frps_valid else 0.0),
+                "frp_avg": (
+                    round(sum(frps_valid) / len(frps_valid), 2) if frps_valid else 0.0
+                ),
                 "frp_max": round(max(frps_valid), 2) if frps_valid else 0.0,
                 "frp_total": round(sum(frps_valid), 2) if frps_valid else 0.0,
                 "confidence_counts": confs,

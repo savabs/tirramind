@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>L1/L2 Pre-Train Sign-Off — Commodity GNN Scope</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; line-height: 1.55; }
+    h1, h2 { color: #1a1a2e; }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+    th, td { border: 1px solid #ccc; padding: 0.4rem 0.6rem; text-align: left; }
+    th { background: #f0f0f8; }
+    .pass { color: #0a6b0a; font-weight: 600; }
+    .warn { background: #fff8e6; border-left: 4px solid #e6a800; padding: 0.75rem 1rem; }
+    pre { background: #f4f4f8; padding: 1rem; overflow-x: auto; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+
+<h1>L1/L2 Pre-Train Sign-Off</h1>
+<p><strong>Date:</strong> 2026-06-03 &nbsp;|&nbsp; <strong>Scope:</strong> N1 commodity futures (20 instruments) → HetTGN Phase 50 train</p>
+<p><strong>Verdict:</strong> <span class="pass">GATES A + B + C PASS</span> — GNN retrain may proceed on frozen spec below.</p>
+<p><strong>Role of gates:</strong> POC shell for the <em>outcome</em> exam (futures IC) — not the intelligence product. Train architecture: [[n1_outcome_input_train_doctrine]].</p>
+
+<h2>1. Gate results (recorded)</h2>
+<table>
+  <tr><th>Gate</th><th>Script</th><th>Result</th><th>Notes</th></tr>
+  <tr><td>A — data</td><td><code>scripts/gate_a_audit.py</code></td><td class="pass">PASS</td><td>20 commodities, ≥30 daily bars; CFTC+GDELT OK</td></tr>
+  <tr><td>B — math parity</td><td><code>scripts/gate_b_parity.py</code></td><td class="pass">PASS</td><td>20/20 commodities; spread_roll/cs/kyle match GNN</td></tr>
+  <tr><td>B — unit tests</td><td>pytest micro + graph + n1</td><td class="pass">PASS</td><td>74 tests (full gate B suite)</td></tr>
+  <tr><td>C — graph</td><td><code>scripts/gate_c_graph_audit.py</code></td><td class="pass">PASS</td><td>instrument dim=49; all 20 micro L1&gt;0; finite features</td></tr>
+</table>
+
+<h2>2. Proxy disclaimers (accepted for v1)</h2>
+<ul>
+  <li><strong>Daily micro:</strong> M9 VPIN/OFI use synthetic one-trade-per-day bars; not exchange tick data.</li>
+  <li><strong>Spread H/L:</strong> Corwin–Schultz uses close-derived proxy high/low (20d rolling vol).</li>
+  <li><strong>OFI parity:</strong> All 20 commodities show intentional <code>signed_flow_z</code> (probe) vs <code>ofi_zscore</code> (GNN) diff — GNN uses trade-tape OFI when available; probe uses daily flow z. Not a failure.</li>
+  <li><strong>Roll spread:</strong> Probe aligned to GNN (log(close ratio) returns) 2026-06-03 fix in <code>compute_micro_snapshot</code>.</li>
+  <li><strong>produced_in:</strong> Seed links (119 edges / 19 instruments), not learned topology.</li>
+  <li><strong>GDELT:</strong> DB-relative cutoff in N1 supply path; dominates obs count — consider subsampling in train.</li>
+</ul>
+
+<div class="warn">
+  <strong>Stale data (documented):</strong> Latest <code>instrument_daily</code> ≈ 2026-04-17–18. DB ~6 weeks behind wall clock. OK for IC delta backtest; refresh before live trading.
+  <br/><strong>Corrupt timestamps:</strong> 50 <code>gov_contracts</code> rows (year 9019) — filtered by <code>_reference_time</code>; ingest guard in place.
+  <br/><strong>Ghost tools:</strong> ais_vessel/energy_supply backfilled (thin); weather/satellite still sparse — raw input growth is post-POC work per [[n1_outcome_input_train_doctrine]].
+</div>
+
+<h2>3. Frozen L2 spec for GNN train</h2>
+<table>
+  <tr><th>Item</th><th>Value</th></tr>
+  <tr><td>Instrument feature dim</td><td>49 = BASE(14) + PRICE(9) + M9(11) + M15(15) — after M14.1</td></tr>
+  <tr><td>Enrichment</td><td>OFF for first post-sign-off train (confirm before notebook run)</td></tr>
+  <tr><td>Micro block offset</td><td>dims 23–33 (0-based)</td></tr>
+  <tr><td>Train notebook</td><td><code>tirramind_kaggle_phase50.ipynb</code></td></tr>
+  <tr><td>IC baseline</td><td>V49 epoch_086 / Phase 41b gate not met</td></tr>
+</table>
+
+<h2>4. Commands to re-verify</h2>
+<pre>
+python3 scripts/gate_a_audit.py
+python3 scripts/gate_b_parity.py
+python3 scripts/gate_c_graph_audit.py
+python3 -m pytest tests/test_microstructure.py tests/test_microstructure_signals.py \
+  tests/test_gnn_micro_feed.py tests/test_microstructure_gnn.py \
+  tests/test_graph_builder.py tests/test_n1_probe.py -q
+</pre>
+
+<h2>5. Sign-off checklist</h2>
+<ul>
+  <li>☑ Gate A pass recorded</li>
+  <li>☑ Gate B parity script + 74 tests pass</li>
+  <li>☑ Gate C graph audit pass</li>
+  <li>☑ Proxy disclaimers documented</li>
+  <li>☐ User confirms enrichment on/off before Kaggle run</li>
+  <li>☐ Optional: DB refresh past 2026-04-17 before train</li>
+</ul>
+
+<p><strong>Artifacts:</strong> <code>.tirra_pipeline/gate_results/gate_{a,b,c}_2026-06-03.json</code></p>
+<p><em>Canonical owner for gate scripts: <code>scripts/gate_*.py</code>. Session progress: [[chat_checkpoint_2026-06-03_pretrain_perfection_handoff]].</em></p>
+</body>
+</html>

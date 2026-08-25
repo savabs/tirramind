@@ -1,0 +1,32 @@
+---
+description: Config module conventions (TIRRA_ env vars)
+globs: agent/config/**
+alwaysApply: false
+---
+
+# Config Module Conventions
+
+## Pattern
+- All configuration via environment variables with `TIRRA_` prefix.
+- Frozen `@dataclass` classes: `AgentConfig`, `PipelineConfig`, etc.
+- No mutable global state. Config is created once and passed down.
+- Default values are sensible for local development (no required env vars for basic operation).
+
+## Conventions
+- `from __future__ import annotations` at top.
+- Use `os.environ.get("TIRRA_VAR", default)` — never `os.environ["TIRRA_VAR"]`.
+- Boolean config: accept "1", "true", "yes" (case-insensitive).
+- Integer/float config: parse with fallback to default on ValueError.
+- Document each env var in the class docstring.
+
+## Security
+- Never log API keys or secrets.
+- Secrets are loaded from env vars, never from config files checked into git.
+- `.env` files are in `.gitignore`.
+
+## Testing
+- Test with `os.environ` patching via `monkeypatch` or `unittest.mock.patch.dict`.
+- Verify defaults, overrides, type parsing, and invalid values.
+
+## Layer Rule
+Config is **cross-cutting** — used by all layers. Keep it thin. No business logic.

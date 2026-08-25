@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Research: M9 Market Microstructure — OFI, VPIN, Hawkes, Spreads, Kyle's Lambda</title>
+  <style>
+    body { font-family: system-ui, sans-serif; line-height: 1.6; max-width: 1000px; margin: 0 auto; padding: 2rem; }
+    h1 { color: #2c5282; }
+    h2 { color: #2b6cb0; border-bottom: 1px solid #ccc; padding-bottom: 0.5rem; margin-top: 2rem; }
+    h3 { color: #4a5568; margin-top: 1.5rem; }
+    .formula { background-color: #f7fafc; padding: 1rem; margin: 1rem 0; border-left: 3px solid #3182ce; font-family: monospace; }
+    .citation { color: #718096; font-size: 0.9rem; }
+    .key-insight { background-color: #f0fff4; border-left: 3px solid #38a169; padding: 1rem; margin: 1rem 0; }
+    code { background-color: #edf2f7; padding: 0.2rem 0.4rem; border-radius: 3px; }
+    table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+    th, td { border: 1px solid #e2e8f0; padding: 0.5rem; text-align: left; }
+    th { background-color: #edf2f7; }
+  </style>
+</head>
+<body>
+
+<h1>Research: M9 Market Microstructure</h1>
+<p><strong>Goal:</strong> Build differentiable PyTorch microstructure feature extractors for N1+N4 playground (commodity futures, sovereign stress signals). No sentiment — mathematical field over finance.</p>
+<p><strong>Doctrine:</strong> Signal Depth L2 (entity-level) from day one. Differentiability invariant — all forward passes in PyTorch for end-to-end gradient flow to GNN.</p>
+<p><strong>Related:</strong> [[math_stack_roadmap]], [[n1_n4_playground_spec]], [[agent_playground_doctrine]]</p>
+
+<h2>1. Order Flow Imbalance (OFI) — M9.1</h2>
+
+<h3>1.1 Definition & Mathematical Foundation</h3>
+<p>OFI quantifies net buy/sell pressure by tracking changes in limit order book volume at the best bid and ask.</p>
+
+<div class="formula">
+OFI(t) = Δvolume_bid(t) - Δvolume_ask(t)
+
+Where:
+- Δvolume_bid(t) = volume added to best bid minus volume removed from best bid
+- Δvolume_ask(t) = volume added to best ask minus volume removed from best ask
+</div>
+
+<p class="citation"><strong>Source:</strong> Cont, Kukanov & Stoikov (2014). "The Price Impact of Order Book Events." <em>Journal of Financial Econometrics</em></p>
+
+<div class="key-insight">
+<strong>Key Insight:</strong> OFI is the strongest single predictor of short-term price changes. On BTC/ETH perpetual data (March 2026), OFI showed mean IC = 0.1505 with positive IC in 98% of 5-minute windows. Predictive power peaks at 1-5 seconds and decays by 60 seconds.
+<p class="citation">Source: Delphi Alpha HFT Secrets 1/5, March 2026, Binance Futures data</p>
+</div>
+
+<h3>1.2 Decomposed OFI (Add/Cancel/Trade)</h3>
+<p>Modern HFT decomposes OFI into three event-driven components with distinct predictive power:</p>
+
+<table>
+  <tr>
+    <th>Component</th>
+    <th>Predictive Rank</th>
+    <th>Description</th>
+  </tr>
+  <tr>
+    <td>Add-OFI</td>
+    <td>1st</td>
+    <td>Net volume added to book (new limit orders)</td>
+  </tr>
+  <tr>
+    <td>Cancel-OFI</td>
+    <td>2nd</td>
+    <td>Net volume cancelled from book</td>
+  </tr>
+  <tr>
+    <td>Trade-OFI</td>
+    <td>3rd (weakest)</td>
+    <td>Volume from executed trades</td>
+  </tr>
+</table>
+
+<p class="citation"><strong>Source:</strong> Sitaru, Calinescu, Cucuringu (2023), ACM ICAIF</p>
+
+<div class="key-insight">
+<strong>Cancel stream carries 30 percentage points of predictive power that trade-tape OFI leaves behind.</strong> Trade-tape only OFI caps at ~35% R² in forward-looking scenarios.
+<p class="citation">Source: HFT Advisory Substack, "Why Your Trade-Tape OFI Caps at 35% R-Squared"</p>
+</div>
+
+<h3>1.3 Signal Horizon & Decay</h3>
+<p>Kolm, Turiel, Westray (2023) in <em>Mathematical Finance</em> found OFI is informative over approximately <strong>two average price changes</strong>. In liquid equities, this translates to 10-30 seconds in clock time (regime-dependent).</p>
+
+<h3>1.4 Implementation Strategy</h3>
+<p><strong>For N1+N4:</strong> We lack tick-level orderbook data for commodity futures. Implementation options:</p>
+<ul>
+  <li><strong>Option A:</strong> Trade-tape OFI from publicly available trades (weaker but available)</li>
+  <li><strong>Option B:</strong> Signed volume classification from price changes (BVC-style, see VPIN)</li>
+  <li><strong>Option C:</strong> Defer to L3 when tick data becomes available</li>
+</ul>
+<p><strong>Decision:</strong> Start with Option B (signed volume via price changes), matches VPIN methodology below. Upgrade to Option A when trade data available.</p>
+
+<h2>2. VPIN (Volume-Synchronized Probability of Informed Trading) — M9.2</h2>
+
+<h3>2.1 Definition & Mathematical Foundation</h3>
+<p>VPIN measures <strong>order flow toxicity</strong> — the imbalance between informed traders and market makers. Unlike time-based metrics, VPIN uses a <strong>volume clock</strong>.</p>
+
+<div class="formula">
+VPIN = (1/n) × Σ|V_buy_i - V_sell_i| / V_bucket
+
+Where:
+- n = number of rolling buckets (typically 50)
+- V_bucket = fixed volume per bucket (e.g., 100,000 shares)
+- V_buy_i, V_sell_i = buy/sell volume in bucket i (estimated via BVC)
+</div>
+
+<p class="citation"><strong>Source:</strong> Easley, López de Prado, O'Hara (2012). "Flow Toxicity and Liquidity in a High-Frequency World." <em>Review of Financial Studies</em></p>
+
+<h3>2.2 Bulk Volume Classification (BVC)</h3>
+<p>BVC classifies volume as buy or sell using the Normal CDF of price changes within a bucket:</p>
+
+<div class="formula">
+V_buy = V_total × Φ((P_close - P_open) / σ_bucket)
+V_sell = V_total - V_buy
+
+Where:
+- Φ = standard normal CDF
+- σ_bucket = volatility estimate for the bucket
+</div>
+
+<p class="citation"><strong>Source:</strong> Easley, López de Prado, O'Hara (2012)</p>
+
+<h3>2.3 Volume Bucketing Algorithm</h3>
+<ol>
+  <li>Set target bucket volume (e.g., 100,000 contracts for liquid futures)</li>
+  <li>Accumulate trades until bucket volume reached</li>
+  <li>Record bucket: (open, close, high, low, total_volume, timestamp_end)</li>
+  <li>Classify bucket volume via BVC</li>
+  <li>Compute VPIN over rolling window of n buckets (n=50 standard)</li>
+</ol>
+
+<div class="key-insight">
+<strong>Calibration Parameters:</strong>
+<ul>
+  <li><strong>Bucket size:</strong> Adjust per instrument. Major FX pairs: ~1M units. Liquid equity futures: 50-100k contracts.</li>
+  <li><strong>Rolling window:</strong> n=50 buckets (original paper). Shorter (20-30) = more responsive but noisier. Longer (100+) = smoother but lags.</li>
+  <li><strong>Per-asset calibration:</strong> Store optimal bucket_volume in metadata DB, default to median daily volume / 200.</li>
+</ul>
+</div>
+
+<h3>2.4 Implementation Architecture</h3>
+<pre><code>class VPINCalculator(nn.Module):
+    """Differentiable VPIN computation from trade data."""
+    
+    def bucket_trades(self, trades: Tensor, bucket_vol: float) -> List[Bucket]
+    def classify_buckets_bvc(self, buckets: List[Bucket]) -> Tensor
+    def compute_vpin(self, buckets: List[Bucket], n: int = 50) -> float
+</code></pre>
+
+<h2>3. Hawkes Process for OFI Forecasting — M9.3</h2>
+
+<h3>3.1 Mathematical Foundation</h3>
+<p>Hawkes processes model order flow as a self-exciting point process, capturing <strong>lagged cross-dependence</strong> between bid and offer events.</p>
+
+<div class="formula">
+λ_buy(t) = μ_buy + Σ φ_buy,buy(t - t_i^buy) + Σ φ_buy,sell(t - t_j^sell)
+λ_sell(t) = μ_sell + Σ φ_sell,sell(t - t_j^sell) + Σ φ_sell,buy(t - t_i^buy)
+
+Where:
+- λ(t) = intensity (arrival rate) at time t
+- μ = baseline intensity
+- φ(τ) = kernel function (decay of past events)
+</div>
+
+<p class="citation"><strong>Source:</strong> Nittur Anantha & Jain (2024). "Forecasting High Frequency Order Flow Imbalance using Hawkes Processes." arXiv:2408.03594, <em>Computational Economics</em> 67:279-312 (2026)</p>
+
+<h3>3.2 Sum of Exponentials Kernel (Best Performer)</h3>
+<p>The paper found <strong>Sum of Exponentials kernel</strong> gives best OFI forecast among all competing models on NSE tick data:</p>
+
+<div class="formula">
+φ(τ) = Σ α_k × β_k × exp(-β_k × τ)
+
+Where:
+- α_k = amplitude of k-th exponential
+- β_k = decay rate of k-th exponential
+- Typical: k=2 (two exponentials capture fast + slow excitation)
+</div>
+
+<h3>3.3 Forecasting Framework</h3>
+<p>The paper develops method to forecast <strong>near-term distribution of OFI</strong>:</p>
+
+<div class="formula">
+E[OFI(T+h, h) | F_T] = E[V_buy(T, T+h) - V_sell(T, T+h) | F_T]
+
+Computed via conditional intensity integrals of fitted Hawkes process.
+</div>
+
+<h3>3.4 Implementation Strategy</h3>
+<p><strong>For N1+N4:</strong> Hawkes processes require high-frequency event data (orderbook events or trades). Implementation phases:</p>
+<ul>
+  <li><strong>Phase 1 (Current):</strong> Skip Hawkes. Use simple OFI + VPIN from available data.</li>
+  <li><strong>Phase 2 (When tick data available):</strong> Fit bivariate Hawkes (buy/sell) with Sum-of-Exp kernel.</li>
+  <li><strong>Phase 3 (Advanced):</strong> Multi-level Hawkes (add/cancel/trade decomposition) per Sitaru et al.</li>
+</ul>
+
+<p><strong>Library:</strong> <code>tick</code> Python library for Hawkes process fitting (supports Sum-of-Exp kernel). Not differentiable — use as feature generator, not in backprop path.</p>
+
+<h2>4. Bid-Ask Spread Estimation — M9.4</h2>
+
+<h3>4.1 Corwin-Schultz Estimator (Primary)</h3>
+<p>Estimates bid-ask spread from <strong>daily high/low prices only</strong> — no tick data required.</p>
+
+<div class="formula">
+Key Insight: High (low) prices are almost always buy (sell) trades.
+- High-low ratio reflects both variance and spread
+- Variance scales with √time, spread does NOT
+- Compare 1-day vs 2-day high-low ratios to separate components
+
+β = [ln(H_t / L_t)]²
+γ = [ln(H_{t,t+1} / L_{t,t+1})]²
+
+α = (√(2β) - √β) / (3 - 2√2) - √(γ / (3 - 2√2))
+
+Spread = 2(e^α - 1) / (1 + e^α)
+</div>
+
+<p class="citation"><strong>Source:</strong> Corwin & Schultz (2012). "A Simple Way to Estimate Bid-Ask Spreads from Daily High and Low Prices." <em>Journal of Finance</em> 67:719-760</p>
+
+<h3>4.2 Censoring & Averaging</h3>
+<p>Three variants used in practice:</p>
+<table>
+  <tr>
+    <th>Variant</th>
+    <th>Method</th>
+    <th>Use Case</th>
+  </tr>
+  <tr>
+    <td>CSM (Censored)</td>
+    <td>Average all, then max(result, 0)</td>
+    <td>General</td>
+  </tr>
+  <tr>
+    <td>CSD (Daily censored)</td>
+    <td>max(S_t, 0) then average</td>
+    <td><strong>Recommended for US equities, futures</strong></td>
+  </tr>
+  <tr>
+    <td>CSP (Positive only)</td>
+    <td>Average only S_t ≥ 0</td>
+    <td>FX spot rates</td>
+  </tr>
+</table>
+
+<p class="citation">Source: Federal Reserve FEDS Working Paper 2019-051, Karnaukh et al. (2015)</p>
+
+<div class="key-insight">
+<strong>For N1+N4:</strong> Use <strong>CSD variant</strong> (daily censoring before averaging). This is standard for commodity futures. Expect ~3.1% of estimates to be negative (set to zero per convention).
+</div>
+
+<h3>4.3 Roll Estimator (Secondary)</h3>
+<p>Uses negative serial covariance from bid-ask bounce:</p>
+
+<div class="formula">
+Spread_Roll = 2√(-Cov(r_t, r_{t-1}))
+
+If Cov < 0, else set to 0.
+</div>
+
+<p class="citation"><strong>Source:</strong> Roll (1984). "A Simple Implicit Measure of the Effective Bid-Ask Spread in an Efficient Market." <em>Journal of Finance</em> 39:1127-1139</p>
+
+<p><strong>Note:</strong> Roll estimator less reliable in crypto/futures markets where bid-ask bounce is weaker. Use Corwin-Schultz as primary.</p>
+
+<h3>4.4 Implementation</h3>
+<pre><code>class SpreadEstimator(nn.Module):
+    """Differentiable spread estimation from OHLC data."""
+    
+    def corwin_schultz(self, high: Tensor, low: Tensor) -> Tensor:
+        """CSD variant with daily censoring."""
+        
+    def roll_measure(self, returns: Tensor) -> Tensor:
+        """Roll estimator from return autocov."""
+</code></pre>
+
+<h2>5. Kyle's Lambda (Price Impact) — M9.5</h2>
+
+<h3>5.1 Definition & Mathematical Foundation</h3>
+<p>Kyle's λ measures <strong>price impact</strong> — how much price moves per unit of signed order flow.</p>
+
+<div class="formula">
+ΔP_t = α + λ × Q_t + ε_t
+
+Where:
+- ΔP_t = price change (log return or price level)
+- Q_t = signed order flow (net buy volume - net sell volume)
+- λ = Kyle's lambda (coefficient of interest)
+</div>
+
+<p class="citation"><strong>Source:</strong> Kyle (1985). "Continuous Auctions and Insider Trading." <em>Econometrica</em> 53:1315-1335</p>
+
+<h3>5.2 Equilibrium Formula</h3>
+<p>In Kyle's model equilibrium:</p>
+
+<div class="formula">
+λ = σ_v / (2σ_u)
+
+Where:
+- σ_v = standard deviation of asset's true value (uncertainty)
+- σ_u = standard deviation of noise trading
+
+Higher λ → less liquid market (each trade moves price more)
+Lower λ → more liquid market (order flow has minimal impact)
+</div>
+
+<h3>5.3 Empirical Estimation (Rolling Window)</h3>
+<p>Standard practice for time-varying λ estimation:</p>
+
+<ol>
+  <li><strong>Rolling window:</strong> Use past 720 hours (30 days) of data</li>
+  <li><strong>Aggregate to hourly:</strong> Compute hourly ΔP and Q</li>
+  <li><strong>OLS regression:</strong> ΔP_τ = λ_T × Q_τ + ε_τ for τ ∈ [T-720, T]</li>
+  <li><strong>Extract λ̂_T:</strong> This is the price impact for day T</li>
+  <li><strong>Roll forward:</strong> Repeat daily to get time series {λ̂_t}</li>
+</ol>
+
+<p class="citation"><strong>Source:</strong> Polymarket study (arXiv:2603.03136v2), Federal Reserve methodology</p>
+
+<div class="key-insight">
+<strong>Interpretation:</strong>
+<ul>
+  <li>For BTC prediction markets: λ ~ 0.4 (illiquid early stage) → 0.01 (mature liquid market)</li>
+  <li>At p=0.5, λ=0.01: $1M net buy moves price by only 0.25%</li>
+  <li>λ is inversely proportional to market depth and trading volume</li>
+</ul>
+</div>
+
+<h3>5.4 HAC Standard Errors</h3>
+<p>Use Newey-West HAC standard errors for robust inference (autocorrelation in residuals common in HFT data).</p>
+
+<p class="citation">Source: drelick/kyle-1985-digital-variant (GitHub), crypto implementation</p>
+
+<h3>5.5 Implementation</h3>
+<pre><code>class KyleLambdaEstimator:
+    """Rolling window OLS estimation of price impact."""
+    
+    def estimate_lambda(
+        self,
+        prices: Tensor,
+        signed_volume: Tensor,
+        window_hours: int = 720
+    ) -> Tensor:
+        """Returns time series of λ̂_t."""
+</code></pre>
+
+<h2>6. GNN Integration — M9.6</h2>
+
+<h3>6.1 Microstructure Features as Node Attributes</h3>
+<p>All M9 features attach to <strong>instrument nodes</strong> in the HGT graph:</p>
+
+<table>
+  <tr>
+    <th>Feature</th>
+    <th>Dimension</th>
+    <th>Temporal Aggregation</th>
+  </tr>
+  <tr>
+    <td>OFI (trade-tape)</td>
+    <td>1</td>
+    <td>5s, 30s, 5m rolling windows</td>
+  </tr>
+  <tr>
+    <td>OFI_zscore</td>
+    <td>1</td>
+    <td>Z-score vs. 1-hour trailing distribution</td>
+  </tr>
+  <tr>
+    <td>VPIN</td>
+    <td>1</td>
+    <td>50-bucket rolling (volume-synchronized)</td>
+  </tr>
+  <tr>
+    <td>VPIN_regime</td>
+    <td>3</td>
+    <td>One-hot: [normal, elevated, extreme]</td>
+  </tr>
+  <tr>
+    <td>Spread_CS</td>
+    <td>1</td>
+    <td>Daily Corwin-Schultz CSD</td>
+  </tr>
+  <tr>
+    <td>Spread_Roll</td>
+    <td>1</td>
+    <td>Daily Roll estimator</td>
+  </tr>
+  <tr>
+    <td>Kyle_lambda</td>
+    <td>1</td>
+    <td>30-day rolling OLS</td>
+  </tr>
+  <tr>
+    <td>Lambda_regime</td>
+    <td>3</td>
+    <td>One-hot: [liquid, normal, illiquid]</td>
+  </tr>
+  <tr>
+    <td>Hawkes_OFI_forecast</td>
+    <td>1</td>
+    <td>E[OFI(t+5s) | F_t] (Phase 2+)</td>
+  </tr>
+</table>
+
+<h3>6.2 Cross-Entity Features (L3 Future)</h3>
+<p>When multiple instruments in same asset class:</p>
+<ul>
+  <li><strong>OFI correlation:</strong> Rolling correlation of OFI(i, t) vs OFI(j, t) → edge weights</li>
+  <li><strong>Hawkes cross-excitation:</strong> φ_{i→j} kernel amplitude → directed edge weights</li>
+  <li><strong>Lambda dispersion:</strong> Std dev of λ across related instruments → market-wide liquidity stress indicator</li>
+</ul>
+
+<h3>6.3 Differentiability Requirements</h3>
+<div class="key-insight">
+<strong>Critical Invariant:</strong> Features must be computed in PyTorch for gradient flow. Non-differentiable operations (e.g., Hawkes fitting, rolling OLS) are <strong>precomputed offline</strong> and stored as static features. Only feature <em>aggregation</em> and <em>normalization</em> happen in forward pass.
+</div>
+
+<h2>7. Data Requirements & Availability</h2>
+
+<h3>7.1 Minimal (Available Now)</h3>
+<table>
+  <tr>
+    <th>Data</th>
+    <th>Frequency</th>
+    <th>Enables</th>
+  </tr>
+  <tr>
+    <td>OHLCV (daily)</td>
+    <td>Daily</td>
+    <td>Corwin-Schultz spread, Roll measure</td>
+  </tr>
+  <tr>
+    <td>Trade-tape (price, volume, timestamp)</td>
+    <td>Tick or 1-min bars</td>
+    <td>Trade-tape OFI, VPIN (BVC), Kyle's λ</td>
+  </tr>
+</table>
+
+<h3>7.2 Enhanced (Future)</h3>
+<table>
+  <tr>
+    <th>Data</th>
+    <th>Frequency</th>
+    <th>Enables</th>
+  </tr>
+  <tr>
+    <td>L2 orderbook snapshots (bid/ask top 5)</td>
+    <td>1-sec or event-driven</td>
+    <td>True OFI (not trade-tape), multi-level OFI</td>
+  </tr>
+  <tr>
+    <td>L3 orderbook events (add/cancel/modify)</td>
+    <td>Event-driven</td>
+    <td>Decomposed OFI, Hawkes multi-type, queue dynamics</td>
+  </tr>
+</table>
+
+<h3>7.3 N1+N4 Commodity Futures Status</h3>
+<ul>
+  <li><strong>Available:</strong> OHLCV daily (CFTC, instrument_universe)</li>
+  <li><strong>Acquirable:</strong> 1-min OHLCV bars from data vendors (CME Group via DataMine)</li>
+  <li><strong>Not yet:</strong> Tick-level or L2/L3 orderbook (expensive, requires direct exchange feed)</li>
+</ul>
+
+<p><strong>Implementation Priority:</strong> Start with OHLCV → Corwin-Schultz. Add 1-min bars for OFI/VPIN/Kyle's λ when available.</p>
+
+<h2>8. Testing Strategy — M9.7</h2>
+
+<h3>8.1 Unit Tests</h3>
+<ul>
+  <li><strong>T1:</strong> Corwin-Schultz on synthetic OHLC with known spread → recover spread ± 5%</li>
+  <li><strong>T2:</strong> VPIN on balanced/imbalanced synthetic buckets → VPIN near 0 / near 1</li>
+  <li><strong>T3:</strong> Kyle's λ on synthetic price/order flow with known impact → recover λ ± 10%</li>
+  <li><strong>T4:</strong> OFI computation: bid adds → positive OFI, ask adds → negative OFI</li>
+  <li><strong>T5:</strong> Gradient flow: all features differentiable w.r.t. input tensors</li>
+</ul>
+
+<h3>8.2 Integration Test</h3>
+<ul>
+  <li><strong>T6:</strong> Wire M9 features into <code>graph_builder.py</code> → instrument nodes have all features</li>
+  <li><strong>T7:</strong> GNN forward pass → gradients flow back through microstructure normalization</li>
+</ul>
+
+<h3>8.3 Empirical Validation</h3>
+<div class="key-insight">
+<strong>VPIN spike before known events:</strong> Test on historical flash crashes, FOMC announcements, or commodity supply shocks. VPIN should spike 10-60 minutes before event-driven volatility surge.
+<p class="citation">Example: 2010 Flash Crash, VPIN elevated before 2:42pm ET crash initiation (Easley et al. 2012)</p>
+</div>
+
+<h2>9. Canonical References</h2>
+
+<h3>9.1 Primary Papers (Must Read)</h3>
+<ol>
+  <li><strong>OFI:</strong> Cont, Kukanov, Stoikov (2014). "The Price Impact of Order Book Events." <em>Journal of Financial Econometrics</em> 12(1):47-88</li>
+  <li><strong>VPIN:</strong> Easley, López de Prado, O'Hara (2012). "Flow Toxicity and Liquidity in a High-Frequency World." <em>Review of Financial Studies</em> 25(5):1457-1493</li>
+  <li><strong>Hawkes OFI:</strong> Nittur Anantha & Jain (2024). "Forecasting High Frequency Order Flow Imbalance using Hawkes Processes." arXiv:2408.03594 → <em>Computational Economics</em> 67:279-312 (2026)</li>
+  <li><strong>Spread:</strong> Corwin & Schultz (2012). "A Simple Way to Estimate Bid-Ask Spreads from Daily High and Low Prices." <em>Journal of Finance</em> 67(3):719-760</li>
+  <li><strong>Kyle's λ:</strong> Kyle (1985). "Continuous Auctions and Insider Trading." <em>Econometrica</em> 53(6):1315-1335</li>
+</ol>
+
+<h3>9.2 Implementation Guides (GitHub/Code)</h3>
+<ul>
+  <li><strong>VPIN-lab:</strong> GitHub rakeshks7/vpin-risk-engine (real-time VPIN calculator, volume clock architecture)</li>
+  <li><strong>Kyle Lambda:</strong> GitHub drelick/kyle-1985-digital-variant (crypto BTC-USD Coinbase implementation with HAC inference)</li>
+  <li><strong>OFI Decomposition:</strong> Sitaru, Calinescu, Cucuringu (2023) ACM ICAIF (add/cancel/trade split)</li>
+</ul>
+
+<h3>9.3 Recent Empirical Studies (2024-2026)</h3>
+<ul>
+  <li><strong>Delphi Alpha:</strong> "HFT Secrets 1/5: Order Flow Imbalance" (March 2026 Binance Futures validation)</li>
+  <li><strong>Polymarket:</strong> arXiv:2603.03136v2 "The Anatomy of a Blockchain Prediction Market" (Kyle's λ evolution)</li>
+  <li><strong>HFT Advisory:</strong> "Why Your Trade-Tape OFI Caps at 35% R-Squared" (cancel stream analysis)</li>
+</ul>
+
+<h2>10. Implementation Roadmap</h2>
+
+<h3>Phase 1: Core Module (Week 1)</h3>
+<ul>
+  <li>✅ Research complete (this document)</li>
+  <li>⬜ <code>agent/quant/microstructure.py</code>: Corwin-Schultz, Roll, OFI (trade-tape), VPIN (BVC), Kyle's λ</li>
+  <li>⬜ Unit tests (T1-T5)</li>
+  <li>⬜ Wire into <code>graph_builder.py</code>: add microstructure features to instrument nodes</li>
+  <li>⬜ Integration test (T6-T7)</li>
+</ul>
+
+<h3>Phase 2: Data Acquisition (Week 2-3)</h3>
+<ul>
+  <li>⬜ Acquire 1-min OHLCV bars for N1 commodity futures (CME Group)</li>
+  <li>⬜ Backfill features for historical GNN training windows</li>
+  <li>⬜ Empirical validation (T8: VPIN spike detection)</li>
+</ul>
+
+<h3>Phase 3: Advanced (Month 2+)</h3>
+<ul>
+  <li>⬜ Hawkes process fitting (when tick data available)</li>
+  <li>⬜ Decomposed OFI (add/cancel/trade) — requires L3 orderbook</li>
+  <li>⬜ Cross-entity L3 features (OFI correlation, Hawkes cross-excitation)</li>
+</ul>
+
+<hr>
+<p><em>Research completed: 2026-06-01 | Next: Create spec + task files, then implement M9 module</em></p>
+
+</body>
+</html>

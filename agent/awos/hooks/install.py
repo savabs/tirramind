@@ -19,19 +19,19 @@ _HOOKS: dict[str, str] = {
     "post-commit": (
         "#!/usr/bin/env bash\n"
         "# AWOS post-commit hook\n"
-        "python -m agent.awos.cli scan --source git-post-commit "
+        "python3 -m agent.awos.cli scan --source git-post-commit "
         ">/dev/null 2>&1 || true\n"
     ),
     "post-merge": (
         "#!/usr/bin/env bash\n"
         "# AWOS post-merge hook\n"
-        "python -m agent.awos.cli scan --source git-post-merge "
+        "python3 -m agent.awos.cli scan --source git-post-merge "
         ">/dev/null 2>&1 || true\n"
     ),
     "pre-push": (
         "#!/usr/bin/env bash\n"
         "# AWOS pre-push hook (non-blocking)\n"
-        "python -m agent.awos.cli scan --source git-pre-push "
+        "python3 -m agent.awos.cli scan --source git-pre-push "
         ">/dev/null 2>&1 || true\n"
         "exit 0\n"
     ),

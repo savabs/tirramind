@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Spec: M9 Microstructure Module Implementation</title>
+  <style>
+    body { font-family: system-ui, sans-serif; line-height: 1.6; max-width: 1000px; margin: 0 auto; padding: 2rem; }
+    h1 { color: #2c5282; }
+    h2 { color: #2b6cb0; border-bottom: 1px solid #ccc; padding-bottom: 0.5rem; margin-top: 2rem; }
+    h3 { color: #4a5568; margin-top: 1.5rem; }
+    pre { background-color: #f7fafc; padding: 1rem; border-left: 3px solid #3182ce; overflow-x: auto; }
+    code { background-color: #edf2f7; padding: 0.2rem 0.4rem; border-radius: 3px; font-family: monospace; }
+    table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+    th, td { border: 1px solid #e2e8f0; padding: 0.5rem; text-align: left; }
+    th { background-color: #edf2f7; }
+    .constraint { background-color: #fffaf0; border-left: 3px solid #dd6b20; padding: 1rem; margin: 1rem 0; }
+    .success { background-color: #f0fff4; border-left: 3px solid #38a169; padding: 1rem; margin: 1rem 0; }
+  </style>
+</head>
+<body>
+
+<h1>Spec: M9 Microstructure Module Implementation</h1>
+<p><strong>Goal:</strong> Build <code>agent/quant/microstructure.py</code> with differentiable PyTorch implementations of M9.1-M9.5 + wire features into GNN <code>graph_builder.py</code>.</p>
+<p><strong>Research:</strong> [[m9_market_microstructure]]</p>
+<p><strong>Related:</strong> [[math_stack_roadmap]], [[n1_n4_playground_spec]]</p>
+
+<h2>1. Architecture Overview</h2>
+
+<h3>1.1 Module Structure</h3>
+<pre><code>agent/quant/microstructure.py
+├── SpreadEstimator (nn.Module)
+│   ├── corwin_schultz(high, low) → spread
+│   └── roll_measure(returns) → spread
+├── OrderFlowImbalance (nn.Module)
+│   ├── compute_ofi_trade_tape(prices, volumes, timestamps)
+│   └── compute_ofi_zscore(ofi, window)
+├── VPINCalculator (nn.Module)
+│   ├── bucket_trades(trades, bucket_volume)
+│   ├── classify_buckets_bvc(buckets)
+│   └── compute_vpin(buckets, n_buckets)
+├── KyleLambdaEstimator
+│   └── estimate_lambda(prices, signed_volume, window_hours)
+└── MicrostructureFeatureExtractor (nn.Module)
+    └── forward(instrument_data) → feature_dict
+</code></pre>
+
+<h3>1.2 Design Constraints</h3>
+<div class="constraint">
+<strong>Differentiability Invariant:</strong> All forward passes must be in PyTorch. Non-differentiable operations (OLS regression for Kyle's λ) are precomputed offline and stored as static features. Only normalization/aggregation in forward pass.
+</div>
+
+<div class="constraint">
+<strong>Signal Depth L2:</strong> All features are per-instrument (entity-level), not market-wide aggregates. Cross-entity features (L3) deferred to future phase.
+</div>
+
+<h2>2. Component Specifications</h2>
+
+<h3>2.1 SpreadEstimator (M9.4)</h3>
+
+<h4>2.1.1 Corwin-Schultz Method</h4>
+<pre><code>class SpreadEstimator(nn.Module):
+    def corwin_schultz(
+        self,
+        high: torch.Tensor,  # shape: (T,) daily highs
+        low: torch.Tensor,   # shape: (T,) daily lows
+        variant: str = "CSD"  # "CSD" (daily censored) | "CSM" | "CSP"
+    ) -> torch.Tensor:
+        """
+        Compute Corwin-Schultz spread estimator.
+        
+        Returns: (T-1,) tensor of daily spreads
+        
+        Algorithm:
+        1. β = [ln(H_t / L_t)]²
+        2. γ = [ln(H_{t,t+1} / L_{t,t+1})]²
+        3. α = (√(2β) - √β) / (3 - 2√2) - √(γ / (3 - 2√2))
+        4. S = 2(e^α - 1) / (1 + e^α)
+        5. Apply censoring per variant
+        """
+</code></pre>
+
+<p><strong>Numerical Stability:</strong></p>
+<ul>
+  <li>Clamp log arguments to min=1e-8 to avoid log(0)</li>
+  <li>Clamp α to [-10, 10] before exp to avoid overflow</li>
+  <li>Set NaN spreads to 0.0</li>
+</ul>
+
+<h4>2.1.2 Roll Measure</h4>
+<pre><code>def roll_measure(
+    self,
+    returns: torch.Tensor  # shape: (T,) log returns
+) -> torch.Tensor:
+    """
+    Compute Roll (1984) spread from return autocovariance.
+    
+    Returns: scalar spread estimate
+    
+    Algorithm:
+    1. Compute Cov(r_t, r_{t-1})
+    2. If Cov < 0: Spread = 2√(-Cov)
+    3. Else: Spread = 0
+    """
+</code></pre>
+
+<h3>2.2 OrderFlowImbalance (M9.1)</h3>
+
+<pre><code>class OrderFlowImbalance(nn.Module):
+    def compute_ofi_trade_tape(
+        self,
+        prices: torch.Tensor,    # (T,) trade prices
+        volumes: torch.Tensor,   # (T,) trade volumes
+        timestamps: torch.Tensor # (T,) unix timestamps
+    ) -> torch.Tensor:
+        """
+        Compute trade-tape OFI using BVC-style price change classification.
+        
+        Returns: (T,) OFI values
+        
+        Algorithm (per research, simplified):
+        1. For each window [t-Δt, t]:
+           - Aggregate volume
+           - Compute price change: Δp = p_close - p_open
+           - Sign volume: V_buy ~ Φ(Δp / σ), V_sell ~ 1 - V_buy
+        2. OFI = V_buy - V_sell
+        """
+        
+    def compute_ofi_zscore(
+        self,
+        ofi: torch.Tensor,  # (T,) raw OFI
+        window: int = 720   # 1-hour lookback (720 5-sec bars)
+    ) -> torch.Tensor:
+        """
+        Standardize OFI to z-score vs. trailing distribution.
+        
+        Returns: (T,) z-scored OFI
+        """
+</code></pre>
+
+<h3>2.3 VPINCalculator (M9.2)</h3>
+
+<pre><code>class VPINCalculator(nn.Module):
+    def __init__(self, bucket_volume: float = 100000.0, n_buckets: int = 50):
+        super().__init__()
+        self.bucket_volume = bucket_volume
+        self.n_buckets = n_buckets
+        
+    @dataclass
+    class VolumeBucket:
+        open_price: float
+        close_price: float
+        high: float
+        low: float
+        total_volume: float
+        timestamp_end: int
+        
+    def bucket_trades(
+        self,
+        trades: List[Tuple[float, float, int]]  # (price, volume, timestamp)
+    ) -> List[VolumeBucket]:
+        """
+        Partition trades into equal-volume buckets.
+        
+        Algorithm:
+        1. Accumulate trades until total_volume >= bucket_volume
+        2. Record bucket OHLC
+        3. Start new bucket
+        """
+        
+    def classify_buckets_bvc(
+        self,
+        buckets: List[VolumeBucket]
+    ) -> torch.Tensor:
+        """
+        Classify each bucket volume as buy/sell using BVC.
+        
+        Returns: (N, 2) tensor [[V_buy_1, V_sell_1], ...]
+        
+        Algorithm:
+        1. Δp = (close - open) / bucket volatility estimate
+        2. V_buy = V_total × Φ(Δp)  # normal CDF
+        3. V_sell = V_total - V_buy
+        """
+        
+    def compute_vpin(
+        self,
+        classified_buckets: torch.Tensor  # (N, 2) [V_buy, V_sell]
+    ) -> torch.Tensor:
+        """
+        Compute VPIN over rolling window.
+        
+        Returns: (N - n_buckets + 1,) VPIN values
+        
+        Algorithm:
+        VPIN = (1/n) × Σ|V_buy_i - V_sell_i| / V_bucket
+        """
+</code></pre>
+
+<h3>2.4 KyleLambdaEstimator (M9.5)</h3>
+
+<pre><code>class KyleLambdaEstimator:
+    """
+    Rolling OLS estimation of price impact.
+    
+    NOTE: Not a nn.Module — OLS is non-differentiable.
+    This is a feature generator, run offline.
+    """
+    
+    def estimate_lambda(
+        self,
+        prices: np.ndarray,         # (T,) hourly prices
+        signed_volume: np.ndarray,  # (T,) hourly net buy volume
+        window_hours: int = 720     # 30 days
+    ) -> np.ndarray:
+        """
+        Rolling OLS: ΔP_t = α + λ × Q_t + ε_t
+        
+        Returns: (T - window_hours + 1,) λ estimates
+        
+        Algorithm:
+        1. For each day T:
+           - Window: [T - window_hours, T]
+           - ΔP = np.diff(prices)
+           - Q = signed_volume[:-1]
+           - OLS: λ̂ = (Q' Q)^{-1} Q' ΔP
+        2. Store λ̂_T
+        """
+</code></pre>
+
+<h3>2.5 MicrostructureFeatureExtractor</h3>
+
+<pre><code>class MicrostructureFeatureExtractor(nn.Module):
+    """
+    Unified extractor that computes all M9 features for one instrument.
+    """
+    
+    def __init__(self):
+        super().__init__()
+        self.spread_estimator = SpreadEstimator()
+        self.ofi_calculator = OrderFlowImbalance()
+        self.vpin_calculator = VPINCalculator()
+        # Kyle's λ is precomputed offline
+        
+    def forward(
+        self,
+        ohlcv: Dict[str, torch.Tensor],  # daily OHLC + volume
+        trades: Optional[List] = None,    # tick data if available
+        precomputed_lambda: Optional[torch.Tensor] = None
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Extract all available M9 features.
+        
+        Returns:
+        {
+            "spread_cs": (T,),
+            "spread_roll": (T,),
+            "ofi": (T,),
+            "ofi_zscore": (T,),
+            "vpin": (T,),
+            "vpin_regime": (T, 3),  # one-hot [normal, elevated, extreme]
+            "kyle_lambda": (T,),
+            "lambda_regime": (T, 3)  # one-hot [liquid, normal, illiquid]
+        }
+        """
+</code></pre>
+
+<h2>3. Graph Builder Integration</h2>
+
+<h3>3.1 New Method in GraphBuilder</h3>
+
+<pre><code># In agent/models/gnn/graph_builder.py
+
+class GraphBuilder:
+    def __init__(self, ...):
+        ...
+        self.microstructure_extractor = MicrostructureFeatureExtractor()
+        
+    def add_microstructure_features(
+        self,
+        graph: HeteroData,
+        instrument_ohlcv: Dict[str, pd.DataFrame],
+        precomputed_lambda: Optional[Dict[str, torch.Tensor]] = None
+    ) -> HeteroData:
+        """
+        Add M9 features to instrument nodes.
+        
+        Args:
+            graph: Existing HeteroData graph
+            instrument_ohlcv: {instrument_id: DataFrame with OHLCV}
+            precomputed_lambda: {instrument_id: λ time series}
+            
+        Returns:
+            graph with updated instrument node features
+        """
+        micro_features = []
+        
+        for inst_id in graph["instrument"].node_id:
+            ohlcv = instrument_ohlcv[inst_id]
+            lambda_ts = precomputed_lambda.get(inst_id) if precomputed_lambda else None
+            
+            feats = self.microstructure_extractor(
+                ohlcv=ohlcv,
+                precomputed_lambda=lambda_ts
+            )
+            
+            # Flatten to single vector
+            micro_vec = torch.cat([
+                feats["spread_cs"][-1:],     # most recent day
+                feats["spread_roll"][-1:],
+                feats["ofi_zscore"][-1:],    # most recent window
+                feats["vpin"][-1:],
+                feats["vpin_regime"][-1],    # (3,)
+                feats["kyle_lambda"][-1:],
+                feats["lambda_regime"][-1]   # (3,)
+            ])  # total: 1+1+1+1+3+1+3 = 11 dims
+            
+            micro_features.append(micro_vec)
+            
+        # Concat with existing instrument features
+        micro_tensor = torch.stack(micro_features)  # (N_instruments, 11)
+        graph["instrument"].x = torch.cat([
+            graph["instrument"].x,
+            micro_tensor
+        ], dim=1)
+        
+        return graph
+</code></pre>
+
+<h3>3.2 Pipeline Integration Point</h3>
+
+<pre><code># In agent/pipeline/store.py or training script
+
+def build_graph_with_microstructure(window_data):
+    # 1. Build base graph (existing)
+    graph = graph_builder.build_graph(window_data)
+    
+    # 2. Add microstructure features
+    graph = graph_builder.add_microstructure_features(
+        graph,
+        instrument_ohlcv=window_data["instrument_ohlcv"],
+        precomputed_lambda=load_precomputed_lambda()
+    )
+    
+    return graph
+</code></pre>
+
+<h2>4. Testing Specification</h2>
+
+<h3>4.1 Unit Tests (tests/test_microstructure.py)</h3>
+
+<table>
+  <tr>
+    <th>Test ID</th>
+    <th>Test Name</th>
+    <th>Assertion</th>
+  </tr>
+  <tr>
+    <td>T1</td>
+    <td>test_corwin_schultz_synthetic</td>
+    <td>Generate OHLC with known spread → recover spread ± 5%</td>
+  </tr>
+  <tr>
+    <td>T2</td>
+    <td>test_vpin_balanced_buckets</td>
+    <td>Balanced buy/sell → VPIN ≈ 0</td>
+  </tr>
+  <tr>
+    <td>T3</td>
+    <td>test_vpin_imbalanced_buckets</td>
+    <td>100% buy → VPIN ≈ 1</td>
+  </tr>
+  <tr>
+    <td>T4</td>
+    <td>test_kyle_lambda_synthetic</td>
+    <td>Price = α + λ×Q + noise → recover λ ± 10%</td>
+  </tr>
+  <tr>
+    <td>T5</td>
+    <td>test_ofi_sign</td>
+    <td>Bid adds → positive OFI, Ask adds → negative OFI</td>
+  </tr>
+  <tr>
+    <td>T6</td>
+    <td>test_spread_gradient</td>
+    <td>Spread is differentiable w.r.t. high/low</td>
+  </tr>
+  <tr>
+    <td>T7</td>
+    <td>test_ofi_gradient</td>
+    <td>OFI is differentiable w.r.t. prices/volumes</td>
+  </tr>
+  <tr>
+    <td>T8</td>
+    <td>test_vpin_gradient</td>
+    <td>VPIN is differentiable w.r.t. bucket prices</td>
+  </tr>
+</table>
+
+<h3>4.2 Integration Tests (tests/test_microstructure_gnn.py)</h3>
+
+<table>
+  <tr>
+    <th>Test ID</th>
+    <th>Test Name</th>
+    <th>Assertion</th>
+  </tr>
+  <tr>
+    <td>T9</td>
+    <td>test_graph_builder_integration</td>
+    <td>add_microstructure_features → instrument.x expanded by 11 dims</td>
+  </tr>
+  <tr>
+    <td>T10</td>
+    <td>test_end_to_end_gradient</td>
+    <td>GNN forward + loss → gradients flow to microstructure features</td>
+  </tr>
+</table>
+
+<h2>5. Data Schema</h2>
+
+<h3>5.1 Precomputed Features Table</h3>
+
+<pre><code>CREATE TABLE microstructure_features (
+    instrument_id TEXT NOT NULL,
+    date DATE NOT NULL,
+    spread_cs REAL,           -- Corwin-Schultz daily
+    spread_roll REAL,         -- Roll estimator
+    kyle_lambda REAL,         -- 30-day rolling λ
+    vpin REAL,                -- 50-bucket VPIN
+    ofi_5s REAL,              -- 5-second OFI
+    ofi_30s REAL,             -- 30-second OFI
+    ofi_5m REAL,              -- 5-minute OFI
+    PRIMARY KEY (instrument_id, date)
+);
+
+CREATE INDEX idx_micro_instrument ON microstructure_features(instrument_id);
+CREATE INDEX idx_micro_date ON microstructure_features(date);
+</code></pre>
+
+<h3>5.2 Feature Backfill Script</h3>
+
+<pre><code># scripts/backfill_microstructure.py
+
+def backfill_instrument(instrument_id: str, start_date: str, end_date: str):
+    """
+    Compute M9 features for one instrument over date range.
+    Store in microstructure_features table.
+    """
+    # 1. Load OHLCV from instrument_daily
+    # 2. Compute Corwin-Schultz, Roll
+    # 3. Load trades (if available), compute VPIN, OFI
+    # 4. Compute Kyle's λ (rolling OLS)
+    # 5. Insert into DB
+</code></pre>
+
+<h2>6. Non-Goals</h2>
+
+<ul>
+  <li>❌ Hawkes process fitting (deferred to Phase 2)</li>
+  <li>❌ Decomposed OFI (add/cancel/trade) — requires L3 data</li>
+  <li>❌ Cross-entity L3 features (OFI correlation) — future</li>
+  <li>❌ Real-time streaming microstructure — batch offline processing only</li>
+</ul>
+
+<h2>7. Acceptance Criteria</h2>
+
+<div class="success">
+<strong>Definition of Done:</strong>
+<ul>
+  <li>✅ <code>agent/quant/microstructure.py</code> exists with all classes</li>
+  <li>✅ All unit tests pass (T1-T8)</li>
+  <li>✅ Integration tests pass (T9-T10)</li>
+  <li>✅ <code>graph_builder.py</code> has <code>add_microstructure_features</code> method</li>
+  <li>✅ Smoke test: GNN trains with M9 features, loss decreases</li>
+  <li>✅ Documentation: docstrings on all public methods</li>
+  <li>✅ No NumPy in forward passes (except Kyle's λ which is precomputed)</li>
+</ul>
+</div>
+
+<hr>
+<p><em>Spec finalized: 2026-06-01 | Next: Create task file, then implement</em></p>
+
+</body>
+</html>

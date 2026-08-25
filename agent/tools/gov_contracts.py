@@ -156,13 +156,14 @@ class GovContractsTool(Tool):
 
             start_date = award.get("start_date") or ""
             try:
-                ts = (
-                    datetime.fromisoformat(
-                        start_date.replace("Z", "+00:00")
-                    ).timestamp()
-                    if start_date
-                    else datetime.now(tz=UTC).timestamp()
-                )
+                if start_date:
+                    dt = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
+                    if dt.year > datetime.now(tz=UTC).year + 1:
+                        ts = datetime.now(tz=UTC).timestamp()
+                    else:
+                        ts = dt.timestamp()
+                else:
+                    ts = datetime.now(tz=UTC).timestamp()
             except (ValueError, AttributeError):
                 ts = datetime.now(tz=UTC).timestamp()
 

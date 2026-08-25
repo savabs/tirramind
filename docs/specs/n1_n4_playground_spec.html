@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Spec: N1+N4 Playground — Macro, Sovereign, Microstructure</title>
+  <style>
+    body { font-family: system-ui, sans-serif; line-height: 1.6; max-width: 900px; margin: 0 auto; padding: 2rem; }
+    h1 { color: #2c5282; }
+    h2 { color: #2b6cb0; margin-top: 1.5rem; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #e2e8f0; padding: 0.5rem; }
+    th { background: #edf2f7; }
+    .ban { background: #fff5f5; border-left: 4px solid #c53030; padding: 1rem; }
+    .core { background: #f0fff4; border-left: 4px solid #38a169; padding: 1rem; }
+  </style>
+</head>
+<body>
+
+<h1>Spec: N1+N4 Playground</h1>
+<p><strong>Status:</strong> Active (founder sign-off 2026-06-02)<br>
+<strong>Replaces:</strong> “N1 only + N4 as appendix” — now a <strong>single fused playground</strong>.</p>
+
+<div class="core">
+  <strong>Playground SKU:</strong> Commodity/energy macro (N1) × sovereign/geopolitical state (N4) ×
+  <strong>microstructure at every scale</strong> — because micro-changes (flow, positioning increments,
+  policy shocks, physical stress) decide macro outcomes before headlines do.
+</div>
+
+<h2>1. Identity: mathematical field, not sentiment</h2>
+
+<div class="ban">
+  <strong>Banned as primary signals:</strong> sentiment scores, fear/greed indices, bullish/bearish narrative,
+  “the market feels…”, LLM opinion, social hype. GDELT is <em>event counts and entropy</em>, not vibe.
+</div>
+
+<p><strong>Required framing (Jane Street / RenTech bar):</strong></p>
+<ul>
+  <li>Observables: positioning (CFTC), flows, rates, vol geometry, order-flow statistics where data exists</li>
+  <li>Structure: regimes (HMM), changepoints (BOCPD), transfer entropy, copulas, rough vol, SDE dynamics</li>
+  <li>Micro: OFI, VPIN, Kyle λ, spread estimators, Hawkes intensities — <strong>M9 priority</strong> on [[math_stack_roadmap]]</li>
+  <li>Output language: σ, percentiles, half-life, impulse response — never mood words</li>
+</ul>
+
+<h2>2. Hero entity sets</h2>
+<table>
+  <tr><th>Layer</th><th>Entities</th><th>Examples</th></tr>
+  <tr><td>N1</td><td>commodity instruments, cftc_contract, producer countries</td><td>CL, GC, ZS, NG; COT extremes</td></tr>
+  <tr><td>N4</td><td>country, organization, sovereign links</td><td>GDELT bursts, yields, sanctions, capital flows</td></tr>
+  <tr><td>Micro (cross-cutting)</td><td>All of the above + time buckets</td><td>Δpositioning, Δspread, flow toxicity, changepoint flags</td></tr>
+</table>
+
+<h2>3. Hero readouts (external product)</h2>
+<ol>
+  <li><strong>Positioning extreme</strong> — CFTC z-score vs rolling window (commodity futures)</li>
+  <li><strong>Regime break</strong> — BOCPD/HMM on returns + vol; stated half-life</li>
+  <li><strong>Sovereign stress composite</strong> — country-node fusion (yields, flows, event rate) tied to a tradeable hook (FX, commodity, spread proxy)</li>
+  <li><strong>Microstructure alert</strong> — flow imbalance / toxicity spike when tick data available; else proxy via positioning velocity + vol-of-vol</li>
+  <li><strong>Cross-domain chain</strong> — one auditable path (e.g. country stress → positioning shift → futures regime) with source URLs</li>
+</ol>
+
+<h2>4. Engineering priorities (raw intelligence first)</h2>
+<p><strong>Deferred (UI / GTM layer — later):</strong> weekly brief generator, Substack, signal-archive marketing site. See [[revenue_plan_2026-05-08]].</p>
+<ol>
+  <li><strong>Sensor density:</strong> backfill N1 L0 + N4 country tools into <code>pipeline.db</code></li>
+  <li><strong>M9 microstructure</strong> in <code>agent/quant/</code> → features into <code>graph_builder</code> (M9.6)</li>
+  <li><strong>Multi-timescale fusion:</strong> Δpositioning, changepoint/regime flags, GDELT event-rate buckets — learned inputs, not hand-waved copy</li>
+  <li><strong>ℰ quality:</strong> GNN train/eval on N1+N4 probes (CFTC regime, country stress propagation, micro alerts) — not Sharpe-only</li>
+  <li><strong>Alignment:</strong> downstream belief Δ / walk-forward tasks per [[gnn_downstream_alignment]]</li>
+</ol>
+
+<h2>5. Non-goals</h2>
+<ul>
+  <li>Sentiment API as a product feature</li>
+  <li>Crypto-primary GTM (N3 deprioritized unless founder reverses)</li>
+  <li>Selling raw vectors / “embedding API”</li>
+</ul>
+
+<h2>Related</h2>
+<ul>
+  <li>[[agent_playground_doctrine]]</li>
+  <li>[[niche_playground_competition]]</li>
+  <li>[[math_stack_roadmap]]</li>
+  <li>[[n1_n4_microstructure_playground_task]]</li>
+</ul>
+
+</body>
+</html>

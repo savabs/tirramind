@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Active Task: M2 Options Pricing & Greeks</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 2rem;
+            background-color: #f9f9f9;
+        }
+
+        header {
+            border-bottom: 3px solid #e53e3e;
+            padding-bottom: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        h1 {
+            color: #e53e3e;
+            margin-top: 0;
+            font-size: 2.5rem;
+        }
+
+        h2 {
+            color: #333;
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 0.5rem;
+            margin-top: 2rem;
+        }
+
+        .meta {
+            font-size: 0.9rem;
+            color: #666;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            background-color: #eee;
+            padding: 1rem;
+            border-radius: 4px;
+            margin-bottom: 1.5rem;
+        }
+
+        .meta div strong {
+            color: #333;
+        }
+
+        .todo-item {
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 1rem;
+            padding: 0.5rem;
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+        }
+
+        .todo-checkbox {
+            margin-right: 0.75rem;
+            margin-top: 0.25rem;
+            transform: scale(1.2);
+        }
+
+        .todo-text {
+            flex-grow: 1;
+        }
+
+        .todo-title {
+            font-weight: bold;
+            color: #2d3748;
+        }
+
+        .todo-desc {
+            font-size: 0.9rem;
+            color: #718096;
+            margin-top: 0.25rem;
+        }
+
+        .todo-priority {
+            font-size: 0.75rem;
+            padding: 0.1rem 0.4rem;
+            border-radius: 3px;
+            font-weight: bold;
+            text-transform: uppercase;
+            margin-left: 0.5rem;
+        }
+
+        .priority-high {
+            background-color: #fed7d7;
+            color: #9b2c2c;
+        }
+
+        .related-links {
+            list-style-type: none;
+            padding-left: 0;
+        }
+
+        .related-links li {
+            margin-bottom: 0.5rem;
+        }
+
+        .related-links a {
+            color: #e53e3e;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .related-links a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <h1>Active Task: M2 Options Pricing & Greeks</h1>
+        <div class="meta">
+            <div><strong>Document Type:</strong> Active Task File</div>
+            <div><strong>Phase:</strong> Moonshot M2</div>
+            <div><strong>Created:</strong> 2026-05-31</div>
+            <div><strong>Status:</strong> Active</div>
+        </div>
+    </header>
+
+    <h2>Atomic Steps Roadmap</h2>
+    <p>We decompose the M2 Options Pricing & Greeks phase into 5 atomic, independently testable steps:</p>
+
+    <div class="todo-item">
+        <input type="checkbox" class="todo-checkbox" disabled checked>
+        <div class="todo-text">
+            <div class="todo-title">M2.1: Implement BlackScholes European pricing model <span
+                    class="todo-priority priority-high">High</span></div>
+            <div class="todo-desc">Write the <code>BlackScholes</code> class in <code>agent/quant/options.py</code>.
+                Code must support call and put, continuous dividends (q), and vectorized operations on multiple
+                dimensions. Add simple unit test validating pricing.</div>
+        </div>
+    </div>
+
+    <div class="todo-item">
+        <input type="checkbox" class="todo-checkbox" disabled checked>
+        <div class="todo-text">
+            <div class="todo-title">M2.2: Add analytical and autograd Greeks calculation <span
+                    class="todo-priority priority-high">High</span></div>
+            <div class="todo-desc">Implement <code>analytical_greeks</code> and <code>autograd_greeks</code> (using
+                <code>torch.autograd.grad</code>) for S, sigma, T, r. Add unit test checking that autograd gradients
+                match analytical formulas to 1e-5.
+            </div>
+        </div>
+    </div>
+
+    <div class="todo-item">
+        <input type="checkbox" class="todo-checkbox" disabled checked>
+        <div class="todo-text">
+            <div class="todo-title">M2.3: Implement vectorized implied volatility solver <span
+                    class="todo-priority priority-high">High</span></div>
+            <div class="todo-desc">Write a differentiable, vectorized <code>implied_volatility</code> Newton-Raphson
+                solver in PyTorch. Include checks to avoid division by zero or NaN gradients, clamping intermediate
+                sigma updates. Add test for convergence and autograd flow.</div>
+        </div>
+    </div>
+
+    <div class="todo-item">
+        <input type="checkbox" class="todo-checkbox" disabled checked>
+        <div class="todo-text">
+            <div class="todo-title">M2.4: Implement Barone-Adesi Whaley American options pricing <span
+                    class="todo-priority priority-high">High</span></div>
+            <div class="todo-desc">Write the <code>BaroneAdesiWhaley</code> class in PyTorch for American calls/puts.
+                Include the iterative critical spot price (S*) search. Add tests confirming American prices are strictly
+                >= European counterpart prices.</div>
+        </div>
+    </div>
+
+    <div class="todo-item">
+        <input type="checkbox" class="todo-checkbox" disabled checked>
+        <div class="todo-text">
+            <div class="todo-title">M2.5: Write comprehensive edge case test suites and run pytest <span
+                    class="todo-priority priority-high">High</span></div>
+            <div class="todo-desc">Write <code>tests/test_options.py</code> covering edge cases (zero time-to-maturity,
+                extremely low volatility, high dividends) and execute tests via pytest. Ensure clean passes and flawless
+                autograd flows.</div>
+        </div>
+    </div>
+
+    <h2>Related Wiki Links</h2>
+    <ul class="related-links">
+        <li><a href="math_stack_roadmap.md">[[math_stack_roadmap]]</a> — Parent task roadmap.</li>
+        <li><a href="../../docs/research/m2_options_pricing_greeks.html">[[m2_options_pricing_greeks]]</a> — Research
+            note.</li>
+        <li><a href="../../docs/specs/m2_options_pricing_greeks_spec.html">[[m2_options_pricing_greeks_spec]]</a> —
+            Technical spec.</li>
+    </ul>
+</body>
+
+</html>

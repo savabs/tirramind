@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Checkpoint 2026-06-09 — Ghost Pattern Publish</title>
+  <style>
+    body { font-family: system-ui, sans-serif; line-height: 1.6; max-width: 900px; margin: 0 auto; padding: 2rem; }
+    h1 { color: #2c5282; }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+    th { background: #f7fafc; }
+    code { background: #edf2f7; padding: 2px 6px; border-radius: 3px; }
+    a { color: #2b6cb0; }
+  </style>
+</head>
+<body>
+  <h1>Checkpoint 2026-06-09 — Ghost Pattern Publish</h1>
+  <p><strong>Session focus:</strong> MP-1 closed loop — resolve alerts, publish-quality briefs, public GitHub archive, X thread prep.</p>
+
+  <h2>Delivered</h2>
+  <ul>
+    <li><strong>Phase 1 complete:</strong> 3 alerts issued, 3 resolved, scorecard at 33% directional (1/3) on n=3</li>
+    <li><strong>Readout backfill:</strong> <code>backfill_recent_readout_prices()</code> + <code>make ghost-readout-backfill</code> — per-trading-day CL=F/BZ=F/NG=F bars for resolution</li>
+    <li><strong>Daily loop:</strong> <code>make ghost-pattern-daily</code> — fetch, scan, backfill, resolve</li>
+    <li><strong>Scanner fixes:</strong> WTI-PHYSICAL CFTC mapping, GDELT country names, CFTC dedupe, tuned thresholds (<code>eia_regime_cftc</code> auto-fires)</li>
+    <li><strong>Phase 2.2:</strong> <code>agent/quant/ghost_brief.py</code> — draft briefs in <code>briefs/draft/</code>, publish briefs in <code>briefs/</code> (3 hand-edited)</li>
+    <li><strong>Public archive:</strong> <a href="https://github.com/savabs/tirramind-ghost-archive">github.com/savabs/tirramind-ghost-archive</a> via <code>make ghost-archive-publish</code></li>
+    <li><strong>X prep:</strong> <code>ghost_archive/x_posts/2026-06-09_brief_001_thread.md</code> — thread + intent URL (manual post; no Twitter API)</li>
+    <li><strong>Tests:</strong> <code>test_ghost_brief_edge.py</code> + <code>test_ghost_chains_edge.py</code> — 14 passing</li>
+  </ul>
+
+  <h2>Scorecard snapshot</h2>
+  <table>
+    <tr><th>Alert</th><th>Outcome</th></tr>
+    <tr><td>#1 EIA + NG CFTC</td><td>CL=F <strong>+4.19%</strong> (2 sessions)</td></tr>
+    <tr><td>#2 GDELT + WTI CFTC</td><td>CL=F <strong>-4.15%</strong> (5 sessions)</td></tr>
+    <tr><td>#3 EIA level + WTI CFTC</td><td>CL=F <strong>-4.15%</strong> (5 sessions)</td></tr>
+  </table>
+
+  <h2>Task progress — [[ghost_pattern_income_task]]</h2>
+  <table>
+    <tr><th>Phase</th><th>Status</th></tr>
+    <tr><td>0 / 0b Foundation + scanner</td><td>Done</td></tr>
+    <tr><td>1 Manual proof (alerts + resolve)</td><td>Done</td></tr>
+    <tr><td>2.2 Draft + publish briefs</td><td>Done</td></tr>
+    <tr><td>2.3 Paid tier ($29/mo)</td><td><strong>Not started</strong> — needs ≥40 engaged followers</td></tr>
+    <tr><td>3.x MP-2 / Telegram / embeddings</td><td>Not started</td></tr>
+  </table>
+  <p><strong>13/17 steps done</strong> on ghost_pattern_income_task.</p>
+
+  <h2>Quality gate</h2>
+  <ul>
+    <li><code>make vault-lint</code> — <strong>PASS</strong> (FM01 fixed on x_posts stub; LK01/ST* advisory only under --strict)</li>
+    <li><code>make quality-gate-fast</code> — <strong>FAIL</strong> on unchecked steps across 12 other active tasks (intentional backlog; ghost task 4 steps remain)</li>
+  </ul>
+
+  <h2>Known gaps</h2>
+  <ul>
+    <li>X post not automated — user posts via intent URL or thread copy-paste</li>
+    <li>GDELT stale (~Apr 21) — limits <code>ais_gdelt_cftc_velocity</code> auto-chains</li>
+    <li>AIS history thin — 3-node <code>ais_eia_cftc</code> rarely auto-fires</li>
+    <li>n=3 scorecard too small for paid tier or MP-2 expansion gate</li>
+  </ul>
+
+  <h2>Next session</h2>
+  <ol>
+    <li>Post X thread for Brief #1 (link public archive)</li>
+    <li><code>make ghost-pattern-daily</code> each trading day — grow auto-alert count</li>
+    <li>After new publish brief: <code>make ghost-archive-publish</code></li>
+    <li>Refresh GDELT ingest when wiring allows</li>
+    <li>Paid tier (2.3) only after audience + n≥20 alerts</li>
+  </ol>
+
+  <h2>Related</h2>
+  <ul>
+    <li>[[ghost_pattern_income_plan]]</li>
+    <li>[[ghost_pattern_income_task]]</li>
+    <li>[[ghost_pattern_technical_roadmap]]</li>
+    <li>[[checkpoint_2026-06-08_ghost_pattern_phase0]]</li>
+    <li>[[scorecard]]</li>
+    <li>[[long_term_vision]]</li>
+  </ul>
+</body>
+</html>

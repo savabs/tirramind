@@ -31,7 +31,7 @@ Prior phases: [[agent_autonomy]], [[scoring_validation]], [[liquidity_regime_det
 
 ## Overview
 
-Build a machine intelligence system that observes the full state of the global system — physical reality, human decisions, information flows, and market prices across every country and asset class — and turns that understanding into monetizable predictive intelligence. Two tracks: **Quant Engine** (global data, math, scoring) and **Agent Intelligence** (memory, learning, autonomy). We build the engine; the agent learns to drive it.
+Build an **advanced self-improving agent** whose core asset is a **cross-domain entity embedding space** (ℰ). **Markets are playground #1** — the first harsh environment that scores the agent. Two tracks: **Agent Intelligence** (ℰ, memory, world model, alignment, RL) and **Playground infrastructure** (global sensors, `agent/quant/` math as constraints/readouts, walk-forward scoring). **ML-first:** discovery lives in representation learning, not hand-built factor shops. Canonical doctrine: [[agent_playground_doctrine]].
 
 **Product direction:** TirraMind is not only a trading system. It is a predictive intelligence platform whose outputs can serve traders, quant teams, enterprises, operators, and strategic decision-makers. Trading remains an important downstream application, but the core product is the prediction engine itself: forecasts, anomaly alerts, regime changes, entity-risk shifts, cross-domain link signals, and decision-support surfaces.
 
@@ -41,11 +41,13 @@ Build a machine intelligence system that observes the full state of the global s
 
 **Margin logic:** better models should widen margin, not threaten the business. If TirraMind is priced around outcome value and embedded in customer workflows, model improvements reduce delivery cost and improve reliability while customer willingness-to-pay remains tied to the value of being right early. The software layer matters because it embeds workflow, historical context, telemetry, and organizational habit, which makes the product harder to swap out than a raw model endpoint.
 
-**Initial commercial wedge:** the first target customers are quant firms and prop firms. They are the cleanest early market because they already understand how to evaluate and monetize predictive signal. The platform stays broader than that wedge, but first packaging should fit quant and prop workflows.
+**Commercial niche:** **N1 + N4 + microstructure** (2026-06-02). Spec: [[n1_n4_playground_spec]]. Task: [[n1_n4_microstructure_playground_task]]. Quant-desk math bar — no sentiment SKU. Buyers: macro retail, indie quant per [[revenue_plan_2026-05-08]].
+
+**Decision filter:** Does this improve ℰ / the agent loop, or only a one-off playground hack? See [[agent_playground_doctrine]].
 
 **Worldview:** Markets are outputs. Reality is the input. TirraMind operates at Layer 0 (physical: shipping, weather, factories) and Layer 1 (behavioral: policy, trades, production) to predict Layers 2-3 (information and prices). No country excluded. No data source irrelevant until proven so.
 
-**Firm identity:** TirraMind is a predictive AI company — not a quant fund. The mission is to build the most capable real-world prediction system ever constructed. The edge is: unconventional observation × SOTA math × living system architecture. The combination of methods nobody else combines (HetTGN, Bayesian belief propagation, Kalman fusion, RL, EWC continuous learning, causal chain detection) applied to data most AI companies never look at is what makes this unreplicable. Cost discipline is strategic: the cheapest data is often the most valuable precisely because nobody else is looking at it. Math on common data = commoditized. Math on unique data = the moat.
+**Firm identity:** TirraMind is an **advanced agent / predictive AI company** — not a quant fund. Mission: learn ℰ over heterogeneous reality; markets score it first. Edge: unconventional observation × ML on a graph × living system (HetTGN, belief propagation, Kalman, RL, EWC, alignment). Quant math in `agent/quant/` is **instrumentation**, not the primary discovery engine. Full doctrine: [[agent_playground_doctrine]].
 
 **POMDP doctrine:** The global system is a Partially Observable Markov Decision Process. States are partially hidden, the environment is non-stationary, actors have latent intentions, and rewards are sparse and delayed. The full stack is designed around this: GNN perceives the partially observable state → world model represents hidden-state uncertainty → Kalman fusion integrates noisy evidence → RL policy acts under uncertainty. Use RL and world model components exactly where this sequential, uncertain, partially observable structure demands it. The current RL layer (SAC, model-free) learns from experience. The Phase 48 target (Dreamer, model-based) plans by imagining trajectories through the world model — the natural solver for a POMDP at scale.
 
@@ -1491,10 +1493,18 @@ Phases 0–44 ── ALL COMPLETE
 - ✅ All 16 EWC tests pass: `PYTHONPATH=. ~/.local/bin/pytest tests/test_ewc.py`
 - ✅ `scripts/kaggle_watch.py` live terminal dashboard created.
 - ✅ Deep architecture review complete: `[[architecture_review_2026]]` — 12-section analysis, 8 risks ranked, all core components validated with sources.
-- ⬜ **NEXT: V16 Kaggle run** — `--resume 40 --epochs 50`, `use_listnet_return_loss=True`, target IC → +0.03–+0.07.
-- ⬜ Fix time_delta NaN before V16 (add NaN guard in trainer.py ~line 812).
+- ✅ Fix time_delta NaN — done 2026-05-27 (see below).
+- ⬜ **NEXT: V34 Kaggle push** — `--resume 40 --epochs 50`, `use_listnet_return_loss=True`, target IC → +0.03–+0.07.
 - ⬜ Complete Phase 17 entity linking before Phase 40 final evaluation run.
-- Return loss at ep40: ~91.4 (stable). time_delta: NaN every epoch (known, medium priority).
+
+**GNN training status (2026-05-27) — PRE-V34 FIXES COMPLETE:**
+- ✅ `time_delta NaN` fixed: `torch.isfinite()` guard added in both the main training path and EWC `_loss_from_window` in `agent/models/gnn/trainer.py`.
+- ✅ `xsnorm_price_feats` added: cross-sectional z-score normalisation of price feature block [14:23] in `graph_builder.py`. Applied consistently in `trainer.py`, `ic_check.py`, `quant_benchmark.py`.
+- ✅ `freeze_backbone` flag: `TrainerConfig.freeze_backbone` + separate raw-head optimizer/clip in `trainer.py`; `--freeze-backbone` CLI in `retrain_gnn.py`.
+- ✅ `return_raw_head` corrected eval: ICIR = **+0.467** with 26-week history. Trained checkpoint: `epoch_021_rawhead.pt`. This is a factor-model floor, independent of GNN quality.
+- ✅ Repo cleanup: 1,149 MagicMock test-DB files removed; 4 old notebooks removed; 417 MB stale nested copy removed; old upload zips removed; logs moved to `logs/`.
+- ✅ `.gitignore` updated: MagicMock patterns, root `*.log`, old upload zips, nested `tirramind_v1/` all blocked.
+- ⬜ **NEXT: V34 push** — stage ep40 → upload tirramind-data → re-upload tirramind-code → update kernel-metadata.json → push. See `[[kaggle_runbook]]` checklist.
 - Known pytest workaround: `PYTHONPATH=. ~/.local/bin/pytest` (3.10.12); system `python3.11 -m pytest` BROKEN.
 
 **All phases are $0.** Every library is open source. Every data source is a free public API.
@@ -1503,6 +1513,7 @@ Phases 0–44 ── ALL COMPLETE
 
 - [[project_memory]]
 - [[tool_priority_ranking]] — Phase 16 diagnostic-driven priority order
+- [[math_stack_roadmap]] — Full applied math stack (SDE, options, Greeks, IV surface, rough vol, CVaR, RL hedging, microstructure, information theory)
 - [[l2_tool_expansion]] — Phase 13 L2 expansion task
 - [[gnn_guided_tool_expansion]] — Phase 16 research
 - [[chat_checkpoint_2026-04-10_session3]] — latest checkpoint

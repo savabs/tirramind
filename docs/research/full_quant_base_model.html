@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>Research: Full-Quant Base Model (Pretrain → Niche Finetune)</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 960px; margin: 2rem auto; line-height: 1.55; }
+    h1, h2, h3 { color: #1a1a2e; }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: 0.92rem; }
+    th, td { border: 1px solid #ccc; padding: 0.4rem 0.6rem; text-align: left; vertical-align: top; }
+    th { background: #f0f0f8; }
+    pre { background: #f4f4f8; padding: 1rem; overflow-x: auto; font-size: 0.88rem; }
+    .thesis { background: #e8f5e9; border-left: 4px solid #2e7d32; padding: 0.75rem 1rem; }
+    .warn { background: #fff8e6; border-left: 4px solid #e6a800; padding: 0.75rem 1rem; }
+    .cite { font-size: 0.85rem; color: #555; }
+  </style>
+</head>
+<body>
+
+<h1>Research: Full-Quant Base Model</h1>
+<p><strong>Date:</strong> 2026-06-03 &nbsp;|&nbsp; <strong>Status:</strong> Active research (strategy) &nbsp;|&nbsp; <strong>Owner:</strong> Canonical strategy for M14+M15 + HetTGN training doctrine</p>
+
+<div class="thesis">
+  <strong>Thesis (founder direction):</strong> Predictiveness should come from a <em>general quant-conditioned base</em> (broad markets, full Layer-2 math on the graph, rich ℰ), then <strong>niche finetuning</strong> (N1+N4 commodities / geopolitics) — analogous to LLM pretrain on broad corpus → SFT/LoRA on a domain. The base must be “sexy strong” (auditable OOS edge on multiple readouts), not a single-ticker hack.
+</div>
+
+<h2>1. Analogy: LLM stages ↔ TirraMind stages</h2>
+<table>
+  <tr><th>LLM</th><th>TirraMind</th><th>What “strong” means</th></tr>
+  <tr><td>Pretrain (next-token)</td><td><strong>Quant base pretrain</strong></td><td>ℰ captures cross-asset state; self-supervised + multi-task losses stable across regimes</td></tr>
+  <tr><td>Mid-training / instruction</td><td><strong>Supervised readouts</strong></td><td>Return IC, vol change, surprise calibration, options-implied move direction — multi-head, walk-forward</td></tr>
+  <tr><td>SFT / LoRA on domain</td><td><strong>Niche finetune</strong></td><td>Freeze or EWC-protect backbone; adapt heads + light adapters on N1+N4 entity subset</td></tr>
+  <tr><td>Eval (MMLU, etc.)</td><td><strong>Playground scorecard</strong></td><td>N1 CFTC regimes, N2 vol surface breaks, N4 country stress — same ℰ, different readouts</td></tr>
+</table>
+
+<pre>
+Layer 1 (sensors)     →  broad ingest: prices, options, rates, positioning, macro, geo
+Layer 2 (quant math)  →  M1–M13 features ON the graph (not orphan libraries)
+Layer 3 (HetTGN)      →  BASE ℰ pretrain (all liquid hero entities)
+Layer 4 (fusion)      →  surprise / convergence on base embeddings
+Niche finetune        →  N1+N4 subgraph + commodity-heavy loss weighting + readout heads
+</pre>
+
+<p><strong>Doctrine alignment:</strong> ML still discovers combos in ℰ; quant math is <em>structured sensors</em> (Gatheral SVI, Roll spread, Rockafellar–Uryasev CVaR, Schreiber transfer entropy) — see [[agent_playground_doctrine]]. Sentiment remains banned as primary edge.</p>
+
+<div class="warn">
+  <strong>Train architecture (canonical):</strong> [[n1_outcome_input_train_doctrine]] — commodity futures return is the <em>outcome</em>; raw L1/L2 intelligence is the <em>input</em>; gates / mask options / cap GDELT / cap DeFi are <em>POC shell</em> only.
+</div>
+
+<h2>2. Why “full quant” should help predictiveness</h2>
+
+<h3>2.1 Information orthogonal to price alone</h3>
+<ul>
+  <li><strong>Options chain</strong> encodes risk-neutral distribution (IV, skew, term) — forward-looking vs realized vol in daily bars (M5/M6).</li>
+  <li><strong>Rates curve</strong> (M15.3) conditions discounting and cross-asset fair value — links sovereign nodes to instruments.</li>
+  <li><strong>Positioning + micro</strong> (CFTC, M9) — who is crowded; options can <em>confirm or contradict</em> positioning extremes.</li>
+  <li><strong>Copula / TE</strong> (M10, M14.2) — tail dependence and directional information flow as <em>edge features</em>, not hand rules.</li>
+</ul>
+
+<h3>2.2 “Confirming predictiveness” without fooling ourselves</h3>
+<p>Options are valuable as <strong>secondary validators</strong> and <strong>extra heads</strong>, not as post-hoc narrative:</p>
+<ul>
+  <li><strong>Feature path:</strong> surface features at T → predict Δrealized vol or return at T+h.</li>
+  <li><strong>Consistency path:</strong> when GNN surprise ↑, does skew/ATM IV ↑ within h days? (lead-lag audit)</li>
+  <li><strong>Disagreement path:</strong> model bullish vol, surface flat → flag for investigation (early signal or model wrong).</li>
+</ul>
+<p>All claims require walk-forward IC / Brier / calibration — same discipline as Phase 41b.</p>
+
+<h3>2.3 Literature anchors (source-backed theory)</h3>
+<ul class="cite">
+  <li><strong>SVI / no-arb surfaces:</strong> Gatheral &amp; Jacquier (2014) — arbitrage-free parameterization; repo implements M5.1–M5.4 in <code>agent/quant/volatility.py</code>.</li>
+  <li><strong>Rough vol:</strong> Bayer, Friz, Gatheral — Hurst H &lt; ½; M6.5–M6.6 in <code>agent/quant/rough.py</code>.</li>
+  <li><strong>Microstructure:</strong> Roll (1984) spread; Easley et al. VPIN; Kyle λ — M9 in <code>agent/quant/microstructure.py</code>.</li>
+  <li><strong>Constrained portfolio:</strong> Rockafellar &amp; Uryasev (2000) CVaR — planned M7.2 (not yet wired).</li>
+  <li><strong>Transfer entropy:</strong> Schreiber (2000) — planned M10.1 for directed edges.</li>
+  <li><strong>GNN + limited labels:</strong> Contrastive pretrain → fine-tune discussed in [[architecture_stress_test]] (Stanford CS224W course notes cited there) — aligns with base→finetune.</li>
+</ul>
+
+<h2>3. Current repo state (honest gap table)</h2>
+<table>
+  <tr><th>Block</th><th>Library (M#)</th><th>In pipeline.db</th><th>On GNN graph</th></tr>
+  <tr><td>SDE / Heston sim</td><td>M1 ✅</td><td>N/A (sim)</td><td>No</td></tr>
+  <tr><td>BSM / Greeks</td><td>M2 ✅</td><td>No chains</td><td>No</td></tr>
+  <tr><td>Levy / Fourier</td><td>M3–M4 partial</td><td>No</td><td>No</td></tr>
+  <tr><td>SVI / SABR surface</td><td>M5 ✅</td><td>No</td><td>No (<code>extract_gnn_features</code> unused)</td></tr>
+  <tr><td>Rough vol</td><td>M6 ✅</td><td>No</td><td>No</td></tr>
+  <tr><td>Portfolio / CVaR</td><td>M7 ⬜</td><td>—</td><td>No</td></tr>
+  <tr><td>RL hedge</td><td>M8 ⬜</td><td>—</td><td>No</td></tr>
+  <tr><td>Micro</td><td>M9 ✅</td><td>daily only</td><td>Yes (11d)</td></tr>
+  <tr><td>TE / copula</td><td>M10–M11 ⬜</td><td>sparse</td><td>No</td></tr>
+  <tr><td>GNN integration</td><td>M14 ⬜</td><td>—</td><td>Blocked on M15 + wiring</td></tr>
+  <tr><td>Data prerequisites</td><td>M15 ⬜</td><td>partial rates (26 rows)</td><td>—</td></tr>
+</table>
+
+<p><strong>Implication:</strong> “Full quant” today = <strong>code exists, graph does not.</strong> Commodity GNN v1 (Gate A–C) is a valid <em>niche finetune</em> candidate, not the base model.</p>
+
+<h2>4. Target architecture: Quant-Conditioned HetTGN (Q-HetTGN)</h2>
+
+<h3>4.1 Node feature tensor (instrument type)</h3>
+<p>Design goal: fixed schema, block-sparse when data missing (zeros + mask bit), no hallucinated IV.</p>
+<pre>
+v1 commodity finetune (now):  BASE(14) + PRICE(9) + M9(11) = 34
+v2 quant base (target):       BASE(14) + PRICE(9) + M9(11) + M5_IV(9) + M2_GREEKS(5) + M6_ROUGH(2) + mask(4) ≈ 54
+  (exact dims finalized in spec after M15.1 schema known)
+</pre>
+
+<h3>4.2 Entity types beyond instruments</h3>
+<ul>
+  <li><strong>cftc_contract</strong> — already in graph via observations.</li>
+  <li><strong>country</strong> — GDELT + sovereign_yield (expand M15.3 backfill).</li>
+  <li><strong>rate_curve / index</strong> — new entities if needed for curve nodes (spec step).</li>
+  <li><strong>option_root</strong> — optional entity type linking chain snapshots to underlyings (M15.1).</li>
+</ul>
+
+<h3>4.3 Training objectives (multi-task base)</h3>
+<table>
+  <tr><th>Phase</th><th>Loss</th><th>Purpose</th></tr>
+  <tr><td>Base A</td><td>Self-supervised link / temporal contrastive on ℰ</td><td>Learn geometry without sparse return labels ([[architecture_stress_test]] Option E)</td></tr>
+  <tr><td>Base B</td><td>Return / vol change IC (Huber + rank)</td><td>Economic readout (current trainer)</td></tr>
+  <tr><td>Base C</td><td>Surprise calibration</td><td>Predict next observation bucket</td></tr>
+  <tr><td>Base D</td><td>Options-implied move (when M15 live)</td><td>Auxiliary head: ΔIV_ATM or skew change</td></tr>
+  <tr><td>Niche FT</td><td>Weighted IC on N1 universe + N4 country episodes</td><td>EWC or LoRA on backbone; freeze quant blocks optional</td></tr>
+</table>
+
+<h3>4.4 Modal balance (critical)</h3>
+<div class="warn">
+  GDELT ≈ 78–90% of observations — can drown options/CFTC signal. Base pretrain must enforce <strong>per-batch modality caps</strong> (Phase 47 doctrine: ≤30% any single category) and/or <strong>importance sampling</strong> by <code>observation_type</code>.
+</div>
+
+<h2>5. M15 data strategy (verified candidates — license TBD per vendor)</h2>
+<p>No single verified <em>free unlimited</em> historical chain API found in 2026-06 web scan. Candidates for <strong>project decision + license review</strong>:</p>
+<table>
+  <tr><th>Source</th><th>Coverage</th><th>Granularity</th><th>Cost model</th><th>Notes</th></tr>
+  <tr><td><a href="https://eodhd.com/lp/us-stock-options-api">EODHD Options API</a></td><td>US equities/ETFs (6000+)</td><td>EOD, ~2y history cited</td><td>From ~$29.99/mo (vendor page)</td><td>Greeks/IV fields claimed; good for base SPY/SPX slice</td></tr>
+  <tr><td><a href="https://databento.com/options">Databento OPRA</a></td><td>SPY, SPX, single names</td><td>Tick+</td><td>Pay-per-use; $125 credits for new users (vendor page)</td><td>Conflicts with Phase 47 “no HFT tick” unless we ingest EOD aggregates only</td></tr>
+  <tr><td><a href="https://www.cboe.com/us/options/market_statistics/historical_data/">Cboe historical</a></td><td>Index/equity volume, ratios</td><td>Daily archives</td><td>Free downloads (limited)</td><td>Not full chain; useful for regime flags</td></tr>
+  <tr><td>FRED + <code>sovereign_debt</code></td><td>Rates</td><td>Daily/monthly</td><td>Free</td><td>Extend existing tool; fix 26-row sparsity</td></tr>
+  <tr><td>CME / commodity options</td><td>CL, GC, NG</td><td>—</td><td>Often paid</td><td>Aligns with N1; verify CME data license separately</td></tr>
+</table>
+<p><strong>Recommendation for M15.1 v0:</strong> SPY + SPX (or SPY only) EOD chain via one paid API after license sign-off OR Cboe + yfinance-style fallback only after endpoint probe in implementation task. <strong>Do not wire graph until rows exist in DB.</strong></p>
+
+<h2>6. What to include: futures, derivatives, etc. (internet + repo audit)</h2>
+
+<p>Industry sources ([LSEG multi-asset coverage](https://www.lseg.com/en/insights/data-analytics/covering-all-bases-the-importance-of-global-data-coverage-for-multi-asset-class-trading), [quant signal vetting](https://youngandcalculated.substack.com/p/how-quant-hedge-funds-actually-build), [derivatives data management](https://www.xenomorph.com/data-management-for-derivatives-trading-and-valuation/)) agree: systematic desks need <strong>breadth across asset classes</strong>, <strong>linkage derivative → underlying</strong>, and <strong>point-in-time</strong> history. Tick/L3 is for HFT desks — not required for TirraMind’s EOD + daily GNN base.</p>
+
+<h3>6.1 Plain glossary</h3>
+<table>
+  <tr><th>Term</th><th>What it is</th><th>Do we need it?</th></tr>
+  <tr><td><strong>Spot / cash</strong></td><td>Stock price today</td><td>Via ETFs (SPY) or futures front month</td></tr>
+  <tr><td><strong>Futures</strong></td><td>Contract to buy/sell later (CL, ES, ZN)</td><td><strong>Yes — already</strong> (<code>instrument_daily</code> on 89 symbols)</td></tr>
+  <tr><td><strong>Options</strong></td><td>Right to buy/sell at a strike/expiry</td><td><strong>Yes for full quant</strong> — missing in DB (M15.1)</td></tr>
+  <tr><td><strong>Options on futures</strong></td><td>Options on CL/GC/ES futures</td><td><strong>High value for N1+N2</strong> — separate ingest (often CME-licensed)</td></tr>
+  <tr><td><strong>FX</strong></td><td>Currencies</td><td><strong>Partial</strong> — 15 FX pairs with daily bars in DB</td></tr>
+  <tr><td><strong>Rates / bonds</strong></td><td>Yields, curves (ZN, US10Y)</td><td><strong>Yes</strong> — expand <code>sovereign_debt</code> + bond ETFs (10 FI in DB)</td></tr>
+  <tr><td><strong>Swaps / forwards (OTC)</strong></td><td>Custom bank contracts</td><td><strong>Later</strong> — hard ingest; not v1 base</td></tr>
+  <tr><td><strong>Credit / CDS</strong></td><td>Default risk instruments</td><td><strong>Later</strong> — institutional feeds</td></tr>
+  <tr><td><strong>Crypto perps</strong></td><td>Derivatives on-chain</td><td><strong>Optional</strong> — 2 symbols today; separate niche (N3)</td></tr>
+</table>
+
+<h3>6.2 Three tiers for TirraMind (not “everything on day one”)</h3>
+<table>
+  <tr><th>Tier</th><th>Include</th><th>Why</th><th>Repo status (2026-06-03)</th></tr>
+  <tr><td><strong>T0 — Required for quant base</strong></td><td>Daily OHLCV futures + ETFs + FX; rate curve; options EOD chains (SPY + key futures options); CFTC; corporate actions/dividends for priced equities; calendar</td><td>Underlying + convexity + discounting — minimum to run M2/M5 on graph</td><td>Futures/ETF/FX ✅ (~89 inst); options ❌; rates sparse (26 rows); dividends ❌</td></tr>
+  <tr><td><strong>T1 — Strong base (recommended)</strong></td><td>+ Expanded sovereign yields; vol indices (VIX); index + commodity option surfaces; positioning (CFTC ✅); macro (FRED)</td><td>Cross-asset regime + vol playground (N2, N5)</td><td>CFTC ✅; GDELT ✅; VIX 2 symbols; ghost tools sparse</td></tr>
+  <tr><td><strong>T2 — Full desk parity</strong></td><td>+ Tick/L2, credit, swaps, full equity fundamentals, alt-data saturation</td><td>Jane Street / HFT tier</td><td><strong>Out of scope</strong> per Phase 47 doctrine (HFT tick, paid firehose) unless policy changes</td></tr>
+</table>
+
+<h3>6.3 “Derivatives” — which ones matter for predictiveness</h3>
+<ul>
+  <li><strong>Futures:</strong> Already your backbone — physical commodities, equity index risk, rates proxies (ZN, ZB ETFs).</li>
+  <li><strong>Listed options (equity + index + commodity):</strong> Highest marginal value for full quant — implied distribution, skew, term structure ([[full_quant_base_model]] §2).</li>
+  <li><strong>Futures ≠ options:</strong> You can have CL futures daily bars without CL option IV — M15 must add the <em>options</em> leg explicitly.</li>
+  <li><strong>ETFs:</strong> Treat as cash proxies (SPY, sector ETFs) — you already have 36 equity/sector ETFs with daily data.</li>
+  <li><strong>Swaps/CDS:</strong> Skip until T2; not needed to beat commodity-only IC.</li>
+</ul>
+
+<h3>6.4 What TirraMind already has (DB audit)</h3>
+<pre>
+89 instruments with instrument_daily: commodity(20), equity_etf(21), sector_etf(15), fx(15),
+  fixed_income(10), equity_index futures(4), vol(2), crypto(2)
++ CFTC positioning, GDELT, Polymarket, insider, etc.
+Missing for full quant: options_chain_eod, dividend, dense rate curve, commodity option vol
+</pre>
+
+<h3>6.5 Recommended M15 expansion order (base model)</h3>
+<ol>
+  <li><strong>Rates:</strong> Backfill US curve (existing <code>sovereign_debt</code> + FRED) — free, enables BSM r(T).</li>
+  <li><strong>Options EOD:</strong> SPY + SPX (or QQQ) chains — general vol base for N2.</li>
+  <li><strong>Commodity options:</strong> CL, GC, NG (CME) — aligns with N1 finetune.</li>
+  <li><strong>Equity index options:</strong> ES options — links macro equity risk to futures.</li>
+  <li><strong>Dividends:</strong> Names you price with M2 (ETFs + large underlyings).</li>
+  <li><strong>Tick (M15.2):</strong> Only if policy allows — Hawkes/VPIN v2.</li>
+</ol>
+
+<p><strong>You do NOT need every derivative product</strong> for a strong base — you need <em>liquid</em> instruments with <em>linked</em> underlying + options + rates, ingested point-in-time.</p>
+
+<h3>6.6 Implementation status (2026-06-03)</h3>
+<table>
+  <tr><th>Tier</th><th>Item</th><th>Status</th></tr>
+  <tr><td>Must</td><td>US rate curve</td><td>✅ <code>sovereign_debt</code> persists full <code>yields</code> dict per day; backfill script</td></tr>
+  <tr><td>Must</td><td>Options EOD</td><td>⏸ Ingest exists; <strong>training masked</strong> (<code>TIRRA_MASK_M15_OPTIONS=1</code>) until paid history — policy 2026-06-04</td></tr>
+  <tr><td>Must</td><td>Dividends</td><td>✅ <code>dividend</code> — SPY + 20 equity ETFs</td></tr>
+  <tr><td>Should</td><td>Futures options (CL=F)</td><td>❌ Yahoo has CL not CL=F; CME ingest TBD</td></tr>
+  <tr><td>Should</td><td>Tick/L2</td><td>❌ deferred</td></tr>
+</table>
+<p>Scripts: <code>scripts/backfill_m15_quant_data.py</code> · DAG: <code>fetch_options_chains</code>, <code>fetch_dividends</code>, <code>fetch_us_yield_curve</code>. Next: M14.1 wire features to graph.</p>
+
+<h2>7. Phased execution (revised roadmap)</h2>
+<pre>
+Phase 0  ✅ L1/L2 commodity gates ([[l1_l2_pretrain_signoff]])
+Phase A  Commodity GNN train (phase50) — dim 49, options block masked
+Phase B  M15.1 + M15.3 ingest (options EOD + rate curve backfill)
+Phase C  M14.1 wire M5/M2 features → graph_builder + new gates
+Phase D  Quant BASE pretrain — broad instrument set, multi-task, modal caps
+Phase E  N1+N4 finetune from base checkpoint (EWC/LoRA)
+Phase F  M7 portfolio head, M8 hedge (reads ℰ), M10 TE edges
+</pre>
+
+<p><strong>Parallel track:</strong> Complete M7.1–M7.2 (differentiable CVaR) as Layer-2 readout math while data ingests.</p>
+
+<h2>8. Success metrics (base “sexy strong”)</h2>
+<table>
+  <tr><th>Metric</th><th>Base target</th><th>Niche FT target</th></tr>
+  <tr><td>Return IC (26w WF)</td><td>&gt; 0.03, t &gt; 2 on liquid basket</td><td>&gt; commodity-only baseline</td></tr>
+  <tr><td>Vol direction IC</td><td>&gt; 0.05 on ATM IV change</td><td>N2 playground probe</td></tr>
+  <tr><td>Surprise calibration</td><td>Brier &lt; naive</td><td>—</td></tr>
+  <tr><td>Embedding stability</td><td>No collapse (V49 lesson)</td><td>—</td></tr>
+  <tr><td>Options consistency</td><td>Lead-lag hit rate &gt; 55% on stress flags</td><td>N1 macro events</td></tr>
+</table>
+
+<h2>9. Risks &amp; mitigations</h2>
+<ul>
+  <li><strong>Feature explosion without data</strong> → mask bits + gate scripts per block (extend Gate B/C).</li>
+  <li><strong>Paid data vs cost doctrine</strong> → treat M15 as infra budget; document ROI vs Kaggle GPU time.</li>
+  <li><strong>Look-ahead in chains</strong> → <code>observed_at</code> = quote time; walk-forward only.</li>
+  <li><strong>Skipping base → finetune</strong> → commodity-only ℰ may not transfer; still run Phase A for baseline.</li>
+  <li><strong>Hand-coded rules</strong> → options “confirmation” must be learned weights or audited lead-lag, not if-statements.</li>
+</ul>
+
+<h2>10. Decisions requested (founder)</h2>
+<ol>
+  <li>Approve <strong>two-stage</strong> train: quant base → N1+N4 finetune (vs single-stage commodity only).</li>
+  <li>Pick <strong>M15.1 first underlying set:</strong> SPY/SPX (equity vol base) vs CL/GC (N1 commodity options).</li>
+  <li>Approve <strong>modest paid data</strong> budget for EOD options (if free chain insufficient after probe).</li>
+  <li>Run <strong>Phase A</strong> commodity GNN now for baseline IC, or <strong>pause</strong> until Phase B ingest done.</li>
+</ol>
+
+<h2>11. Next artifacts (pipeline)</h2>
+<ul>
+  <li>Spec: [[full_quant_base_model_spec]] (tensor schema, training recipe, gate extensions)</li>
+  <li>Task: [[full_quant_base_model_task]] (M15 → M14.1 → base train → niche FT)</li>
+  <li>Update [[math_stack_roadmap]] — mark M14/M15 as blocking “base model” track</li>
+</ul>
+
+<h2>Related</h2>
+<ul>
+  <li>[[agent_playground_doctrine]]</li>
+  <li>[[math_stack_roadmap]]</li>
+  <li>[[quant_training_ground]]</li>
+  <li>[[l1_l2_pretrain_signoff]]</li>
+  <li>[[architecture_stress_test]]</li>
+  <li>[[niche_playground_competition_spec]]</li>
+  <li>[[n1_n4_playground_spec]]</li>
+  <li>[[world_state_prediction_methodology]]</li>
+</ul>
+
+<p><em>End research — 2026-06-03</em></p>
+</body>
+</html>

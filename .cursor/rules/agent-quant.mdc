@@ -1,0 +1,43 @@
+---
+description: Quant module conventions (Layer 2 feature engineering)
+globs: agent/quant/**
+alwaysApply: false
+---
+
+# Quant Module Conventions
+
+## Module Pattern
+- Always start with `from __future__ import annotations`
+- Three-tier imports: stdlib → third-party (numpy, scipy, etc.) → local
+- Comprehensive type hints (`np.ndarray`, `list[int]`, `dict[str, Any]`)
+
+## Code Structure
+- **Result classes**: Use `@dataclass` with `@property` for derived values. Name as `<Algorithm>Result`.
+- **Algorithm classes**: Standard class with `__init__`, detailed NumPy-style docstrings with `Parameters` and `Returns` sections.
+- **Utility functions**: Compact docstrings, one function per concern.
+
+## Math Standards
+- All outputs are **distributions with uncertainty bounds**, never point estimates.
+- Use log returns unless explicitly stated otherwise.
+- Default annualization: 252 trading days.
+- Guard against division by zero, empty arrays, and NaN propagation.
+- Validate inputs at function boundaries only (not internal helpers).
+
+## Research Discipline
+- For new algorithms, unfamiliar mathematical techniques, or externally inspired implementations, search GitHub for strong OSS references and read authoritative papers or documentation before coding.
+- Use multiple keyword variants and capture repository/doc findings plus reuse constraints in the feature research note.
+- If a repository's license is unclear or incompatible with commercial use, keep only the concept in research and reimplement the method independently in TirraMind style.
+- Start the research note from `docs/research/RESEARCH_TEMPLATE.md` unless the work needs a specialized structure.
+
+## Testing Requirements
+- Every module has a corresponding `tests/test_<module>_edge.py`.
+- Edge cases are mandatory: empty arrays, single-element, NaN inputs, all-zero, negative values, very large arrays.
+- Use `pytest` with class-based grouping (`class TestBOCPD:`, etc.).
+- Numerical assertions use `np.testing.assert_allclose` or `pytest.approx`.
+
+## Libraries (no paid dependencies)
+- numpy, scipy, statsmodels, hmmlearn, filterpy, numpyro, pgmpy, cvxpy
+- Never import pandas in hot loops. Use numpy for computation, pandas for I/O boundaries.
+
+## Layer Rule
+This is **Layer 2: Feature Engineering**. No data fetching. No LLM calls. Pure math in, distributions out.

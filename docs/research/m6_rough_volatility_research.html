@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Research: M6 Rough Volatility</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 2rem;
+            background-color: #f9f9f9;
+        }
+
+        header {
+            border-bottom: 3px solid #718096;
+            padding-bottom: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        h1 {
+            color: #4a5568;
+            margin-top: 0;
+            font-size: 2.5rem;
+        }
+
+        h2 {
+            color: #2d3748;
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 0.5rem;
+            margin-top: 2rem;
+        }
+
+        .meta {
+            font-size: 0.9rem;
+            color: #666;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            background-color: #eee;
+            padding: 1rem;
+            border-radius: 4px;
+            margin-bottom: 1.5rem;
+        }
+
+        .formula {
+            background-color: #f7fafc;
+            border-left: 4px solid #718096;
+            padding: 1rem;
+            font-family: "Courier New", Courier, monospace;
+            margin: 1.5rem 0;
+            border-radius: 0 4px 4px 0;
+            overflow-x: auto;
+        }
+
+        .highlight {
+            font-weight: bold;
+            color: #4a5568;
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <h1>Research: M6 Rough Volatility</h1>
+        <div class="meta">
+            <div><strong>Phase:</strong> M6 Rough Volatility</div>
+            <div><strong>Status:</strong> ACTIVE</div>
+            <div><strong>Topic:</strong> Fractional Brownian Motion, Hurst, rBergomi</div>
+        </div>
+    </header>
+
+    <h2>1. Mathematical Foundations of Rough Volatility</h2>
+    <p>
+        Traditional models of stochastic volatility (e.g. Heston, SABR) assume volatility is driven by standard Brownian motion, which has paths of Hölder regularity $1/2 - \epsilon$.
+        Empirical studies, however, show that the log-volatility process behaves like a <span class="highlight">fractional Brownian motion (fBm)</span> with Hurst index $H \in (0, 0.5)$.
+        Since $H < 0.5$, the volatility path is highly non-smooth, presenting a highly singular, jagged behavior which is called <em>rough volatility</em>.
+    </p>
+
+    <h2>2. The Rough Bergomi (rBergomi) Model</h2>
+    <p>
+        The rBergomi model (Bayer, Friz, Gatheral 2016) is a log-normal fractional Volterra model. The instantaneous variance $V_t$ is defined as:
+    </p>
+    <div class="formula">
+        V_t = xi_0(t) * exp( eta * sqrt(2*H) * Y_t - 0.5 * eta^2 * t^(2*H) )
+    </div>
+    <p>
+        where $\xi_0(t)$ is the market forward variance curve, $\eta$ is the volatility of volatility, and $Y_t$ is a fractional Riemann-Liouville integral:
+    </p>
+    <div class="formula">
+        Y_t = \int_0^t (t-s)^{H - 1/2} dW_s
+    </div>
+    <p>
+        with $dW_s$ as the asset's orthogonal or correlated driver.
+    </p>
+
+    <h2>3. Bennedsen-Lunde-Pakkanen Hybrid Simulation</h2>
+    <p>
+        Simulating the fractional Volterra process is difficult due to the singularity of the kernel $(t-s)^{H-1/2}$ at $s = t$ when $H < 0.5$.
+        The <span class="highlight">hybrid scheme</span> (Bennedsen, Lunde, Pakkanen 2017) resolves this by decomposing the integral into:
+    </p>
+    <ul>
+        <li><strong>Local Part:</strong> Integrates the power-law singularity analytically over the most recent time step $[t-\Delta t, t]$:
+            <div class="formula">
+                Y^L_t = \int_{t-\Delta t}^t (t-s)^{H-1/2} dW_s
+            </div>
+        </li>
+        <li><strong>History Part:</strong> Approximates the integral over $[0, t-\Delta t]$ as a Riemann sum using weights $b_j$:
+            <div class="formula">
+                Y^H_t = \sum_{j=1}^{i-1} b_j \Delta W_{t - j \Delta t}<br>
+                b_j = \frac{j^{H+1/2} - (j-1)^{H+1/2}}{H + 1/2}
+            </div>
+        </li>
+    </ul>
+
+    <h2>4. Empirical Hurst Exponent Estimation</h2>
+    <p>
+        In physical time-series of asset volatility, the Hurst exponent can be estimated by analyzing the scaling of the $q$-th moment of log-volatility increments:
+    </p>
+    <div class="formula">
+        E[ |log(sigma_{t+dt}) - log(sigma_t)|^q ] = C_q * dt^(q * H)
+    </div>
+    <p>
+        Specifically, for quadratic increments ($q=2$):
+    </p>
+    <div class="formula">
+        log( E[ (log(sigma_{t+dt}) - log(sigma_t))^2 ] ) = Constant + 2 * H * log(dt)
+    </div>
+    <p>
+        We can estimate $H$ by performing a linear regression of the log-variance of increments against the log-lag $\log(dt)$ for lags $dt = 1, 2, \dots, N_{\text{lags}}$.
+    </p>
+
+    <h2>5. ATM Skew Exploding Power Law</h2>
+    <p>
+        One of the most profound signatures of rough volatility in options markets is the behavior of the ATM implied volatility skew $\psi(T) = \left|\frac{\partial \sigma_{\text{implied}}}{\partial k}(0)\right|$ as a function of time-to-maturity $T$.
+        In standard models (SABR, Heston), the ATM skew remains flat or constant as $T \rightarrow 0$.
+        In rough volatility models, the ATM skew explodes as a power law near the short-term boundary:
+    </p>
+    <div class="formula">
+        psi(T) \propto T^{H - 1/2}
+    </div>
+    <p>
+        Since $H < 0.5$, $H - 1/2 < 0$, which causes $\lim_{T \rightarrow 0} \psi(T) = \infty$, matching the real-world exploding skew observed in historical index option chains!
+    </p>
+</body>
+
+</html>

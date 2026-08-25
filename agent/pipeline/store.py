@@ -41,7 +41,9 @@ log = logging.getLogger(__name__)
 _DEFAULT_DB_PATH = ".tirra_pipeline/pipeline.db"
 _PIPELINE_SCHEMA_NAME = "pipeline_store"
 _PIPELINE_SCHEMA_VERSION = 1
-_PIPELINE_SCHEMA_DESCRIPTION = "Baseline portable schema: epoch timestamps, integer booleans, JSON text payloads"
+_PIPELINE_SCHEMA_DESCRIPTION = (
+    "Baseline portable schema: epoch timestamps, integer booleans, JSON text payloads"
+)
 
 _SCHEMA_MIGRATIONS_SQL = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -516,7 +518,9 @@ class PipelineStore:
     def get_run(self, run_id: str) -> dict[str, Any] | None:
         """Get a specific run by ID."""
         conn = self._get_conn()
-        row = conn.execute("SELECT * FROM dag_runs WHERE run_id=?", (run_id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM dag_runs WHERE run_id=?", (run_id,)
+        ).fetchone()
         if row is None:
             return None
         return self._row_to_dict(row)
@@ -660,7 +664,10 @@ class PipelineStore:
         """
         errors = validate_feature(feature)
         if errors:
-            raise ValueError(f"Feature '{feature.feature_name}' failed validation: " + "; ".join(errors))
+            raise ValueError(
+                f"Feature '{feature.feature_name}' failed validation: "
+                + "; ".join(errors)
+            )
         conn = self._get_conn()
         cursor = conn.execute(
             "INSERT OR REPLACE INTO features "
@@ -710,7 +717,10 @@ class PipelineStore:
             if errs:
                 all_errors.append(f"[{idx}] {feat.feature_name}: {'; '.join(errs)}")
         if all_errors:
-            raise ValueError(f"Batch validation failed ({len(all_errors)} feature(s)): " + " | ".join(all_errors))
+            raise ValueError(
+                f"Batch validation failed ({len(all_errors)} feature(s)): "
+                + " | ".join(all_errors)
+            )
 
         conn = self._get_conn()
         row_ids: list[int] = []
@@ -734,7 +744,11 @@ class PipelineStore:
                         json.dumps(list(feat.source_signals)),
                         feat.builder,
                         feat.unit,
-                        (json.dumps(feat.metadata, default=str) if feat.metadata else None),
+                        (
+                            json.dumps(feat.metadata, default=str)
+                            if feat.metadata
+                            else None
+                        ),
                     ),
                 )
                 row_ids.append(cursor.lastrowid)  # type: ignore[arg-type]
@@ -803,7 +817,10 @@ class PipelineStore:
         """
         errors = validate_belief(belief)
         if errors:
-            raise ValueError(f"Belief '{belief.variable_name}' failed validation: " + "; ".join(errors))
+            raise ValueError(
+                f"Belief '{belief.variable_name}' failed validation: "
+                + "; ".join(errors)
+            )
         conn = self._get_conn()
         cursor = conn.execute(
             "INSERT OR REPLACE INTO beliefs "
@@ -819,7 +836,11 @@ class PipelineStore:
                 belief.dist_type,
                 belief.mean,
                 belief.variance,
-                (json.dumps(belief.probabilities) if belief.probabilities is not None else None),
+                (
+                    json.dumps(belief.probabilities)
+                    if belief.probabilities is not None
+                    else None
+                ),
                 belief.evidence_count,
                 belief.model_graph_hash,
                 belief.confidence,
@@ -852,7 +873,10 @@ class PipelineStore:
             if errs:
                 all_errors.append(f"[{idx}] {b.variable_name}: {'; '.join(errs)}")
         if all_errors:
-            raise ValueError(f"Batch validation failed ({len(all_errors)} belief(s)): " + " | ".join(all_errors))
+            raise ValueError(
+                f"Batch validation failed ({len(all_errors)} belief(s)): "
+                + " | ".join(all_errors)
+            )
 
         conn = self._get_conn()
         row_ids: list[int] = []
@@ -872,7 +896,11 @@ class PipelineStore:
                         b.dist_type,
                         b.mean,
                         b.variance,
-                        (json.dumps(b.probabilities) if b.probabilities is not None else None),
+                        (
+                            json.dumps(b.probabilities)
+                            if b.probabilities is not None
+                            else None
+                        ),
                         b.evidence_count,
                         b.model_graph_hash,
                         b.confidence,
@@ -1107,10 +1135,30 @@ class PipelineStore:
             for r in rows
         ]
 
+    def query_all_entity_aliases(self) -> list[dict[str, Any]]:
+        """Return every row in entity_aliases — used by EntityResolver."""
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT * FROM entity_aliases ORDER BY entity_id"
+        ).fetchall()
+        return [
+            {
+                "alias_id": r["alias_id"],
+                "entity_id": r["entity_id"],
+                "source": r["source"],
+                "external_id": r["external_id"],
+                "confidence": r["confidence"],
+                "created_at": r["created_at"],
+            }
+            for r in rows
+        ]
+
     def get_entity(self, entity_id: str) -> dict[str, Any] | None:
         """Get a single entity record by ID."""
         conn = self._get_conn()
-        row = conn.execute("SELECT * FROM entities WHERE entity_id=?", (entity_id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM entities WHERE entity_id=?", (entity_id,)
+        ).fetchone()
         if row is None:
             return None
         return self._entity_row_to_dict(row)
@@ -1276,7 +1324,9 @@ class PipelineStore:
         ``"both"`` (default) — either side.
         """
         if direction not in ("outgoing", "incoming", "both"):
-            raise ValueError(f"direction must be outgoing/incoming/both, got {direction!r}")
+            raise ValueError(
+                f"direction must be outgoing/incoming/both, got {direction!r}"
+            )
 
         conn = self._get_conn()
         parts: list[str] = []
@@ -1288,7 +1338,9 @@ class PipelineStore:
             if link_type is not None:
                 clauses.append("link_type=?")
                 p.append(link_type)
-            parts.append(f"SELECT * FROM entity_links WHERE {' AND '.join(clauses)}")  # noqa: S608
+            parts.append(
+                f"SELECT * FROM entity_links WHERE {' AND '.join(clauses)}"
+            )  # noqa: S608
             params.extend(p)
 
         if direction in ("incoming", "both"):
@@ -1297,7 +1349,9 @@ class PipelineStore:
             if link_type is not None:
                 clauses.append("link_type=?")
                 p.append(link_type)
-            parts.append(f"SELECT * FROM entity_links WHERE {' AND '.join(clauses)}")  # noqa: S608
+            parts.append(
+                f"SELECT * FROM entity_links WHERE {' AND '.join(clauses)}"
+            )  # noqa: S608
             params.extend(p)
 
         sql = " UNION ".join(parts) + " ORDER BY created_at DESC LIMIT ?"
@@ -1818,7 +1872,9 @@ class PipelineStore:
     def _entity_alert_row_to_dict(row: Any) -> dict[str, Any]:
         d = dict(row)
         try:
-            d["evidence_sources"] = tuple(json.loads(d.pop("evidence_sources_json", "[]")))
+            d["evidence_sources"] = tuple(
+                json.loads(d.pop("evidence_sources_json", "[]"))
+            )
         except (json.JSONDecodeError, TypeError):
             d["evidence_sources"] = ()
         try:
@@ -1835,11 +1891,15 @@ class PipelineStore:
         except (json.JSONDecodeError, TypeError):
             d["member_entity_ids"] = []
         try:
-            d["contributing_domains"] = tuple(json.loads(d.pop("contributing_domains_json", "[]")))
+            d["contributing_domains"] = tuple(
+                json.loads(d.pop("contributing_domains_json", "[]"))
+            )
         except (json.JSONDecodeError, TypeError):
             d["contributing_domains"] = ()
         try:
-            d["contributing_tools"] = tuple(json.loads(d.pop("contributing_tools_json", "[]")))
+            d["contributing_tools"] = tuple(
+                json.loads(d.pop("contributing_tools_json", "[]"))
+            )
         except (json.JSONDecodeError, TypeError):
             d["contributing_tools"] = ()
         try:
@@ -1992,11 +2052,15 @@ class PipelineStore:
 
         for val in pending["state"]:
             if not math.isfinite(val):
-                log.warning("Pending state for %s contains non-finite value, skipping", date)
+                log.warning(
+                    "Pending state for %s contains non-finite value, skipping", date
+                )
                 return False
         for val in next_state:
             if not math.isfinite(val):
-                log.warning("next_state for %s contains non-finite value, skipping", date)
+                log.warning(
+                    "next_state for %s contains non-finite value, skipping", date
+                )
                 return False
 
         # Store the completed transition
@@ -2332,7 +2396,9 @@ class PipelineStore:
                 (status,),
             ).fetchall()
         else:
-            rows = conn.execute("SELECT * FROM discovered_sources ORDER BY discovered_at").fetchall()
+            rows = conn.execute(
+                "SELECT * FROM discovered_sources ORDER BY discovered_at"
+            ).fetchall()
         return [self._source_row_to_dict(r) for r in rows]
 
     @staticmethod
@@ -2459,9 +2525,13 @@ class PipelineStore:
         """Query registered entity types."""
         conn = self._get_conn()
         if active_only:
-            rows = conn.execute("SELECT * FROM entity_type_registry WHERE active=1 ORDER BY type_name").fetchall()
+            rows = conn.execute(
+                "SELECT * FROM entity_type_registry WHERE active=1 ORDER BY type_name"
+            ).fetchall()
         else:
-            rows = conn.execute("SELECT * FROM entity_type_registry ORDER BY type_name").fetchall()
+            rows = conn.execute(
+                "SELECT * FROM entity_type_registry ORDER BY type_name"
+            ).fetchall()
         result = []
         for r in rows:
             d = dict(r)

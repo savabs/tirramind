@@ -30,7 +30,8 @@ Rate limits: None detected. Sub-second responses.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone; UTC = timezone.utc
+import time
+from datetime import date, datetime, timedelta, timezone; UTC = timezone.utc
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -38,8 +39,10 @@ import httpx
 from agent.data.cache import DataCache
 from agent.tools.base import Tool, ToolResult
 
+from agent.pipeline.store import PipelineStore
+
 if TYPE_CHECKING:
-    from agent.pipeline.store import PipelineStore
+    pass
 
 try:
     from agent.pipeline.entity import entity_id_from_key
@@ -146,6 +149,12 @@ _BASE = "https://meri.digitraffic.fi/api"
 _UA = "TirraMind/0.1 (research; https://github.com/tirramind)"
 _TIMEOUT = 30  # bulk fetches are ~7MB
 
+# MP-1 ghost chains: one daily row per area (not per-vessel position spam).
+_AREA_DAILY_OBS = "area_daily_activity"
+_AIS_PROXY_OBS = "baltic_activity_proxy"
+_DEFAULT_MP1_AREA = "full_baltic"
+_MIN_LIVE_DAYS_FOR_PRIMARY_SERIES = 30
+
 # Cache TTLs (seconds)
 _LOC_TTL = 300  # 5 min — positions change constantly
 _META_TTL = 21600  # 6 hr — ship names/types rarely change
@@ -219,6 +228,28 @@ def _ship_type_label(code: int) -> str:
     return "other"
 
 
+def _normalize_mmsi(mmsi: int | str | None) -> int | None:
+    if mmsi is None:
+        return None
+    try:
+        return int(mmsi)
+    except (TypeError, ValueError):
+        return None
+
+
+def _vessel_meta(meta: dict[Any, dict], mmsi: int | str | None) -> dict:
+    """Lookup metadata whether the index keys are int or str MMSI."""
+    key = _normalize_mmsi(mmsi)
+    if key is None:
+        return {}
+    if key in meta:
+        return meta[key]
+    s = str(key)
+    if s in meta:
+        return meta[s]
+    return {}
+
+
 def _ship_type_matches(code: int, filter_type: str) -> bool:
     """Check if a ship type code matches the requested filter."""
     if filter_type == "all":
@@ -245,7 +276,7 @@ class AISVesselTool(Tool):
         "properties": {
             "mode": {
                 "type": "string",
-                "enum": ["area", "vessel", "port_calls", "destination_flow"],
+                "enum": ["area", "area_daily_snapshot", "vessel", "port_calls", "destination_flow"],
                 "description": (
                     "area = vessels in bounding box or named area. "
                     "vessel = specific MMSI position + metadata. "
@@ -331,14 +362,36 @@ class AISVesselTool(Tool):
     # ------------------------------------------------------------------
 
     def _get(self, url: str, params: dict | None = None, timeout: int = _TIMEOUT) -> httpx.Response:
-        """HTTP GET with standard headers and timeout."""
-        return httpx.get(
-            url,
-            params=params,
-            headers={"User-Agent": _UA, "Accept": "application/json"},
-            timeout=timeout,
-            follow_redirects=True,
-        )
+        """HTTP GET with standard headers, gzip, and 429 retry."""
+        headers = {
+            "User-Agent": _UA,
+            "Accept": "application/json",
+            "Accept-Encoding": "gzip",
+        }
+        last_exc: httpx.HTTPError | None = None
+        for attempt in range(4):
+            try:
+                resp = httpx.get(
+                    url,
+                    params=params,
+                    headers=headers,
+                    timeout=timeout,
+                    follow_redirects=True,
+                )
+                if resp.status_code == 429 and attempt < 3:
+                    time.sleep(1.5 * (attempt + 1))
+                    continue
+                resp.raise_for_status()
+                return resp
+            except httpx.HTTPError as exc:
+                last_exc = exc
+                if attempt < 3:
+                    time.sleep(1.0 * (attempt + 1))
+                    continue
+                raise
+        if last_exc is not None:
+            raise last_exc
+        raise RuntimeError("unreachable")
 
     # ------------------------------------------------------------------
     # Bulk data fetchers (with caching)
@@ -348,7 +401,7 @@ class AISVesselTool(Tool):
         """Fetch all vessel locations. Cached for 5 min."""
         cache_key = "ais_locations_bulk"
         if self._cache:
-            cached = self._cache.get("ais_vessel", {"key": cache_key}, ttl=_LOC_TTL)
+            cached = self._cache.get("ais_vessel", {"key": cache_key})
             if cached is not None:
                 return cached
 
@@ -364,9 +417,9 @@ class AISVesselTool(Tool):
 
     def _fetch_metadata(self) -> dict[int, dict]:
         """Fetch all vessel metadata, indexed by MMSI. Cached for 6hr."""
-        cache_key = "ais_metadata_bulk"
+        cache_key = "ais_metadata_bulk_v2"
         if self._cache:
-            cached = self._cache.get("ais_vessel_meta", {"key": cache_key}, ttl=_META_TTL)
+            cached = self._cache.get("ais_vessel_meta", {"key": cache_key})
             if cached is not None:
                 return cached
 
@@ -378,7 +431,7 @@ class AISVesselTool(Tool):
         indexed: dict[int, dict] = {}
         if isinstance(vessels, list):
             for v in vessels:
-                mmsi = v.get("mmsi")
+                mmsi = _normalize_mmsi(v.get("mmsi"))
                 if mmsi is not None:
                     indexed[mmsi] = v
 
@@ -391,7 +444,7 @@ class AISVesselTool(Tool):
         """Fetch metadata for a single vessel by MMSI."""
         cache_key = f"ais_meta_{mmsi}"
         if self._cache:
-            cached = self._cache.get("ais_vessel_meta_single", {"key": cache_key}, ttl=_META_TTL)
+            cached = self._cache.get("ais_vessel_meta_single", {"key": cache_key})
             if cached is not None:
                 return cached
 
@@ -406,18 +459,21 @@ class AISVesselTool(Tool):
 
         return data
 
-    def _fetch_port_calls(self, from_date: str) -> list[dict]:
-        """Fetch Finnish port call data from a given date."""
-        cache_key = f"ais_port_calls_{from_date}"
+    def _fetch_port_calls(self, from_date: str, to_date: str | None = None) -> list[dict]:
+        """Fetch Finnish port call data for a date range (inclusive from, optional to)."""
+        cache_key = f"ais_port_calls_{from_date}_{to_date or 'open'}"
         if self._cache:
-            cached = self._cache.get("ais_port_calls", {"key": cache_key}, ttl=_PORT_TTL)
+            cached = self._cache.get("ais_port_calls", {"key": cache_key})
             if cached is not None:
                 return cached
 
+        params: dict[str, str] = {"from": f"{from_date}T00:00:00Z"}
+        if to_date:
+            params["to"] = f"{to_date}T23:59:59Z"
         resp = self._get(
             f"{_BASE}/port-call/v1/port-calls",
-            params={"from": f"{from_date}T00:00:00Z"},
-            timeout=15,
+            params=params,
+            timeout=60,
         )
         resp.raise_for_status()
         data = resp.json()
@@ -437,9 +493,78 @@ class AISVesselTool(Tool):
     # Mode implementations
     # ------------------------------------------------------------------
 
+    def _count_area_vessels(
+        self,
+        area_name: str,
+        ship_type: str = "all",
+    ) -> dict[str, Any]:
+        """Count vessels in a named area (full scan, no display limit)."""
+        if area_name not in _NAMED_AREAS:
+            raise ValueError(f"Unknown area_name: {area_name}")
+        lat_min, lat_max, lon_min, lon_max = _NAMED_AREAS[area_name]
+        features = self._fetch_locations()
+        meta = self._fetch_metadata()
+        matched: list[dict[str, Any]] = []
+        for f in features:
+            geom = f.get("geometry")
+            if not geom or geom.get("type") != "Point":
+                continue
+            coords = geom.get("coordinates", [])
+            if len(coords) < 2:
+                continue
+            lon, lat = coords[0], coords[1]
+            if not _in_bbox(lat, lon, lat_min, lat_max, lon_min, lon_max):
+                continue
+            mmsi = f.get("mmsi") or f.get("properties", {}).get("mmsi")
+            if mmsi is None:
+                continue
+            vm = _vessel_meta(meta, mmsi)
+            st_code = vm.get("shipType", 0)
+            label = _ship_type_label(st_code)
+            if ship_type != "all" and not _ship_type_matches(st_code, ship_type):
+                continue
+            matched.append({"mmsi": mmsi, "ship_type": label, "ship_type_code": st_code})
+        type_counts: dict[str, int] = {}
+        for m in matched:
+            st = m.get("ship_type", "unknown")
+            type_counts[st] = type_counts.get(st, 0) + 1
+        tanker_count = type_counts.get("tanker", 0)
+        return {
+            "area": area_name,
+            "ship_type_filter": ship_type,
+            "vessel_count": len(matched),
+            "tanker_count": tanker_count,
+            "type_counts": type_counts,
+        }
+
+    def _persist_area_observation(
+        self,
+        area_name: str,
+        observed_at: float,
+        value: dict[str, Any],
+        observation_type: str,
+    ) -> None:
+        if self._store is None or entity_id_from_key is None:
+            return
+        eid = entity_id_from_key("maritime_area", area_name)
+        self._store.register_entity(
+            entity_type="maritime_area",
+            canonical_name=area_name,
+            entity_id=eid,
+            metadata={"region": "baltic", "bbox": _NAMED_AREAS.get(area_name)},
+        )
+        self._store.store_entity_observation(
+            entity_id=eid,
+            source_tool="ais_vessel",
+            observed_at=observed_at,
+            observation_type=observation_type,
+            value=value,
+            depth_level=1,
+        )
+
     def _mode_area(self, **kw: Any) -> ToolResult:
         """Vessels in a bounding box or named area."""
-        area_name = (kw.get("area_name") or "").strip().lower()
+        area_name = (kw.get("area_name") or kw.get("area") or "").strip().lower()
         ship_type = (kw.get("ship_type") or "all").strip().lower()
         limit = min(max(int(kw.get("limit", 50)), 1), 500)
 
@@ -496,7 +621,7 @@ class AISVesselTool(Tool):
 
             # Ship type filter
             if ship_type != "all":
-                vessel_meta = meta.get(mmsi, {})
+                vessel_meta = _vessel_meta(meta, mmsi)
                 st_code = vessel_meta.get("shipType", 0)
                 if not _ship_type_matches(st_code, ship_type):
                     continue
@@ -514,7 +639,7 @@ class AISVesselTool(Tool):
 
             # Enrich with metadata if available
             if meta:
-                vm = meta.get(mmsi, {})
+                vm = _vessel_meta(meta, mmsi)
                 entry["name"] = vm.get("name", "")
                 entry["destination"] = vm.get("destination", "")
                 entry["ship_type"] = _ship_type_label(vm.get("shipType", 0))
@@ -744,6 +869,45 @@ class AISVesselTool(Tool):
             },
         )
 
+    def _mode_area_daily_snapshot(self, **kw: Any) -> ToolResult:
+        """Store one daily Baltic area activity row for ghost-chain z-scores."""
+        area_name = (kw.get("area_name") or kw.get("area") or _DEFAULT_MP1_AREA).strip().lower()
+        ship_type = (kw.get("ship_type") or "tanker").strip().lower()
+        as_of = kw.get("as_of")
+        if as_of:
+            day = str(as_of)[:10]
+        else:
+            day = datetime.now(UTC).strftime("%Y-%m-%d")
+        try:
+            counts = self._count_area_vessels(area_name, ship_type="all")
+        except httpx.HTTPError as exc:
+            return ToolResult(success=False, output=f"AIS area snapshot failed: {exc}")
+        except ValueError as exc:
+            return ToolResult(success=False, output=str(exc))
+
+        metric_count = counts["tanker_count"] if ship_type == "tanker" else counts["vessel_count"]
+        value = {
+            **counts,
+            "metric": "baltic_area_live",
+            "series_count": metric_count,
+            "observed_day": day,
+        }
+        observed_at = datetime.fromisoformat(day + "T12:00:00+00:00").replace(tzinfo=UTC).timestamp()
+        try:
+            self._persist_area_observation(area_name, observed_at, value, _AREA_DAILY_OBS)
+        except Exception:
+            log.exception("Area daily snapshot persistence failed (non-fatal)")
+
+        lines = [
+            f"AIS daily snapshot: {area_name} | {counts['tanker_count']} tankers | "
+            f"{counts['vessel_count']} total vessels ({day})",
+        ]
+        return ToolResult(
+            success=True,
+            output="\n".join(lines),
+            data=value,
+        )
+
     def _mode_destination_flow(self, **kw: Any) -> ToolResult:
         """Aggregate destination distribution — the killer feature."""
         ship_type = (kw.get("ship_type") or "all").strip().lower()
@@ -833,9 +997,24 @@ class AISVesselTool(Tool):
             return
         self._persist_entities_inner(vessels)
 
+    @staticmethod
+    def _observed_at_ts(raw: Any) -> float:
+        """Normalize observed_at to unix seconds for PipelineStore."""
+        if raw is None:
+            return datetime.now(UTC).timestamp()
+        if isinstance(raw, (int, float)):
+            return float(raw)
+        if isinstance(raw, str):
+            try:
+                return float(raw)
+            except ValueError:
+                s = raw.replace("Z", "+00:00")
+                return datetime.fromisoformat(s).timestamp()
+        return datetime.now(UTC).timestamp()
+
     def _persist_entities_inner(self, vessels: list[dict[str, Any]]) -> None:
         seen: set[str] = set()
-        now = datetime.now(UTC).isoformat()
+        now_ts = datetime.now(UTC).timestamp()
         for v in vessels:
             mmsi = v.get("mmsi")
             imo = v.get("imo")
@@ -870,7 +1049,7 @@ class AISVesselTool(Tool):
                 self._store.store_entity_observation(
                     entity_id=eid,
                     source_tool="ais_vessel",
-                    observed_at=v.get("timestamp") or now,
+                    observed_at=self._observed_at_ts(v.get("timestamp") or now_ts),
                     observation_type="vessel_position",
                     value={
                         "lat": lat,
@@ -910,7 +1089,7 @@ class AISVesselTool(Tool):
 
     def _persist_port_call_entities_inner(self, calls: list[dict[str, Any]]) -> None:
         seen: set[str] = set()
-        now = datetime.now(UTC).isoformat()
+        now_ts = datetime.now(UTC).timestamp()
         for c in calls:
             mmsi = c.get("mmsi")
             imo = c.get("imoLloyds")
@@ -935,7 +1114,7 @@ class AISVesselTool(Tool):
             self._store.store_entity_observation(
                 entity_id=eid,
                 source_tool="ais_vessel",
-                observed_at=c.get("eta") or now,
+                observed_at=self._observed_at_ts(c.get("eta") or now_ts),
                 observation_type="port_call",
                 value={
                     "port": c.get("portToVisit"),
@@ -974,6 +1153,7 @@ class AISVesselTool(Tool):
 
         dispatch = {
             "area": self._mode_area,
+            "area_daily_snapshot": self._mode_area_daily_snapshot,
             "vessel": self._mode_vessel,
             "port_calls": self._mode_port_calls,
             "destination_flow": self._mode_destination_flow,
@@ -991,3 +1171,127 @@ class AISVesselTool(Tool):
         except Exception as exc:
             log.exception("AIS tool error in mode '%s'", mode)
             return ToolResult(success=False, output=f"AIS tool error: {exc}")
+
+
+# ── MP-1 ghost pattern ingest / backfill ───────────────────────────────
+
+
+def _port_call_day(call: dict[str, Any]) -> str | None:
+    raw = call.get("portCallTimestamp") or call.get("eta")
+    if not raw:
+        return None
+    return str(raw)[:10]
+
+
+def _is_tanker_port_call(call: dict[str, Any]) -> bool:
+    code = call.get("vesselTypeCode")
+    if code is None:
+        return False
+    return _SHIP_TYPE_RANGES["tanker"][0] <= int(code) <= _SHIP_TYPE_RANGES["tanker"][1]
+
+
+def backfill_ais_port_call_proxy(
+    store: PipelineStore,
+    *,
+    lookback_days: int = 90,
+    area_name: str = _DEFAULT_MP1_AREA,
+    cache: DataCache | None = None,
+) -> dict[str, Any]:
+    """Backfill daily Finnish port-call counts as Baltic activity proxy.
+
+    Digitraffic has no historical AIS area snapshots; port-call tanker counts
+  are a consistent pre-live series until ``area_daily_activity`` accumulates.
+    """
+    if entity_id_from_key is None:
+        return {"days_stored": 0, "error": "entity_id_from_key unavailable"}
+
+    tool = AISVesselTool(cache=cache, pipeline_store=store)
+    end = datetime.now(UTC).date()
+    start = end - timedelta(days=max(lookback_days, 1))
+    from_date = start.isoformat()
+    to_date = end.isoformat()
+
+    day_all: dict[str, int] = {}
+    day_tankers: dict[str, int] = {}
+    total_calls = 0
+    failed_days = 0
+
+    # Digitraffic rejects long multi-day ranges; single-day queries work for history.
+    day = start
+    while day <= end:
+        day_s = day.isoformat()
+        try:
+            calls = tool._fetch_port_calls(day_s, day_s)
+        except httpx.HTTPError as exc:
+            log.warning("AIS port-call fetch failed for %s: %s", day_s, exc)
+            failed_days += 1
+            day += timedelta(days=1)
+            time.sleep(0.5)
+            continue
+        total_calls += len(calls)
+        day_all[day_s] = len(calls)
+        day_tankers[day_s] = sum(1 for c in calls if _is_tanker_port_call(c))
+        day += timedelta(days=1)
+        time.sleep(0.35)
+
+    stored = 0
+    for day_s in sorted(day_all):
+        observed_at = datetime.fromisoformat(day_s + "T12:00:00+00:00").replace(tzinfo=UTC).timestamp()
+        tankers = day_tankers.get(day_s, 0)
+        value = {
+            "area": area_name,
+            "metric": "finnish_port_calls",
+            "vessel_count": day_all[day_s],
+            "tanker_count": tankers,
+            "series_count": tankers,
+            "observed_day": day_s,
+            "proxy": True,
+        }
+        tool._persist_area_observation(area_name, observed_at, value, _AIS_PROXY_OBS)
+        stored += 1
+
+    return {
+        "days_stored": stored,
+        "from_date": from_date,
+        "to_date": to_date,
+        "port_calls_fetched": total_calls,
+        "failed_days": failed_days,
+    }
+
+
+def ingest_area_daily_snapshot(
+    store: PipelineStore,
+    *,
+    area_name: str = _DEFAULT_MP1_AREA,
+    ship_type: str = "tanker",
+    cache: DataCache | None = None,
+    as_of: date | None = None,
+) -> dict[str, Any]:
+    """Fetch live Baltic bbox tanker count and store one row for ``as_of`` day."""
+    tool = AISVesselTool(cache=cache, pipeline_store=store)
+    result = tool.execute(
+        mode="area_daily_snapshot",
+        area_name=area_name,
+        ship_type=ship_type,
+        as_of=(as_of or datetime.now(UTC).date()).isoformat(),
+    )
+    if not result.success:
+        return {"stored": False, "error": result.output}
+    return {"stored": True, **(result.data or {})}
+
+
+def backfill_ais_area_daily(
+    store: PipelineStore,
+    *,
+    lookback_days: int = 90,
+    area_name: str = _DEFAULT_MP1_AREA,
+    cache: DataCache | None = None,
+) -> dict[str, Any]:
+    """Port-call proxy history + today's live Baltic area snapshot."""
+    proxy = backfill_ais_port_call_proxy(
+        store, lookback_days=lookback_days, area_name=area_name, cache=cache
+    )
+    live = ingest_area_daily_snapshot(
+        store, area_name=area_name, cache=cache
+    )
+    return {"proxy": proxy, "live": live}

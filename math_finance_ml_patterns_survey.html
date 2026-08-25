@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Advanced Math Finance + ML Pattern Recognition — TirraMind Survey</title>
+<style>
+  :root { --bg:#0d1117; --surface:#161b22; --border:#30363d; --text:#c9d1d9; --muted:#8b949e; --accent:#58a6ff; --green:#3fb950; --orange:#d2991d; --purple:#a371f7; --gold:#e3b341; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:var(--bg); color:var(--text); line-height:1.6; max-width:1100px; margin:0 auto; padding:2rem; }
+  h1 { font-size:1.8rem; color:#fff; border-bottom:1px solid var(--border); padding-bottom:1rem; margin-bottom:1.5rem; }
+  h2 { font-size:1.3rem; color:#fff; margin:2rem 0 0.8rem; border-bottom:1px solid var(--border); padding-bottom:0.3rem; }
+  h3 { font-size:1rem; color:var(--accent); margin:1.2rem 0 0.5rem; }
+  .badge { display:inline-block; padding:0.1rem 0.5rem; border-radius:10px; font-size:0.75rem; font-weight:600; margin:0 0.2rem; }
+  .bg { background:#1a3a2a; color:var(--green); } .bo { background:#3a2e1a; color:var(--orange); } .bp { background:#2a1a3a; color:var(--purple); } .bb { background:#1a2a3a; color:var(--accent); } .bgd { background:#3a3520; color:var(--gold); }
+  .repo { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:0.9rem 1rem; margin:0.6rem 0; }
+  .repo.math { border-left:3px solid var(--gold); }
+  .repo.ml { border-left:3px solid var(--accent); }
+  .repo h4 { font-size:0.95rem; margin-bottom:0.2rem; }
+  .repo h4 a { color:var(--accent); text-decoration:none; }
+  .repo .stars { color:var(--orange); font-size:0.8rem; }
+  .repo .desc { font-size:0.85rem; margin:0.3rem 0; }
+  .repo .take { font-size:0.8rem; color:var(--muted); margin-top:0.4rem; padding:0.4rem 0.6rem; background:#0d1117; border-radius:4px; border-left:2px solid var(--accent); }
+  .repo .take strong { color:var(--accent); }
+  .summary { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:0.8rem; margin:1rem 0; }
+  .sc { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:0.8rem; text-align:center; }
+  .sc .n { font-size:1.6rem; font-weight:700; color:var(--accent); }
+  .sc .l { color:var(--muted); font-size:0.8rem; }
+  .toc { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:1rem; margin:1rem 0; }
+  .toc ol { margin-left:1.2rem; font-size:0.85rem; }
+  .toc li { margin:0.2rem 0; }
+  .toc a { color:var(--accent); text-decoration:none; }
+  .hl { padding:0.8rem 1rem; border-radius:6px; margin:0.8rem 0; }
+  .hl-math { background:#2a2515; border:1px solid var(--gold); }
+  .hl-math h4 { color:var(--gold); }
+  .hl-ml { background:#151a2a; border:1px solid var(--accent); }
+  .hl-ml h4 { color:var(--accent); }
+  footer { margin-top:2rem; padding-top:0.8rem; border-top:1px solid var(--border); color:var(--muted); font-size:0.75rem; }
+  hr { border:none; border-top:1px solid var(--border); margin:1.5rem 0; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>📐 Advanced Math Finance + 🧠 ML Pattern Recognition</h1>
+  <p style="color:var(--muted);">Pure mathematical finance (stochastic calculus, rough volatility, optimal transport, copulas, signatures) and advanced ML (foundation models, neural ODEs, contrastive learning, TDA, SSMs, Hawkes processes)</p>
+  <div style="margin-top:0.5rem;">
+    <span class="badge bp">doc/research</span> <span class="badge bb">phase/exploration</span> <span class="badge bgd">topic/math-finance</span> <span class="badge bb">topic/ml-patterns</span> <span class="badge bo">30+ repos</span>
+  </div>
+</header>
+
+<div class="summary">
+  <div class="sc"><div class="n">8</div><div class="l">Stochastic / PDE / Lévy</div></div>
+  <div class="sc"><div class="n">4</div><div class="l">Rough Vol / Optimal Transport</div></div>
+  <div class="sc"><div class="n">3</div><div class="l">Copulas / Dependence</div></div>
+  <div class="sc"><div class="n">5</div><div class="l">Foundation Models / SSMs</div></div>
+  <div class="sc"><div class="n">4</div><div class="l">Contrastive / Representation</div></div>
+  <div class="sc"><div class="n">4</div><div class="l">Neural ODE / Signatures / TDA</div></div>
+  <div class="sc"><div class="n">3</div><div class="l">Hawkes / Point Processes</div></div>
+  <div class="sc"><div class="n">3</div><div class="l">Anomaly / Manifold / Info Geom</div></div>
+</div>
+
+<div class="toc">
+  <strong>📑 Contents</strong>
+  <ol>
+    <li><strong style="color:var(--gold)">TRACK A — Pure Math Finance</strong>: Stochastic/PDE/Lévy, Rough Vol, Optimal Transport, Copulas, Path Signatures</li>
+    <li><strong style="color:var(--accent)">TRACK B — Advanced ML Pattern Recognition</strong>: Foundation Models, SSMs (Mamba/S4), Contrastive/SSL, Neural ODEs/CDEs, TDA, Hawkes, Anomaly Detection, Manifold Learning, Info Geometry</li>
+    <li><a href="#synth">Synthesis</a></li>
+  </ol>
+</div>
+
+<!-- ===== TRACK A: PURE MATH FINANCE ===== -->
+<hr>
+<h2 style="color:var(--gold);">📐 TRACK A — Pure Mathematical Finance</h2>
+
+<h3>A.1 Stochastic Calculus, PDE Methods &amp; Lévy Processes</h3>
+
+<div class="repo math">
+  <h4><a href="https://github.com/cantaro86/Financial-Models-Numerical-Methods">cantaro86/Financial-Models-Numerical-Methods</a> <span class="stars">⭐ 6,000</span></h4>
+  <span class="badge bb">Python/Jupyter</span> <span class="badge bgd">Math Finance</span>
+  <p class="desc">Comprehensive notebooks: SDEs, Lévy processes, PDE methods (finite difference), Fourier pricing (COS, Carr-Madan), Kalman filter, Heston calibration. Covers topics "not popular among practitioners" — the advanced math that gives an edge.</p>
+  <div class="take"><strong>🎯 TirraMind:</strong> The Lévy process and Fourier pricing notebooks are reference implementations for modeling assets with jumps — critical for capturing tail events. The PDE finite-difference methods could model how shocks propagate through TirraMind's entity graph as a diffusion process.</div>
+</div>
+
+<div class="repo math">
+  <h4><a href="https://github.com/patrick-t98/quantitative-finance-notebooks">patrick-t98/quantitative-finance-notebooks</a> <span class="stars">⭐ 300</span></h4>
+  <span class="badge bb">Python</span> <span class="badge bgd">SDE + Greeks</span>
+  <p class="desc">Itô-Doeblin formula, GBM, Black-Scholes-Merton, Greeks, jump processes, exotic/American options. Clean pedagogical implementations.</p>
+  <div class="take"><strong>🎯 TirraMind:</strong> The jump process implementations complement cantaro86's work. Jump-diffusion models are essential for modeling sudden regime changes — exactly what TirraMind's alternative data (sanctions, disasters, port closures) detects.</div>
+</div>
+
+<div class="repo math">
+  <h4><a href="https://github.com/Apress/Stochastic-Finance-with-Python">Apress/Stochastic-Finance-with-Python</a> <span class="stars">⭐ 50</span></h4>
+  <span class="badge bb">Python</span> <span class="badge bgd">Stochastic Finance</span>
+  <p class="desc">Companion code for "Stochastic Finance with Python" (Avishek Nag, 2024). Covers stochastic processes, option pricing, Monte Carlo methods.</p>
+  <div class="take"><strong>🎯 TirraMind:</strong> Modern textbook-quality reference for stochastic finance implementations. The Monte Carlo methods are directly applicable to TirraMind's scenario simulation layer.</div>
+</div>
+
+<h3>A.2 Rough Volatility &amp; Fractional Processes</h3>
+
+<div class="repo math">
+  <h4><a href="https://github.com/ryanmccrickerd/rough_bergomi">ryanmccrickerd/rough_bergomi</a> <span class="stars">⭐ 200</span></h4>
+  <span class="badge bb">Python</span> <span class="badge bgd">Rough Bergomi</span>
+  <p class="desc">Python implementation of the rough Bergomi (rBergomi) model by Bayer, Friz &amp; Gatheral. Uses hybrid simulation scheme (Bennedsen, Lunde, Pakkanen) and variance reduction pricing (McCrickerd &amp; Pakkanen).</p>
+  <div class="take"><strong>🎯 TirraMind:</strong> Rough volatility (H &lt; 0.5) is a cutting-edge discovery — volatility is rougher than Brownian motion, implying strong short-term predictability. TirraMind's high-frequency alternative data (AIS, satellite) could feed into rough vol models for unprecedented short-horizon edge.</div>
+</div>
+
+<div class="repo math">
+  <h4><a href="https://github.com/sigurdroemer/rough_volatility">sigurdroemer/rough_volatility</a> <span class="stars">⭐ 30</span></h4>
+  <span class="badge bb">Python</span> <span class="badge bgd">Rough Vol + NN</span>
+  <p class="desc">Pricing models and neural network representations for rough vs classical stochastic volatility. Empirical analysis on SPX and VIX markets.</p>
+  <div class="take"><strong>🎯 TirraMind:</strong> The neural network + rough vol combination is directly relevant — it shows how to embed advanced math models into neural architectures. TirraMind could embed rough vol dynamics into its GNN node update functions.</div>
+</div>
+
+<h3>A.3 Optimal Transport &amp; Wasserstein Methods</h3>
+
+<div class="repo math">
+  <h4><a href="https://github.com/PythonOT/POT">PythonOT/POT</a> <span class="stars">⭐ 2,500</span></h4>
+  <span class="badge bb">Python</span> <span class="badge bgd">Optimal Transport</span>
+  <p class="desc">Python Optimal Transport library. Wasserstein distance, Sinkhorn, Gromov-Wasserstein, barycenters, domain adaptation, Wasserstein dimensionality reduction. 31 releases. The standard OT library.</p>
+  <div class="take"><strong>🎯 TirraMind:</strong> Wasserstein distances can measure distribution shifts in TirraMind's data feeds — detecting when a data source's statistical properties change (regime shift). Distributionally robust portfolio optimization via Wasserstein ambiguity sets is a direct application. Domain adaptation can align embeddings from different data sources.</div>
+</div>
+
+<h3>A.4 Copulas &amp; Dependence Modeling</h3>
+
+<div class="repo math">
+  <h4><a href="https://github.com/vinecopulib/pyvinecopulib">vinecopulib/pyvinecopulib</a> <span class="stars">⭐ 200</span></h4>
+  <span class="badge bb">Python/C++</span> <span class="badge bgd">Vine Copulas</span>
+  <p class="desc">High-performance vine copula library. C++ backend (Eigen) with Python interface. Flexible dependence modeling via bivariate building blocks (Aas et al., 2009).</p>
+  <div class="take"><strong>🎯 TirraMind:</strong> Vine copulas model complex multivariate dependence structures — exactly what TirraMind needs to understand how 51+ data sources co-move during crises. Tail dependence coefficients from copulas can become edge weights in TirraMind's graph, encoding "these entities crash together."</div>
+</div>
+
+<div class="repo math">
+  <h4><a href="https://github.com/maximenc/pycop">maximenc/pycop</a> <span class="stars">⭐ 100</span></h4>
+  <span class="badge bb">Python</span> <span class="badge bgd">Copula Library</span>
+  <p class="desc">Multivariate dependence modeling with copulas. Estimation, simulation, mixture models, empirical copula methods, non-parametric tail dependence.</p>
+  <div class="take"><strong>🎯 TirraMind:</strong> The mixture copula approach allows blending different dependence structures — useful for modeling assets that behave differently in normal vs crisis regimes. Lighter-weight alternative to pyvinecopulib for simpler use cases.</div>
+</div>
+
+<h3>A.5 Path Signatures (Rough Path Theory)</h3>
+
+<div class="repo math">
+  <h4><a href="https://github.com/kormilitzin/the-signature-method-in-machine-learning">kormilitzin/the-signature-method-in-machine-learning</a> <span class="stars">⭐ 300</span></h4>
+  <span class="badge bb">Python</span> <span class="badge bgd">Path Signatures</span>
+  <p class="desc">Theory and practice of the signature method — a powerful feature extraction technique from rough path theory in stochastic analysis. Applications in finance, medicine, and deep learning.</p>
+  <div class="take"><strong>🎯 TirraMind:</strong> Path signatures are a universal feature extractor for sequential data — they capture the "shape" of a time series path (lead-lag, area, curvature). TirraMind could compute signatures of AIS vessel trajectories, commodity price paths, or satellite activity sequences as graph node features. This is genuinely cutting-edge — few quant funds use signatures yet.</div>
+</div>
+
+<!-- ===== TRACK B: ADVANCED ML PATTERN RECOGNITION ===== -->
+<hr>
+<h2 style="color:var(--accent);">🧠 TRACK B — Advanced ML Pattern Recognition</h2>
+
+<h3>B.1 Time Series Foundation Models</h3>
+
+<div class="repo ml">
+  <h4><a href="https://github.com/google-research/timesfm">google-research/timesfm</a> <span class="stars">⭐ 4,000</span></h4>
+  <span class="badge bb">Python</span> <span class="badge bp">Google Research</span>
+  <p class="desc">TimesFM — pretrained time-series foundation model by Google. Decoder-only architecture. Fine-tuning with LoRA via HuggingFace + PEFT. Probabilistic forecasting.</p>
+  <div class="take"><strong>🎯 TirraMind:</strong> TimesFM could serve as a baseline forecaster for individual time series in TirraMind's graph. The GNN would then model cross-entity interactions on top. The LoRA fine-tuning approach allows adapting to TirraMind's unique data without full retraining.</div>
+</div>
+
+<div class="repo ml">
+  <h4><a href="https://github.com/time-series-foundation-models/lag-llama">time-series-foundation-models/lag-llama</a> <span class="stars">⭐ 1,500</span></h4>
+  <span class="badge bb">Python</span> <span class="badge bp">Foundation Model</span>
+  <p class="desc">Lag-Llama — probabilistic time series foundation model. Outputs full probability distributions per timestep. Pretrained on diverse corpus. Supports finetuning.</p>
+  <div class="take"><strong>🎯 TirraMind:</strong> The probabilistic output is key — it provides uncertainty estimates that TirraMind's Bayesian fusion layer can ingest. Lag-Llama on individual series + GNN on cross-series interactions = powerful combination.</div>
+</div>
+
+<h3>B.2 State Space Models (S4 / Mamba)</h3>
+
+<div class="repo ml">
+  <h4><a href="https://github.com/state-spaces/mamba">state-spaces/mamba</a> <span class="stars">⭐ 15,000</span></h4>
+  <span class="badge bb">Python</span> <span class="badge bp">SSM Architecture</span>
+  <p class="desc">Mamba — structured state space model architecture. Linear-time sequence modeling, outperforming Transformers on long sequences. Mamba-3 with structured state space duality.</p>
+  <div class="take"><strong>🎯 TirraMind:</strong> Mamba could replace or augment TGN for temporal sequence modeling in TirraMind's graph. Its linear-time scaling is critical for processing long histories (years of daily data across thousands of entities). The state space formulation naturally handles irregular sampling — common in alternative data.</div>
+</div>
+
+<div class="repo ml">
+  <h4><a href="https://github.com/state-spaces/s4">state-spaces/s4</a> <span class="stars">⭐ 3,000</span></h4>
+  <span class="badge bb">Python</span> <span class="badge bp">S4 Model</span>
+  <p class="desc">Structured State Space Sequence Models (S4). The predecessor to Mamba. Handles Long Range Arena tasks, speech, and time series. Mathematical foundation for modern SSMs.</p>
+  <div class="take"><strong>🎯 TirraMind:</strong> S4's mathematical formulation (HiPPO matrices, bilinear discretization) is worth studying for TirraMind's temporal encoding layer. The continuous-time formulation connects naturally to neural ODEs and stochastic calculus.</div>
+</div>
+
+<h3>B.3 Contrastive &amp; Self-Supervised Learning for Time Series</h3>
+
+<div class="repo ml">
+  <h4><a href="https://github.com/zhihanyue/ts2vec">zhihanyue/ts2vec</a> <span class="stars">⭐ 800</span></h4>
+  <span class="badge bb">Python</span> <span class="badge bp">AAAI 2022</span>
+  <p class="desc">TS2Vec — universal time series representation learning. Contrastive learning over timestamp-level and instance-level views. Hierarchical contrasting. Works on any time series length.</p>
+  <div class="take"><strong>🎯 TirraMind:</strong> TS2Vec could generate universal embeddings for any time series in TirraMind's graph — AIS, prices, satellite, news sentiment — all mapped to the same representation space. This enables cross-domain similarity search: "find all entities whose time series patterns resemble this vessel's trajectory."</div>
+</div>
+
+<div class="repo ml">
+  <h4><a href="https://github.com/emadeldeen24/TS-TCC">emadeldeen24/TS-TCC</a> <span class="stars">⭐ 600</span></h4>
+  <span class="badge bb">Python</span> <span class="badge bp">IJCAI 2021</span>
+  <p class="desc">Time-Series Representation Learning via Temporal and Contextual Contrasting. Weak and strong augmentations. Temporal contrasting module + contextual contrasting module.</p>
+  <div class="take"><strong>🎯 TirraMind:</strong> The augmentation-based contrastive approach is robust to noise — important for TirraMind's noisy alternative data. The contextual contrasting (discriminating between different entities' patterns) maps directly to TirraMind's entity resolution problem.</div>
+</div>
+
+<div class="repo ml">
+  <h4><a href="https://github.com/qingsongedu/Awesome-SSL4TS">qingsongedu/Awesome-SSL4TS</a> <span class="stars">⭐ 800</span></h4>
+  <span class="badge bb">Curated List</span> <span class="badge bp">SSL for TS</span>
+  <p class="desc">Comprehensive survey of self-supervised learning for time series. Covers contrastive, generative, and predictive SSL methods. The definitive reference.</p>
+  <div class="take"><strong>🎯 TirraMind:</strong> Essential reference for choosing SSL methods. The contrastive methods are most relevant — they can pretrain TirraMind's encoders on unlabeled alternative data before fine-tuning on specific prediction tasks.</div>
+</div>
+
+<h3>B.4 Neural Differential Equations</h3>
+
+<div class="repo ml">
+  <h4><a href="https://github.com/patrick-kidger/NeuralCDE">patrick-kidger/NeuralCDE</a> <span class="stars">⭐ 700</span></h4>
+  <span class="badge bb">Python</span> <span class="badge bp">NeurIPS 2020 Spotlight</span>
+  <p class="desc">Neural Controlled Differential Equations for irregular time series. Handles partially-observed, irregularly-sampled multivariate data. Continuous-time analogue of RNNs. torchcde + torchdiffeq.</p>
+  <div class="take"><strong>🎯 TirraMind:</strong> TirraMind's data is inherently irregularly sampled — AIS pings every few minutes, SEC filings quarterly, satellite images when clouds permit. Neural CDEs handle this natively. This is a direct architectural upgrade over discrete-time GNN snapshots. The CDE formulation also connects to path signatures mathematically.</div>
+</div>
+
+<div class="repo ml">
+  <h4><a href="https://github.com/Zymrael/awesome-neural-ode">Zymrael/awesome-neural-ode</a> <span class="stars">⭐ 1,000</span></h4>
+  <span class="badge bb">Curated List</span> <span class="badge bp">Neural ODEs</span>
+  <p class="desc">Comprehensive collection of neural ODE/CDE/SDE resources. Papers, code, tutorials. Covers continuous normalizing flows, latent ODEs, and applications.</p>
+  <div class="take"><strong>🎯 TirraMind:</strong> The neural SDE section is particularly relevant — it combines stochastic calculus with deep learning. Neural SDEs could model TirraMind's entity states as stochastic processes, with the GNN providing the drift and diffusion functions.</div>
+</div>
+
+<h3>B.5 Topological Data Analysis</h3>
+
+<div class="repo ml">
+  <h4><a href="https://github.com/giotto-ai/giotto-tda">giotto-ai/giotto-tda</a> <span class="stars">⭐ 800</span></h4>
+  <span class="badge bb">Python</span> <span class="badge bp">TDA Library</span>
+  <p class="desc">High-performance topological ML toolbox. Persistent homology, Mapper algorithm, persistence diagram vectorization. scikit-learn compatible. Time series, graphs, images, point clouds.</p>
+  <div class="take"><strong>🎯 TirraMind:</strong> Persistent homology detects topological features (loops, voids) in data that persist across scales — capturing market regime structure invisible to correlation analysis. The Mapper algorithm can create a topological graph from TirraMind's entity embeddings, revealing the "shape" of the market. This is bleeding-edge — almost no quant funds use TDA.</div>
+</div>
+
+<h3>B.6 Hawkes Processes &amp; Point Processes</h3>
+
+<div class="repo ml">
+  <h4><a href="https://github.com/slinderman/pyhawkes">slinderman/pyhawkes</a> <span class="stars">⭐ 200</span></h4>
+  <span class="badge bb">Python</span> <span class="badge bp">Hawkes Process</span>
+  <p class="desc">Bayesian inference for Hawkes processes with random network models. Discovers latent network connections from event timing patterns.</p>
+  <div class="take"><strong>🎯 TirraMind:</strong> Hawkes processes model self-exciting events — exactly what financial dislocations look like (one default triggers another). TirraMind could model sanctions events, port closures, or price jumps as mutually exciting point processes. The inferred network from pyhawkes could become edges in TirraMind's graph.</div>
+</div>
+
+<div class="repo ml">
+  <h4><a href="https://github.com/Hongrui24/NeuralHawkesPytorch">Hongrui24/NeuralHawkesPytorch</a> <span class="stars">⭐ 100</span></h4>
+  <span class="badge bb">Python/PyTorch</span> <span class="badge bp">Neural Hawkes</span>
+  <p class="desc">Neural Hawkes process — deep learning for event prediction. Predicts when the next event happens and what type. LSTM-based intensity functions.</p>
+  <div class="take"><strong>🎯 TirraMind:</strong> Neural Hawkes can predict the timing and type of future events in TirraMind's data streams — when will the next sanctions announcement occur? What type? This adds a temporal point process layer on top of the GNN's continuous predictions.</div>
+</div>
+
+<h3>B.7 Graph Anomaly Detection</h3>
+
+<div class="repo ml">
+  <h4><a href="https://github.com/KatieBuc/gnnad">KatieBuc/gnnad</a> <span class="stars">⭐ 100</span></h4>
+  <span class="badge bb">Python/PyG</span> <span class="badge bp">Graph Anomaly</span>
+  <p class="desc">Graph Deviation Network (GDN) — GNN-based anomaly detection on multivariate time series. Learns inter-sensor relationships as a graph, uses attention-based forecasting and deviation scoring.</p>
+  <div class="take"><strong>🎯 TirraMind:</strong> GDN's learned graph structure mirrors TirraMind's approach. The deviation scoring could detect when TirraMind's entity relationships break down — a supply chain link that suddenly deviates from historical patterns. This is an early warning system for the graph itself.</div>
+</div>
+
+<div class="repo ml">
+  <h4><a href="https://github.com/xuhongzuo/DeepOD">xuhongzuo/DeepOD</a> <span class="stars">⭐ 400</span></h4>
+  <span class="badge bb">Python</span> <span class="badge bp">Deep Anomaly</span>
+  <p class="desc">Deep learning outlier/anomaly detection library. Transformer-based, autoencoder-based, GAN-based detectors. Tabular and time series data.</p>
+  <div class="take"><strong>🎯 TirraMind:</strong> DeepOD's transformer-based anomaly detectors could monitor each of TirraMind's 51+ data feeds for anomalies — detecting data quality issues, API failures, or genuine regime changes before they corrupt the GNN training pipeline.</div>
+</div>
+
+<h3>B.8 Manifold Learning &amp; Dimensionality Reduction</h3>
+
+<div class="repo ml">
+  <h4><a href="https://github.com/lmcinnes/umap">lmcinnes/umap</a> <span class="stars">⭐ 7,500</span></h4>
+  <span class="badge bb">Python</span> <span class="badge bp">Manifold Learning</span>
+  <p class="desc">Uniform Manifold Approximation and Projection. Fast, scalable dimensionality reduction. Preserves both local and global structure. Beyond t-SNE.</p>
+  <div class="take"><strong>🎯 TirraMind:</strong> UMAP can project TirraMind's entity embeddings into 2D/3D for visualization — revealing clusters of related companies, vessels, or countries. The topological foundation of UMAP (fuzzy simplicial sets) connects to TDA. UMAP embeddings could also serve as positional encodings in the GNN.</div>
+</div>
+
+<h3>B.9 Information Geometry</h3>
+
+<div class="repo ml">
+  <h4><a href="https://github.com/nocotan/awesome-information-geometry">nocotan/awesome-information-geometry</a> <span class="stars">⭐ 300</span></h4>
+  <span class="badge bb">Curated List</span> <span class="badge bp">Info Geometry</span>
+  <p class="desc">Comprehensive resource list for information geometry. Fisher-Rao metric, natural gradient, statistical manifolds, α-connections, divergence functions.</p>
+  <div class="take"><strong>🎯 TirraMind:</strong> Natural gradient descent (using Fisher information matrix) can optimize TirraMind's probabilistic models more efficiently by respecting the geometry of the parameter space. This is particularly relevant for the Bayesian fusion layer — natural gradients follow the true steepest descent on the statistical manifold.</div>
+</div>
+
+<!-- ===== SYNTHESIS ===== -->
+<hr>
+<h2 id="synth">🎯 Synthesis: Top Ideas for TirraMind</h2>
+
+<div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+  <div class="hl hl-math">
+    <h4>📐 Math Finance — Top Picks</h4>
+    <ol style="font-size:0.85rem;">
+      <li><strong>Path Signatures</strong> — universal feature extractor for all sequential data in TirraMind. Cutting-edge, underutilized in quant finance.</li>
+      <li><strong>Rough Volatility (rBergomi)</strong> — model short-horizon predictability from high-frequency alternative data.</li>
+      <li><strong>Vine Copulas (pyvinecopulib)</strong> — multivariate tail dependence as graph edge weights.</li>
+      <li><strong>Wasserstein distances (POT)</strong> — detect distribution shifts in data feeds, distributionally robust portfolios.</li>
+      <li><strong>Lévy processes + Fourier pricing</strong> — model jump risks detected by TirraMind's event surveillance.</li>
+    </ol>
+  </div>
+  <div class="hl hl-ml">
+    <h4>🧠 ML Patterns — Top Picks</h4>
+    <ol style="font-size:0.85rem;">
+      <li><strong>Neural CDEs</strong> — handle irregularly-sampled alternative data natively. Replace discrete snapshots with continuous-time modeling.</li>
+      <li><strong>TS2Vec</strong> — universal embeddings across all data domains. Cross-domain similarity search.</li>
+      <li><strong>Mamba/S4</strong> — linear-time sequence modeling for long entity histories.</li>
+      <li><strong>Topological Data Analysis (giotto-tda)</strong> — persistent homology for market regime structure. Bleeding-edge.</li>
+      <li><strong>Neural Hawkes Processes</strong> — predict timing/type of future events from event stream data.</li>
+      <li><strong>GDN (Graph Deviation Network)</strong> — anomaly detection on the graph itself. Early warning system.</li>
+    </ol>
+  </div>
+</div>
+
+<div style="background:var(--surface); border:2px solid var(--green); border-radius:6px; padding:1rem; margin-top:1rem;">
+  <h4 style="color:var(--green); margin-top:0;">🧬 The Synthesis: Continuous-Time Heterogeneous Graph Learning</h4>
+  <p style="font-size:0.9rem;">The most powerful combination from this survey:</p>
+  <p style="font-size:0.9rem;"><strong>Neural CDEs</strong> (continuous-time, irregular sampling) + <strong>Path Signatures</strong> (universal path features) + <strong>Mamba/S4</strong> (linear-time long sequences) + <strong>Vine Copulas</strong> (tail dependence edges) + <strong>TDA</strong> (topological regime detection) + <strong>Rough Volatility</strong> (short-horizon dynamics)</p>
+  <p style="font-size:0.9rem; margin-top:0.5rem;">This stack models TirraMind's world as a <strong>continuous-time stochastic dynamical system on a heterogeneous graph</strong> — not discrete snapshots, not homogeneous nodes. This is the mathematical foundation that separates a Jane Street/Palantir hybrid from a collection of scripts.</p>
+  <p style="color:var(--green); font-weight:700;">This is the PhD-level math that gives the edge. Build it.</p>
+</div>
+
+<footer>
+  <p>Research note — <code>math_finance_ml_patterns_survey.html</code> | 2026-05-24 | 30+ repos | Combined with previous surveys: 80+ repos total</p>
+  <p>Related: <code>osiris_research.html</code>, <code>osiris_survey.html</code>, <code>advanced_quant_surveillance_survey.html</code>, <code>[[tirramind_structure]]</code></p>
+</footer>
+
+</body>
+</html>

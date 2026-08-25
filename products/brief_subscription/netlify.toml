@@ -1,0 +1,28 @@
+# Netlify static hosting for the TirraMind public site.
+# Alternative to Vercel — pick one. This folder is the publish root.
+
+[build]
+  publish = "."
+
+# Redirect /buy to the Paddle checkout once live
+[[redirects]]
+  from = "/buy"
+  to = "https://checkout.paddle.com/YOUR-LIVE-PAYMENT-LINK"
+  status = 302
+
+# Proxy the protected brief + webhook to the separate Tirra backend
+[[redirects]]
+  from = "/brief.json"
+  to = "https://api.tirramind.com/brief.json"
+  status = 200
+
+[[redirects]]
+  from = "/brief.md"
+  to = "https://api.tirramind.com/brief.md"
+  status = 200
+
+# Clean URLs
+[[redirects]]
+  from = "/*"
+  to = "/:splat.html"
+  status = 200

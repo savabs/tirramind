@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Checkpoint 2026-06-07 — V72 Confirmatory Gate FAIL · Architecture Overhaul Handoff</title>
+</head>
+<body>
+  <h1>Checkpoint 2026-06-07 — V72 Confirmatory Gate FAIL · Architecture Overhaul Handoff</h1>
+  <p><em>Session handoff for new chat. Prior work: training stagnation research → V65–V71 diagnostic batch → V72 load_model fix → aligned eval confirmatory.</em></p>
+
+  <h2>Decision (canonical for next session)</h2>
+  <p><strong>Stop tuning the current HetTGN + ListNet + concat-head stack.</strong> V72 is the first run with training-aligned eval (<code>GNN-ConcatReturnHead</code>). Primary gate <strong>FAIL</strong>: IC=+0.0587, t=1.03 (need IC&gt;0.03 <strong>and</strong> t&gt;2.0). Proceed to <strong>architectural overhaul</strong> — do not run more hyperparameter smokes on this stack unless explicitly scoped as ablations.</p>
+
+  <h2>Where we are now</h2>
+  <table border="1" cellpadding="6">
+    <tr><th>Item</th><th>Value</th></tr>
+    <tr><td>Active kernel</td><td><code>deeperisbetter/tirramind-phase50</code></td></tr>
+    <tr><td>Repo <code>kernel_version</code></td><td><strong>V72</strong> (next push → V73)</td></tr>
+    <tr><td>Kaggle UI version (last run)</td><td><strong>v73</strong></td></tr>
+    <tr><td>Last completed run</td><td><strong>V72</strong> fingerprint <code>06dcbc9c1b78</code></td></tr>
+    <tr><td>Fix label</td><td><code>v72_load_model_concat_fix</code></td></tr>
+    <tr><td>Run status</td><td>ERROR† — train 10/10 + eval printed; post-eval JSON write crashed (fixed locally)</td></tr>
+    <tr><td>State file</td><td><code>.tirra_pipeline/kaggle_state.json</code></td></tr>
+    <tr><td>Only promoted full run (reference)</td><td><strong>V52</strong> PurgedRanker IC +0.0474 (90ep, pre-backfill era)</td></tr>
+  </table>
+
+  <h2>V72 confirmatory results (aligned eval — authoritative)</h2>
+  <table border="1" cellpadding="6">
+    <tr><th>Metric</th><th>Value</th></tr>
+    <tr><td>★ PRIMARY GATE (GNN-ConcatReturnHead)</td><td><strong>FAIL</strong> — IC=+0.0587, t=+1.03, n=7 folds</td></tr>
+    <tr><td>GNN-ReturnHead</td><td>IC=+0.0587, t=+1.03 (identical to ConcatReturnHead)</td></tr>
+    <tr><td>GNN-EmbNorm</td><td>IC=+0.0664, t=+1.16 (marginal)</td></tr>
+    <tr><td>GNN-PurgedRanker</td><td>IC=−0.0785, t=−1.02 (negative)</td></tr>
+    <tr><td>Return loss ep1→10</td><td>101.30 → 102.46 (flat)</td></tr>
+    <tr><td>Collapse frac</td><td>27.55%</td></tr>
+    <tr><td>Train time</td><td>1957s (~33 min GPU)</td></tr>
+  </table>
+  <p>Eval fix verified: <code>Restored return_concat_head (instrument_raw_dim=49)</code>, <code>Running strategy: GNN-ConcatReturnHead</code>, no unexpected-key warnings on concat head.</p>
+
+  <h2>What we learned (V65–V71 batch + V72)</h2>
+  <h3>Confirmed fixes</h3>
+  <ul>
+    <li><strong>H2 clamp saturation</strong> — <code>return_pred_clamp=50</code> + LayerNorm unstuck return loss (no longer frozen at 109.59 / pred_std→0).</li>
+    <li><strong>Eval/training mismatch</strong> — V68–V71 never ran ConcatReturnHead because <code>load_model()</code> rebuilt HetTGN without <code>use_concat_head</code>. Fixed in V72.</li>
+    <li><strong>PCGrad crash</strong> — zero-pad grad flatten + try/except fallback. PCGrad runs but <strong>hurts</strong> IC/collapse (V70/V71).</li>
+    <li><strong>GPU quota</strong> — auto CPU fallback in <code>kaggle_launch.push_kernel()</code>.</li>
+  </ul>
+  <h3>Refuted / inconclusive</h3>
+  <ul>
+    <li><strong>ListNet τ=0.5</strong> — refuted (worse collapse, return loss ↑ to ~108).</li>
+    <li><strong>PCGrad</strong> — refuted as improvement (V70/V71 worse than V68 baseline).</li>
+    <li><strong>CSRC off (V66)</strong> — inconclusive; V71 τ+PCGrad collapse 49.5% worst since V64.</li>
+    <li><strong>H1 backfill signal removal</strong> — still plausible; PurgedRanker consistently negative post-backfill smokes.</li>
+  </ul>
+
+  <h2>Code changes landed this arc (repo)</h2>
+  <table border="1" cellpadding="6">
+    <tr><th>File</th><th>Change</th></tr>
+    <tr><td><code>agent/models/gnn/trainer.py</code></td><td><code>return_pred_clamp</code>, <code>use_concat_batchnorm</code>, PCGrad, [GRAD_FLOW]/[IN_SAMPLE_IC] diag; <code>_het_tgn_kwargs_from_checkpoint()</code> + <code>load_model()</code> concat-head restore</td></tr>
+    <tr><td><code>scripts/phase40_gnn_backtest.py</code></td><td><code>GNNConcatReturnHeadStrategy</code>, <code>primary_ic_strategy</code> gate; JSON <code>passed</code> fix (numpy bool)</td></tr>
+    <tr><td><code>scripts/kaggle_launch.py</code></td><td>GPU→CPU fallback; CANONICAL_KERNEL_VERSION=72</td></tr>
+    <tr><td><code>scripts/kaggle_batch_v65.py</code>, <code>v68.py</code></td><td>Batch push scripts</td></tr>
+    <tr><td><code>docs/research/training_stagnation_root_cause.html</code></td><td>H1–H6 hypotheses + instrumentation plan</td></tr>
+  </table>
+
+  <h2>User workflow preference (unchanged)</h2>
+  <ul>
+    <li><strong>No autonomous loop.</strong> Push/check logs only when user asks.</li>
+    <li>User may paste Kaggle logs manually (API often returns only latest version).</li>
+    <li>GPU quota exhausted → retry on CPU (automatic in launcher).</li>
+  </ul>
+
+  <h2>Next session — recommended start</h2>
+  <ol>
+    <li>Read this checkpoint + [[training_stagnation_root_cause]] + [[VERSIONS]].</li>
+    <li>Scope <strong>architectural overhaul</strong> (new research → spec → task). Candidates: replace ListNet with pairwise/ranknet objective; decouple return head from MTL backbone; simplify to embedding-only + honest Ridge; or new backbone (non-TGN).</li>
+    <li>Do <strong>not</strong> re-run V68-style smokes on current stack unless testing a specific new architecture component.</li>
+    <li>Local uncommitted fix: <code>phase40_gnn_backtest.py</code> JSON <code>passed</code> field — include in next push if running Kaggle again.</li>
+  </ol>
+
+  <h2>Version table (smoke batch summary)</h2>
+  <table border="1" cellpadding="6">
+    <tr><th>Repo</th><th>Kaggle UI</th><th>Fix</th><th>ConcatReturnHead eval?</th><th>Best IC note</th></tr>
+    <tr><td>V65</td><td>v66</td><td>clamp50+BN</td><td>No (load bug)</td><td>collapse 19.1%, return moving</td></tr>
+    <tr><td>V66</td><td>v67</td><td>no CSRC</td><td>No</td><td>EmbNorm +0.07 marginal</td></tr>
+    <tr><td>V67</td><td>v68</td><td>PCGrad</td><td>Crash ep1 (fixed later)</td><td>—</td></tr>
+    <tr><td>V68–V71</td><td>v69–v72</td><td>eval gate variants</td><td>No (load bug)</td><td>EmbNorm ~+0.06; Purged −0.09</td></tr>
+    <tr><td><strong>V72</strong></td><td><strong>v73</strong></td><td>load_model fix</td><td><strong>Yes</strong></td><td><strong>Concat IC +0.059 t=1.03 FAIL</strong></td></tr>
+  </table>
+
+  <h2>Related artifacts</h2>
+  <ul>
+    <li>Research: [[training_stagnation_root_cause]]</li>
+    <li>Prior checkpoint: [[chat_checkpoint_2026-06-06_v63_v64_training]]</li>
+    <li>Version log: [[VERSIONS]]</li>
+    <li>Roadmap owner: [[quant_training_ground]]</li>
+  </ul>
+</body>
+</html>

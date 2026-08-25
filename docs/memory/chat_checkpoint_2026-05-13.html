@@ -1,0 +1,1299 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>TirraMind — Grand Checkpoint 2026-05-13 (GitHub Copilot Farewell)</title>
+    <style>
+        :root {
+            --ink: #0a2540;
+            --ink2: #1a3a5c;
+            --paper: #fbfaf6;
+            --border: #d8d3c4;
+            --accent: #b85c2c;
+            --code: #2b2a26;
+            --code-bg: #f3f0e6;
+            --green: #2e7d32;
+            --red: #b71c1c;
+            --orange: #b85c2c;
+            --grey: #6b6657;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Georgia, "Times New Roman", serif;
+            background: var(--paper);
+            color: var(--ink);
+            max-width: 1100px;
+            margin: 2rem auto;
+            padding: 0 2rem;
+            line-height: 1.55;
+        }
+
+        h1 {
+            color: var(--ink);
+            border-bottom: 3px double var(--ink);
+            padding-bottom: .5rem;
+            font-size: 2.1rem;
+        }
+
+        h2 {
+            color: var(--ink);
+            border-bottom: 1px solid var(--border);
+            padding-bottom: .3rem;
+            margin-top: 2.5rem;
+            font-size: 1.6rem;
+        }
+
+        h3 {
+            color: var(--ink2);
+            margin-top: 1.5rem;
+            font-size: 1.2rem;
+        }
+
+        h4 {
+            color: var(--ink2);
+            margin-top: 1rem;
+            font-size: 1.05rem;
+            font-style: italic;
+        }
+
+        p,
+        li {
+            font-size: 1rem;
+        }
+
+        .meta {
+            font-size: .9rem;
+            color: var(--grey);
+            margin-bottom: 1rem;
+        }
+
+        .callout {
+            border-left: 4px solid var(--accent);
+            background: #fff7ee;
+            padding: .8rem 1.2rem;
+            margin: 1rem 0;
+            border-radius: 0 4px 4px 0;
+        }
+
+        .warn {
+            border-left: 4px solid var(--red);
+            background: #fff0ef;
+            padding: .8rem 1.2rem;
+            margin: 1rem 0;
+            border-radius: 0 4px 4px 0;
+        }
+
+        .ok {
+            border-left: 4px solid var(--green);
+            background: #effbf0;
+            padding: .8rem 1.2rem;
+            margin: 1rem 0;
+            border-radius: 0 4px 4px 0;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 1rem 0;
+            font-family: -apple-system, system-ui, sans-serif;
+            font-size: .92rem;
+        }
+
+        th,
+        td {
+            border: 1px solid var(--border);
+            padding: .45rem .7rem;
+            text-align: left;
+            vertical-align: top;
+        }
+
+        th {
+            background: #ebe6d4;
+        }
+
+        code {
+            background: var(--code-bg);
+            color: var(--code);
+            padding: .1rem .35rem;
+            border-radius: 3px;
+            font-family: "JetBrains Mono", Menlo, monospace;
+            font-size: .88em;
+        }
+
+        pre {
+            background: var(--code);
+            color: #f1ecdc;
+            padding: 1rem;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-family: "JetBrains Mono", Menlo, monospace;
+            font-size: .82rem;
+            line-height: 1.45;
+        }
+
+        pre code {
+            background: transparent;
+            color: inherit;
+            padding: 0;
+        }
+
+        .tag {
+            display: inline-block;
+            background: #e8e2cf;
+            color: var(--ink);
+            border-radius: 3px;
+            padding: 0 .45rem;
+            font-size: .82em;
+            margin: 0 .15rem;
+            font-family: -apple-system, system-ui, sans-serif;
+        }
+
+        .done {
+            color: var(--green);
+            font-weight: bold;
+        }
+
+        .todo {
+            color: var(--red);
+        }
+
+        .active {
+            color: var(--orange);
+            font-weight: bold;
+        }
+
+        hr {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 2rem 0;
+        }
+
+        .toc {
+            background: #f3f0e6;
+            border: 1px solid var(--border);
+            padding: 1rem 1.5rem;
+            border-radius: 4px;
+            margin-bottom: 2rem;
+            font-family: -apple-system, system-ui, sans-serif;
+            font-size: .92rem;
+            columns: 2;
+            column-gap: 2rem;
+        }
+
+        .toc a {
+            color: var(--ink);
+            text-decoration: none;
+        }
+
+        .toc a:hover {
+            text-decoration: underline;
+        }
+
+        .farewell {
+            font-style: italic;
+            color: var(--grey);
+            border-top: 2px solid var(--border);
+            padding-top: 1rem;
+            margin-top: 3rem;
+        }
+
+        blockquote {
+            border-left: 3px solid var(--border);
+            margin: 1rem 0;
+            padding: .3rem 1rem;
+            color: var(--grey);
+            font-style: italic;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>TirraMind — Grand Checkpoint, 13 May 2026</h1>
+    <p class="meta">Phase 47 (Living System / EWC stabilization on Kaggle). Latest commit <code>6199c61</code>. Author:
+        GitHub Copilot agent session, final entry before handoff to Claude Code.</p>
+
+    <div class="callout">
+        <strong>This is a farewell checkpoint.</strong> It is intentionally long and complete: it covers not only the
+        work done in this final Copilot session but the full arc of the project up to today — the architecture, the
+        eight months of phase history, the operational lessons learned, the live experiments running on Kaggle, and the
+        precise next moves so the successor agent can pick up cold without re-deriving anything. Every checkpoint in
+        <code>docs/memory/</code> from April through May is referenced. When in doubt, this document is the index.
+    </div>
+
+    <nav class="toc">
+        <strong>Contents</strong>
+        <ol>
+            <li><a href="#mission">Mission &amp; doctrine</a></li>
+            <li><a href="#arch">Architecture — the 7-layer stack</a></li>
+            <li><a href="#current-state">Current state of the system</a></li>
+            <li><a href="#phase-history">Phase history (15→47)</a></li>
+            <li><a href="#training-loop">The training loop, deconstructed</a></li>
+            <li><a href="#kaggle">Kaggle workflow &amp; gotchas</a></li>
+            <li><a href="#this-session">What this session changed</a></li>
+            <li><a href="#commits">Commit log (last 20)</a></li>
+            <li><a href="#live-experiments">Live experiments &amp; what to monitor</a></li>
+            <li><a href="#next">Immediate next steps (P1/P2/P3)</a></li>
+            <li><a href="#gotchas">Gotchas, traps, hard-won facts</a></li>
+            <li><a href="#files">Canonical file map</a></li>
+            <li><a href="#facts">Key facts table (cold-start)</a></li>
+            <li><a href="#farewell">Farewell</a></li>
+        </ol>
+    </nav>
+
+    <hr>
+
+    <h2 id="mission">1. Mission &amp; doctrine</h2>
+
+    <p><strong>TirraMind is a predictive AI company, not a quant fund.</strong> The mission is to build the most capable
+        real-world prediction system ever constructed — a living intelligence that watches physical reality (Layer 0:
+        ships, weather, factories, grid, disease), behaviour (Layer 1: policy, trades, filings, social), and information
+        flows simultaneously across every country, and outputs probability distributions over what happens next.</p>
+
+    <p>The edge is not data scale and not model size. The edge is the <em>combination</em>: unconventional observation ×
+        SOTA math × living-system architecture. Specifically, the math stack combines temporal heterogeneous GNNs,
+        Bayesian belief propagation, Kalman signal fusion, RL policy under partial observability, EWC continuous
+        learning, causal chain detection, and investigative entity linking — all running over 51 free-tier data sources
+        nobody else looks at together.</p>
+
+    <h3>The POMDP doctrine</h3>
+    <p>The global system is treated as a Partially Observable Markov Decision Process: hidden states (actors act on
+        private information), non-stationary environment (regimes shift), millions of latent intentions, sparse and
+        delayed rewards. Every layer is designed to serve this structure:</p>
+    <ul>
+        <li><strong>GNN</strong> perceives the partially observable state from heterogeneous evidence.</li>
+        <li><strong>World model</strong> represents uncertainty over hidden states (Bayesian DAG today;
+            transformer-based world model is the Phase 48 target).</li>
+        <li><strong>Kalman fusion</strong> is the belief-state estimator — combines noisy multi-source observations.
+        </li>
+        <li><strong>RL policy</strong> (SAC today, Dreamer-style model-based tomorrow) plans under that uncertainty.
+        </li>
+    </ul>
+
+    <h3>Cost discipline</h3>
+    <p><strong>$0 spend until proven edge.</strong> All data is free-tier (SEC EDGAR, GDELT, CFTC, Polymarket,
+        ClinicalTrials, ADS-B via OpenSky, ISO grids, FRED, Yahoo). All math is open source (pgmpy, pymc, filterpy,
+        cvxpy, scipy, hmmlearn, statsmodels). LLM is Groq free tier / Claude Haiku for routing only. Compute is
+        local-first with Kaggle as the GPU plane. <strong>The cheapest data is often the most valuable because nobody
+            else is looking at it.</strong></p>
+
+    <h3>Model agnosticism doctrine (standing rule)</h3>
+    <p>No model, method, or architecture is sacred. The current stack — pgmpy DAG, SAC RL, HetTGN GNN, Kalman fusion —
+        is the best-justified choice <em>right now</em> for the data volume. After Phase 40 produces real backtests, any
+        component not producing genuine predictive edge (measured by out-of-sample calibration, Sharpe attribution, or
+        convergence signal quality) gets replaced or upgraded regardless of how much code was written for it. Sunk cost
+        is not a reason to keep a weak model.</p>
+
+    <hr>
+
+    <h2 id="arch">2. Architecture — the 7-layer computation stack</h2>
+
+    <p>Every line of code in this repo maps to exactly one of these layers. Don't mix layers; clean separation enables
+        independent testing and swappability.</p>
+
+    <table>
+        <tr>
+            <th>Layer</th>
+            <th>Purpose</th>
+            <th>Module</th>
+            <th>Status</th>
+        </tr>
+        <tr>
+            <td>L1 Surveillance</td>
+            <td>Data fetching (51 free APIs)</td>
+            <td><code>agent/tools/</code></td>
+            <td class="done">29/51 wired into DAG; 22 dormant</td>
+        </tr>
+        <tr>
+            <td>L2 Feature engineering</td>
+            <td>OFI, VPIN, Hurst, transfer entropy, Hawkes intensity, BOCPD, HMM regimes</td>
+            <td><code>agent/quant/</code></td>
+            <td class="done">Live</td>
+        </tr>
+        <tr>
+            <td>L3 World model</td>
+            <td>Bayesian DAG over hidden states; belief propagation</td>
+            <td><code>agent/models/world_model/</code></td>
+            <td class="done">pgmpy live; transformer WM is Phase 48</td>
+        </tr>
+        <tr>
+            <td>L4 Signal fusion</td>
+            <td>Kalman / particle filter — belief estimator</td>
+            <td><code>agent/fusion/</code></td>
+            <td class="done">filterpy Kalman live</td>
+        </tr>
+        <tr>
+            <td>L5 RL policy</td>
+            <td>SAC today; Dreamer Phase 48; Thompson Sampling bandit for goal selection</td>
+            <td><code>agent/learning/</code></td>
+            <td class="done">SAC + bandit live</td>
+        </tr>
+        <tr>
+            <td>L6 Adversarial</td>
+            <td>Manipulation detection, edge decay, counterparty modeling</td>
+            <td><code>agent/adversarial/</code></td>
+            <td>Stubs</td>
+        </tr>
+        <tr>
+            <td>L7 LLM support</td>
+            <td>Text parsing, hypothesis generation, narration. <em>The LLM never decides.</em></td>
+            <td><code>agent/reasoning/</code></td>
+            <td class="done">Groq + Claude Haiku routing</td>
+        </tr>
+    </table>
+
+    <h3>The GNN — TirraMind's central nervous system</h3>
+    <p>The heart of the system is a <strong>Heterogeneous Temporal Graph Neural Network (HetTGN)</strong> living in
+        <code>agent/models/gnn/</code>. It is the join layer that fuses 51 data sources into a single learned
+        representation per entity per time.
+    </p>
+    <ul>
+        <li><strong>Architecture:</strong> hidden_dim=128, 2 layers, 2 attention heads, ~1.96M params.</li>
+        <li><strong>Heads:</strong> obs_type classifier (CE), value_head, return_pred_head (Phase 41 MLP 128→64→1),
+            contrastive head, time_delta head.</li>
+        <li><strong>Loss:</strong> multi-task weighted sum; Phase 49 added per-entity-type alignment weights from
+            world-model likelihood gradient.</li>
+        <li><strong>Memory:</strong> HeteroMemory GRU per node (entity state evolves continuously between training
+            runs).</li>
+        <li><strong>Continual learning:</strong> Elastic Weight Consolidation (EWC) with λ=1000, Fisher diagonal,
+            sidecar <code>ewc_state.pt</code> persisted across subprocess boundaries — see Phase 46.</li>
+    </ul>
+
+    <h3>Data Acquisition Graph (DAG)</h3>
+    <p>The DAG in <code>agent/pipeline/dags/daily_collection.py</code> defines the daily ingestion run. As of Phase 45.2
+        it has <strong>29 nodes / 29 unique operators</strong>. 22 tools remain unwired and the next wave of DAG
+        expansion is gated by GNN attention diagnostics (Signal Depth Doctrine — don't wire a 4th channel to an
+        already-dense entity type; wire the missing link between disconnected clusters).</p>
+
+    <h3>The Signal Depth Doctrine</h3>
+    <p>Every data tool must be evaluated against three depth layers:</p>
+    <ul>
+        <li><strong>L1 (Aggregate):</strong> top-line numbers — commodity infrastructure.</li>
+        <li><strong>L2 (Entity-level):</strong> resolve to individual filers, vessels, wallets, contracts. <em>This is
+                where alpha starts.</em></li>
+        <li><strong>L3 (Cross-entity combinations):</strong> link entities across tools. The investigative-journalist
+            test: <em>"would a reporter find this output useful for uncovering something hidden?"</em> If no, the tool
+            is not deep enough.</li>
+    </ul>
+
+    <hr>
+
+    <h2 id="current-state">3. Current state of the system</h2>
+
+    <table>
+        <tr>
+            <th>Metric</th>
+            <th>Value</th>
+            <th>Source</th>
+        </tr>
+        <tr>
+            <td>Tools</td>
+            <td>61 files (51 data, 10 utility)</td>
+            <td><code>tirramind_structure.md</code></td>
+        </tr>
+        <tr>
+            <td>DAG nodes wired</td>
+            <td>29 / 51 (47.1%)</td>
+            <td>Phase 45.2 baseline</td>
+        </tr>
+        <tr>
+            <td>OBSERVATION_TYPES</td>
+            <td>32</td>
+            <td>Phase 28</td>
+        </tr>
+        <tr>
+            <td>ENRICHMENT_DIM</td>
+            <td>41 (9 base stats + 32 obs_type_dist)</td>
+            <td>Phase 28</td>
+        </tr>
+        <tr>
+            <td>Bandit arms</td>
+            <td>48</td>
+            <td>—</td>
+        </tr>
+        <tr>
+            <td>Tests passing</td>
+            <td>9676+ (incl. 16 EWC tests, 65 GNN tests)</td>
+            <td>Post-Phase-46 regression 2026-04-23</td>
+        </tr>
+        <tr>
+            <td>Entity observations in pipeline.db</td>
+            <td>339,164 (post-Goldstein filter; was 977,863 pre-filter)</td>
+            <td>2026-05-12</td>
+        </tr>
+        <tr>
+            <td>Entities in pipeline.db</td>
+            <td>2,688</td>
+            <td>2026-05-12</td>
+        </tr>
+        <tr>
+            <td>Entity links</td>
+            <td>Phase 17 in progress — links being added to 9 of 12 L2 tools</td>
+            <td>—</td>
+        </tr>
+        <tr>
+            <td>GNN size</td>
+            <td>~1.96M parameters</td>
+            <td>—</td>
+        </tr>
+        <tr>
+            <td>Storage overhead (EWC)</td>
+            <td>~1.7 MB (current weights + Fisher diagonal)</td>
+            <td>Phase 46</td>
+        </tr>
+        <tr>
+            <td>Compute target</td>
+            <td>Kaggle (kernel <code>deeperisbetter/tirramind-h-g</code>)</td>
+            <td>laptop is code-only</td>
+        </tr>
+        <tr>
+            <td>Latest commit</td>
+            <td><code>6199c61</code> (this session, pushed)</td>
+            <td><code>git log</code></td>
+        </tr>
+        <tr>
+            <td>Live Kaggle run</td>
+            <td>V16 kernel version 17, epochs 40→50, running</td>
+            <td>—</td>
+        </tr>
+    </table>
+
+    <div class="warn">
+        <strong>HARD RULE: Laptop is code-only.</strong> 7.6 GB RAM and a GTX 1650 with 4 GB VRAM cannot handle the full
+        pipeline. Anything that loads a model or the DB into RAM <em>must</em> run on Kaggle. Before running any compute
+        script locally, ask: "Does this load a model or DB into RAM?" If yes — stop, push code, run it on Kaggle.
+    </div>
+
+    <hr>
+
+    <h2 id="phase-history">4. Phase history (compressed timeline)</h2>
+
+    <p>Eight months of work, sequenced. This is the full ladder, not all the rungs are equal but each one moved the
+        project forward.</p>
+
+    <h3>Foundational (Phases 1–11)</h3>
+    <ul>
+        <li><strong>Phase 7b — Global Deep Surveillance:</strong> batches 1–10 complete (57 tools built). Remaining
+            unbuilt: 7b-N (FCC Spectrum), 7b-AM (Consumer Confidence), 7b-AO (Commerce Inventory).</li>
+        <li><strong>Phase 7c — Convergence Detection (complete 2026-04-05):</strong> <code>agent/convergence/</code> —
+            10 modules, 0 LLM calls, 883 tests passing in 4.6s. 12 causal chain templates, Benjamini-Hochberg FDR,
+            Fisher combined test, smart pair selection. Registered as the 4th DAG.</li>
+        <li><strong>Phase 10b — L2 Tool Upgrades:</strong> insider_filings, form144, whale_alert all upgraded to
+            entity-resolved L2.</li>
+    </ul>
+
+    <h3>GNN track (Phases 12–17)</h3>
+    <ul>
+        <li><strong>Phase 12 — HetTGN architecture:</strong> 242 tests, full type-aware temporal GNN with HeteroMemory.
+        </li>
+        <li><strong>Phase 13 — L2 Tool Expansion:</strong> 12 L2 tools, 147 tests. Every L2 follows the pattern:
+            <code>TYPE_CHECKING</code> import → <code>PipelineStore</code> kwarg → <code>_persist_entities_inner</code>
+            → entity_ids → tests.
+        </li>
+        <li><strong>Phase 14–15 — Pattern Recovery + Fine-Tuning.</strong></li>
+        <li><strong>Phase 16 — GNN-Guided Tool Expansion:</strong> <code>run_diagnostics</code> + Tier 1/2/3 ranking
+            system.</li>
+        <li><strong>Phase 17 — Entity Linking Layer (active):</strong> 7 link types (works_for, transacts_with,
+            event_involves, port_call_to, lobbies_for, cert_for, located_in, patents_in). The blocker is that the graph
+            still has isolated nodes — entity links are what give the GNN cross-type attention something to learn.</li>
+    </ul>
+
+    <h3>Country & macro enrichment (Phases 28–29)</h3>
+    <ul>
+        <li><strong>Phase 28 — Country Node Macro Enrichment (complete 2026-04-16):</strong> sovereign_debt →
+            sovereign_yield, capital_flows → capital_flow, global_pmi → economic_activity. Country nodes now carry 6 obs
+            types. 44 new L2 tests + 14 integration tests. Regression: 9054 passing.</li>
+        <li><strong>Phase 29 — Reviewed Memory / Lesson Promotion (complete 2026-04-17):</strong> CandidateStore with
+            statistical thresholds (support≥3, runs≥2, sign_agreement≥0.8), TTL decay on EpisodicMemory, 30 tests, ~260
+            LOC.</li>
+    </ul>
+
+    <h3>DAG wiring binge (Phases 42–45)</h3>
+    <ul>
+        <li><strong>Phase 42 (complete 2026-04-21):</strong> 8 dormant L2 tools wired. DAG: 10 → 18 nodes. Entropy 0.17
+            → 0.29 nats (target ≥1.0 not reached — structural gap remains).</li>
+        <li><strong>Phase 43 (complete 2026-04-22):</strong> ais_vessel, gov_contracts, sanctions_monitor,
+            patent_filings. DAG 18 → 22.</li>
+        <li><strong>Phase 44 (complete 2026-04-22):</strong> regulatory_gazette, form144, supply_chain_monitor,
+            political_risk, comtrade. DAG 22 → 27.</li>
+        <li><strong>Phase 45.2 (complete 2026-04-22):</strong> cert_transparency + dns_monitor with 20-domain financial
+            whitelist. DAG 27 → 29.</li>
+    </ul>
+
+    <h3>Living system (Phases 46–47)</h3>
+    <ul>
+        <li><strong>Phase 46 — Living System / EWC (complete 2026-04-23):</strong> Elastic Weight Consolidation wired
+            into the trainer. λ=1000, Fisher diagonal computed once per full retrain, <code>ewc_state.pt</code> sidecar.
+            <strong>This phase made the GNN's weights evolve continuously between full retrains</strong> — the final
+            missing piece of the living system.
+        </li>
+        <li><strong>Phase 47 — Historical Backfill (complete 2026-04-24):</strong> 10-year backfill
+            (<code>--days-back 3650</code>). DB grew to 977,863 observations / 2,450 entities. GDELT contributed +900K
+            obs from a 10yr weekly-sampled backfill. Density audit identified 4 sparse entity types (wallet, protocol,
+            company, organization) as supplementary only.</li>
+    </ul>
+
+    <h3>Architectural review &amp; convergence-as-control (Phases 49 / 49b)</h3>
+    <ul>
+        <li><strong>Phase 49b — Convergence as Control Signal (complete 2026-04-24):</strong> the convergence detector
+            is no longer just a feature — it's a control signal that throttles the pipeline. New module
+            <code>agent/pipeline/regime_gate.py</code> exposes <code>get_current_regime</code>,
+            <code>is_high_changepoint</code>, <code>world_model_prior_decay</code>, <code>feature_trust_scale</code>,
+            <code>sac_entropy_scale</code>. The world model inflates Kalman P and blends CPDs toward uniform on regime
+            change; SAC entropy target scales with regime stability; GNN features are down-weighted when
+            stability_duration_days &lt; 3.
+        </li>
+        <li><strong>Phase 49 — GNN Downstream Alignment (complete 2026-04-24):</strong> new
+            <code>agent/models/gnn/alignment.py</code> with <code>compute_belief_log_likelihood_delta</code>,
+            <code>store_entity_alignment</code>, <code>load_alignment_weights</code>. The trainer now uses
+            per-entity-type CE weights derived from world-model likelihood improvement — i.e. the GNN's loss is now
+            <em>aligned with downstream usefulness</em>, not pure self-supervised reconstruction.
+        </li>
+    </ul>
+
+    <h3>Phase 40 / 41 — first contact with real IC</h3>
+    <ul>
+        <li><strong>Phase 40 — Real Data Model Refresh:</strong> walk-forward backtest against real observations. The
+            first real signal-vs-noise read.</li>
+        <li><strong>Phase 41 — IC Diagnostic + Signal Inversion (complete 2026-04-29):</strong> Added Spearman IC
+            computation per fold to <code>scripts/phase40_gnn_backtest.py</code>. Results: GNN-EmbNorm IC = −0.0325
+            (t=−1.26), GNN-ValueHead IC = −0.0165 (t=−0.96). <strong>Root cause confirmed: 92.2% of training
+                observations were GDELT → embedding became a geopolitical-activity proxy, not a return signal.</strong>
+            Inversion (contrarian) test produced ΔSharpe = −0.022 — no improvement. Temperature fix T=0.3 made GNN
+            strategy ≈ EqualWeight (neutral).</li>
+        <li><strong>Phase 41b — GDELT Goldstein Filter (complete 2026-05-06):</strong> Added
+            <code>_GOLDSTEIN_TENSION_THRESHOLD = -5.0</code> to <code>agent/tools/gdelt.py</code>. Filter applied in
+            both backfill and daily paths. Expected effect: 901,704 → ~90,000 GDELT obs; share drops 91.3% → ~50%.
+            <code>TestGoldsteinTensionFilter</code> (8 tests) added.
+        </li>
+    </ul>
+
+    <h3>Kaggle training campaign (May 2026)</h3>
+    <ul>
+        <li><strong>V11–V14 (failed):</strong> all crashed at ~60s due to <code>--wandb-run-name</code> argparse error.
+            Root cause: Kaggle secrets service intermittently fails on <code>tirramind_token</code>, kernel falls back
+            to <code>tirramind-code</code> dataset, which had a stale <code>pipeline_orchestrator.py</code> with the old
+            flag name. Fixed in commit <code>870e714</code>.</li>
+        <li><strong>V15 (success):</strong> Pushed 2026-05-12 after replacing both <code>tirramind_code.zip</code> and
+            <code>tirramind_code_p47.zip</code> in dataset v13. Trained epochs 28→38.
+        </li>
+        <li><strong>V16 (running now):</strong> Kernel <code>deeperisbetter/tirramind-h-g</code> version 17. Resuming
+            from epoch 40, target epoch 50. Critical test: does the EWC sidecar fix in <code>5ba8b2c</code> hold?
+            Success criterion: <strong>ep 41 obs_type loss &lt; 500</strong> (in V15 the EWC state was lost between
+            subprocess blocks and obs_type loss spiked).</li>
+    </ul>
+
+    <hr>
+
+    <h2 id="training-loop">5. The training loop, deconstructed</h2>
+
+    <p>This is the part of the system that has caused the most pain and that the successor agent will spend the most
+        time staring at. Read this carefully.</p>
+
+    <h3>Block-structured training</h3>
+    <p>Kaggle kernels have a 9-hour wall-clock limit. The full training loop is therefore broken into <strong>blocks of
+            5 epochs</strong>, with each block running in its own subprocess. The orchestrator is
+        <code>pipeline_orchestrator.py</code>. It runs:
+    </p>
+    <pre><code>while epochs_done &lt; target_epochs and budget_left:
+    subprocess(retrain_gnn.py --block-size 5)   # train 5 epochs
+    subprocess(auto_improve.py)                  # detect pattern, write next_config.json
+    epochs_done += 5</code></pre>
+
+    <h3>Why subprocesses (and why this caused bugs)</h3>
+    <p>Each block runs as a separate Python subprocess so OOM or crashes don't kill the orchestrator. This means
+        <strong>nothing in process memory survives between blocks</strong> — only what's persisted to disk. This bit us
+        hard with EWC: the first implementation kept Fisher diagonal in memory and the EWC penalty effectively reset to
+        zero every 5 epochs, producing obs_type loss spikes at every block boundary. The fix (commit
+        <code>5ba8b2c</code>) was to write Fisher and snapshot weights to <code>ewc_state.pt</code> after each block and
+        reload them at the start of the next.
+    </p>
+
+    <h3>auto_improve.py — the adaptation brain</h3>
+    <p>Between training blocks, <code>scripts/auto_improve.py</code> reads <code>metrics.jsonl</code>, classifies the
+        recent training trajectory into a pattern, and writes <code>next_config.json</code> which the next subprocess
+        reads. Patterns include: <code>diverging</code>, <code>stagnating</code>, <code>improving</code>,
+        <code>return_head_frozen</code>, and (as of this session) <code>improving_ic_positive</code> and
+        <code>ic_degrading</code>.
+    </p>
+
+    <p>There is also an LLM advisor (Claude Haiku) that runs alongside the heuristic classifier — see commits
+        <code>bf789e4</code>, <code>4b52bd0</code>. The LLM proposes config changes; the heuristic is the safety net.
+        The LLM never makes decisions unilaterally — it's L7 support.
+    </p>
+
+    <h3>The IC-gated triggers (added this session)</h3>
+    <p>Before this session, <code>auto_improve.py</code> only looked at training loss. That's dangerous: a model can
+        have stagnant or even rising training loss while producing positive predictive IC (the signal has just become
+        harder to fit by self-supervision). Conversely, a model can have beautifully decreasing training loss while
+        producing negative IC (memorising patterns that anti-correlate with future returns — exactly what Phase 41
+        found).</p>
+
+    <p>The new logic:</p>
+    <ul>
+        <li><code>_load_ic_results(checkpoint_dir)</code> reads <code>ic_results.json</code> written by the backtest.
+            Returns the best strategy's mean Spearman IC, or <code>None</code> if no backtest has run yet.</li>
+        <li>New pattern <strong><code>improving_ic_positive</code></strong>: if IC &gt; 0.02, return immediately with no
+            config change — <em>trust the predictive signal even if training loss is flat.</em></li>
+        <li>New pattern <strong><code>ic_degrading</code></strong>: if IC &lt; −0.01, halve <code>gdelt_frac</code> and
+            log the worst entity type from <code>entity_type_losses</code>. Limited to 2 consecutive triggers to prevent
+            oscillation.</li>
+        <li>Graceful degradation: when no <code>ic_results.json</code> exists, all IC checks return <code>None</code>
+            and the classifier falls back to pure loss-based heuristics.</li>
+    </ul>
+
+    <h3>The per-entity-type loss (added this session)</h3>
+    <p>Every epoch now writes <code>entity_type_losses</code> and <code>entity_type_counts</code> dictionaries to
+        <code>metrics.jsonl</code>. This is how <code>ic_degrading</code> identifies <em>which</em> entity type to
+        throttle. Before this change the trainer aggregated obs_type CE into a single scalar; now both
+        alignment-weighted and non-weighted branches use <code>reduction="none"</code> and per-ntype CE is accumulated.
+    </p>
+
+    <h3>The backtest CLI (added this session)</h3>
+    <p>Before: <code>scripts/phase40_gnn_backtest.py</code> hard-coded <code>MODEL_PATH</code> and <code>DB_PATH</code>.
+        To evaluate a different checkpoint you had to edit the source file. Now: <code>--model-path</code>,
+        <code>--db-path</code>, <code>--out</code> argparse flags. The script also writes <code>ic_results.json</code>
+        next to the model in the format
+        <code>{"model_path": ..., "strategies": {...}, "best": {"strategy": ..., "mean_ic": ...}}</code>. <strong>This
+            is the file that <code>auto_improve._load_ic_results</code> reads.</strong> The two systems are designed to
+        talk to each other.
+    </p>
+
+    <hr>
+
+    <h2 id="kaggle">6. Kaggle workflow &amp; gotchas</h2>
+
+    <div class="callout">
+        The canonical Kaggle reference is <code>docs/memory/kaggle_runbook.md</code>. <strong>Read it before touching
+            anything on Kaggle.</strong> This section is the summary.
+    </div>
+
+    <h3>The two-dataset model</h3>
+    <ul>
+        <li><code>tirramind-code</code> dataset — contains <code>tirramind_code.zip</code> and
+            <code>tirramind_code_p47.zip</code>. <strong>Both zips must be kept in sync.</strong> Kaggle falls back to
+            <code>tirramind_code_p47.zip</code> when git clone fails (which happens when the
+            <code>tirramind_token</code> secret fails) — this is why V11–V14 crashed: only one zip had been updated.
+        </li>
+        <li><code>tirramind-data</code> dataset — contains <code>pipeline.db</code> and
+            <code>checkpoints/epoch_NNN.pt</code> files. <strong>Checkpoint format is FLAT</strong>
+            (<code>checkpoints/epoch_NNN.pt</code>, NOT <code>checkpoints/h_g/epoch_NNN.pt</code>). The zip command must
+            preserve the subfolder — never <code>zip -j</code>.
+        </li>
+    </ul>
+
+    <h3>Code source priority</h3>
+    <ol>
+        <li>Kaggle first tries <code>git clone git@github.com:savabs/tirramind.git</code> using the
+            <code>tirramind_token</code> secret.
+        </li>
+        <li>If git clone succeeds → code is fresh from GitHub <code>main</code> branch.</li>
+        <li>If git clone fails (secret service flake) → falls back to <code>tirramind-code</code> dataset zip.</li>
+    </ol>
+
+    <div class="warn">
+        <strong>This is why the <code>tirramind_v1/</code> sandbox bit us.</strong> The Copilot agent in the prior
+        session edited files inside <code>tirramind_v1/</code>, which is an <em>untracked</em> subdirectory. Those
+        changes never reached Kaggle. <strong>All canonical code is at root-level (<code>agent/</code>,
+            <code>scripts/</code>) and tracked by git.</strong> Before editing any code that needs to run on Kaggle,
+        verify you're editing the root-level file. The path test: <code>git ls-files | grep &lt;your-file&gt;</code>
+        must return a result.
+    </div>
+
+    <h3>Pre-push gate: <code>scripts/kaggle_preflight.py</code></h3>
+    <p>9 checks that must pass before pushing a new kernel version. Added this session (commit <code>000fa7a</code>):
+    </p>
+    <ol>
+        <li>EWC tests pass</li>
+        <li>Import sanity (no circular imports)</li>
+        <li>Git working tree clean</li>
+        <li>No secrets in changed files</li>
+        <li>Zip structure correct (subfolder preserved)</li>
+        <li>DB present and non-empty</li>
+        <li>Latest checkpoint exists</li>
+        <li>argparse flags match between orchestrator and retrain_gnn</li>
+        <li>Both code zips in sync</li>
+    </ol>
+
+    <h3>Auth ritual</h3>
+    <pre><code>export KAGGLE_API_TOKEN=$(python3.11 -c "import json; print(json.load(open('/home/becmachlean/.kaggle/kaggle.json'))['key'])")</code></pre>
+
+    <h3>Dataset update wait</h3>
+    <p><strong>Wait ≥3 minutes after uploading a dataset version before pushing a kernel.</strong> Kaggle's dataset
+        processing is eventually consistent — pushing too fast pulls the old version.</p>
+
+    <hr>
+
+    <h2 id="this-session">7. What this session changed</h2>
+
+    <p>This session's work is captured in commit <strong><code>6199c61</code></strong>: <em>"feat: IC-gated triggers
+            (auto_improve) + per-entity-type loss (trainer) + backtest CLI --model-path/--out"</em>. 224 insertions, 60
+        deletions across 4 files.</p>
+
+    <h3>The discovery that reframed the session</h3>
+    <p>The session began verifying that the prior session's backtest <code>--help</code> worked. It did — but only
+        because the agent was looking at <code>tirramind_v1/scripts/phase40_gnn_backtest.py</code>, which is in the
+        untracked sandbox. <strong>The root-level canonical file had no argparse</strong>, which Kaggle is what uses.
+        All three P1/P2 sets of changes from the prior session had landed in the wrong directory.</p>
+
+    <p>This consumed roughly the first third of the session: discovering the mistake, then reapplying all changes to
+        root-level files, then verifying with <code>git ls-files</code>.</p>
+
+    <h3>The Unicode replacement tool bug</h3>
+    <p>Halfway through reapplying changes, the VS Code <code>replace_string_in_file</code> tool started failing
+        silently. The cause: the trainer code contains box-drawing characters (<code>─</code>, U+2500) in comment lines.
+        The tool's string-matcher fails on strings containing these. <strong>Workaround:</strong> for files containing
+        box-drawing characters, drive replacements through a Python one-liner: <code>open(file).read()</code> →
+        <code>str.replace(old, new)</code> → <code>open(file, 'w').write()</code>. This produced three Python patch
+        scripts during the session that all completed cleanly.
+    </p>
+
+    <h3>Files modified (root-level, committed)</h3>
+    <table>
+        <tr>
+            <th>File</th>
+            <th>Change</th>
+            <th>Lines</th>
+        </tr>
+        <tr>
+            <td><code>agent/models/gnn/trainer.py</code></td>
+            <td>Per-entity-type obs_type CE tracking in <code>metrics.jsonl</code></td>
+            <td>~3 patches</td>
+        </tr>
+        <tr>
+            <td><code>scripts/auto_improve.py</code></td>
+            <td><code>_load_ic_results()</code> + <code>improving_ic_positive</code> + <code>ic_degrading</code>
+                patterns</td>
+            <td>~5 inserts</td>
+        </tr>
+        <tr>
+            <td><code>scripts/phase40_gnn_backtest.py</code></td>
+            <td>argparse <code>--model-path</code>/<code>--db-path</code>/<code>--out</code>; IC JSON output</td>
+            <td>~3 patches</td>
+        </tr>
+        <tr>
+            <td><code>scripts/kaggle_preflight.py</code></td>
+            <td>Committed previously-uncommitted state</td>
+            <td>—</td>
+        </tr>
+        <tr>
+            <td><code>docs/memory/kaggle_runbook.md</code></td>
+            <td>Commit hash → <code>6199c61</code>; H-D eval step 3 uses <code>--model-path</code> flag</td>
+            <td>2 edits</td>
+        </tr>
+    </table>
+
+    <h3>Tests run</h3>
+    <ul>
+        <li><code>PYTHONPATH=. ~/.local/bin/pytest tests/test_ewc.py -q --tb=short</code> → <strong>16 passed in
+                217s</strong>.</li>
+        <li><code>python3 scripts/phase40_gnn_backtest.py --help</code> → argparse output confirmed on root-level file.
+        </li>
+    </ul>
+
+    <hr>
+
+    <h2 id="commits">8. Commit log — last 20 commits</h2>
+
+    <pre><code>6199c61  feat: IC-gated triggers (auto_improve) + per-entity-type loss (trainer) + backtest CLI --model-path/--out
+000fa7a  feat: kaggle_preflight.py — mandatory pre-push gate (EWC, import, git, secrets, zip, DB, checkpoint)
+80290eb  fix: load WANDB_API_KEY + HF_TOKEN from Kaggle Secrets before training cell
+c6bb110  chore: kaggle_watch formatting; runbook V16 checklist
+88e88d3  fix: dt_loss NaN guard; kaggle_watch JSONL logging; task file V16 status
+5ba8b2c  Fix: EWC sidecar persistence across block boundaries; add kaggle_watch live dashboard
+870e714  fix: --wandb-run-name → --wandb-run (retrain_gnn.py argparse crash)
+d140cda  sync: commit locally-modified files missing from code dataset
+b8a690b  phase47: A1+A2+A3 — GDELT filter, 21d forward returns, obs_type key fix
+4b7c396  fix: density audit sparse entities — defi_flows history mode, gov_contracts org obs, backfill fixes
+3f8a131  feat: closed-loop self-restart — fresh_start + arch_overrides
+4b52bd0  feat: LLM-primary advisor + trainer warnings in metrics.jsonl
+2677458  feat: return_head_frozen auto-fix — obs_type_weight flag + frozen detector in auto_improve
+5aff85f  fix: HF Hub repo name aurabear/tirramind-hg-data
+8bcfd24  feat: HF Hub checkpoint persistence — zero-human session continuity via savabs/tirramind-hg-data
+71b8fd6  feat: wandb live monitoring — orchestrator --wandb-project, check_training.py CLI, notebook WANDB_API_KEY
+0e3f791  fix: ruff lint+format, FM01/FM02 frontmatter fixes (CI unblock)
+83c63b5  feat: switch Kaggle session to CPU-only (disable GPU)
+c6dc7ca  fix: use ANTHROPIC_API_KEY secret name in notebook cell 5
+bf789e4  feat: LLM-powered training decisions in auto_improve.py (Claude Haiku, heuristic fallback)</code></pre>
+
+    <hr>
+
+    <h2 id="live-experiments">9. Live experiments &amp; what to monitor</h2>
+
+    <h3>V16 training run</h3>
+    <table>
+        <tr>
+            <th>Field</th>
+            <th>Value</th>
+        </tr>
+        <tr>
+            <td>Kernel</td>
+            <td><code>deeperisbetter/tirramind-h-g</code></td>
+        </tr>
+        <tr>
+            <td>Version</td>
+            <td>17 (running)</td>
+        </tr>
+        <tr>
+            <td>Epoch range</td>
+            <td>40 → 50</td>
+        </tr>
+        <tr>
+            <td>Block size</td>
+            <td>5 epochs per subprocess</td>
+        </tr>
+        <tr>
+            <td>Resume from</td>
+            <td><code>checkpoints/epoch_040.pt</code></td>
+        </tr>
+        <tr>
+            <td><strong>Critical test</strong></td>
+            <td><strong>Ep 41 obs_type loss &lt; 500</strong></td>
+        </tr>
+        <tr>
+            <td>What's being tested</td>
+            <td>EWC sidecar fix from commit <code>5ba8b2c</code></td>
+        </tr>
+        <tr>
+            <td>W&amp;B entity / project</td>
+            <td><code>999-sbpatel</code> / <code>tirramind</code></td>
+        </tr>
+    </table>
+
+    <h3>Monitoring commands</h3>
+    <pre><code># Status
+kaggle kernels status deeperisbetter/tirramind-h-g
+
+# When complete, download and inspect
+kaggle kernels output deeperisbetter/tirramind-h-g -p /tmp/hg_v16_out --force
+grep -a "epoch\|IC\|loss\|Block\|wandb" /tmp/hg_v16_out/tirramind-h-g.log | tail -40
+
+# Specifically check ep 41 obs_type:
+grep '"obs_type"' /tmp/hg_v16_out/metrics.jsonl | sed -n '1,5p'</code></pre>
+
+    <h3>Why this matters</h3>
+    <p>V15 had a smooth obs_type curve <em>within</em> blocks but a spike <em>at</em> each block boundary — the smoking
+        gun that EWC state wasn't surviving subprocess transitions. The <code>ewc_state.pt</code> sidecar fix makes
+        Fisher diagonal and the reference weights persist on disk. If V16 ep 41 shows the same spike, EWC sidecar reload
+        is still broken and the trainer needs more instrumentation. If it doesn't, Phase 46 is finally confirmed in
+        production.</p>
+
+    <hr>
+
+    <h2 id="next">10. Immediate next steps</h2>
+
+    <h3>P1 — Right now (must do before any new work)</h3>
+    <ol>
+        <li><strong>Monitor V16 to completion.</strong> Check ep 41 obs_type. If &lt; 500, EWC sidecar works — proceed.
+            If not, debug-mode protocol: reproduce, instrument, hypothesise, fix, regress. <strong>Mandatory: after 2
+                failed fix attempts, switch to formal debug mode</strong> (per copilot-instructions rule 6).</li>
+        <li><strong>Run the IC backtest on Kaggle</strong> (laptop RAM rule — never run locally). This is the first ever
+            real IC measurement using the new <code>--model-path</code> flag and the first production write of
+            <code>ic_results.json</code>. After this runs once, all subsequent <code>auto_improve.py</code> invocations
+            will exercise the new IC-gated patterns.
+        </li>
+    </ol>
+
+    <pre><code># Add to V17 Kaggle notebook as new cell, after training:
+python3 scripts/phase40_gnn_backtest.py \
+    --model-path .tirra_pipeline/checkpoints/h_g/epoch_050.pt \
+    --db-path .tirra_pipeline/pipeline.db \
+    --out .tirra_pipeline/ic_results.json</code></pre>
+
+    <h3>P2 — Next (data curriculum)</h3>
+    <ol>
+        <li><strong>Add <code>--entity-type-weights</code> and <code>--recency-alpha</code> flags</strong> to
+            <code>scripts/retrain_gnn.py</code> + trainer sampler. Format:
+            <code>--entity-type-weights '{"gdelt": 0.5, "instrument": 2.0}'</code>. Wire into the DataLoader sampler in
+            <code>agent/models/gnn/trainer.py</code>. Verify via <code>entity_type_counts</code> in
+            <code>metrics.jsonl</code>.
+        </li>
+        <li><strong>Add <code>--exclude-obs-types</code> flag</strong> for ablation studies.</li>
+        <li><strong>Exercise the IC-gated patterns end-to-end</strong> by running a real backtest + a training block in
+            sequence on Kaggle.</li>
+    </ol>
+
+    <h3>P3 — Later (calibration &amp; drift)</h3>
+    <ol>
+        <li><strong>Brier score + ECE</strong> in <code>scripts/phase40_gnn_backtest.py</code>. The IC tells us
+            direction; calibration tells us probability honesty.</li>
+        <li><strong>Embedding drift metric per entity type</strong> in <code>agent/models/gnn/trainer.py</code>.
+            Per-entity-type cosine distance from previous checkpoint. Flags entity types whose representation is moving
+            fast → candidates for review.</li>
+    </ol>
+
+    <h3>P4 — Roadmap (Phases 17 → 48)</h3>
+    <ol>
+        <li>Finish Phase 17 — entity linking layer (add <code>link_entities()</code> to 9 of 12 L2 tools).</li>
+        <li>Phase 18 — Tier-1 tools (sanctions_monitor, gov_contracts, supply_chain_monitor L2).</li>
+        <li>Phase 19 — World Model. Phase 20 — Signal Fusion. Phase 21 — RL Policy. Phase 22 — Adversarial.</li>
+        <li>Phase 24 — E2E Integration + Global Multi-Asset (~100 instruments as first-class GNN entity nodes).</li>
+        <li>Phase 24b.5 — GNN attention diagnostic drives Phase 25 (L2 tool expansion for global instrument coverage).
+        </li>
+        <li>Phase 40 — Real Data Model Refresh (gated: ≥3–4 weeks of dense data first).</li>
+        <li>Phase 48 — Transformer world model + Dreamer model-based RL. Gated by Phase 40 proving the current stack has
+            hit its ceiling.</li>
+    </ol>
+
+    <hr>
+
+    <h2 id="gotchas">11. Gotchas, traps, and hard-won facts</h2>
+
+    <div class="warn">
+        <strong>Hard-won lessons. Internalise these before doing anything risky.</strong>
+    </div>
+
+    <ol>
+        <li><strong>Laptop is code-only.</strong> 7.6 GB RAM / GTX 1650 4GB cannot run the pipeline. If a script loads
+            the DB or a model into RAM, it must run on Kaggle.</li>
+        <li><strong>The <code>tirramind_v1/</code> subdirectory is an untracked sandbox.</strong> Edits there don't
+            reach Kaggle. Canonical code lives at root level. Use <code>git ls-files</code> to verify.</li>
+        <li><strong>VS Code <code>replace_string_in_file</code> silently fails on Unicode box-drawing
+                characters</strong> (<code>─</code>, U+2500). Workaround: drive replacements through Python
+            <code>str.replace()</code> directly. Files affected: <code>trainer.py</code> and the GNN backtest script.
+        </li>
+        <li><strong>Working pytest invocation:</strong> <code>PYTHONPATH=. ~/.local/bin/pytest</code> with Python
+            3.10.12. <em>Do not</em> use <code>python3.11 -m pytest</code> — that environment is broken (anaconda3 was
+            removed; the rebuilt <code>.venv</code> is incomplete as of 2026-05-04).</li>
+        <li><strong>Both Kaggle code zips must be in sync.</strong> Failing to update
+            <code>tirramind_code_p47.zip</code> alongside <code>tirramind_code.zip</code> is what killed V11–V14.
+        </li>
+        <li><strong>Wait ≥3 minutes after a Kaggle dataset upload</strong> before pushing a kernel. Dataset processing
+            is eventually consistent.</li>
+        <li><strong>EWC state must persist across subprocesses.</strong> The block-structured trainer runs each block as
+            a fresh Python process. Anything in process memory dies. Use <code>ewc_state.pt</code> sidecar.</li>
+        <li><strong>The LLM is never a decision-maker.</strong> It explains, parses, narrates. Numerical decisions are
+            owned by the math layer. The Haiku advisor in <code>auto_improve.py</code> proposes; the heuristic
+            classifier disposes.</li>
+        <li><strong>IC has priority over training loss.</strong> Phase 41 proved this empirically: training loss can
+            decrease while IC goes negative. The new <code>improving_ic_positive</code> pattern (this session) codifies
+            it.</li>
+        <li><strong>GDELT dominated the dataset</strong> at 91.3%. After the Goldstein filter (Phase 41b) the share
+            drops to ~50%. Watch this number — <code>auto_improve</code>'s <code>ic_degrading</code> trigger will halve
+            <code>gdelt_frac</code> further if needed.
+        </li>
+        <li><strong>Checkpoint format is FLAT</strong> on Kaggle: <code>checkpoints/epoch_NNN.pt</code>, not
+            <code>checkpoints/h_g/epoch_NNN.pt</code>.
+        </li>
+        <li><strong>Single-owner rule:</strong> each fact lives in exactly one file.
+            <code>memories/repo/tirramind_structure.md</code> owns metrics.
+            <code>tasks/active/quant_training_ground.md</code> owns the roadmap. Checkpoints are append-only history.
+            Never edit a past checkpoint — record corrections in the next one.
+        </li>
+        <li><strong>Write-gate protocol:</strong> a decision is not real until it's in a file. Write the canonical file
+            in the same turn as the approval, then confirm.</li>
+        <li><strong>Workflow preflight is mandatory.</strong> Non-trivial work requires research + spec + active task
+            file before any code is touched. Trivial = single-file, low-risk, no interface change.</li>
+        <li><strong>Vibe Coding Protocol:</strong> AI-owned work targets leaf nodes (low blast radius). Before each
+            execution, spend 15–20 min jointly exploring the codebase with the model, then compress to one structured
+            prompt. For leaf code: 1 happy-path test + 2 failure-case tests. Save exhaustive testing for non-leaf code.
+        </li>
+    </ol>
+
+    <hr>
+
+    <h2 id="files">12. Canonical file map</h2>
+
+    <table>
+        <tr>
+            <th>Purpose</th>
+            <th>Path</th>
+            <th>Owner / role</th>
+        </tr>
+        <tr>
+            <td>Tools (data acquisition)</td>
+            <td><code>agent/tools/</code></td>
+            <td>L1 surveillance, 51 files</td>
+        </tr>
+        <tr>
+            <td>Feature engineering</td>
+            <td><code>agent/quant/</code></td>
+            <td>L2 signal extraction</td>
+        </tr>
+        <tr>
+            <td>GNN architecture</td>
+            <td><code>agent/models/gnn/model.py</code></td>
+            <td>HetTGN definition</td>
+        </tr>
+        <tr>
+            <td>GNN trainer</td>
+            <td><code>agent/models/gnn/trainer.py</code></td>
+            <td>3111+ lines, EWC, multi-task loss</td>
+        </tr>
+        <tr>
+            <td>GNN alignment</td>
+            <td><code>agent/models/gnn/alignment.py</code></td>
+            <td>Phase 49 — downstream alignment weights</td>
+        </tr>
+        <tr>
+            <td>EWC</td>
+            <td><code>agent/models/gnn/ewc.py</code></td>
+            <td>Phase 46 — Fisher diag + penalty</td>
+        </tr>
+        <tr>
+            <td>World model</td>
+            <td><code>agent/models/world_model/</code></td>
+            <td>L3 — pgmpy Bayesian DAG</td>
+        </tr>
+        <tr>
+            <td>Signal fusion</td>
+            <td><code>agent/fusion/</code></td>
+            <td>L4 — Kalman / particle filter</td>
+        </tr>
+        <tr>
+            <td>RL policy</td>
+            <td><code>agent/learning/sac.py</code></td>
+            <td>L5 — SAC with Phase 49b entropy scaling</td>
+        </tr>
+        <tr>
+            <td>Bandit (goal selection)</td>
+            <td><code>agent/learning/bandit.py</code></td>
+            <td>Thompson Sampling, 48 arms</td>
+        </tr>
+        <tr>
+            <td>Convergence detection</td>
+            <td><code>agent/convergence/</code></td>
+            <td>10 modules, 0 LLM, 883 tests</td>
+        </tr>
+        <tr>
+            <td>Regime gate</td>
+            <td><code>agent/pipeline/regime_gate.py</code></td>
+            <td>Phase 49b — convergence as control signal</td>
+        </tr>
+        <tr>
+            <td>DAGs</td>
+            <td><code>agent/pipeline/dags/</code></td>
+            <td>daily_collection, gnn_inference, world_model_update, feature_generation</td>
+        </tr>
+        <tr>
+            <td>Orchestrator</td>
+            <td><code>agent/core/orchestrator.py</code></td>
+            <td>Research → Plan → Execute → Synthesize</td>
+        </tr>
+        <tr>
+            <td>Training orchestrator</td>
+            <td><code>scripts/pipeline_orchestrator.py</code></td>
+            <td>Subprocess loop, block-structured</td>
+        </tr>
+        <tr>
+            <td>Trainer entry</td>
+            <td><code>scripts/retrain_gnn.py</code></td>
+            <td>One block of N epochs</td>
+        </tr>
+        <tr>
+            <td>Adaptation brain</td>
+            <td><code>scripts/auto_improve.py</code></td>
+            <td>1022+ lines, pattern detection, IC-gated</td>
+        </tr>
+        <tr>
+            <td>Backtest</td>
+            <td><code>scripts/phase40_gnn_backtest.py</code></td>
+            <td>865+ lines, Spearman IC, writes ic_results.json</td>
+        </tr>
+        <tr>
+            <td>Pre-push gate</td>
+            <td><code>scripts/kaggle_preflight.py</code></td>
+            <td>9 checks, must pass before push</td>
+        </tr>
+        <tr>
+            <td>Backfill</td>
+            <td><code>scripts/backfill.py</code></td>
+            <td>10-year historical ingestion</td>
+        </tr>
+        <tr>
+            <td>Kaggle runbook</td>
+            <td><code>docs/memory/kaggle_runbook.md</code></td>
+            <td><strong>Read first before any Kaggle action</strong></td>
+        </tr>
+        <tr>
+            <td>Project structure</td>
+            <td><code>memories/repo/tirramind_structure.md</code></td>
+            <td>Canonical metrics owner</td>
+        </tr>
+        <tr>
+            <td>Roadmap</td>
+            <td><code>tasks/active/quant_training_ground.md</code></td>
+            <td>Canonical phase-ordering owner</td>
+        </tr>
+        <tr>
+            <td>Research notes</td>
+            <td><code>docs/research/</code></td>
+            <td>HTML primary + .md stub</td>
+        </tr>
+        <tr>
+            <td>Specs</td>
+            <td><code>docs/specs/</code></td>
+            <td>HTML primary + .md stub</td>
+        </tr>
+        <tr>
+            <td>Active tasks</td>
+            <td><code>tasks/active/</code></td>
+            <td>—</td>
+        </tr>
+        <tr>
+            <td>Completed tasks</td>
+            <td><code>tasks/done/</code></td>
+            <td>—</td>
+        </tr>
+        <tr>
+            <td>Checkpoints</td>
+            <td><code>docs/memory/chat_checkpoint_*.html</code></td>
+            <td>Append-only history</td>
+        </tr>
+    </table>
+
+    <hr>
+
+    <h2 id="facts">13. Key facts table (cold-start cheat sheet)</h2>
+
+    <table>
+        <tr>
+            <th>Question</th>
+            <th>Answer</th>
+        </tr>
+        <tr>
+            <td>What is the latest commit?</td>
+            <td><code>6199c61</code> on <code>main</code>, pushed to <code>git@github.com:savabs/tirramind.git</code>
+            </td>
+        </tr>
+        <tr>
+            <td>What's running on Kaggle?</td>
+            <td>Kernel <code>deeperisbetter/tirramind-h-g</code> version 17, V16 training, epochs 40→50</td>
+        </tr>
+        <tr>
+            <td>What's the success criterion for the live run?</td>
+            <td>Epoch 41 obs_type loss &lt; 500 (proves EWC sidecar persistence)</td>
+        </tr>
+        <tr>
+            <td>Where's the canonical code?</td>
+            <td>Root-level <code>agent/</code> and <code>scripts/</code> — NOT <code>tirramind_v1/</code> (sandbox)</td>
+        </tr>
+        <tr>
+            <td>How do I run tests?</td>
+            <td><code>PYTHONPATH=. ~/.local/bin/pytest</code> (Python 3.10.12)</td>
+        </tr>
+        <tr>
+            <td>How do I auth to Kaggle?</td>
+            <td><code>export KAGGLE_API_TOKEN=$(python3.11 -c "import json; print(json.load(open('/home/becmachlean/.kaggle/kaggle.json'))['key'])")</code>
+            </td>
+        </tr>
+        <tr>
+            <td>What's the DB state?</td>
+            <td>339,164 observations, 2,688 entities (post-Goldstein filter)</td>
+        </tr>
+        <tr>
+            <td>What's the GNN architecture?</td>
+            <td>HetTGN, hidden_dim=128, 2 layers, 2 heads, ~1.96M params</td>
+        </tr>
+        <tr>
+            <td>What's EWC λ?</td>
+            <td>1000.0</td>
+        </tr>
+        <tr>
+            <td>What's the EWC sidecar?</td>
+            <td><code>ewc_state.pt</code> in the checkpoint dir</td>
+        </tr>
+        <tr>
+            <td>Where's <code>ic_results.json</code> written?</td>
+            <td><code>&lt;checkpoint_dir&gt;/ic_results.json</code> by backtest; read by
+                <code>auto_improve._load_ic_results</code>
+            </td>
+        </tr>
+        <tr>
+            <td>What's the IC threshold for <code>improving_ic_positive</code>?</td>
+            <td>&gt; 0.02</td>
+        </tr>
+        <tr>
+            <td>What's the IC threshold for <code>ic_degrading</code>?</td>
+            <td>&lt; −0.01 (limited to 2 consecutive triggers)</td>
+        </tr>
+        <tr>
+            <td>What was Phase 41 IC?</td>
+            <td>−0.0325 (GNN-EmbNorm, t=−1.26) — weak, not significant. GDELT dominance was the root cause.</td>
+        </tr>
+        <tr>
+            <td>What was Phase 41b's fix?</td>
+            <td>Goldstein tension filter threshold <code>-5.0</code> in <code>gdelt.py</code>. GDELT share: 91.3% → ~50%
+            </td>
+        </tr>
+        <tr>
+            <td>W&amp;B entity / project</td>
+            <td><code>999-sbpatel</code> / <code>tirramind</code></td>
+        </tr>
+        <tr>
+            <td>Where do checkpoints go?</td>
+            <td>Locally untracked (<code>docs/</code> is in <code>.gitignore</code>) — this file is local-only</td>
+        </tr>
+        <tr>
+            <td>Compute target</td>
+            <td>Kaggle for everything that loads the DB or a model into RAM</td>
+        </tr>
+        <tr>
+            <td>Kaggle dataset wait</td>
+            <td>≥3 minutes between upload and kernel push</td>
+        </tr>
+        <tr>
+            <td>How many tools wired into DAG?</td>
+            <td>29 of 51 (47.1%); next wave gated by GNN attention diagnostic</td>
+        </tr>
+        <tr>
+            <td>How many tests pass?</td>
+            <td>9676+ (incl. 16 EWC, 65 GNN)</td>
+        </tr>
+    </table>
+
+    <hr>
+
+    <h2 id="farewell">14. Farewell</h2>
+
+    <p>This was the last session in GitHub Copilot before handoff. The work has moved from chaotic experiment toward a
+        real system: the data pipeline is wired, the GNN learns continuously, regime changes throttle downstream
+        confidence, the trainer adapts itself between blocks, and — as of this session — the adaptation listens to
+        predictive IC rather than just self-supervised reconstruction loss.</p>
+
+    <p>What remains is the part that always remains: <em>do the math actually predict reality?</em> Phase 41 said "not
+        yet, because the data was 92% GDELT." Phase 41b filtered the GDELT noise. V16 is running right now to confirm
+        EWC stays alive across block boundaries. The IC backtest after V16 will be the first measurement that says yes
+        or no, on real data, with a real model that learns continuously.</p>
+
+    <p>The successor agent inherits:</p>
+    <ul>
+        <li>A clean tree, latest commit <code>6199c61</code>, all P1/P2 training-loop improvements in canonical files.
+        </li>
+        <li>16/16 EWC tests passing.</li>
+        <li>A pre-push gate (<code>kaggle_preflight.py</code>) that won't let you push broken code.</li>
+        <li>A live experiment (V16) about to produce its answer.</li>
+        <li>A clear next move (P1: monitor V16; P1: run IC backtest on Kaggle; P2: data curriculum flags).</li>
+        <li>A complete architectural map and a list of every trap that bit this codebase.</li>
+    </ul>
+
+    <p class="farewell">"We are secret journalists. Our job is to find data that has patterns — things that lead to
+        things that not many people can see." Go find them.</p>
+
+    <hr>
+
+    <h3>Related</h3>
+    <ul>
+        <li><a href="kaggle_runbook.md">kaggle_runbook.md</a> — read before any Kaggle action</li>
+        <li><a href="chat_checkpoint_2026-05-12.md">chat_checkpoint_2026-05-12.md</a> — previous session (V15 push)</li>
+        <li><a
+                href="chat_checkpoint_2026-04-29_phase41_ic_diagnostic.md">chat_checkpoint_2026-04-29_phase41_ic_diagnostic.md</a>
+            — first real IC measurement</li>
+        <li><a href="chat_checkpoint_2026-04-24_phase49_complete.md">chat_checkpoint_2026-04-24_phase49_complete.md</a>
+            — GNN downstream alignment</li>
+        <li><a
+                href="chat_checkpoint_2026-04-24_phase47_extended_backfill_complete.md">chat_checkpoint_2026-04-24_phase47_extended_backfill_complete.md</a>
+            — 10-year backfill</li>
+        <li><a
+                href="chat_checkpoint_2026-05-26b_architecture_review.md">chat_checkpoint_2026-05-26b_architecture_review.md</a>
+            — Phase 49/49b architectural review</li>
+    </ul>
+
+</body>
+
+</html>

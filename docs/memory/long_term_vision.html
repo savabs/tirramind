@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Canonical: TirraMind Long-Term Vision (Locked)</title>
+  <style>
+    body { font-family: system-ui, sans-serif; line-height: 1.6; max-width: 900px; margin: 0 auto; padding: 2rem; color: #1a202c; }
+    h1 { color: #2c5282; border-bottom: 3px solid #3182ce; padding-bottom: 0.5rem; }
+    h2 { color: #2b6cb0; margin-top: 2rem; border-bottom: 1px solid #e2e8f0; }
+    table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+    th, td { border: 1px solid #e2e8f0; padding: 0.5rem; text-align: left; }
+    th { background: #edf2f7; }
+    .locked { background: #faf5ff; border: 2px solid #805ad5; padding: 1rem; margin: 1rem 0; border-radius: 4px; }
+    .canonical { background: #ebf8ff; border-left: 4px solid #3182ce; padding: 1rem; margin: 1rem 0; }
+    .warning { background: #fffaf0; border-left: 4px solid #dd6b20; padding: 1rem; margin: 1rem 0; }
+    .timeline { background: #f0fff4; border-left: 4px solid #38a169; padding: 1rem; margin: 1rem 0; }
+  </style>
+</head>
+<body>
+
+<h1>Canonical: TirraMind Long-Term Vision</h1>
+<p><strong>Status:</strong> <strong>LOCKED</strong> — canonical owner for the 5–10 year north star. Do not delete or narrow without an ADR.<br>
+<strong>Effective:</strong> 2026-06-08<br>
+<strong>Paired with:</strong> [[ghost_pattern_income_plan]] (near-term earnable path; does not replace this vision)</p>
+
+<div class="locked">
+  <strong>Lock rule:</strong> Tactical pivots (architecture, GTM, micro-niche focus) are allowed. This document records <em>what we are building toward</em> when those tactics succeed. If a decision contradicts a section here, write an ADR — do not silently drift.
+</div>
+
+<div class="canonical">
+  <strong>North star (one sentence):</strong> TirraMind is an <em>advanced self-improving agent company</em> whose core asset is a learned <strong>cross-domain entity embedding space ℰ</strong> — unified intelligence over heterogeneous reality. <strong>Markets are playground #1</strong> (fast scoring, adversarial, monetizable readouts). The commercial end state is <strong>outcome-shaped intelligence</strong> (probability updates, ghost-pattern alerts, regime state) — not a trading bot, not a copilot, not a data API wrapper.
+</div>
+
+<h2>1. What we are building (the asset)</h2>
+
+<h3>1.1 The embedding space ℰ</h3>
+<ul>
+  <li><strong>ℰ</strong> = persistent, time-evolving entity embeddings from HetTGN + memory over a heterogeneous graph.</li>
+  <li>Entity state <code>h_i(t)</code> encodes latent condition; prices, spreads, and P&amp;L are <em>readouts</em>, not the definition of intelligence.</li>
+  <li><strong>Moat:</strong> fusion of sensors nobody else jointly models — physical (L0) + behavioral (L1) + informational (L2) → price consequences (L3).</li>
+  <li><strong>Quality bar:</strong> belief Δ, alignment losses, episode retrieval, niche event prediction — not vanity accuracy on a single head.</li>
+</ul>
+
+<h3>1.2 Ghost patterns (the economic mechanism)</h3>
+<p>A <strong>ghost pattern</strong> is a <em>joint trajectory anomaly</em> across entities and domains — a chain invisible to any single-instrument feature or single data vendor.</p>
+<pre>
+Physical world (L0)  →  Country / sector events (L1)  →  Instrument readout (L2/L3)
+         ↑________________ graph message passing / ℰ ________________↑
+</pre>
+<ul>
+  <li>Example: GDELT supply disruption → energy sector node stress → producer-country capital outflow → CFTC positioning velocity spike → crude lag weeks later.</li>
+  <li>Detection stack (target): graph path templates → embedding trajectory anomaly (TDC-AE) → GNN readout heads with walk-forward proof.</li>
+  <li>See [[ghost_pattern_graph_audit]], [[machine_intelligence_architecture]], [[LESSONS]] R-ghost sections.</li>
+</ul>
+
+<h3>1.3 The seven-layer computation stack</h3>
+<table>
+  <tr><th>Layer</th><th>Role</th><th>Path</th></tr>
+  <tr><td>1 — Surveillance</td><td>Global sensors, entity resolution</td><td><code>agent/tools/</code></td></tr>
+  <tr><td>2 — Feature engineering</td><td>BOCPD, HMM, spectral, microstructure</td><td><code>agent/quant/</code></td></tr>
+  <tr><td>3 — World model</td><td>Bayesian graph, HetTGN, causal structure</td><td><code>agent/models/</code></td></tr>
+  <tr><td>4 — Fusion</td><td>Kalman, particle filter</td><td><code>agent/fusion/</code></td></tr>
+  <tr><td>5 — Learning</td><td>RL, portfolio, continual learning (EWC)</td><td><code>agent/learning/</code></td></tr>
+  <tr><td>6 — Adversarial</td><td>Manipulation, edge decay</td><td><code>agent/adversarial/</code></td></tr>
+  <tr><td>7 — LLM support</td><td>Parse, narrate — <em>never decides</em></td><td><code>agent/reasoning/</code></td></tr>
+</table>
+<p>Two engines: <strong>deterministic pipeline</strong> (DAG, truth) + <strong>agent loop</strong> (explore, hypothesize, learn). The LLM explains what the math decided.</p>
+
+<h2>2. Company identity (archetype stack)</h2>
+<p>Four roles inside <strong>one agent</strong>, not four products on day one:</p>
+<table>
+  <tr><th>Archetype</th><th>Contribution</th></tr>
+  <tr><td><strong>Palantir</strong></td><td>Reality integration — sensors → ontology → graph</td></tr>
+  <tr><td><strong>DeepMind</strong></td><td>ℰ, temporal memory, world model, alignment, continual learning</td></tr>
+  <tr><td><strong>Jane Street</strong></td><td>Systems truth — tests, reproducibility, eval that does not lie</td></tr>
+  <tr><td><strong>Renaissance</strong></td><td>Economic scoring — walk-forward, sparse reward, compounding edge</td></tr>
+</table>
+<p>Full identity doctrine: [[agent_playground_doctrine]].</p>
+
+<h2>3. Playgrounds (environments)</h2>
+<table>
+  <tr><th>Playground</th><th>Role</th><th>Status</th></tr>
+  <tr><td><strong>#1 Markets</strong></td><td>First scoring environment — POMDP, non-stationary, monetizable</td><td>Active (Phase 50 GNN, Phase 41b gate, architecture overhaul)</td></tr>
+  <tr><td><strong>#2+ (future)</strong></td><td>Other agent loops (e.g. self-learning editor) — separate repos until closed loop</td><td>Parallel founder projects; do not merge codebases early</td></tr>
+</table>
+<p><strong>Commercial niche on playground #1:</strong> N1 + N4 fused + microstructure everywhere ([[n1_n4_playground_spec]]). Mathematical-field positioning — regimes, flows, positioning geometry — <em>not</em> sentiment products.</p>
+
+<h2>4. Build order (non-negotiable)</h2>
+<ol>
+  <li><strong>Layer A — Raw intelligence:</strong> sensor density, graph topology, ℰ training, ghost-pattern detection, honest baselines.</li>
+  <li><strong>Layer B — Packaging:</strong> briefs, alerts, archives, APIs — only after readouts are defensible.</li>
+  <li><strong>Layer C — Scale:</strong> firm delivery, platform, multi-playground transfer.</li>
+</ol>
+<div class="warning">
+  <strong>Anti-pattern:</strong> Shipping a fancy wrapper (API fetch + chart + Substack) <em>before</em> cross-domain ghost signal exists. Near-term income must still be <strong>intelligence-shaped</strong> — see [[ghost_pattern_income_plan]].
+</div>
+
+<h2>5. Success horizons</h2>
+
+<div class="timeline">
+  <h3>Year 1–2 (proof)</h3>
+  <ul>
+    <li>≥1 micro-playground with public ghost-pattern track record (chain alerts, not z-scores alone).</li>
+    <li>Two-stage GNN or trajectory detector beats honest momentum baseline on Phase 41b gate (IC &gt; 0.03, t &gt; 2).</li>
+    <li>Daily pipeline running — L0 sensors populated for chosen micro-niches.</li>
+    <li>Earnable income from niche intelligence products (not venture scale).</li>
+  </ul>
+</div>
+
+<div class="timeline">
+  <h3>Year 3–5 (compound)</h3>
+  <ul>
+    <li>ℰ stable across regime shifts; continual learning without catastrophic forget.</li>
+    <li>Multiple micro-playgrounds on same ℰ machinery (new sensors + readout head, not new company).</li>
+    <li>B2B: prop/quant monitored ghost-pattern feeds with audited walk-forward stats.</li>
+    <li>Agent loop closes: perceive → represent → act → learn with measurable belief Δ.</li>
+  </ul>
+</div>
+
+<div class="timeline">
+  <h3>Year 5–10 (end state)</h3>
+  <ul>
+    <li><strong>Outward product:</strong> probability distributions and decision advantage over Layers 0–3 — physical → behavioral → information → prices.</li>
+    <li>Transfer: same ℰ + agent architecture generalizes beyond markets (new playground, same stack).</li>
+    <li>Services-as-software at scale: customers buy outcomes; models are replaceable internals ([[predictive_platform_positioning]]).</li>
+    <li>Optional: proprietary capital deployment — only after years of OOS proof, not as identity.</li>
+  </ul>
+</div>
+
+<h2>6. Explicit non-goals (do not become this)</h2>
+<ul>
+  <li>A quant fund hiring discretionary sector analysts per vertical.</li>
+  <li>A Bloomberg alternative or commodity data reseller.</li>
+  <li>An “AI newsletter” or sentiment product (fear/greed, narrative ML).</li>
+  <li>A copilot / ChatGPT wrapper over public APIs.</li>
+  <li>A generic embedding API — customers buy <em>readouts</em>, not vectors.</li>
+  <li>A Palantir clone before ℰ works on at least one playground.</li>
+</ul>
+
+<h2>7. Edge thesis (why this can win)</h2>
+<p><strong>Unconventional observation × SOTA math × living system architecture.</strong></p>
+<ul>
+  <li>Cheapest data is often most valuable — nobody else looks (CFTC + AIS + drought + country fusion, not Terminal headlines).</li>
+  <li>Math on common data is commoditized; math on unique <em>joint</em> data is the moat.</li>
+  <li>Hand-code schemas and invariants; learn ambiguous relations, scoring, and latent structure ([[agent_playground_doctrine]] rule #9).</li>
+  <li>Signal Depth Doctrine: L1 aggregate → L2 entity → L3 cross-entity combinations ([[SCHEMA]]).</li>
+</ul>
+
+<h2>8. Technical north stars (engineering)</h2>
+<table>
+  <tr><th>Milestone</th><th>Meaning</th></tr>
+  <tr><td>Phase 41b gate</td><td>Walk-forward IC &gt; 0.03 and t &gt; 2 on primary strategy — economic proof on playground</td></tr>
+  <tr><td>Ghost pattern detector</td><td>Embedding trajectory store + TDC-AE anomaly → thresholded alerts</td></tr>
+  <tr><td>Two-stage GNN</td><td>SSL graph encoder → decoupled ranker ([[gnn_two_stage_spec]])</td></tr>
+  <tr><td>Math stack M1–M9</td><td>Physics of readouts; microstructure (M9) cross-cutting ([[math_stack_roadmap]])</td></tr>
+  <tr><td>Autonomic workflow</td><td>Agent company loop: research → spec → implement → eval without human bottlenecks ([[autonomic_workflow_system]])</td></tr>
+</table>
+<p>Engineering roadmap detail: [[quant_training_ground]]. Canonical metrics: [[tirramind_structure]].</p>
+
+<h2>9. Decision filter (all work)</h2>
+<p>Before prioritizing any work, ask ([[agent_playground_doctrine]] §7):</p>
+<ol>
+  <li>Does this improve <strong>ℰ</strong> or the agent loop?</li>
+  <li>Does this strengthen <strong>systems truth</strong>?</li>
+  <li>Does this advance <strong>N1+N4 readouts</strong> or microstructure math?</li>
+  <li>Is this sentiment/narrative? → reject or reframe as measurable events.</li>
+  <li>Is this a playground-only hack with no transfer to general intelligence?</li>
+</ol>
+
+<h2>10. Related canonical files</h2>
+<ul>
+  <li>[[agent_playground_doctrine]] — identity, ML-first, niche process</li>
+  <li>[[ghost_pattern_income_plan]] — realistic earnable income (micro-niches, intelligence SKU)</li>
+  <li>[[ghost_pattern_technical_roadmap]] — deep technical plan (arXiv, GitHub, pure math)</li>
+  <li>[[predictive_platform_positioning]] — outcome-over-tool commercial layer</li>
+  <li>[[project_memory]] — session-level project state (links here; does not duplicate vision)</li>
+  <li>[[quant_training_ground]] — playground engineering phases</li>
+  <li>[[revenue_plan_2026-05-08]] — superseded for GTM tactics; retained as historical brief MVP notes</li>
+</ul>
+
+</body>
+</html>

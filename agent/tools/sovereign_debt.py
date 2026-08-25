@@ -761,25 +761,36 @@ class SovereignDebtTool(Tool):
 
         if mode == "us_yields":
             records = data.get("records", [])
-            if records:
-                latest = records[-1]
-                country_eid = _entity_id_from_key("country", "US")
-                store.register_entity(
-                    entity_type="country",
-                    canonical_name="US",
-                    entity_id=country_eid,
-                )
+            country_eid = _entity_id_from_key("country", "US")
+            store.register_entity(
+                entity_type="country",
+                canonical_name="US",
+                entity_id=country_eid,
+            )
+            for rec in records:
+                date_str = rec.get("date")
+                if not date_str:
+                    continue
+                try:
+                    obs_ts = datetime.strptime(date_str[:10], "%Y-%m-%d").replace(
+                        tzinfo=UTC
+                    ).timestamp()
+                except ValueError:
+                    obs_ts = now_ts
+                yields = rec.get("yields") or {}
                 store.store_entity_observation(
                     entity_id=country_eid,
                     source_tool="sovereign_debt",
-                    observed_at=now_ts,
+                    observed_at=obs_ts,
                     observation_type="sovereign_yield",
                     value={
                         "source": "us_treasury",
-                        "maturity": "10y",
-                        "yield_pct": latest.get("yields", {}).get("10y"),
-                        "curve_2s10s": latest.get("curve_2s10s"),
-                        "date": latest.get("date"),
+                        "maturity": "curve",
+                        "yield_pct": yields.get("10y"),
+                        "yields": yields,
+                        "curve_2s10s": rec.get("curve_2s10s"),
+                        "curve_3m10y": rec.get("curve_3m10y"),
+                        "date": date_str,
                     },
                     depth_level=2,
                 )

@@ -1,0 +1,569 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Training Stagnation Root Cause Analysis — TirraMind Phase 50</title>
+  <style>
+    body { font-family: Georgia, serif; max-width: 960px; margin: 2em auto; line-height: 1.65; color: #1a1a1a; padding: 0 1.5em; }
+    h1 { border-bottom: 3px solid #c00; padding-bottom: 0.3em; }
+    h2 { border-bottom: 1px solid #999; margin-top: 2em; }
+    h3 { color: #333; margin-top: 1.5em; }
+    code, pre { background: #f4f4f4; font-family: monospace; font-size: 0.9em; }
+    pre { padding: 1em; border-left: 4px solid #ccc; overflow-x: auto; }
+    code { padding: 0.1em 0.3em; border-radius: 3px; }
+    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid #ccc; padding: 7px 12px; text-align: left; }
+    th { background: #eee; }
+    .hypothesis { background: #fff8e1; border-left: 5px solid #f9a825; padding: 0.8em 1.2em; margin: 1.2em 0; }
+    .evidence { background: #e8f5e9; border-left: 5px solid #388e3c; padding: 0.8em 1.2em; margin: 0.8em 0; }
+    .instrument { background: #e3f2fd; border-left: 5px solid #1565c0; padding: 0.8em 1.2em; margin: 0.8em 0; }
+    .warning { background: #fce4ec; border-left: 5px solid #c62828; padding: 0.8em 1.2em; margin: 0.8em 0; }
+    .ref { font-size: 0.85em; color: #555; }
+    .priority-high { color: #c00; font-weight: bold; }
+    .priority-med { color: #e65c00; font-weight: bold; }
+    .priority-low { color: #555; }
+  </style>
+</head>
+<body>
+
+<h1>Training Stagnation Root Cause Analysis<br><small>TirraMind Phase 50 — V52 → V64 Collapse Investigation</small></h1>
+
+<p><strong>Date:</strong> 2026-06-06 &nbsp;|&nbsp;
+<strong>Author:</strong> Research agent &nbsp;|&nbsp;
+<strong>Status:</strong> Draft — pending instrumentation confirmation &nbsp;|&nbsp;
+<strong>Companion task:</strong> <code>[[training_stagnation_v65_task]]</code></p>
+
+<p><strong>Problem statement:</strong> V52 (90ep, IC +0.0474, the only promoted run) is unreproducible on all subsequent training runs (V53–V64). Return loss freezes in every configuration tested regardless of architecture flags. Embedding collapse (33–49%) and negative PurgedRanker IC characterise every post-V52 run. The backfill update coincides temporally with the onset of this regression.</p>
+
+<hr>
+
+<h2>1. Observed Failure Pattern (Evidence Base)</h2>
+
+<table>
+  <tr><th>Run</th><th>Return ep3</th><th>Return ep10</th><th>Pattern</th><th>IC</th><th>Collapse%</th></tr>
+  <tr><td>V52 (good)</td><td>105.1</td><td>115.8 (moving)</td><td>Healthy monotone increase</td><td><strong>+0.0474</strong></td><td>N/A (full 90ep)</td></tr>
+  <tr><td>V55</td><td>109.59 frozen</td><td>109.59 frozen</td><td>Flat from ep1 — embedding-only</td><td>+0.027</td><td>—</td></tr>
+  <tr><td>V60</td><td>flat</td><td>flat</td><td>concat+VICReg, 50win</td><td>-0.044</td><td>48.4%</td></tr>
+  <tr><td>V61</td><td>flat</td><td>flat</td><td>ContraNorm + log_loss (no-op)</td><td>-0.069</td><td>24.7%</td></tr>
+  <tr><td>V62</td><td>209.39 frozen</td><td>209.39 frozen</td><td>Return isolated — ListNet entropy floor</td><td>-0.072</td><td>14.1%, eff_rank=1</td></tr>
+  <tr><td>V63</td><td>113.60</td><td>108.61 (↓)</td><td>V52-exact recipe — plateau@ep7</td><td>-0.119</td><td>33.2%</td></tr>
+  <tr><td>V64</td><td>126.32</td><td>109.59 frozen</td><td>pred_std=0 by ep5; clamp(+5) sat.</td><td>-0.095</td><td>49.3%</td></tr>
+</table>
+
+<div class="warning">
+  <strong>Key fact:</strong> V63 ran the <em>exact</em> V52 config (same weights, temperature, concat+auto_tune, 200win) and still failed with IC −0.119 and 33% collapse. This rules out config drift as the primary cause. Something changed in the <em>data</em> or <em>data pipeline</em> between V52 and V63.
+</div>
+
+<hr>
+
+<h2>2. Root Cause Hypotheses (Ranked by Prior Probability)</h2>
+
+<h3>H1 — Backfill Distribution Shift: Label Leakage Removal <span class="priority-high">[Priority: CRITICAL — test first]</span></h3>
+
+<div class="hypothesis">
+  <strong>Hypothesis:</strong> The backfill update applied after V52 corrected point-in-time violations in the <code>instrument_daily</code> return labels, retroactively replacing look-ahead-contaminated returns with honest point-in-time values. V52's signal (IC +0.0474) was partially or entirely a product of this contamination. Post-backfill, the honest distribution is substantially noisier and the original targets are unachievable.
+</div>
+
+<div class="evidence">
+  <strong>Supporting evidence:</strong>
+  <ul>
+    <li>VERSIONS.md Phase 47 note: "Extended backfill, doctrine complete. <strong>Data leakage discovered (IC=0.48 fake).</strong>" — confirms that a prior leakage existed and was corrected in the pipeline.</li>
+    <li>V63 is an exact V52 config replayed on post-backfill data; it produces IC −0.119 vs +0.0474. A 16-point IC swing from config alone is impossible — the data distribution changed.</li>
+    <li>Feature-store literature (Paleyes et al. 2022; ml4trading.io primer) documents that backfill-induced training/serving skew produces 5–20% performance drops and that models appear to decay when the real cause is the pipeline correction.</li>
+    <li><code>_build_forward_return_lookup()</code> computes 21-day forward returns from <code>close</code> prices at training time. If the backfill added, removed, or corrected <code>close</code> rows, the forward return distribution shifts — but this function runs fresh each training run, so no V52 forward-return checkpoint was preserved.</li>
+    <li>Return loss floor difference: V55 and V64 both freeze at exactly 109.59 — the same floor, different configs. This is consistent with the loss minimiser collapsing to a degenerate constant-prediction solution on the post-backfill label distribution, not a config bug.</li>
+  </ul>
+</div>
+
+<div class="instrument">
+  <strong>Instrumentation required:</strong>
+  <pre>
+# 1. Snapshot the forward-return distribution at training start (add to trainer.py)
+#    Log: mean, std, count, % finite, min/max of _forward_returns.values()
+log.info("FWD_RETURN_DIST: n=%d mean=%.4f std=%.4f pct_finite=%.2f min=%.4f max=%.4f",
+    n_fwd, np.mean(vals), np.std(vals), pct_finite, min(vals), max(vals))
+
+# 2. Compare daily log_return distribution vs forward_return distribution
+#    If std(log_return) << std(forward_return) after backfill, the labels changed.
+
+# 3. Spearman rank correlation between today's target labels and V52's labels
+#    (requires saving a small CSV of (entity_id, forward_return) per window from V52).
+#    Proxy: run retrain on pre-backfill DB snapshot if one exists.
+
+# 4. Check: does the model produce IC &gt; 0 on the training windows (in-sample)?
+#    If IC &lt; 0 even in-sample, the labels are unlearnable from the input features.
+  </pre>
+</div>
+
+<p class="ref">References: Paleyes et al. (2022) "Challenges in Deploying Machine Learning"; ml4trading.io "Training-Serving Skew"; RisingWave blog "Feature Backfilling" (2026); VERSIONS.md Phase 47.</p>
+
+---
+
+<h3>H2 — ListNet + Hard Clamp: Gradient Annihilation via Prediction Saturation <span class="priority-high">[Priority: HIGH — confirmed mechanistically in V64]</span></h3>
+
+<div class="hypothesis">
+  <strong>Hypothesis:</strong> The <code>_ret_pred.clamp(-5.0, 5.0)</code> at line 2555 of <code>trainer.py</code> applied <em>before</em> the ListNet softmax causes a systematic pathology: when raw head predictions exceed ±5, clamping removes gradient flow to the head entirely (gradient of clamp is 0 outside the interval). After a few epochs of learning, all predictions saturate at +5.0 (mean → 5.0, std → 0), making the ListNet softmax a uniform distribution over identical scores — loss plateaus but no ranking gradient propagates.
+</div>
+
+<div class="evidence">
+  <strong>Supporting evidence:</strong>
+  <ul>
+    <li>V64 [GRAD_FLOW] log: <code>pred_std 1.42 → 0.00</code>, <code>pred_mean → 5.0000</code> by ep5. This is a direct measurement of saturation.</li>
+    <li>The clamp range ±5 was designed to guard against extreme financial values, but xsnorm-normalised price features can easily push the concat head output beyond ±5 when the head learns scale-dependent patterns.</li>
+    <li>PiRank (OpenReview) and temperature-check literature (arxiv:2010.07344) both confirm that low-temperature softmax with bounded logits causes "large gradient norms unsuitable for training, or loss stalling/diverging." At τ=0.1 (our config), the softmax gradient is extremely sharp — a ±5 clamp that all predictions hit creates a flat probability vector, zero cross-entropy gradient.</li>
+    <li>ListNet top-1 cross-entropy: if <code>softmax(scores / 0.1)</code> is uniform because all scores = 5.0, the loss equals <code>log(N)</code> — a constant. Gradient of a constant is zero.</li>
+    <li>The 109.59 floor appears in both V55 and V64 — different configs, same floor. This is the ListNet entropy floor for N≈53 instruments at τ=0.1: <code>log(53) / 0.1 ≈ 39.7</code>... wait, but 109.59 matches a specific uniform-prediction floor for the observed N and τ. This needs measurement.</li>
+  </ul>
+</div>
+
+<div class="instrument">
+  <strong>Instrumentation required:</strong>
+  <pre>
+# Already exists as [GRAD_FLOW] — extend with:
+# 1. Per-epoch: fraction of predictions hitting the clamp boundary
+pct_clamped_upper = (ret_pred_raw &gt; 5.0).float().mean().item()
+pct_clamped_lower = (ret_pred_raw &lt; -5.0).float().mean().item()
+log.info("[GRAD_FLOW] ep%d pct_clamped_upper=%.3f pct_clamped_lower=%.3f",
+    epoch, pct_clamped_upper, pct_clamped_lower)
+
+# 2. Gradient norm of concat_head parameters before and after clamp
+# Compare: do gradients reach the concat head at all after ep5?
+concat_grad_norm = sum(p.grad.norm().item()**2 for p in model.return_concat_head.parameters()
+                        if p.grad is not None) ** 0.5
+
+# 3. ABLATION: remove clamp entirely (replace with clamp(-50, 50)) — does pred_std stay &gt; 0?
+# Expected: if this alone fixes stagnation, H2 is confirmed and H1 becomes less dominant.
+
+# 4. Theoretical floor: log(N_cross_section) / tau for uniform prediction
+# Log this at each window: theoretical_floor = math.log(n_valid_instruments) / tau
+  </pre>
+</div>
+
+<p class="ref">References: arxiv:2010.07344 "Temperature check: theory and practice"; PiRank OpenReview (Fp5wZq7_iL); arxiv:2510.14156 "On Evaluating Loss Functions for Stock Ranking"; trainer.py line 2555.</p>
+
+---
+
+<h3>H3 — Multi-Task Gradient Imbalance: obs_type Dominance Killing Return Signal <span class="priority-high">[Priority: HIGH]</span></h3>
+
+<div class="hypothesis">
+  <strong>Hypothesis:</strong> The obs_type classification head (cross-entropy over ~2,145 entities) produces gradients ~40× larger in raw magnitude than the return ranking head (~53 instruments). Even with the <code>_return_upscale</code> scalar compensation introduced in Phase 50, the gradient <em>directions</em> conflict. The obs_type task optimises entity-type discrimination which is orthogonal (and sometimes contradictory) to return ranking; PCGrad is implemented in the codebase but is NOT called in the main training loop — it exists as a dead function.
+</div>
+
+<div class="evidence">
+  <strong>Supporting evidence:</strong>
+  <ul>
+    <li><code>trainer.py</code> line 2101–2118: "The return head sees only ~53 entities while obs_type sees ~2,145 entities. Without upscaling, the return gradient is ~40× weaker." — explicitly acknowledged in code.</li>
+    <li><code>_pcgrad_projection()</code> is defined at line 168 but is never invoked in the <code>train()</code> loop — confirmed by grep. The gradient conflict is measured nowhere.</li>
+    <li>V62 (return isolated, value_w=0, vicreg_weight=0): return still freezes at 209.39. This means even when obs_type weight=1 and all other tasks are suppressed, the return cannot move. At this point the only explanation is either H1 (labels) or H2 (clamp/saturation).</li>
+    <li>CAGrad (arxiv:2110.14048) and IMGrad (IJCAI 2025) show that gradient dominance — not just conflict — is the more significant problem in MTL. Even Kendall auto-tune (our auto_tune_loss_weights) does not resolve gradient direction conflicts, only magnitude imbalance.</li>
+    <li>VERSIONS.md V43 candidates: "GradNorm (arxiv:1711.02257): auto-balances MTL weights based on gradient magnitudes. Addresses obs_type CE dominating return loss 154:1." — this was noted as a candidate but never implemented.</li>
+    <li>MiM-StocR (arxiv:2509.10461): "CQB optimization based on historical gradients to improve training stability and delay overfitting." Gradient balancing delayed overfitting; simple weight scaling did not.</li>
+  </ul>
+</div>
+
+<div class="instrument">
+  <strong>Instrumentation required:</strong>
+  <pre>
+# At each backward pass, measure cosine similarity between obs_type gradient and return gradient
+# Both flattened into 1D vectors over shared backbone parameters
+
+def _measure_gradient_conflict(model, obs_loss, ret_loss, optimizer):
+    """Call after total.backward(), before optimizer.step()."""
+    # Capture per-task gradients on backbone (everything except task-specific heads)
+    backbone_params = [p for n, p in model.named_parameters()
+                       if 'return' not in n and 'obs_type' not in n and p.grad is not None]
+    # obs_type gradient (requires separate backward — expensive; do only every 10 windows)
+    g_obs = torch.cat([p.grad.flatten() for p in backbone_params])
+    # ... (zero_grad, obs_loss.backward(), capture) ...
+    cosine_sim = F.cosine_similarity(g_obs.unsqueeze(0), g_ret.unsqueeze(0)).item()
+    grad_ratio = g_obs.norm().item() / max(g_ret.norm().item(), 1e-8)
+    log.info("[GRAD_CONFLICT] ep%d cosine_sim=%.4f grad_ratio=%.2f", epoch, cosine_sim, grad_ratio)
+
+# Expected: cosine_sim &lt; 0 → conflict confirmed; grad_ratio &gt;&gt; 1 → dominance confirmed.
+# Quick proxy (cheaper): log per-task gradient norms from existing backward pass.
+  </pre>
+</div>
+
+<p class="ref">References: arxiv:2110.14048 CAGrad; AAAI 2023 CoNAL; arxiv:1711.02257 GradNorm; arxiv:2509.10461 MiM-StocR; trainer.py lines 168–210, 2101–2118.</p>
+
+---
+
+<h3>H4 — CSRC Contrastive Loss Driving Dimensional Embedding Collapse <span class="priority-med">[Priority: MEDIUM]</span></h3>
+
+<div class="hypothesis">
+  <strong>Hypothesis:</strong> The Cross-Sectional Ranking Contrastive (CSRC) loss uses return-decile-based positive/negative pairs. Because financial returns are noisy (low SNR), the "top decile" and "bottom decile" assignments are unstable across windows — instruments that are "top" in one window are "bottom" in the next. The InfoNCE objective then pulls the same embedding toward opposite directions across consecutive windows, causing the backbone to converge to a degenerate low-variance representation that satisfies no decile assignment consistently. This directly produces dimensional collapse: embeddings compress to a low-dimensional subspace where all instruments look the same, destroying the IC-relevant structure.
+</div>
+
+<div class="evidence">
+  <strong>Supporting evidence:</strong>
+  <ul>
+    <li>V64: embedding collapse 49.3% with CSRC active (contrastive_weight=1). V62: collapse 14.1% with CSRC active but obs_type dominant. V61: collapse 24.7% with ContraNorm.</li>
+    <li>Meta AI blog on dimensional collapse: "contrastive learning can induce dimensional collapse — embeddings vacate certain dimensions and shrink into a lower-dimensional subspace." The mechanism: positive pairs aligned by strong augmentation + implicit regularization from multi-layer dynamics.</li>
+    <li>Financial return correlation paper (arxiv:2407.18645): "The complex and stochastic nature of financial markets poses unique challenges [for contrastive learning]. We use hypothesis testing on return correlations to generate informative positive/negative samples." — Our CSRC uses raw quantile bins without any statistical test of pair informativeness.</li>
+    <li>arxiv:2306.02117 on deep GCL: "long-range starvation — lower layers collapse without supervision from the top-layer contrastive loss." Our GNN backbone is 2 layers; the contrastive loss is applied to top-layer embeddings. Lower backbone layers may receive no return-relevant gradient.</li>
+    <li>The old <code>_contrastive_loss()</code> (entity-identity pairs) was noted as having "collapsed all instrument embeddings to a single cluster." CSRC was introduced to fix this, but the underlying problem (noisy pair assignments) may not be solved by switching to decile-based pairs alone.</li>
+    <li>V64 [GRAD_FLOW]: <code>emb_std</code> and <code>eff_rank</code> diagnostics confirm structural collapse independent of the clamp issue.</li>
+  </ul>
+</div>
+
+<div class="instrument">
+  <strong>Instrumentation required:</strong>
+  <pre>
+# 1. Per-window: measure decile assignment stability across consecutive windows
+#    Track what fraction of top-decile instruments at window t are also top-decile at window t+1
+#    (Kendall's tau of return ranks across adjacent windows)
+
+# 2. Per-epoch: effective rank of instrument embeddings
+#    Already exists as eff_rank in [GRAD_FLOW] — also log per-layer, not just final layer
+effective_rank_layer0 = compute_effective_rank(model.conv_layers[0].out_embeddings)
+effective_rank_final  = compute_effective_rank(instrument_embeddings)
+
+# 3. ABLATION: set contrastive_weight=0 (CSRC disabled) + clamp fix
+#    If collapse drops dramatically, H4 is confirmed as contributing cause.
+
+# 4. Measure Kendall's tau of 21-day forward return rankings across adjacent 168h windows
+#    If tau &lt; 0.1, the labels are too unstable for InfoNCE-style training.
+import scipy.stats
+tau, _ = scipy.stats.kendalltau(ranks_t, ranks_t_next)
+log.info("[LABEL_STABILITY] window_tau=%.4f", tau)
+  </pre>
+</div>
+
+<p class="ref">References: arxiv:2407.18645 "Contrastive Learning of Asset Embeddings"; arxiv:2203.12821 nmrGCL dimensional collapse; arxiv:2306.02117 deep GCL long-range starvation; Meta AI blog "Understanding Dimensional Collapse"; trainer.py lines 1668–1764.</p>
+
+---
+
+<h3>H5 — TGN Memory Staleness: Post-Step Memory Update Starving Gradient Flow <span class="priority-med">[Priority: MEDIUM]</span></h3>
+
+<div class="hypothesis">
+  <strong>Hypothesis:</strong> After each optimizer step, the trainer calls <code>model.update_memory_from_events()</code> with <em>detached</em> embeddings (line 2714–2723). This means the memory module (GRU/attention state for each entity) receives no gradient signal from training — it is updated as a side-effect of the forward pass, not optimised. Over time, the memory state becomes stale relative to the backbone parameters, injecting noisy or conflicting conditioning into subsequent windows, degrading the return-relevant backbone gradient.
+</div>
+
+<div class="evidence">
+  <strong>Supporting evidence:</strong>
+  <ul>
+    <li>Trainer code lines 2712–2723: "Skip when CWM is active — memories already updated above." The non-CWM path explicitly uses <code>embeddings_detached</code>. The TGN paper (Rossi et al. 2020) warns: "reversing the order — predicting interactions then updating memory — causes all memory-related modules not to receive a gradient."</li>
+    <li>MSPipe (arxiv:2402.15113): memory staleness in temporal GNN training reduces effective learning signal; nodes that haven't appeared recently have stale memories that bias forward passes.</li>
+    <li>With walk-forward windows of 168h and 200 max windows, many instruments may go several windows without a fresh price observation, accumulating stale GRU states that inject noise into the return head's input embedding.</li>
+    <li>V62 (eff_rank=1/93 of possible): a rank-1 embedding subspace is consistent with all backbone outputs being dominated by a single mode — which could be the stale memory anchor overwhelming the per-window graph features.</li>
+  </ul>
+</div>
+
+<div class="instrument">
+  <strong>Instrumentation required:</strong>
+  <pre>
+# 1. Per-window: log the fraction of instrument entities whose memory was last updated
+#    more than K windows ago (staleness distribution)
+
+# 2. Correlation between memory staleness and return prediction error per entity
+
+# 3. ABLATION: zero-initialise memory at the start of each epoch (fresh memory)
+#    If training improves, memory accumulation is hurting more than helping.
+
+# 4. Try gradient-through-memory: for a single small run, do not detach embeddings
+#    before memory update (expensive but diagnostic)
+  </pre>
+</div>
+
+<p class="ref">References: arxiv:2209.02462 "Rethinking Memory Staleness in Dynamic GNN"; Rossi et al. (2020) TGN paper; arxiv:2402.15113 MSPipe; trainer.py lines 2711–2723.</p>
+
+---
+
+<h3>H6 — Forward Return Label Alignment Mismatch: 21-Day Horizon vs 168h Training Window <span class="priority-med">[Priority: MEDIUM — structural flaw]</span></h3>
+
+<div class="hypothesis">
+  <strong>Hypothesis:</strong> The training target is a 21-trading-day (≈1 month) forward return. The training window is 168 hours (1 week). During training, the model is shown 1-week graph snapshots and asked to predict 1-month outcomes. But the 1-month forward return at time t is only revealed to the model as a supervisory signal at time t, while it was not available until t+21 trading days. If the forward return lookup is built from the full observation list (including observations from the future relative to the current training window), there is a systematic look-ahead bias — the model sees future close prices that were used to compute the label it is currently being trained on. After the backfill corrected data ordering, this bias may have been removed, destroying the previously learnable signal.
+</div>
+
+<div class="evidence">
+  <strong>Supporting evidence:</strong>
+  <ul>
+    <li><code>_build_forward_return_lookup()</code> is called once before training (line 2132–2139) over <em>all</em> prefetched observations. The returned dict maps <code>(entity_id, int(observed_at_t0)) → forward_return</code> where forward_return uses <code>close_t+21days</code> from the same full observation list. There is no temporal guard: if observation at t_end of the training window is used to look up a forward return whose <em>future close price</em> falls within the same window or is observable by the model's graph features, leakage exists.</li>
+    <li>The Phase 47 note: "Data leakage discovered (IC=0.48 fake)" — an IC of 0.48 is only achievable with label leakage. This confirms leakage was real and was patched. V52 might have been trained during or just after a partial patch, retaining residual leakage.</li>
+    <li>The current code searches for close prices "±3 calendar days" around the 21-day target. In the walk-forward setup, if the graph feature window includes close prices that overlap with the forward return computation window, the feature and label are partially the same data.</li>
+  </ul>
+</div>
+
+<div class="instrument">
+  <strong>Instrumentation required:</strong>
+  <pre>
+# 1. For each training window [t_start, t_end], verify that ALL close prices used
+#    in forward_return computation have observed_at &gt; t_end + horizon_secs
+#    (i.e., the future close is truly outside the current graph feature window)
+
+# 2. Log the overlap fraction per window:
+#    "What fraction of forward-return labels use a future close price that falls
+#     inside the current feature window?"
+
+# 3. Run a sanity IC check: train on SHUFFLED labels (random assignment of returns
+#    to instruments). If IC on shuffled labels is still &gt; 0, there is leakage.
+
+# 4. Run in-sample IC: at each epoch, compute Spearman IC of predictions vs targets
+#    on the TRAINING windows. If in-sample IC &lt; 0.01, the features carry no learnable
+#    signal for the labels — the problem is the label distribution (H1/H6), not the
+#    architecture (H2/H3/H4).
+  </pre>
+</div>
+
+<p class="ref">References: Lewellen (2015) "The Cross-section of Expected Stock Returns"; ml4trading.io "Point-in-time joins"; VERSIONS.md Phase 47; trainer.py lines 1101–1210.</p>
+
+---
+
+<h2>3. Hypothesis Priority Matrix</h2>
+
+<table>
+  <tr>
+    <th>Hypothesis</th>
+    <th>Prior P</th>
+    <th>Falsifiability</th>
+    <th>Cost to test</th>
+    <th>Fix if confirmed</th>
+  </tr>
+  <tr>
+    <td><strong>H1</strong> — Backfill label shift</td>
+    <td class="priority-high">~70%</td>
+    <td>Run in-sample IC on training windows</td>
+    <td>Low (1 training run, measure IC per epoch in-sample)</td>
+    <td>Understand what the achievable IC ceiling is post-backfill; retarget expectations or re-engineer features</td>
+  </tr>
+  <tr>
+    <td><strong>H2</strong> — Clamp saturation</td>
+    <td class="priority-high">~85% (mechanistically confirmed V64)</td>
+    <td>Remove clamp, re-run 10ep smoke</td>
+    <td>Very low (one line change)</td>
+    <td>Replace hard clamp with soft tanh scaling; add BatchNorm before return head</td>
+  </tr>
+  <tr>
+    <td><strong>H3</strong> — MTL gradient dominance</td>
+    <td class="priority-high">~65%</td>
+    <td>Log gradient cosine sim + norms per task</td>
+    <td>Medium (instrumentation + isolated ablation)</td>
+    <td>Activate PCGrad; or use separate optimiser for return head; or GradNorm</td>
+  </tr>
+  <tr>
+    <td><strong>H4</strong> — CSRC collapse</td>
+    <td class="priority-med">~55%</td>
+    <td>Disable CSRC, measure collapse%</td>
+    <td>Low (flag flip)</td>
+    <td>Apply hypothesis-test-based pair sampling (arxiv:2407.18645); add VICReg variance term</td>
+  </tr>
+  <tr>
+    <td><strong>H5</strong> — TGN memory staleness</td>
+    <td class="priority-med">~40%</td>
+    <td>Zero memory at epoch start, compare</td>
+    <td>Medium (code change)</td>
+    <td>Gradient-through-memory; or reduce memory horizon; or reset stale entities</td>
+  </tr>
+  <tr>
+    <td><strong>H6</strong> — Forward return look-ahead</td>
+    <td class="priority-med">~45%</td>
+    <td>Shuffled-label IC test</td>
+    <td>Low (shuffled labels = no code change)</td>
+    <td>Enforce strict point-in-time guard in _build_forward_return_lookup</td>
+  </tr>
+</table>
+
+<div class="warning">
+  <strong>Important:</strong> H2 (clamp) is mechanistically <em>confirmed</em> by V64 instrumentation. But even if fixed, H1 (label shift) may mean the achievable IC after clamp fix is still negative or near-zero. The clamp fix is a necessary condition, not a sufficient one. Test H1 and H2 in parallel.
+</div>
+
+<hr>
+
+<h2>4. Instrumentation Plan — V65 Design</h2>
+
+<p>Per the V53 methodology lock: <strong>one hypothesis per run, one config change at a time.</strong> However, the in-sample IC diagnostic (H1) and the shuffled-label test (H6) are zero-cost additions to any run and should always be included.</p>
+
+<h3>V65-A: Clamp Fix + Label Diagnostic (H1 + H2 combined — recommended first run)</h3>
+
+<table>
+  <tr><th>Parameter</th><th>V52 / V64</th><th>V65-A</th></tr>
+  <tr><td>Clamp on <code>_ret_pred</code></td><td><code>clamp(-5, 5)</code></td><td><strong>Remove (or extend to <code>clamp(-50, 50)</code>)</strong></td></tr>
+  <tr><td>Add BatchNorm before return head</td><td>No</td><td><strong>Yes</strong> — prevents saturation after xsnorm concat</td></tr>
+  <tr><td>In-sample IC logging</td><td>No</td><td><strong>Yes</strong> — per epoch, log Spearman(pred, target) on training windows</td></tr>
+  <tr><td>Shuffled-label smoke (1 epoch)</td><td>No</td><td><strong>Yes</strong> — 1 epoch with shuffled returns; expect IC ≈ 0 if no leakage</td></tr>
+  <tr><td>[GRAD_FLOW] extension</td><td>pred_std, emb_std</td><td><strong>+ pct_clamped, grad_norms_per_task, decile_stability</strong></td></tr>
+  <tr><td>All other config</td><td>V52-exact</td><td>V52-exact (200win, τ=0.1, return_w=3, auto_tune, concat+direction)</td></tr>
+</table>
+
+<h3>V65-B: CSRC Ablation (H4 — only if V65-A still shows collapse &gt; 20%)</h3>
+
+<table>
+  <tr><th>Parameter</th><th>V65-A</th><th>V65-B</th></tr>
+  <tr><td>CSRC (use_csrc_loss)</td><td>True</td><td><strong>False (contrastive_weight=0)</strong></td></tr>
+  <tr><td>VICReg weight</td><td>0</td><td><strong>0.1</strong> (prevents collapse without noisy pairs)</td></tr>
+  <tr><td>All else</td><td>V65-A</td><td>V65-A</td></tr>
+</table>
+
+<h3>V65-C: Gradient Conflict Resolution (H3 — only after H2 confirmed fixed)</h3>
+
+<table>
+  <tr><th>Parameter</th><th>V65-A</th><th>V65-C</th></tr>
+  <tr><td>PCGrad</td><td>Disabled (dead code)</td><td><strong>Activated — wrap backward() with pcgrad_projection()</strong></td></tr>
+  <tr><td>Return head optimizer</td><td>Shared Adam</td><td><strong>Separate Adam with higher LR (1e-3 vs 1e-4 for backbone)</strong></td></tr>
+  <tr><td>All else</td><td>V65-A</td><td>V65-A</td></tr>
+</table>
+
+<hr>
+
+<h2>5. Architecture Flaws — Structural Problems Independent of Config</h2>
+
+<p>These are issues in the current design that no config knob can fully fix. They require code changes.</p>
+
+<h3>F1 — Hard Clamp Before Softmax is Fundamentally Broken</h3>
+<p>The <code>clamp(-5, 5)</code> at line 2555 applied before <code>_listnet_loss()</code> is architecturally unsound. ListNet requires a <em>distribution</em> of scores; clamping them to an identical value destroys the distribution. The correct approach is either:</p>
+<ol>
+  <li>Apply BatchNorm on <code>_concat_in</code> before the head so predictions stay in a bounded range naturally.</li>
+  <li>Remove the clamp entirely and instead clip gradients (already done at norm=1.0).</li>
+  <li>Apply a learnable temperature scaling layer after the head (<code>pred / softplus(T)</code>) to normalise scale without hard bounds.</li>
+</ol>
+
+<h3>F2 — PCGrad is Implemented but Never Called</h3>
+<p><code>_pcgrad_projection()</code> at line 168 is a complete, correct implementation of PCGrad (Yu et al. NeurIPS 2020, arXiv:2001.06782) — but it is never invoked in the main <code>train()</code> loop. The gradient conflict it was designed to resolve almost certainly exists at scale (5 tasks, ~2145 vs ~53 entity counts). This is a dead feature that should either be wired in or removed to reduce confusion.</p>
+
+<h3>F3 — Auto-tune (Kendall) Weighs Magnitudes, Not Directions — Cannot Resolve Conflict</h3>
+<p>The Kendall et al. (2018) uncertainty weighting (<code>auto_tune_loss_weights</code>) adjusts effective per-task weights via learnable <code>log_var</code> parameters. It can silence or amplify a task's contribution to the total loss, but it cannot fix gradient <em>direction</em> conflicts — when obs_type and return gradients point in opposite directions on the backbone, scaling one down does not resolve the conflict, it only reduces one participant. GradNorm or PCGrad is required for direction-aware conflict resolution.</p>
+
+<h3>F4 — The Concat Head Architecture Conflates Two Objectives</h3>
+<p>The <code>return_concat_head([xsnorm_raw || gnn_emb])</code> combines raw price features (already highly predictive, strong gradient signal) with GNN embeddings (weak gradient, potentially noisy). When the head learns to rely primarily on raw features (which is optimal given the gradient balance), the GNN backbone receives no useful training signal from the return loss — which is the entire point of connecting the backbone to the return supervision. The concat architecture creates a gradient bypass: the head can minimise return loss using only the raw features, disconnecting backbone learning.</p>
+
+<h3>F5 — ListNet Temperature τ=0.1 Creates Extremely Sharp Gradients at Initialisation</h3>
+<p>PiRank paper: "low temperatures induce large gradient norms which are unsuitable for training and lead to loss stalling or diverging." At τ=0.1, the effective softmax is ≈ argmax. For N=53 instruments, if initial predictions are in [−1, 1] (before saturation), the softmax gradient is non-zero but extremely concentrated on the top-ranked item. After saturation (all predictions → clamp boundary), the gradient collapses. A higher temperature (τ=0.5 or τ=1.0) would smooth the gradient landscape and make training stable across a wider range of prediction scales.</p>
+
+<hr>
+
+<h2>6. What Changes Between V52 (Success) and Now (Systematic Failure)</h2>
+
+<p>This is the most important section. V52 worked with the exact same config now being tested. The delta must be in the <em>data</em>.</p>
+
+<table>
+  <tr>
+    <th>Variable</th>
+    <th>V52 (2026-06-02)</th>
+    <th>V63/V64 (2026-06-06)</th>
+    <th>Effect on training</th>
+  </tr>
+  <tr>
+    <td>Backfill state</td>
+    <td>Pre- or partial-backfill correction</td>
+    <td>Post-backfill correction</td>
+    <td>Label distribution shifted — achievable IC may be lower</td>
+  </tr>
+  <tr>
+    <td>Forward return labels</td>
+    <td>Built from V52-era DB snapshot</td>
+    <td>Built fresh from post-backfill DB</td>
+    <td>Different close price rows → different forward returns</td>
+  </tr>
+  <tr>
+    <td>Number of instrument_daily obs</td>
+    <td>Unknown (V52 snapshot)</td>
+    <td>May have increased (more rows backfilled)</td>
+    <td>More instruments → different xsnorm scaling → different prediction scale → clamp hits sooner</td>
+  </tr>
+  <tr>
+    <td>DB entity count</td>
+    <td>~V52 era count</td>
+    <td>May have grown</td>
+    <td>Larger N in CSRC → more noisy pairs → more collapse pressure</td>
+  </tr>
+  <tr>
+    <td>Code: clamp(-5, 5)</td>
+    <td>Present in V52 (same code)</td>
+    <td>Present</td>
+    <td>Clamp was always there — but V52 pred_std never hit 0. Something changed in initial prediction scale.</td>
+  </tr>
+</table>
+
+<div class="warning">
+  <strong>Critical open question:</strong> Why did V52 <em>not</em> saturate the clamp while V64 did within 5 epochs? Both use the same clamp and same concat head. The most likely explanation: the post-backfill DB contains more or differently-scaled price features, shifting the xsnorm distribution and pushing predictions outside ±5 faster. This is testable by logging <code>xsnorm_price_feats</code> statistics before the head.
+</div>
+
+<hr>
+
+<h2>7. Actionable Fixes (Ordered by Impact/Effort)</h2>
+
+<table>
+  <tr>
+    <th>Fix</th>
+    <th>File / Line</th>
+    <th>Change</th>
+    <th>Effort</th>
+    <th>Expected effect</th>
+  </tr>
+  <tr>
+    <td><strong>F2-fix</strong>: Remove hard clamp before ListNet</td>
+    <td><code>trainer.py:2555</code></td>
+    <td>Replace <code>clamp(-5, 5)</code> with <code>clamp(-50, 50)</code> or remove; add BatchNorm on concat_in</td>
+    <td>1 line + 1 module</td>
+    <td>Restores pred_std &gt; 0; ListNet gradient flows; likely necessary but not sufficient</td>
+  </tr>
+  <tr>
+    <td><strong>Diagnostic</strong>: In-sample IC per epoch</td>
+    <td><code>trainer.py</code> epoch loop</td>
+    <td>Log <code>scipy.stats.spearmanr(preds, targets)</code> on training windows at each epoch end</td>
+    <td>~10 lines</td>
+    <td>Directly reveals whether labels are learnable at all (tests H1)</td>
+  </tr>
+  <tr>
+    <td><strong>Diagnostic</strong>: xsnorm feature stats</td>
+    <td><code>trainer.py:2530</code></td>
+    <td>Log mean/std of <code>_raw_feat_t</code> and <code>_concat_in</code> before head on first window of each epoch</td>
+    <td>3 lines</td>
+    <td>Reveals if post-backfill price features are out-of-distribution vs V52</td>
+  </tr>
+  <tr>
+    <td><strong>F1-fix</strong>: Wire PCGrad into backward loop</td>
+    <td><code>trainer.py:2690</code></td>
+    <td>Before <code>optimizer.step()</code>, apply <code>_pcgrad_projection(task_grads)</code> — requires per-task backward passes</td>
+    <td>~30 lines</td>
+    <td>Resolves direction conflict between obs_type and return gradients</td>
+  </tr>
+  <tr>
+    <td><strong>F3-fix</strong>: Increase ListNet τ from 0.1 → 0.5</td>
+    <td><code>notebook config: listnet_temperature</code></td>
+    <td>0.1 → 0.5</td>
+    <td>Config-only</td>
+    <td>Smoother gradient landscape; less likely to drive predictions to clamp boundary</td>
+  </tr>
+  <tr>
+    <td><strong>H4-fix</strong>: CSRC ablation (disable)</td>
+    <td><code>notebook config: use_csrc_loss</code></td>
+    <td>False; add <code>vicreg_weight=0.1</code></td>
+    <td>Config-only</td>
+    <td>Tests if CSRC drives collapse; VICReg provides collapse prevention without noisy pairs</td>
+  </tr>
+  <tr>
+    <td><strong>H6-fix</strong>: Point-in-time guard for forward returns</td>
+    <td><code>trainer.py:1158</code></td>
+    <td>In <code>_build_forward_return_lookup</code>, only accept future close prices with <code>ts_future &gt; t_end_of_current_window</code> — requires passing window boundaries into the lookup function</td>
+    <td>~20 lines</td>
+    <td>Ensures no look-ahead bias in forward return labels</td>
+  </tr>
+</table>
+
+<hr>
+
+<h2>8. References</h2>
+
+<ol>
+  <li>Cao et al. (2007). "Learning to Rank: From Pairwise Approach to Listwise Approach." ICML. [ListNet loss]</li>
+  <li>Kendall et al. (2018). "Multi-Task Learning Using Uncertainty to Weigh Losses." CVPR. [auto-tune / log-var weighting]</li>
+  <li>Yu et al. (2020). "Gradient Surgery for Multi-Task Learning." NeurIPS. arXiv:2001.06782. [PCGrad — implemented but inactive]</li>
+  <li>Chen et al. (2020). "GradNorm: Gradient Normalization for Adaptive Loss Balancing." ICML. arXiv:1711.02257.</li>
+  <li>Liu et al. (2021). "Conflict-Averse Gradient Descent for Multi-task Learning." arXiv:2110.14048.</li>
+  <li>Bardes et al. (2022). "VICReg: Variance-Invariance-Covariance Regularization." arXiv:2105.04906. [implemented, weight=0]</li>
+  <li>Rossi et al. (2020). "Temporal Graph Networks for Deep Learning on Dynamic Graphs." GRL+@ICML.</li>
+  <li>Lewellen (2015). "The Cross-section of Expected Stock Returns." JFE.</li>
+  <li>Qiu et al. (2024). "Contrastive Learning of Asset Embeddings from Financial Time Series." arXiv:2407.18645.</li>
+  <li>Zhou et al. (2022). "Dimensional Collapse in Graph Contrastive Learning." arXiv:2203.12821.</li>
+  <li>Bao et al. (2022). "Large-scale deep GCL: long-range starvation." arXiv:2306.02117.</li>
+  <li>Garg et al. (2020). "Temperature check for softmax-cross-entropy losses." arXiv:2010.07344.</li>
+  <li>Zhuang et al. (2023). "PiRank: Scalable Learning-to-Rank." OpenReview Fp5wZq7_iL.</li>
+  <li>Zhang et al. (2025). "On Evaluating Loss Functions for Stock Ranking." arXiv:2510.14156.</li>
+  <li>Lu et al. (2025). "MiM-StocR: Momentum-integrated Multi-task Stock Recommendation." arXiv:2509.10461.</li>
+  <li>Paleyes et al. (2022). "Challenges in Deploying Machine Learning." ACM Computing Surveys.</li>
+  <li>ml4trading.io (2025). "Training-Serving Skew, Point-in-Time Joins, and Feature Stores."</li>
+</ol>
+
+</body>
+</html>

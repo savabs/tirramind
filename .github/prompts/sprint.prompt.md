@@ -1,3 +1,5 @@
+> Legacy reference. Use Cursor skill `/sprint` — canonical: `.cursor/skills/sprint/SKILL.md`
+
 ---
 description: "Sprint mode: execute ALL remaining steps in the active task file sequentially without stopping between steps."
 ---

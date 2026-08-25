@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Training Loop Adaptation — Gap Analysis</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 2rem;
+            background: #0f0f13;
+            color: #d4d4d8;
+            line-height: 1.6;
+        }
+
+        h1 {
+            color: #e2e8f0;
+            border-bottom: 2px solid #3b82f6;
+            padding-bottom: .5rem;
+        }
+
+        h2 {
+            color: #93c5fd;
+            margin-top: 2rem;
+        }
+
+        h3 {
+            color: #7dd3fc;
+        }
+
+        .meta {
+            color: #64748b;
+            font-size: .85rem;
+            margin-bottom: 2rem;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 0;
+            border-bottom: 2px solid #1e293b;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+        }
+
+        .tab {
+            padding: .5rem 1.2rem;
+            cursor: pointer;
+            color: #64748b;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+            font-size: .9rem;
+        }
+
+        .tab.active {
+            color: #3b82f6;
+            border-bottom-color: #3b82f6;
+        }
+
+        .panel {
+            display: none;
+        }
+
+        .panel.active {
+            display: block;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+            font-size: .9rem;
+        }
+
+        th {
+            background: #1e293b;
+            color: #93c5fd;
+            padding: .6rem 1rem;
+            text-align: left;
+        }
+
+        td {
+            padding: .5rem 1rem;
+            border-bottom: 1px solid #1e293b;
+            vertical-align: top;
+        }
+
+        tr:hover td {
+            background: #1a1a22;
+        }
+
+        .yes {
+            color: #4ade80;
+        }
+
+        .no {
+            color: #f87171;
+        }
+
+        .partial {
+            color: #fbbf24;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: .15rem .5rem;
+            border-radius: .25rem;
+            font-size: .75rem;
+            font-weight: 600;
+            margin-left: .4rem;
+        }
+
+        .badge-red {
+            background: #450a0a;
+            color: #f87171;
+        }
+
+        .badge-yellow {
+            background: #451a03;
+            color: #fbbf24;
+        }
+
+        .badge-green {
+            background: #052e16;
+            color: #4ade80;
+        }
+
+        .badge-blue {
+            background: #172554;
+            color: #93c5fd;
+        }
+
+        code {
+            background: #1e293b;
+            padding: .1rem .4rem;
+            border-radius: .2rem;
+            font-size: .85rem;
+            color: #7dd3fc;
+        }
+
+        pre {
+            background: #1e293b;
+            padding: 1rem;
+            border-radius: .4rem;
+            overflow-x: auto;
+            font-size: .85rem;
+            color: #94a3b8;
+            line-height: 1.5;
+        }
+
+        .callout {
+            border-left: 3px solid;
+            padding: .8rem 1rem;
+            margin: 1rem 0;
+            border-radius: 0 .4rem .4rem 0;
+        }
+
+        .callout-red {
+            border-color: #f87171;
+            background: #1a0a0a;
+        }
+
+        .callout-yellow {
+            border-color: #fbbf24;
+            background: #1a110a;
+        }
+
+        .callout-green {
+            border-color: #4ade80;
+            background: #0a1a0a;
+        }
+
+        .callout-blue {
+            border-color: #3b82f6;
+            background: #0a0f1a;
+        }
+
+        .priority {
+            font-weight: 700;
+        }
+
+        .p1 {
+            color: #f87171;
+        }
+
+        .p2 {
+            color: #fbbf24;
+        }
+
+        .p3 {
+            color: #4ade80;
+        }
+
+        svg text {
+            font-family: inherit;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>Training Loop Adaptation — Gap Analysis</h1>
+    <div class="meta">Phase 41 · 2026-05-13 · layer/learning · topic/training-loop</div>
+
+    <div class="tabs">
+        <div class="tab active" onclick="show('verdict')">Verdict</div>
+        <div class="tab" onclick="show('current')">Current System</div>
+        <div class="tab" onclick="show('gaps')">Gap Analysis</div>
+        <div class="tab" onclick="show('what-to-build')">What to Build</div>
+        <div class="tab" onclick="show('references')">References</div>
+    </div>
+
+    <!-- ===== VERDICT ===== -->
+    <div id="verdict" class="panel active">
+        <h2>Short Answer</h2>
+
+        <div class="callout callout-blue">
+            <strong>The block structure is correct.</strong> Train N epochs → adapt → repeat is the right
+            architecture for a Kaggle-constrained, non-stationary POMDP world. The problem is not
+            the loop shape. The problem is <em>what the loop can observe</em> and <em>what it can change</em>.
+        </div>
+
+        <div class="callout callout-red">
+            <strong>The current adaptation scope is too narrow.</strong>
+            <code>auto_improve.py</code> watches 5 aggregate loss numbers and can only turn 7 scalar
+            knobs. It is flying blind on the two signals that actually matter:
+            <ol>
+                <li><strong>IC (Spearman rank correlation)</strong> — the real predictive signal. Never measured.</li>
+                <li><strong>Per-entity-type performance</strong> — which entity types are learning vs. collapsing.
+                    Not recorded anywhere.</li>
+            </ol>
+            Changing <code>lr</code> and <code>return_weight</code> when you can't see which entities are
+            failing is like adjusting a telescope without looking through it.
+        </div>
+
+        <h2>Priority Roadmap</h2>
+
+        <table>
+            <tr>
+                <th>Priority</th>
+                <th>What to Add</th>
+                <th>Where</th>
+                <th>Effort</th>
+                <th>Expected Impact</th>
+            </tr>
+            <tr>
+                <td><span class="priority p1">P1 BLOCKER</span></td>
+                <td>Walk-forward IC measurement after every training run</td>
+                <td><code>phase40_gnn_backtest.py</code> + Kaggle notebook</td>
+                <td>~1 day</td>
+                <td>Know if the model actually predicts anything</td>
+            </tr>
+            <tr>
+                <td><span class="priority p1">P1</span></td>
+                <td>Per-entity-type loss tracking in <code>metrics.jsonl</code></td>
+                <td><code>trainer.py</code> (epoch record)</td>
+                <td>~2 hrs</td>
+                <td>Enables targeted data curriculum decisions</td>
+            </tr>
+            <tr>
+                <td><span class="priority p2">P2</span></td>
+                <td>Data curriculum knobs: <code>entity_type_weights</code>, <code>recency_alpha</code></td>
+                <td><code>retrain_gnn.py</code> flags + <code>trainer.py</code> sampler</td>
+                <td>~1 day</td>
+                <td>Direct adaptation of training distribution to what's failing</td>
+            </tr>
+            <tr>
+                <td><span class="priority p2">P2</span></td>
+                <td>IC-gated adaptation triggers in <code>auto_improve.py</code></td>
+                <td><code>auto_improve.py</code></td>
+                <td>~4 hrs</td>
+                <td>Adaptation responds to real metric not loss proxy</td>
+            </tr>
+            <tr>
+                <td><span class="priority p2">P2</span></td>
+                <td>Observation-type gating (include/exclude obs_types per block)</td>
+                <td><code>retrain_gnn.py</code> + <code>auto_improve.py</code></td>
+                <td>~4 hrs</td>
+                <td>Suppress noisy obs types that steal gradient budget</td>
+            </tr>
+            <tr>
+                <td><span class="priority p3">P3</span></td>
+                <td>Representational stability metric (embedding cosine drift)</td>
+                <td><code>trainer.py</code> (end of block)</td>
+                <td>~2 hrs</td>
+                <td>Early warning for catastrophic forgetting beyond EWC</td>
+            </tr>
+            <tr>
+                <td><span class="priority p3">P3</span></td>
+                <td>Brier score / ECE calibration in backtest</td>
+                <td><code>phase40_gnn_backtest.py</code></td>
+                <td>~2 hrs</td>
+                <td>Confidence calibration check</td>
+            </tr>
+        </table>
+
+        <div class="callout callout-yellow">
+            <strong>What NOT to build right now:</strong> NAS (neural architecture search), replay buffers,
+            progressive networks, Dreamer world model curriculum. These are Phase 48+ features. The model
+            has 339K observations and has never had a measured IC. Building more complexity before confirming
+            the current stack has real predictive edge is waste. See Architecture Priority doctrine:
+            "Model agnosticism doctrine — the test is always does this produce real edge."
+        </div>
+    </div>
+
+    <!-- ===== CURRENT SYSTEM ===== -->
+    <div id="current" class="panel">
+        <h2>What the Current Loop Does</h2>
+
+        <svg viewBox="0 0 860 420" xmlns="http://www.w3.org/2000/svg"
+            style="width:100%;max-width:860px;background:#0f0f13;border-radius:.5rem;padding:1rem;">
+            <!-- Boxes -->
+            <rect x="20" y="160" width="130" height="50" rx="6" fill="#172554" stroke="#3b82f6" stroke-width="1.5" />
+            <text x="85" y="180" text-anchor="middle" fill="#93c5fd" font-size="12">pipeline_orchestrator</text>
+            <text x="85" y="196" text-anchor="middle" fill="#64748b" font-size="10">while budget_remaining</text>
+
+            <rect x="210" y="100" width="150" height="60" rx="6" fill="#1a0f00" stroke="#f59e0b" stroke-width="1.5" />
+            <text x="285" y="122" text-anchor="middle" fill="#fbbf24" font-size="12">retrain_gnn.py</text>
+            <text x="285" y="138" text-anchor="middle" fill="#64748b" font-size="10">block_size=5 epochs</text>
+            <text x="285" y="152" text-anchor="middle" fill="#64748b" font-size="10">subprocess</text>
+
+            <rect x="210" y="220" width="150" height="60" rx="6" fill="#0a0f1a" stroke="#6366f1" stroke-width="1.5" />
+            <text x="285" y="243" text-anchor="middle" fill="#a5b4fc" font-size="12">auto_improve.py</text>
+            <text x="285" y="259" text-anchor="middle" fill="#64748b" font-size="10">pattern detection</text>
+            <text x="285" y="273" text-anchor="middle" fill="#64748b" font-size="10">subprocess</text>
+
+            <rect x="430" y="100" width="160" height="80" rx="6" fill="#1a1a1a" stroke="#374151" stroke-width="1.5" />
+            <text x="510" y="122" text-anchor="middle" fill="#9ca3af" font-size="11">Reads metrics.jsonl:</text>
+            <text x="510" y="138" text-anchor="middle" fill="#6b7280" font-size="10">total / return / dt</text>
+            <text x="510" y="152" text-anchor="middle" fill="#6b7280" font-size="10">obs_type / contrastive</text>
+            <text x="510" y="166" text-anchor="middle" fill="#f87171" font-size="10">❌ no per-entity breakdown</text>
+
+            <rect x="430" y="220" width="160" height="80" rx="6" fill="#1a1a1a" stroke="#374151" stroke-width="1.5" />
+            <text x="510" y="243" text-anchor="middle" fill="#9ca3af" font-size="11">Writes next_config.json:</text>
+            <text x="510" y="259" text-anchor="middle" fill="#6b7280" font-size="10">lr / return_weight</text>
+            <text x="510" y="273" text-anchor="middle" fill="#6b7280" font-size="10">obs_type_weight / gdelt_frac</text>
+            <text x="510" y="287" text-anchor="middle" fill="#f87171" font-size="10">❌ no data curriculum knobs</text>
+
+            <rect x="660" y="155" width="160" height="60" rx="6" fill="#052e16" stroke="#4ade80" stroke-width="1.5" />
+            <text x="740" y="178" text-anchor="middle" fill="#4ade80" font-size="11">ewc_state.pt</text>
+            <text x="740" y="194" text-anchor="middle" fill="#6b7280" font-size="10">Fisher diagonal persisted</text>
+            <text x="740" y="210" text-anchor="middle" fill="#6b7280" font-size="10">across subprocesses (v16)</text>
+
+            <!-- Arrows -->
+            <line x1="150" y1="185" x2="208" y2="150" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#arr)" />
+            <line x1="150" y1="185" x2="208" y2="240" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#arr)" />
+            <line x1="360" y1="140" x2="428" y2="140" stroke="#f59e0b" stroke-width="1" marker-end="url(#arr)" />
+            <line x1="360" y1="260" x2="428" y2="260" stroke="#6366f1" stroke-width="1" marker-end="url(#arr)" />
+            <line x1="285" y1="160" x2="285" y2="218" stroke="#666" stroke-width="1" marker-end="url(#arr)"
+                stroke-dasharray="4" />
+            <line x1="590" y1="185" x2="658" y2="185" stroke="#4ade80" stroke-width="1" marker-end="url(#arr)"
+                stroke-dasharray="4" />
+            <!-- Loop back -->
+            <path d="M 285 280 Q 285 360 150 360 Q 70 360 60 220" stroke="#555" stroke-width="1" fill="none"
+                marker-end="url(#arr)" stroke-dasharray="4" />
+
+            <defs>
+                <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                    <path d="M0,0 L6,3 L0,6 z" fill="#64748b" />
+                </marker>
+            </defs>
+        </svg>
+
+        <h2>What auto_improve Detects and Can Change</h2>
+        <table>
+            <tr>
+                <th>Pattern</th>
+                <th>Detection Logic</th>
+                <th>Action</th>
+            </tr>
+            <tr>
+                <td>divergence</td>
+                <td>return_loss trend > 0.001</td>
+                <td>halve lr</td>
+            </tr>
+            <tr>
+                <td>return_head_frozen</td>
+                <td>return_loss flat for 5 epochs</td>
+                <td>lower obs_type_weight, raise return_weight</td>
+            </tr>
+            <tr>
+                <td>auto_tune_suppressing</td>
+                <td>auto_tune on AND return_loss stuck</td>
+                <td>set return_weight=2.0</td>
+            </tr>
+            <tr>
+                <td>dt_dominance</td>
+                <td>dt_ret_ratio > 5.0</td>
+                <td>raise return_weight</td>
+            </tr>
+            <tr>
+                <td>oscillation</td>
+                <td>CV > 12% over window</td>
+                <td>halve lr</td>
+            </tr>
+            <tr>
+                <td>gdelt_noise</td>
+                <td>gdelt_frac > 0.02</td>
+                <td>halve gdelt_frac</td>
+            </tr>
+            <tr>
+                <td>listnet_temperature</td>
+                <td>listnet_temp > 0.35</td>
+                <td>lower temperature</td>
+            </tr>
+            <tr>
+                <td>structural</td>
+                <td>all fast-paths exhausted</td>
+                <td>escalate to Claude / trigger research</td>
+            </tr>
+        </table>
+
+        <div class="callout callout-yellow">
+            The LLM path (Claude via <code>agent/reasoning/llm_client.py</code>) classifies the pattern
+            and can suggest any flag combination. But it is also limited to what <code>metrics.jsonl</code>
+            exposes — 5 aggregate loss values — and the same 7 scalar flag knobs. A better-informed LLM
+            would still be blind to entity-type dynamics and IC.
+        </div>
+    </div>
+
+    <!-- ===== GAPS ===== -->
+    <div id="gaps" class="panel">
+        <h2>The Three Fundamental Gaps</h2>
+
+        <h3>Gap 1: Observability — What the Loop Can See</h3>
+        <table>
+            <tr>
+                <th>Signal</th>
+                <th>Currently Logged</th>
+                <th>Impact of Absence</th>
+            </tr>
+            <tr>
+                <td>Aggregate training loss (total, return, dt, obs_type, contrastive)</td>
+                <td><span class="yes">✓ Yes</span></td>
+                <td>—</td>
+            </tr>
+            <tr>
+                <td><strong>Walk-forward Spearman IC</strong></td>
+                <td><span class="no">✗ Never measured</span></td>
+                <td><strong>We don't know if the model predicts anything real.</strong>
+                    All adaptation decisions are based on training loss proxies with unknown
+                    correlation to actual predictive edge.</td>
+            </tr>
+            <tr>
+                <td><strong>Per-entity-type loss breakdown</strong></td>
+                <td><span class="no">✗ Not logged</span></td>
+                <td>auto_improve sees GDELT dominance as "gdelt_frac too high" but can't
+                    see which specific entity types (commodity, macro, equity) are contributing
+                    to obs_type loss. Can't target adaptation at failing entity types.</td>
+            </tr>
+            <tr>
+                <td><strong>Training data composition per block</strong></td>
+                <td><span class="no">✗ Not logged</span></td>
+                <td>No record of how many observations per entity type were in each block.
+                    Can't correlate composition changes to loss changes.</td>
+            </tr>
+            <tr>
+                <td><strong>Embedding drift per entity type</strong></td>
+                <td><span class="no">✗ Not logged</span></td>
+                <td>EWC protects weights but doesn't directly measure representational
+                    drift. Can't detect if certain entity types are drifting out of the
+                    embedding space while overall EWC loss looks stable.</td>
+            </tr>
+            <tr>
+                <td>Gradient norm / LR schedule</td>
+                <td><span class="partial">~ Partial (LR logged)</span></td>
+                <td>Grad norm not tracked — can't detect gradient explosion before it
+                    propagates to loss.</td>
+            </tr>
+        </table>
+
+        <h3>Gap 2: Adaptation Scope — What the Loop Can Change</h3>
+        <table>
+            <tr>
+                <th>Adaptation Lever</th>
+                <th>Currently Possible</th>
+                <th>Why It Matters</th>
+            </tr>
+            <tr>
+                <td>Scalar hyperparameters (lr, weights, temperature)</td>
+                <td><span class="yes">✓ Yes</span></td>
+                <td>—</td>
+            </tr>
+            <tr>
+                <td>Architecture (hidden_dim, heads) via fresh_start</td>
+                <td><span class="partial">~ Yes, but destroys learned weights</span></td>
+                <td>fresh_start = epoch 0 restart. 40 epochs of learning lost. Should
+                    be last resort, not a config option.</td>
+            </tr>
+            <tr>
+                <td><strong>Data curriculum: entity-type weights</strong></td>
+                <td><span class="no">✗ No</span></td>
+                <td>If GDELT entities are well-learned but commodity entities lag,
+                    we should oversample commodity in the next block. Currently impossible.</td>
+            </tr>
+            <tr>
+                <td><strong>Data curriculum: recency weighting (recency_alpha)</strong></td>
+                <td><span class="no">✗ No</span></td>
+                <td>When a regime shift is detected (fast market moves, news shock),
+                    upweight recent observations. Currently all observations equally weighted.</td>
+            </tr>
+            <tr>
+                <td><strong>Observation-type gating (exclude noisy obs_types)</strong></td>
+                <td><span class="no">✗ No</span></td>
+                <td>Some obs_types steal gradient budget without providing signal.
+                    Should be able to exclude obs_type X from one block to test if loss improves.</td>
+            </tr>
+            <tr>
+                <td><strong>Prediction horizon adaptation</strong></td>
+                <td><span class="no">✗ No</span></td>
+                <td>ListNet ranks by return over some horizon. That horizon is fixed.
+                    Short-horizon ranking may be better in volatile regimes.</td>
+            </tr>
+            <tr>
+                <td>Flag overrides for next block</td>
+                <td><span class="yes">✓ Yes (via next_config.json)</span></td>
+                <td>—</td>
+            </tr>
+        </table>
+
+        <h3>Gap 3: Trigger Logic — When the Loop Adapts</h3>
+        <div class="callout callout-red">
+            All current triggers fire on training loss thresholds (<code>stagnation_threshold=0.005</code>,
+            <code>oscillation_cv=0.12</code> etc.). This means:
+            <ul>
+                <li>A model can have flat training loss AND declining IC — no trigger fires.</li>
+                <li>A model can have rising training loss AND improving IC (generalization improving while
+                    fitting gets harder) — incorrect trigger fires.</li>
+                <li>The system adapts by loss, not by predictive edge. This is a fundamental misalignment.</li>
+            </ul>
+            Until IC is measured, the trigger logic is necessarily loss-based. But the architecture
+            must be designed to accept IC signals once they are available.
+        </div>
+    </div>
+
+    <!-- ===== WHAT TO BUILD ===== -->
+    <div id="what-to-build" class="panel">
+        <h2>Concrete Build Plan (in order)</h2>
+
+        <div class="callout callout-blue">
+            This is NOT a rewrite. It is a series of small additions that feed more information
+            into an existing loop that already has the right shape. Each addition is independent and
+            testable. Do not build P2 before P1 is verified.
+        </div>
+
+        <h3>Step 1 (P1 Blocker) — IC Measurement After Each Run</h3>
+        <p>File: <code>scripts/phase40_gnn_backtest.py</code></p>
+        <pre>
+# Currently hardcodes:
+MODEL_PATH = Path(".tirra_pipeline/gnn_model.pt")
+
+# Needed: --model-path CLI arg, then run as Kaggle cell after training:
+#   python scripts/phase40_gnn_backtest.py \
+#       --model-path .tirra_pipeline/checkpoints/h_g/epoch_050.pt \
+#       --db-path .tirra_pipeline/pipeline.db \
+#       --out .tirra_pipeline/checkpoints/h_g/ic_results.json
+#
+# Output: { "spearman_ic": 0.032, "p_value": 0.001, "n_periods": 24, ... }
+# auto_improve reads ic_results.json → uses IC for trigger decisions</pre>
+        <p>Effort: ~4 hrs. Exit condition: <code>ic_results.json</code> written with
+            valid Spearman IC and p-value after Kaggle run.</p>
+
+        <h3>Step 2 (P1) — Per-Entity-Type Loss in metrics.jsonl</h3>
+        <p>File: <code>agent/models/gnn/trainer.py</code> — epoch record section (~line 1900)</p>
+        <pre>
+# Add to _epoch_record:
+"entity_type_losses": {
+    "gdelt":     _gdelt_obs_loss_avg,    # mean obs_type CE for GDELT rows
+    "commodity": _commodity_obs_loss_avg,
+    "macro":     _macro_obs_loss_avg,
+    # ... one entry per entity_type in entity_types_present
+},
+"entity_type_counts": {
+    "gdelt": _n_gdelt,
+    "commodity": _n_commodity,
+    ...
+}</pre>
+        <p>This requires accumulating per-entity-type loss during the epoch loop.
+            The entity_type is already a node attribute — group by it when computing obs_type CE.
+            Effort: ~2 hrs. Exit condition: metrics.jsonl shows entity_type_losses keys after one epoch.</p>
+
+        <h3>Step 3 (P2) — Data Curriculum Flags</h3>
+        <p>Files: <code>retrain_gnn.py</code>, <code>trainer.py</code>, <code>auto_improve.py</code></p>
+        <pre>
+# New flags in retrain_gnn.py:
+--entity-type-weights '{"gdelt": 0.5, "commodity": 2.0}'  # oversample struggling types
+--recency-alpha 0.0   # 0.0 = uniform (default), 1.0 = fully recency-weighted
+
+# trainer.py DataLoader: apply weights to observation sampler
+# auto_improve.py: after Step 2, compare entity_type_losses:
+#   if commodity_loss > 1.5 * gdelt_loss:
+#       next_config["flag_overrides"]["entity_type_weights"] = '{"commodity": 2.0}'</pre>
+        <p>Effort: ~1 day. Exit condition: trainer shows higher commodity observations per batch
+            when entity_type_weights sets commodity weight to 2.0.</p>
+
+        <h3>Step 4 (P2) — Observation-Type Gating</h3>
+        <p>File: <code>retrain_gnn.py</code> new flag <code>--exclude-obs-types price_move,sentiment</code></p>
+        <pre>
+# Trainer filters observations where obs_type in excluded set
+# auto_improve.py: if one obs_type drives > 40% of obs_type_loss
+#   and entity_count for that type > 500:
+#     exclude it for one block, check if total loss drops</pre>
+        <p>Effort: ~4 hrs.</p>
+
+        <h3>Step 5 (P2) — IC-Gated Trigger Logic</h3>
+        <p>File: <code>auto_improve.py</code></p>
+        <pre>
+# After Step 1:
+ic_path = checkpoint_dir / "ic_results.json"
+if ic_path.exists():
+    ic_data = json.loads(ic_path.read_text())
+    ic = ic_data.get("spearman_ic", None)
+    # Replace stagnation_threshold trigger:
+    if ic is not None:
+        if ic < 0:   DIVERGING → trigger adaptation
+        if ic < 0.02: WEAK → trigger data curriculum change
+        if ic > 0.05: STRONG → reduce regularization, increase lr slightly</pre>
+
+        <h3>What NOT to Build (Now)</h3>
+        <table>
+            <tr>
+                <th>Idea</th>
+                <th>Why Defer</th>
+            </tr>
+            <tr>
+                <td>Neural Architecture Search (NAS)</td>
+                <td>Requires fresh_start → throws away 40 epochs. Not justified until
+                    IC confirms current architecture has hit its ceiling at scale.</td>
+            </tr>
+            <tr>
+                <td>Experience replay buffer</td>
+                <td>EWC already handles catastrophic forgetting. Add replay only if
+                    embedding drift (Step P3 metric) shows EWC is insufficient.</td>
+            </tr>
+            <tr>
+                <td>Dreamer world model curriculum</td>
+                <td>Phase 48 target. Requires confirming Phase 40 stack is at ceiling.
+                    Not remotely justified at 339K obs.</td>
+            </tr>
+            <tr>
+                <td>Progressive neural networks</td>
+                <td>Incompatible with current HetTGN checkpoint format.
+                    Major architectural change without evidence current arch is wrong.</td>
+            </tr>
+            <tr>
+                <td>Multi-task learning with new output heads</td>
+                <td>We have 6 loss terms already. Adding more before IC is measured
+                    dilutes gradient budget further.</td>
+            </tr>
+        </table>
+    </div>
+
+    <!-- ===== REFERENCES ===== -->
+    <div id="references" class="panel">
+        <h2>References</h2>
+        <table>
+            <tr>
+                <th>Source</th>
+                <th>Key Takeaway</th>
+                <th>How It Informs This Design</th>
+            </tr>
+            <tr>
+                <td><a href="https://kumo.ai/pyg/concepts/curriculum-learning/" style="color:#7dd3fc">Curriculum
+                        Learning for GNNs — Kumo.ai</a></td>
+                <td>Start with easy (well-connected, unambiguous) nodes, progress to hard.
+                    Pacing function controls transition speed.</td>
+                <td>Data curriculum direction: easy = high-confidence entities (stocks with
+                    long history), hard = sparse entities (new tickers, GDELT events with
+                    few links). <strong>Entity-type weighting is a proxy for this.</strong></td>
+            </tr>
+            <tr>
+                <td><a href="https://www.vldb.org/pvldb/vol15/p1572-zhou.pdf" style="color:#7dd3fc">TGL: Temporal GNN
+                        Training on Billion-Scale Graphs — VLDB 2022</a></td>
+                <td>"Random chunk scheduling" mitigates obsolete node memory with large
+                    batch sizes. Temporal-CSR structure for efficient neighbor sampling.</td>
+                <td>Current trainer samples observations sequentially per block. Random
+                    chunk scheduling (shuffle blocks of temporal windows) would reduce
+                    node memory staleness — relevant when block_size is extended to 10.</td>
+            </tr>
+            <tr>
+                <td><a href="https://arxiv.org/pdf/2301.12230" style="color:#7dd3fc">Continual Graph Learning: A Survey
+                        — arXiv 2023</a></td>
+                <td>EWC is effective but memory-constrained. Replay-based methods
+                    (DER, ER-GNN) outperform regularization alone on tasks with
+                    large distributional shift. Progressive networks avoid forgetting
+                    but grow linearly.</td>
+                <td>EWC (currently implemented) is the right first layer of protection.
+                    Replay buffer is the justified next step IF IC degrades on entity types
+                    introduced in early blocks — not before.</td>
+            </tr>
+            <tr>
+                <td><a href="https://arxiv.org/html/2401.16650v2" style="color:#7dd3fc">WMAR: World Models with
+                        Augmented Replay — arXiv 2024</a></td>
+                <td>DreamerV3's FIFO replay buffer is insufficient for continual RL.
+                    Distribution-matching replay (keep representative samples from each
+                    task) outperforms FIFO in non-stationary settings.</td>
+                <td>When we add a replay buffer (Phase 48+), use distribution-matching
+                    not FIFO. But only after Phase 40 stack shows IC ceiling.</td>
+            </tr>
+            <tr>
+                <td>W&B EWC Overview — wandb.ai</td>
+                <td>EWC anchors weights by Fisher information. Effective when task count
+                    is low; degrades when Fisher diagonal is stale.</td>
+                <td>Our Fisher is refreshed every 5 epochs (sidecar fix in v16). This
+                    is correct — stale Fisher would make EWC a no-op over time.</td>
+            </tr>
+        </table>
+
+        <h2>Related</h2>
+        <ul>
+            <li><a href="../specs/training_loop_adaptation_spec.html"
+                    style="color:#7dd3fc">[[training_loop_adaptation_spec]]</a> — spec (to be written)</li>
+            <li><a href="architecture_review_2026.html" style="color:#7dd3fc">[[architecture_review_2026]]</a> — full
+                architecture review from external review</li>
+            <li><a href="../memory/kaggle_runbook.html" style="color:#7dd3fc">[[kaggle_runbook]]</a></li>
+        </ul>
+    </div>
+
+    <script>
+        function show(id) {
+            document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.getElementById(id).classList.add('active');
+            event.target.classList.add('active');
+        }
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Research: GNN Architecture Overhaul — Post-V72 Pivot</title>
+</head>
+<body>
+  <h1>Research: GNN Architecture Overhaul — Post-V72 Pivot</h1>
+  <p><strong>Date:</strong> 2026-06-07 &nbsp;|&nbsp; <strong>Status:</strong> Active &nbsp;|&nbsp;
+  <strong>Trigger:</strong> [[checkpoint_2026-06-07_v72_architecture_handoff]]</p>
+
+  <h2>Problem</h2>
+  <p>After 72 Kaggle kernel versions, the HetTGN + ListNet + concat-head MTL stack cannot pass the
+  Phase 41b gate (IC &gt; 0.03 <strong>and</strong> t &gt; 2.0). V72 confirmatory run with aligned
+  eval: ConcatReturnHead IC=+0.0587, t=1.03 — directionally positive, statistically weak.
+  Hyperparameter tuning on this stack is exhausted.</p>
+
+  <h2>What V65–V72 proved (stop re-litigating)</h2>
+  <ul>
+    <li><strong>Fixed:</strong> clamp saturation (return_pred_clamp=50 + BatchNorm), eval/training mismatch (load_model concat restore)</li>
+    <li><strong>Refuted:</strong> ListNet τ=0.5, PCGrad as improvement</li>
+    <li><strong>Ceiling:</strong> current MTL stack tops out ~IC +0.06, t ~1.0 on smoke folds</li>
+    <li><strong>Still open:</strong> H1 backfill label shift — V52 (+0.0474) may be partly leakage-era</li>
+  </ul>
+
+  <h2>Architectural flaws (structural, not tunable)</h2>
+  <ol>
+    <li><strong>MTL gradient warfare</strong> — obs_type (~2145 entities) vs return (~53 instruments) share one backbone</li>
+    <li><strong>Wrong coupling</strong> — concat head can satisfy return loss via raw features alone, starving backbone</li>
+    <li><strong>CSRC instability</strong> — noisy decile pairs in non-stationary returns drive collapse</li>
+    <li><strong>TGN inductive bias</strong> — event-prediction architecture applied to cross-sectional ranking</li>
+    <li><strong>Eval inconsistency</strong> — trained heads vs PurgedRanker (honest Ridge) disagree; PurgedRanker negative post-backfill</li>
+  </ol>
+
+  <h2>Overhaul plan (two phases)</h2>
+
+  <h3>Phase A — Honest baselines (Option A, 1–2 days)</h3>
+  <p>Answer: <em>is there learnable signal in post-backfill labels before building new architecture?</em></p>
+  <table border="1" cellpadding="6">
+    <tr><th>Baseline</th><th>Method</th><th>Interpretation</th></tr>
+    <tr><td>Label audit</td><td>Forward-return distribution from <code>_build_forward_return_lookup</code></td><td>H1 — did labels change post-backfill?</td></tr>
+    <tr><td>RawPrice-PurgedRanker</td><td>Ridge on 9 price features, purged walk-forward (same folds as phase40)</td><td>Ceiling without any GNN</td></tr>
+    <tr><td>Momentum-Rank</td><td>Single-factor rank by 21d momentum</td><td>Sanity check / classical factor</td></tr>
+    <tr><td>GNN-PurgedRanker</td><td>Ridge on frozen GNN embeddings (V72 checkpoint)</td><td>Does ℰ add value over raw features?</td></tr>
+  </table>
+  <p><strong>Decision tree:</strong></p>
+  <ul>
+    <li>All baselines IC ≈ 0 → fix data/labels (H1) before architecture work</li>
+    <li>RawPrice passes gate, GNN does not → graph encoder not adding value; proceed to decoupled Stage-B ranker</li>
+    <li>Both pass → two-stage pipeline (Option B) is the path</li>
+  </ul>
+
+  <h3>Phase B — Decoupled two-stage (Option B, if Phase A shows signal)</h3>
+  <ol>
+    <li><strong>Stage 1:</strong> Train HetTGN self-supervised only (obs_type + link + time_delta). No return loss, no CSRC.</li>
+    <li><strong>Stage 2:</strong> Export instrument embeddings per window → separate cross-sectional ranker (Ridge, RankNet, or small MLP).</li>
+  </ol>
+  <p>References: THGNN (CIKM 2022), MDGNN (AAAI 2024) — production quant GNNs separate representation from prediction.</p>
+
+  <h3>Phase C — Surgical alternatives (if B insufficient)</h3>
+  <ul>
+    <li>Replace ListNet with pairwise RankNet loss</li>
+    <li>Direction classification instead of forward-return regression</li>
+    <li>New backbone (temporal transformer over entity-obs sequences — Phase 48 direction)</li>
+  </ul>
+
+  <h2>Exit gate (unchanged)</h2>
+  <p>Mean IC &gt; 0.03 and t-stat &gt; 2.0 on purged walk-forward. Primary strategy:
+  <code>RawPrice-PurgedRanker</code> for Phase A; <code>Stage2-Ranker</code> for Phase B.</p>
+
+  <h2>Related</h2>
+  <ul>
+    <li>[[training_stagnation_root_cause]]</li>
+    <li>[[checkpoint_2026-06-07_v72_architecture_handoff]]</li>
+    <li>[[phase41b_gnn_signal_extraction]]</li>
+    <li>[[quant_training_ground]]</li>
+    <li>[[gnn_architecture_overhaul_spec]]</li>
+    <li>[[gnn_architecture_overhaul_task]]</li>
+  </ul>
+</body>
+</html>

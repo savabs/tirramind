@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OSIRIS — Open Source OSINT Platform (Research Note)</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --border: #30363d;
+    --text: #c9d1d9;
+    --muted: #8b949e;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --orange: #d2991d;
+    --red: #f85149;
+    --purple: #a371f7;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.6;
+    max-width: 1100px; margin: 0 auto; padding: 2rem;
+  }
+  header {
+    border-bottom: 1px solid var(--border); padding-bottom: 1.5rem; margin-bottom: 2rem;
+  }
+  h1 { font-size: 2rem; color: #fff; }
+  h1 span { color: var(--accent); }
+  h2 {
+    font-size: 1.4rem; color: #fff; margin: 2rem 0 0.75rem;
+    padding-bottom: 0.4rem; border-bottom: 1px solid var(--border);
+  }
+  h3 { font-size: 1.1rem; color: var(--accent); margin: 1.5rem 0 0.5rem; }
+  .meta {
+    display: flex; gap: 2rem; margin-top: 0.75rem; color: var(--muted); font-size: 0.9rem;
+  }
+  .meta span { display: flex; align-items: center; gap: 0.35rem; }
+  .badge {
+    display: inline-block; padding: 0.15rem 0.6rem; border-radius: 12px;
+    font-size: 0.8rem; font-weight: 600;
+  }
+  .badge-green { background: #1a3a2a; color: var(--green); }
+  .badge-orange { background: #3a2e1a; color: var(--orange); }
+  .badge-purple { background: #2a1a3a; color: var(--purple); }
+  .badge-red { background: #3a1a1a; color: var(--red); }
+
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.9rem; }
+  th, td { padding: 0.6rem 0.8rem; text-align: left; border: 1px solid var(--border); }
+  th { background: var(--surface); color: var(--accent); font-weight: 600; }
+  tr:nth-child(even) { background: #0d1117; }
+  tr:nth-child(odd) { background: var(--surface); }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 1.25rem; margin: 1rem 0;
+  }
+  .card h4 { color: #fff; margin-bottom: 0.5rem; }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; }
+
+  .arch-diagram {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 1.5rem; margin: 1rem 0;
+    font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.82rem;
+    line-height: 1.5; overflow-x: auto; white-space: pre;
+    color: var(--muted);
+  }
+  .arch-diagram .hl { color: var(--accent); }
+  .arch-diagram .gr { color: var(--green); }
+  .arch-diagram .or { color: var(--orange); }
+
+  .risk-high { border-left: 3px solid var(--red); }
+  .risk-med  { border-left: 3px solid var(--orange); }
+  .risk-low  { border-left: 3px solid var(--green); }
+
+  ul, ol { margin: 0.5rem 0 0.5rem 1.5rem; }
+  li { margin: 0.3rem 0; }
+
+  .tabs { display: flex; gap: 0; margin-bottom: 0; }
+  .tab {
+    padding: 0.5rem 1.2rem; background: var(--surface); border: 1px solid var(--border);
+    border-bottom: none; border-radius: 8px 8px 0 0; cursor: pointer;
+    color: var(--muted); font-size: 0.9rem; margin-right: 2px;
+  }
+  .tab.active { color: #fff; background: var(--bg); border-bottom: 1px solid var(--bg); margin-bottom: -1px; }
+  .tab-content { display: none; border: 1px solid var(--border); border-radius: 0 8px 8px 8px; padding: 1.5rem; }
+  .tab-content.active { display: block; }
+
+  .score-bar {
+    display: flex; align-items: center; gap: 0.5rem; margin: 0.3rem 0;
+  }
+  .score-bar .fill {
+    height: 8px; border-radius: 4px; background: var(--accent);
+  }
+  .score-bar .empty {
+    height: 8px; border-radius: 4px; background: var(--border); flex: 1;
+  }
+
+  .section-nav {
+    display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 1rem 0;
+  }
+  .section-nav a {
+    color: var(--accent); text-decoration: none; font-size: 0.85rem;
+    padding: 0.25rem 0.6rem; border-radius: 4px; border: 1px solid var(--border);
+  }
+  .section-nav a:hover { background: var(--surface); }
+
+  footer {
+    margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border);
+    color: var(--muted); font-size: 0.8rem;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1><span>⬡</span> OSIRIS — Open Source Intelligence &amp; Reconnaissance Integrated System</h1>
+  <div class="meta">
+    <span>📅 2026-05-24</span>
+    <span>🏷️ <span class="badge badge-purple">doc/research</span></span>
+    <span>🔗 <a href="https://github.com/simplifaisoul/osiris" style="color:var(--accent)">github.com/simplifaisoul/osiris</a></span>
+    <span>⭐ ~1,900 stars</span>
+  </div>
+</header>
+
+<nav class="section-nav">
+  <a href="#overview">Overview</a>
+  <a href="#architecture">Architecture</a>
+  <a href="#features">Features</a>
+  <a href="#tirramind-overlap">TirraMind Overlap</a>
+  <a href="#integration-paths">Integration Paths</a>
+  <a href="#risks">Risks</a>
+  <a href="#references">References</a>
+</nav>
+
+<!-- ================================================================== -->
+<h2 id="overview">1. Overview</h2>
+
+<p>OSIRIS is a <strong>production-grade, real-time OSINT dashboard</strong> positioned as an open-source alternative to Palantir. It aggregates live global intelligence feeds — flight tracking, maritime AIS, CCTV networks, earthquake monitoring, wildfire detection, conflict zone mapping, satellite orbits, and 24/7 live news streams — into a single GPU-accelerated map interface.</p>
+
+<div class="grid-3">
+  <div class="card">
+    <h4>📦 Tech Stack</h4>
+    Next.js 16, MapLibre GL (WebGL), Tailwind CSS, Node.js 22 Alpine, Docker (~220 MB image)
+  </div>
+  <div class="card">
+    <h4>🔓 License</h4>
+    MIT License — fully permissive for commercial use, modification, and redistribution
+  </div>
+  <div class="card">
+    <h4>🚀 Deployment</h4>
+    Docker Compose, GHCR prebuilt images, CasaOS one-click install, keyless operation out of the box
+  </div>
+</div>
+
+<!-- ================================================================== -->
+<h2 id="architecture">2. Architecture</h2>
+
+<div class="arch-diagram">
+┌─────────────────────────────────────────────────────────┐
+│  <span class="hl">OSIRIS CLIENT</span> (Next.js 16 + MapLibre GL + WebGL)         │
+│  ┌──────────────┐  ┌──────────────┐  ┌─────────────────┐ │
+│  │ <span class="gr">MapLibre GL</span>  │  │ <span class="gr">HUD Panels</span>  │  │ <span class="or">RECON Toolkit</span>  │ │
+│  │ GPU WebGL     │  │ Layer Toggles │  │ Port Scan        │ │
+│  │ 60fps Render  │  │ Entity Counts │  │ DNS / WHOIS      │ │
+│  │               │  │ Live Feeds    │  │ SSL Inspector    │ │
+│  │               │  │               │  │ Vuln Scanner     │ │
+│  └──────────────┘  └──────────────┘  └─────────────────┘ │
+├─────────────────────────────────────────────────────────┤
+│  <span class="hl">NEXT.JS API ROUTES</span> (proxy layer)                       │
+│  /api/flights  /api/earthquakes  /api/cctv               │
+│  /api/news     /api/fires        /api/maritime           │
+│  /api/gdelt    /api/satellites   /api/weather            │
+│  /api/scanner  /api/sentinel     /api/osint/*            │
+├─────────────────────────────────────────────────────────┤
+│  <span class="hl">EXTERNAL DATA SOURCES</span> (public, mostly keyless)         │
+│  OpenSky · USGS · NASA FIRMS · NOAA · TfL · NVD         │
+│  GDACS · EONET · N2YO · aisstream.io · RSS Feeds        │
+└─────────────────────────────────────────────────────────┘
+</div>
+
+<p><strong>Key architectural decisions:</strong></p>
+<ul>
+  <li><strong>WebGL rendering, not DOM:</strong> All map markers, arcs, and heatmaps are rendered on the GPU via MapLibre GL. This enables 60fps with thousands of concurrent entities — critical for dense geospatial intelligence.</li>
+  <li><strong>API route proxy pattern:</strong> Next.js server-side routes proxy external API calls, keeping API keys server-side and reducing client-side network overhead.</li>
+  <li><strong>Viewport-aware loading:</strong> Data is fetched only for the visible map bounding box. Layers are lazy-loaded on toggle activation, not on page load.</li>
+  <li><strong>Aggressive caching:</strong> A <code>layerFetchedRef</code> prevents duplicate API requests. Stable data sources poll at 15–30 minute intervals. Static data (news feeds) is served from memory with zero external calls.</li>
+  <li><strong>Keyless by default:</strong> All core map layers work without any API keys. Optional keys (FIRMS, OpenSky OAuth2, N2YO, AIS) only increase rate limits.</li>
+</ul>
+
+<!-- ================================================================== -->
+<h2 id="features">3. Feature Breakdown</h2>
+
+<h3>3.1 Intelligence Layers (15 toggleable)</h3>
+<table>
+  <tr><th>Layer</th><th>Data Source</th><th>Update Frequency</th><th>Key Required?</th></tr>
+  <tr><td>Live Flights</td><td>OpenSky Network</td><td>~15s</td><td>No (OAuth2 optional)</td></tr>
+  <tr><td>Maritime Traffic</td><td>aisstream.io</td><td>Real-time stream</td><td>Optional</td></tr>
+  <tr><td>Earthquakes</td><td>USGS</td><td>~5 min</td><td>No</td></tr>
+  <tr><td>Wildfires</td><td>NASA FIRMS</td><td>~3 hours</td><td>Optional</td></tr>
+  <tr><td>Satellites</td><td>N2YO</td><td>~30 min</td><td>Optional</td></tr>
+  <tr><td>Weather</td><td>NOAA</td><td>~30 min</td><td>No</td></tr>
+  <tr><td>CCTV Networks</td><td>TfL / public feeds</td><td>~15 min</td><td>No</td></tr>
+  <tr><td>News / GDELT</td><td>GDELT + RSS</td><td>~15 min</td><td>No</td></tr>
+  <tr><td>Conflict Zones</td><td>Curated (static)</td><td>Manual</td><td>No</td></tr>
+</table>
+
+<h3>3.2 RECON Toolkit (Cyber Intelligence)</h3>
+<table>
+  <tr><th>Tool</th><th>Capability</th><th>Requires Backend?</th></tr>
+  <tr><td>Port Scanner</td><td>TCP connect scan with service fingerprinting</td><td>Yes (SCANNER_URL)</td></tr>
+  <tr><td>DNS Lookup</td><td>A, AAAA, MX, NS, TXT, CNAME resolution</td><td>Yes</td></tr>
+  <tr><td>WHOIS</td><td>Domain/IP registration data</td><td>Yes</td></tr>
+  <tr><td>SSL/TLS Inspector</td><td>Certificate chain analysis, expiry, issuer</td><td>Yes</td></tr>
+  <tr><td>IP Intelligence</td><td>Geolocation, ASN, threat reputation</td><td>Yes</td></tr>
+  <tr><td>Vulnerability Scanner</td><td>CVE lookup against NVD database</td><td>Yes</td></tr>
+</table>
+
+<h3>3.3 Conflict Zone Monitoring</h3>
+<p>13 active zones with severity-coded markers:</p>
+<div class="grid-2">
+  <div class="card risk-high"><h4>🔴 Active Wars</h4>Ukraine, Gaza, Sudan, Myanmar, DRC, Yemen</div>
+  <div class="card risk-med"><h4>🟠 High Tension</h4>Syria, Lebanon, Sahel, Somalia, Red Sea</div>
+</div>
+<div class="grid-2">
+  <div class="card risk-low"><h4>🟡 Elevated</h4>Taiwan Strait, Korean DMZ</div>
+  <div class="card"><h4>📡 Live Broadcasts</h4>25+ streams: NBC, CBS, ABC, Sky News, Al Jazeera, France 24, NHK, WION</div>
+</div>
+
+<!-- ================================================================== -->
+<h2 id="tirramind-overlap">4. TirraMind Overlap Analysis</h2>
+
+<h3>4.1 Direct Data Source Overlap</h3>
+<table>
+  <tr><th>TirraMind Tool</th><th>OSIRIS Equivalent</th><th>Gap / Complement</th></tr>
+  <tr>
+    <td><code>agent/tools/ais_vessel.py</code></td>
+    <td>Maritime AIS layer</td>
+    <td>OSIRIS adds real-time map rendering; TirraMind has deeper vessel-commodity linking</td>
+  </tr>
+  <tr>
+    <td><code>agent/tools/earthquake_proximity.py</code></td>
+    <td>USGS earthquake layer</td>
+    <td>OSIRIS adds live magnitude HUD + map pins; TirraMind computes proximity to infrastructure</td>
+  </tr>
+  <tr>
+    <td><code>agent/tools/satellite_activity.py</code></td>
+    <td>N2YO satellite layer</td>
+    <td>OSIRIS adds orbital track visualization; TirraMind extracts activity patterns</td>
+  </tr>
+  <tr>
+    <td><code>agent/tools/gdelt.py</code></td>
+    <td>GDELT + news layer</td>
+    <td>OSIRIS adds geospatial news clustering + live broadcast pins</td>
+  </tr>
+  <tr>
+    <td><code>agent/tools/political_risk.py</code></td>
+    <td>Conflict zone markers</td>
+    <td>OSIRIS adds severity-coded live markers for 13 zones</td>
+  </tr>
+  <tr>
+    <td><code>agent/tools/sanctions_monitor.py</code></td>
+    <td>—</td>
+    <td>OSIRIS conflict zones could enrich sanctions entity graph</td>
+  </tr>
+  <tr>
+    <td><code>agent/tools/weather_alerts.py</code></td>
+    <td>NOAA weather layer</td>
+    <td>OSIRIS adds real-time weather overlay on map</td>
+  </tr>
+  <tr>
+    <td><code>agent/tools/dns_monitor.py</code></td>
+    <td>RECON DNS Lookup</td>
+    <td>OSIRIS adds interactive DNS resolution; TirraMind monitors changes over time</td>
+  </tr>
+  <tr>
+    <td><code>agent/tools/cert_transparency.py</code></td>
+    <td>RECON SSL Inspector</td>
+    <td>OSIRIS adds certificate chain analysis UI</td>
+  </tr>
+  <tr>
+    <td><code>agent/tools/internet_infrastructure.py</code></td>
+    <td>RECON IP Intelligence</td>
+    <td>OSIRIS adds ASN/geolocation/threat reputation lookup</td>
+  </tr>
+  <tr>
+    <td><code>agent/tools/internet_outages.py</code></td>
+    <td>—</td>
+    <td>OSIRIS doesn't cover this; TirraMind has unique edge here</td>
+  </tr>
+</table>
+
+<h3>4.2 Data Sources OSIRIS Has That TirraMind Lacks</h3>
+<table>
+  <tr><th>Source</th><th>Value to TirraMind</th><th>Integration Difficulty</th></tr>
+  <tr>
+    <td>OpenSky live flights</td>
+    <td>Aviation as economic proxy; cargo throughput; sanctions evasion detection</td>
+    <td><span class="badge badge-green">Low</span> — public API, keyless</td>
+  </tr>
+  <tr>
+    <td>NASA FIRMS wildfires</td>
+    <td>Supply chain disruption signals; insurance risk; agricultural impact</td>
+    <td><span class="badge badge-green">Low</span> — public API</td>
+  </tr>
+  <tr>
+    <td>Live CCTV networks</td>
+    <td>Physical activity verification; port/factory throughput estimation</td>
+    <td><span class="badge badge-orange">Medium</span> — scraping required</td>
+  </tr>
+  <tr>
+    <td>Live broadcast streams</td>
+    <td>Real-time narrative tracking; sentiment; breaking news detection</td>
+    <td><span class="badge badge-orange">Medium</span> — stream processing</td>
+  </tr>
+  <tr>
+    <td>Conflict zone static markers</td>
+    <td>Geopolitical risk graph nodes; entity relationship enrichment</td>
+    <td><span class="badge badge-green">Low</span> — static data</td>
+  </tr>
+  <tr>
+    <td>NVD vulnerability DB</td>
+    <td>Infrastructure risk edges in world model; cyber-physical risk fusion</td>
+    <td><span class="badge badge-green">Low</span> — public API</td>
+  </tr>
+</table>
+
+<!-- ================================================================== -->
+<h2 id="integration-paths">5. Integration Paths for TirraMind</h2>
+
+<h3>5.1 🗺️ Visualization Frontend for the GNN World Model</h3>
+<div class="card">
+  <p>TirraMind's <code>agent/models/world_model.py</code> produces a heterogeneous graph with entities (vessels, companies, countries, infrastructure) and edges (trade flows, ownership, supply chain links). OSIRIS's MapLibre GL + WebGL architecture could render:</p>
+  <ul>
+    <li><strong>Entity nodes</strong> as interactive map pins with metadata popups</li>
+    <li><strong>Edge relationships</strong> as geospatial arcs or flow lines</li>
+    <li><strong>GNN attention weights</strong> as heatmap overlays or node color intensity</li>
+    <li><strong>Embedding space clusters</strong> projected onto geographic coordinates</li>
+    <li><strong>Conflict zones</strong> from <code>political_risk.py</code> using OSIRIS's severity-coded markers</li>
+  </ul>
+  <p><strong>Feasibility:</strong> OSIRIS is MIT-licensed. The MapLibre GL rendering layer can be adapted as a standalone React component library for TirraMind's inference API to serve.</p>
+</div>
+
+<h3>5.2 📡 New Data Adapters for the Pipeline</h3>
+<div class="card">
+  <p>OSIRIS's API route architecture provides a blueprint for new <code>agent/tools/</code> adapters:</p>
+  <table>
+    <tr><th>Proposed Tool</th><th>Source</th><th>Graph Node Type</th><th>Edge Type</th></tr>
+    <tr><td><code>flight_tracker.py</code></td><td>OpenSky</td><td>Aircraft, Airport</td><td>ROUTE, CARGO_CAPACITY</td></tr>
+    <tr><td><code>wildfire_monitor.py</code></td><td>NASA FIRMS</td><td>FireEvent, Region</td><td>AFFECTS_SUPPLY_CHAIN, THREATENS_INFRA</td></tr>
+    <tr><td><code>vulnerability_scanner.py</code></td><td>NVD</td><td>Vulnerability, Infrastructure</td><td>EXPOSES, PATCH_AVAILABLE</td></tr>
+    <tr><td><code>conflict_zone.py</code></td><td>Curated</td><td>ConflictZone, Country</td><td>SANCTIONS_RISK, SUPPLY_DISRUPTION</td></tr>
+  </table>
+</div>
+
+<h3>5.3 🔧 RECON Toolkit → Infrastructure Monitoring Enrichment</h3>
+<div class="card">
+  <p>TirraMind's existing infrastructure tools (<code>dns_monitor.py</code>, <code>internet_outages.py</code>, <code>cert_transparency.py</code>) monitor changes over time. OSIRIS's RECON toolkit adds <strong>point-in-time investigative capabilities</strong>:</p>
+  <ul>
+    <li><strong>Port scanner</strong> → detect live services on infrastructure nodes, feed into graph as <code>SERVICE_RUNNING</code> edges</li>
+    <li><strong>SSL inspector</strong> → validate certificate chains for monitored domains, add <code>CERT_EXPIRING</code> risk edges</li>
+    <li><strong>IP intelligence</strong> → enrich <code>internet_infrastructure.py</code> nodes with ASN, geolocation, and threat reputation</li>
+    <li><strong>Vulnerability scanner</strong> → add CVE-based risk edges to infrastructure nodes in the world model</li>
+  </ul>
+  <p><strong>Note:</strong> RECON toolkit requires a separate scanner backend (<code>SCANNER_URL</code>/<code>SCANNER_KEY</code>). Without it, these tools return 503. This backend is not open-sourced in the OSIRIS repo.</p>
+</div>
+
+<h3>5.4 ⚡ Performance Patterns to Adopt</h3>
+<table>
+  <tr><th>OSIRIS Pattern</th><th>TirraMind Equivalent</th><th>Benefit</th></tr>
+  <tr>
+    <td>Viewport-aware loading</td>
+    <td><code>agent/pipeline/</code> geospatial backfill</td>
+    <td>Reduce API calls by 60-80% when backfilling regional data</td>
+  </tr>
+  <tr>
+    <td><code>layerFetchedRef</code> dedup</td>
+    <td><code>agent/data/cache.py</code></td>
+    <td>Prevent duplicate fetches across overlapping pipeline DAGs</td>
+  </tr>
+  <tr>
+    <td>Polling relaxation (15-30 min)</td>
+    <td><code>agent/pipeline/scheduler.py</code></td>
+    <td>Reduce rate-limit hits on stable sources</td>
+  </tr>
+  <tr>
+    <td>Static data from memory</td>
+    <td>Pipeline store (<code>store.py</code>)</td>
+    <td>Zero external calls for reference data</td>
+  </tr>
+  <tr>
+    <td>Multi-stage Docker (~220 MB)</td>
+    <td>Inference API container</td>
+    <td>Lightweight deployment for model serving</td>
+  </tr>
+</table>
+
+<h3>5.5 🐳 Deployment Reference</h3>
+<div class="card">
+  <p>OSIRIS's Docker patterns provide a reference for containerizing TirraMind's inference layer:</p>
+  <ul>
+    <li><strong>Multi-stage build:</strong> <code>node:22-alpine</code> → standalone Next.js output (~220 MB, non-root)</li>
+    <li><strong>GHCR publishing:</strong> <code>ghcr.io/aiacos/osiris:latest</code></li>
+    <li><strong>Environment-driven config:</strong> All settings via <code>.env</code> file, no hardcoded values</li>
+    <li><strong>CasaOS metadata:</strong> <code>x-casaos:</code> in docker-compose for one-click home-lab install</li>
+  </ul>
+  <p>TirraMind could adopt a similar pattern: multi-stage Python Docker image → GHCR → env-driven config for the inference API.</p>
+</div>
+
+<!-- ================================================================== -->
+<h2 id="risks">6. Risks &amp; Limitations</h2>
+
+<div class="card risk-med">
+  <h4>🟠 RECON Backend Not Open-Sourced</h4>
+  <p>The scanner backend that powers the RECON toolkit (port scan, DNS, WHOIS, SSL, IP intel, vuln scan) is <strong>not included</strong> in the OSIRIS repository. Without <code>SCANNER_URL</code>/<code>SCANNER_KEY</code>, all RECON tools return 503. This means the cyber intelligence capabilities cannot be directly replicated — only the frontend UI patterns can be reused.</p>
+</div>
+
+<div class="card risk-low">
+  <h4>🟢 Frontend-Only Scope</h4>
+  <p>OSIRIS is a dashboard, not an analytical engine. It visualizes data but does not model, predict, or infer. TirraMind's core value (GNN world model, Bayesian fusion, causal discovery) has no equivalent in OSIRIS. The value is in the visualization layer and data source discovery, not in analytical capability.</p>
+</div>
+
+<div class="card risk-low">
+  <h4>🟢 Tech Stack Mismatch</h4>
+  <p>OSIRIS is JavaScript/TypeScript (Next.js). TirraMind is Python (PyTorch, PyG, NumPy). Any integration of OSIRIS's frontend would require either a polyglot deployment (Python API + Node.js frontend) or reimplementing the MapLibre GL patterns in a Python-compatible framework (Dash, Streamlit, or a custom FastAPI + Jinja2 + MapLibre GL JS setup).</p>
+</div>
+
+<div class="card risk-med">
+  <h4>🟠 Data Freshness Varies Widely</h4>
+  <p>OSIRIS's data layers have inconsistent update frequencies: flights update every ~15s, but wildfires update every ~3 hours and conflict zones are manually curated. For TirraMind's real-time prediction use case, the slower layers may have limited value as live signals.</p>
+</div>
+
+<!-- ================================================================== -->
+<h2 id="references">7. References</h2>
+
+<table>
+  <tr><th>Resource</th><th>URL</th><th>Notes</th></tr>
+  <tr><td>GitHub Repository</td><td><a href="https://github.com/simplifaisoul/osiris">github.com/simplifaisoul/osiris</a></td><td>Primary source; MIT license; ~1,900 stars, ~400 forks</td></tr>
+  <tr><td>Docker Guide</td><td><a href="https://github.com/simplifaisoul/osiris/blob/master/DOCKER.md">DOCKER.md</a></td><td>Full Docker, CasaOS, and API-key setup guide</td></tr>
+  <tr><td>Live Demo</td><td>Linked from README</td><td>Production deployment for interactive testing</td></tr>
+  <tr><td>Discord Community</td><td><a href="https://discord.gg/umBykEpb98">discord.gg/umBykEpb98</a></td><td>Community support and discussion</td></tr>
+  <tr><td>OpenSky API Docs</td><td><a href="https://openskynetwork.github.io/opensky-api/">openskynetwork.github.io/opensky-api</a></td><td>Flight tracking data source</td></tr>
+  <tr><td>NASA FIRMS</td><td><a href="https://firms.modaps.eosdis.nasa.gov/">firms.modaps.eosdis.nasa.gov</a></td><td>Wildfire detection data source</td></tr>
+</table>
+
+<!-- ================================================================== -->
+<h2 id="related">8. Related</h2>
+<ul>
+  <li><code>agent/tools/ais_vessel.py</code> — Maritime AIS vessel tracking (overlaps with OSIRIS maritime layer)</li>
+  <li><code>agent/tools/gdelt.py</code> — GDELT news/event ingestion (overlaps with OSIRIS news layer)</li>
+  <li><code>agent/tools/satellite_activity.py</code> — Satellite activity monitoring (overlaps with OSIRIS satellite layer)</li>
+  <li><code>agent/tools/earthquake_proximity.py</code> — Seismic event proximity (overlaps with OSIRIS earthquake layer)</li>
+  <li><code>agent/tools/political_risk.py</code> — Geopolitical risk assessment (complements OSIRIS conflict zones)</li>
+  <li><code>agent/tools/dns_monitor.py</code> — DNS change monitoring (complements OSIRIS RECON DNS)</li>
+  <li><code>agent/tools/cert_transparency.py</code> — Certificate transparency monitoring (complements OSIRIS SSL inspector)</li>
+  <li><code>agent/tools/internet_infrastructure.py</code> — Infrastructure monitoring (complements OSIRIS IP intelligence)</li>
+  <li><code>agent/models/world_model.py</code> — GNN world model (could be visualized via OSIRIS-style map)</li>
+  <li><code>agent/pipeline/scheduler.py</code> — Pipeline scheduler (could adopt OSIRIS polling relaxation)</li>
+</ul>
+
+<footer>
+  <p>Research note — <code>docs/research/osiris.html</code> | Phase: exploration | Topic: osint-integration | Layer: surveillance</p>
+  <p>Part of the open-source repository survey for TirraMind enhancement. See also: <code>[[osiris]]</code> (this doc), <code>[[tirramind_structure]]</code> (project metrics).</p>
+</footer>
+
+</body>
+</html>

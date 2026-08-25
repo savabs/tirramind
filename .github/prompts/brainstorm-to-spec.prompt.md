@@ -1,3 +1,5 @@
+> Legacy reference. Use Cursor skill `/brainstorm-to-spec` — canonical: `.cursor/skills/brainstorm-to-spec/SKILL.md`
+
 ---
 description: "Turn a rough idea into a research/spec-ready plan without writing code."
 ---

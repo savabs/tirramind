@@ -1,0 +1,50 @@
+{
+  "mcpServers": {
+    "tavily": {
+      "command": "npx",
+      "args": ["-y", "tavily-mcp@0.1.3"],
+      "env": {
+        "TAVILY_API_KEY": "YOUR_TAVILY_API_KEY"
+      }
+    },
+    "wolfram-alpha": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/StoneDot/wolframalpha-mcp-server.git",
+        "python",
+        "-m",
+        "wolframalpha_mcp_server.server"
+      ],
+      "env": {
+        "WOLFRAM_APP_ID": "YOUR_WOLFRAM_APP_ID"
+      }
+    },
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp"],
+      "env": {
+        "CONTEXT7_API_KEY": "YOUR_CONTEXT7_API_KEY_OPTIONAL"
+      }
+    },
+    "sequential-thinking": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"]
+    },
+    "git": {
+      "command": "python3",
+      "args": ["-m", "mcp_server_git", "--repository", "."]
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp"]
+    },
+    "memory": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"],
+      "env": {
+        "MEMORY_FILE_PATH": ".tirra_memory/memory.json"
+      }
+    }
+  }
+}

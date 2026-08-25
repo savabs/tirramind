@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Specification: M2 Options Pricing & Greeks</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 2rem;
+            background-color: #f9f9f9;
+        }
+        header {
+            border-bottom: 3px solid #319795;
+            padding-bottom: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        h1 {
+            color: #319795;
+            margin-top: 0;
+            font-size: 2.5rem;
+        }
+        h2 {
+            color: #333;
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 0.5rem;
+            margin-top: 2rem;
+        }
+        h3 {
+            color: #319795;
+            margin-top: 1.5rem;
+        }
+        .meta {
+            font-size: 0.9rem;
+            color: #666;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            background-color: #eee;
+            padding: 1rem;
+            border-radius: 4px;
+            margin-bottom: 1.5rem;
+        }
+        .meta div strong {
+            color: #333;
+        }
+        code {
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+            background-color: #f1f1f1;
+            padding: 0.2rem 0.4rem;
+            border-radius: 3px;
+            font-size: 0.9rem;
+        }
+        pre {
+            background-color: #2d3748;
+            color: #f7fafc;
+            padding: 1.5rem;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 1.5rem 0;
+        }
+        pre code {
+            background-color: transparent;
+            padding: 0;
+            color: inherit;
+            font-size: 0.85rem;
+        }
+        .formula-box {
+            background-color: #e6fffa;
+            border-left: 4px solid #319795;
+            padding: 1rem 1.5rem;
+            border-radius: 0 4px 4px 0;
+            margin: 1.5rem 0;
+            font-style: italic;
+        }
+        .step-list {
+            padding-left: 1.5rem;
+        }
+        .step-list li {
+            margin-bottom: 1rem;
+        }
+        .step-title {
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        .related-links {
+            list-style-type: none;
+            padding-left: 0;
+        }
+        .related-links li {
+            margin-bottom: 0.5rem;
+        }
+        .related-links a {
+            color: #319795;
+            text-decoration: none;
+            font-weight: bold;
+        }
+        .related-links a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Specification: M2 Options Pricing & Greeks</h1>
+        <div class="meta">
+            <div><strong>Document Type:</strong> Technical Specification</div>
+            <div><strong>Phase:</strong> Moonshot M2</div>
+            <div><strong>Created:</strong> 2026-05-31</div>
+            <div><strong>Status:</strong> Under Review</div>
+        </div>
+    </header>
+
+    <h2>1. Overview</h2>
+    <p>
+        This specification details the code layout, numerical safeguards, implementation interfaces, and verification plans for the 
+        <strong>M2 Options Pricing & Greeks</strong> module. It covers vectorized Black-Scholes European pricing, automatic differentiation (autograd) 
+        Greeks, implied volatility solving via robust, differentiable Newton-Raphson iterations, and analytic American pricing under the Barone-Adesi Whaley 
+        framework.
+    </p>
+
+    <h2>2. Interface Requirements</h2>
+    <p>
+        All logic will be housed in <code>agent/quant/options.py</code>. Code must support multi-dimensional PyTorch tensors (e.g. 1D, 2D, or higher) 
+        and run seamlessly on both CPU and GPU (using PyTorch's native device dispatching).
+    </p>
+
+    <h3>2.1. European Options Model</h3>
+    <pre><code># agent/quant/options.py
+
+import torch
+import torch.nn as nn
+import math
+
+class BlackScholes(nn.Module):
+    """Vectorized and fully differentiable Black-Scholes-Merton options pricing engine."""
+    def __init__(self):
+        super().__init__()
+
+    def forward(
+        self,
+        S: torch.Tensor,
+        K: torch.Tensor,
+        T: torch.Tensor,
+        r: torch.Tensor,
+        sigma: torch.Tensor,
+        q: torch.Tensor = None,
+        is_call: bool = True,
+    ) -> torch.Tensor:
+        """Computes European option prices.
+        
+        All arguments can be PyTorch tensors of arbitrary but matching shapes.
+        """
+        ...
+</code></pre>
+
+    <h3>2.2. Robust Newton-Raphson Implied Vol Solver</h3>
+    <p>
+        The implied volatility solver will use a vectorized Newton-Raphson update. Since we want gradients to flow through the solved implied volatility back to the pricing inputs (e.g. \(S, K, T, r, C_{\text{market}}\)), we must keep all operations within PyTorch's autograd graph.
+    </p>
+    <pre><code>def implied_volatility(
+    S: torch.Tensor,
+    K: torch.Tensor,
+    T: torch.Tensor,
+    r: torch.Tensor,
+    market_price: torch.Tensor,
+    q: torch.Tensor = None,
+    is_call: bool = True,
+    max_iters: int = 20,
+    tolerance: float = 1e-6,
+) -> torch.Tensor:
+    """Finds implied volatility via fully differentiable Newton-Raphson iterations."""
+    ...
+</code></pre>
+
+    <h3>2.3. Barone-Adesi Whaley American Model</h3>
+    <p>
+        For American call and put options, we implement the analytic Barone-Adesi Whaley (BAW) quadratic approximation. 
+        It involves solving for the critical spot price \(S^*\) where early exercise becomes optimal.
+    </p>
+    <pre><code>class BaroneAdesiWhaley(nn.Module):
+    """Vectorized, differentiable American option pricing using Barone-Adesi Whaley (1987) approximation."""
+    def __init__(self):
+        super().__init__()
+
+    def forward(
+        self,
+        S: torch.Tensor,
+        K: torch.Tensor,
+        T: torch.Tensor,
+        r: torch.Tensor,
+        sigma: torch.Tensor,
+        q: torch.Tensor = None,
+        is_call: bool = True,
+    ) -> torch.Tensor:
+        ...
+</code></pre>
+
+    <h2>3. Numerical Stability & Safeguards</h2>
+    <p>
+        To prevent NaN gradients under extreme or boundary conditions, we define the following constraints:
+    </p>
+    <ul>
+        <li><strong>Time-to-maturity (\(T\)):</strong> Bound to a safe minimum of <code>1e-5</code> (roughly 5 minutes of a year).</li>
+        <li><strong>Volatility (\(\sigma\)):</strong> Bound to a safe minimum of <code>1e-4</code> (0.01% vol) to prevent division by zero in \(d_1\).</li>
+        <li><strong>Spot Price (\(S\)) and Strike (\(K\)):</strong> Bound to a safe minimum of <code>1e-6</code>.</li>
+        <li><strong>Cumulative Normal Distribution \(N(x)\):</strong> Implemented as <code>0.5 * (1 + torch.erf(x / math.sqrt(2)))</code> which is numerically stable and has standard gradients.</li>
+    </ul>
+
+    <h2>4. Testing & Verification</h2>
+    <p>
+        We must enforce the following validation tests in <code>tests/test_options.py</code>:
+    </p>
+    <ol class="step-list">
+        <li><span class="step-title">Smoke Test:</span> European pricing matches standard Black-Scholes calculators for basic call/put options.</li>
+        <li><span class="step-title">Greeks Verification:</span> Verify that automatic gradients computed via <code>torch.autograd.grad</code> match the analytical Greeks formulas to a tolerance of <code>1e-5</code>.</li>
+        <li><span class="step-title">Implied Vol Flow:</span> Verify that solved implied volatilities can be differentiated with respect to the input option prices.</li>
+        <li><span class="step-title">American Pricing boundary:</span> Verify that American call prices are strictly greater than or equal to their European counterparts, particularly when dividend yields are high.</li>
+        <li><span class="step-title">GPU Compatibility:</span> Confirm that pricing and autograd Greeks work properly on CUDA if available.</li>
+    </ol>
+
+    <h2>5. Related Wiki Links</h2>
+    <ul class="related-links">
+        <li><a href="../../tasks/active/math_stack_roadmap.md">[[math_stack_roadmap]]</a> — Parent task roadmap.</li>
+        <li><a href="../research/m2_options_pricing_greeks.html">[[m2_options_pricing_greeks]]</a> — Research note and background.</li>
+    </ul>
+</body>
+</html>

@@ -29,12 +29,21 @@ class RewardWeights:
     - Higher facts_weight → prioritize knowledge discovery
     - Higher novelty_bonus → reward exploring new arms
     - Higher dead_end_penalty → punish wasted effort harder
+
+    **Fix (2026-08-24):** the reward is now *success-anchored*. The objective
+    ``success`` flag is the dominant term (default 0.6); the LLM-judged
+    ``eval_score`` is a secondary fine-tune (default 0.15). Without this, the
+    signal was dominated by model opinion + cost/novelty and the bandit learned
+    the wrong objective (same cold-start/cost-preference collapse seen in the
+    awos/learning port). Success-anchoring keeps correctness the primary signal
+    while still rewarding edge and knowledge.
     """
 
-    eval_weight: float = 0.4
-    sharpe_weight: float = 0.3
-    facts_weight: float = 0.2
-    novelty_bonus: float = 0.1
+    success_weight: float = 0.6   # objective success flag (the primary signal)
+    eval_weight: float = 0.15      # LLM-judged quality fine-tune (secondary)
+    sharpe_weight: float = 0.15     # strategy edge
+    facts_weight: float = 0.1
+    novelty_bonus: float = 0.05
     dead_end_penalty: float = 0.3
 
 
@@ -49,25 +58,29 @@ def compute_reward(
 ) -> float:
     """Convert an Evaluation into a scalar reward for the bandit.
 
-    Components:
-    1. eval_score: The evaluator's 0-1 score (LLM + heuristic blend)
-    2. sharpe_quality: If backtest metrics exist, normalize Sharpe → [0,1]
-    3. knowledge_gain: new_facts_count / 5, capped at 1.0
-    4. novelty: Small bonus for first pull on an arm (encourage exploration)
-    5. dead_end: Penalty subtracted if the evaluation flagged a dead end
+    **Success-anchored (fix 2026-08-24):**
+    The objective outcome (success) is the dominant term, so the reward reliably
+    indexes on whether the goal actually worked, not on model opinion. The LLM
+    score becomes a secondary fine-tune.
 
-    Args:
-        evaluation: The Evaluation from the evaluator.
-        is_first_pull: Whether this is the first time the arm was pulled.
-        weights: Configurable component weights.
+    Components:
+    1. success_term: objective success flag weighted by success_weight (default 0.6)
+    2. eval_score: LLM-judged score weighted by eval_weight (now secondary)
+    3. sharpe_quality: if backtest metrics exist, normalize Sharpe → [0,1]
+    4. knowledge_gain: new_facts_count / 5, capped at 1.0
+    5. novelty: Small bonus for first pull on an arm (encourage exploration)
+    6. dead_end: Penalty subtracted if the evaluation flagged a dead end
 
     Returns:
         Scalar reward in [0, 1].
     """
-    # Component 1: base evaluation score (already 0-1)
+    # Component 1: OBJECTIVE success flag (primary signal)
+    success_term = weights.success_weight * (1.0 if evaluation.success else 0.0)
+
+    # Component 2: LLM-judged quality (secondary fine-tune, success-anchored)
     eval_component = weights.eval_weight * evaluation.score
 
-    # Component 2: Sharpe quality (backtest-specific)
+    # Component 3: Sharpe quality (backtest-specific)
     sharpe_component = 0.0
     if evaluation.strategy_metrics:
         sharpe = evaluation.strategy_metrics.get("sharpe")
@@ -76,25 +89,33 @@ def compute_reward(
             sharpe_normalized = max(0.0, min(1.0, (sharpe + 0.5) / 2.0))
             sharpe_component = weights.sharpe_weight * sharpe_normalized
 
-    # Component 3: knowledge gain
+    # Component 4: knowledge gain
     facts_normalized = min(1.0, evaluation.new_facts_count / 5.0)
     facts_component = weights.facts_weight * facts_normalized
 
-    # Component 4: novelty bonus for first pulls
+    # Component 5: novelty bonus for first pulls
     novelty_component = weights.novelty_bonus if is_first_pull else 0.0
 
-    # Component 5: dead-end penalty
+    # Component 6: dead-end penalty
     dead_end_component = weights.dead_end_penalty if evaluation.dead_end else 0.0
 
     # Combine
-    raw_reward = eval_component + sharpe_component + facts_component + novelty_component - dead_end_component
+    raw_reward = (
+        success_term
+        + eval_component
+        + sharpe_component
+        + facts_component
+        + novelty_component
+        - dead_end_component
+    )
 
     # Clamp to [0, 1]
     reward = max(0.0, min(1.0, raw_reward))
 
     log.info(
-        "Reward: %.3f (eval=%.3f sharpe=%.3f facts=%.3f novelty=%.3f dead_end=-%.3f)",
+        "Reward: %.3f (success=%.3f eval=%.3f sharpe=%.3f facts=%.3f novelty=%.3f dead_end=-%.3f)",
         reward,
+        success_term,
         eval_component,
         sharpe_component,
         facts_component,

@@ -34,12 +34,23 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from agent.data.cache import DataCache
 from agent.tools.base import Tool, ToolResult
+
+if TYPE_CHECKING:
+    from agent.pipeline.store import PipelineStore
+
+try:
+    from agent.pipeline.entity import entity_id_from_key
+except ImportError:  # pragma: no cover
+    entity_id_from_key = None  # type: ignore[misc, assignment]
+
+UTC = timezone.utc
 
 log = logging.getLogger(__name__)
 
@@ -77,8 +88,14 @@ def _get_api_key() -> str:
 class EnergySupplyTool(Tool):
     """Monitor US energy supply via EIA petroleum stocks and rig counts."""
 
-    def __init__(self, cache: DataCache | None = None) -> None:
+    def __init__(
+        self,
+        cache: DataCache | None = None,
+        *,
+        pipeline_store: PipelineStore | None = None,
+    ) -> None:
         self._cache = cache
+        self._store = pipeline_store
 
     @property
     def name(self) -> str:
@@ -134,7 +151,11 @@ class EnergySupplyTool(Tool):
                 output=f"Invalid mode '{mode}'. Must be one of: {sorted(VALID_MODES)}",
             )
 
-        weeks = min(kwargs.get("weeks") or 12, 52)
+        weeks = kwargs.get("weeks")
+        days_back = kwargs.get("days_back")
+        if weeks is None and days_back:
+            weeks = max(1, min(int(days_back) // 7, 52))
+        weeks = min(weeks or 12, 52)
         series_filter = (kwargs.get("series") or "").strip().lower()
 
         if mode == "petroleum_stocks":
@@ -223,6 +244,11 @@ class EnergySupplyTool(Tool):
                 {"output": summary, "data": result_data},
             )
 
+        try:
+            self._persist_rig_count(parsed)
+        except Exception:
+            log.exception("Energy supply rig_count persistence failed (non-fatal)")
+
         return ToolResult(success=True, output=summary, data=result_data)
 
     def _fetch_petroleum_data(
@@ -283,7 +309,99 @@ class EnergySupplyTool(Tool):
             "weeks": weeks,
         }
 
+        try:
+            self._persist_petroleum_series(label, all_records)
+        except Exception:
+            log.exception("Energy supply petroleum persistence failed (non-fatal)")
+
         return ToolResult(success=True, output=summary, data=result_data)
+
+    # ── L2 persistence (US country entity) ──────────────────────────
+
+    def _us_country_entity_id(self) -> str | None:
+        if entity_id_from_key is None:
+            return None
+        return entity_id_from_key("country", "US")
+
+    def _persist_petroleum_series(
+        self, label: str, all_records: dict[str, list[dict]]
+    ) -> int:
+        if self._store is None or entity_id_from_key is None:
+            return 0
+        return self._persist_petroleum_series_inner(label, all_records)
+
+    def _persist_petroleum_series_inner(
+        self, label: str, all_records: dict[str, list[dict]]
+    ) -> int:
+        assert self._store is not None
+        eid = self._us_country_entity_id()
+        if not eid:
+            return 0
+        self._store.register_entity(
+            entity_type="country",
+            canonical_name="United States",
+            entity_id=eid,
+        )
+        n = 0
+        for series_name, records in all_records.items():
+            for rec in records:
+                period = (rec.get("period") or "").strip()
+                if not period:
+                    continue
+                self._store.store_entity_observation(
+                    entity_id=eid,
+                    source_tool="energy_supply",
+                    observed_at=_eia_period_to_ts(period),
+                    observation_type="petroleum_inventory",
+                    depth_level=2,
+                    value={
+                        "mode": label,
+                        "series": series_name,
+                        "period": period,
+                        "value": rec.get("value"),
+                        "units": rec.get("units"),
+                        "product": rec.get("product"),
+                        "process": rec.get("process"),
+                    },
+                )
+                n += 1
+        if n:
+            log.info("Energy supply L2: %d petroleum_inventory observations", n)
+        return n
+
+    def _persist_rig_count(self, records: list[dict]) -> int:
+        if self._store is None or entity_id_from_key is None:
+            return 0
+        eid = self._us_country_entity_id()
+        if not eid:
+            return 0
+        self._store.register_entity(
+            entity_type="country",
+            canonical_name="United States",
+            entity_id=eid,
+        )
+        n = 0
+        for rec in records:
+            period = (rec.get("period") or "").strip()
+            if not period:
+                continue
+            self._store.store_entity_observation(
+                entity_id=eid,
+                source_tool="energy_supply",
+                observed_at=_eia_period_to_ts(period),
+                observation_type="rig_count",
+                depth_level=2,
+                value={
+                    "mode": "rig_count",
+                    "period": period,
+                    "value": rec.get("value"),
+                    "units": rec.get("units"),
+                },
+            )
+            n += 1
+        if n:
+            log.info("Energy supply L2: %d rig_count observations", n)
+        return n
 
 
 # ── EIA fetch (module-level for testability) ────────────────────
@@ -350,6 +468,19 @@ def _parse_eia_records(raw: list[dict]) -> list[dict]:
     # Sort chronologically (EIA returns newest-first)
     records.sort(key=lambda r: r["period"])
     return records
+
+
+def _eia_period_to_ts(period: str) -> float:
+    """EIA weekly YYYY-MM-DD or monthly YYYY-MM → unix timestamp."""
+    period = period.strip()
+    try:
+        if len(period) >= 10:
+            dt = datetime.strptime(period[:10], "%Y-%m-%d")
+        else:
+            dt = datetime.strptime(period[:7], "%Y-%m").replace(day=1)
+        return dt.replace(tzinfo=UTC).timestamp()
+    except ValueError:
+        return datetime.now(UTC).timestamp()
 
 
 def _safe_float(val: Any) -> float | None:

@@ -1,3 +1,5 @@
+> Legacy reference. Use Cursor skill `/debug` — canonical: `.cursor/skills/debug/SKILL.md`
+
 ---
 description: "Structured debug workflow: reproduce → instrument → capture → hypothesis → fix → regress."
 ---

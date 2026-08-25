@@ -312,3 +312,22 @@ class TestModelPersistence:
         loaded = Trainer.load_model(model_path, store_with_data)
         history = loaded.train()
         assert len(history["total"]) == small_config.epochs
+
+    def test_load_restores_concat_head_from_checkpoint_weights(
+        self,
+        tmp_path: Path,
+    ):
+        """State-dict inference restores concat head flags on legacy checkpoints."""
+        from agent.models.gnn.trainer import _het_tgn_kwargs_from_checkpoint
+
+        config = TrainerConfig(use_concat_head=False)
+        checkpoint = {
+            "in_channels": {"instrument": 14, "company": 10},
+            "model_state_dict": {
+                "return_concat_head.0.weight": torch.zeros(8, 142),
+            },
+        }
+        kw = _het_tgn_kwargs_from_checkpoint(checkpoint, config)
+        assert kw["use_concat_head"] is True
+        assert kw["instrument_raw_dim"] == 14
+        assert config.use_concat_head is True

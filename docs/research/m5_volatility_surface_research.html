@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Research: M5 Implied Volatility Surface</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 2rem;
+            background-color: #f9f9f9;
+        }
+
+        header {
+            border-bottom: 3px solid #3182ce;
+            padding-bottom: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        h1 {
+            color: #3182ce;
+            margin-top: 0;
+            font-size: 2.5rem;
+        }
+
+        h2 {
+            color: #2b6cb0;
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 0.5rem;
+            margin-top: 2rem;
+        }
+
+        .meta {
+            font-size: 0.9rem;
+            color: #666;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            background-color: #eee;
+            padding: 1rem;
+            border-radius: 4px;
+            margin-bottom: 1.5rem;
+        }
+
+        .formula {
+            background-color: #f7fafc;
+            border-left: 4px solid #3182ce;
+            padding: 1rem;
+            font-family: "Courier New", Courier, monospace;
+            margin: 1.5rem 0;
+            border-radius: 0 4px 4px 0;
+            overflow-x: auto;
+        }
+
+        .highlight {
+            font-weight: bold;
+            color: #2c5282;
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <h1>Research: M5 Implied Volatility Surface</h1>
+        <div class="meta">
+            <div><strong>Phase:</strong> M5 Volatility Surface</div>
+            <div><strong>Status:</strong> ACTIVE</div>
+            <div><strong>Topic:</strong> Math Finance (SVI, SABR, GNN Features)</div>
+        </div>
+    </header>
+
+    <h2>1. Goal & Concept</h2>
+    <p>
+        The implied volatility surface is the primary repository of market expectations regarding future underlying price distributions. Point estimates of volatility are insufficient for robust option trading and portfolio hedging. We require:
+    </p>
+    <ul>
+        <li><span class="highlight">SVI Parameterization (Stochastic Volatility Inspired):</span> A smooth, stable parameterization of each implied variance smile (per maturity slice) that enforces structural consistency and is robust to overfitting.</li>
+        <li><span class="highlight">SABR Stochastic Volatility Model:</span> A model of volatility smiles driven by Hagan's asymptotic formula to capture local volatility dynamics, forward skew, and dynamics across maturities.</li>
+        <li><span class="highlight">No-Arbitrage Constraints:</span> Verification that our fitted surfaces are free of <em>calendar arbitrage</em> and <em>butterfly arbitrage</em> (by checking that Durrleman's local risk-neutral density function is positive everywhere).</li>
+        <li><span class="highlight">GNN Node Feature Extraction:</span> Decomposing the continuous surface into a vectorized, finite set of low-dimensional node features (ATM vol, skewness, curvature, term structure slope, SVI parameters) to condition GNN relational asset predictions.</li>
+    </ul>
+
+    <h2>2. Raw SVI Mathematical Formulation</h2>
+    <p>
+        Raw SVI parameterizes total implied variance $w(k; a, b, \rho, m, \sigma)$ for log-moneyness $k = \log(K/F)$ as:
+    </p>
+    <div class="formula">
+        w(k) = a + b * (rho * (k - m) + sqrt((k - m)^2 + sigma^2))
+    </div>
+    <p>where:</p>
+    <ul>
+        <li><strong>a:</strong> Vertical translation (minimum variance level).</li>
+        <li><strong>b:</strong> Slope of the asymptotes.</li>
+        <li><strong>rho (&rho;):</strong> Correlation between the asset price and volatility, determining the rotation/skewness.</li>
+        <li><strong>m:</strong> Horizontal translation.</li>
+        <li><strong>sigma (&sigma;):</strong> Curvature parameter.</li>
+    </ul>
+
+    <h2>3. Durrleman's No-Butterfly-Arbitrage Condition</h2>
+    <p>
+        Butterfly arbitrage is present if and only if the risk-neutral density is negative. Under Durrleman's condition, the density $p(k)$ is positive if:
+    </p>
+    <div class="formula">
+        g(k) = (1 - k * w'(k) / (2 * w(k)))^2 - w'(k)^2 / 4 * (1 / w(k) + 1 / 4) + w''(k) / 2 &gt;= 0
+    </div>
+    <p>
+        where $w'(k)$ and $w''(k)$ are the first and second derivatives of SVI total variance w.r.t log-moneyness $k$. We will implement analytical derivatives or use PyTorch autograd to evaluate $g(k)$ dynamically and output no-arbitrage flags.
+    </p>
+
+    <h2>4. SABR Stochastic Volatility Model (Hagan Approximation)</h2>
+    <p>
+        The SABR model represents the asset's forward rate $F_t$ and its volatility $\alpha_t$:
+    </p>
+    <div class="formula">
+        dF = alpha * F^beta * dW1<br>
+        dalpha = nu * alpha * dW2
+    </div>
+    <p>where $dW1 \cdot dW2 = \rho dt$. Hagan's formula for implied volatility $\sigma_{\text{SABR}}$ is:</p>
+    <div class="formula">
+        sigma(K) = [alpha / ( (F * K)^((1-beta)/2) * (1 + (1-beta)^2/24 * log(F/K)^2) )] * (z / x(z)) * [1 + ( (1-beta)^2/24 * alpha^2/(F*K)^(1-beta) + rho*beta*nu*alpha/(4*(F*K)^((1-beta)/2)) + (2-3*rho^2)/24 * nu^2 ) * T]
+    </div>
+    <p>where:</p>
+    <div class="formula">
+        z = (nu / alpha) * (F * K)^((1-beta)/2) * log(F/K)<br>
+        x(z) = log( (sqrt(1 - 2*rho*z + z^2) + z - rho) / (1 - rho) )
+    </div>
+
+    <h2>5. GNN Node Features</h2>
+    <p>
+        To interface the continuous volatility surface with GNN instrument nodes, we extract:
+    </p>
+    <ul>
+        <li><strong>ATM Volatility:</strong> $\sigma_{\text{implied}}(k=0)$.</li>
+        <li><strong>Skew (Skewness Slope):</strong> $\frac{\partial \sigma_{\text{implied}}}{\partial k}(k=0)$.</li>
+        <li><strong>Curvature:</strong> $\frac{\partial^2 \sigma_{\text{implied}}}{\partial k^2}(k=0)$.</li>
+        <li><strong>Term Structure Slope:</strong> The difference between long-term and short-term ATM volatility.</li>
+        <li><strong>SVI Params:</strong> $[a, b, \rho, m, \sigma]$.</li>
+    </ul>
+</body>
+
+</html>

@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>Spec: Full-Quant Base Model (Draft)</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; line-height: 1.55; }
+    h1, h2 { color: #1a1a2e; }
+    .draft { background: #fff3e0; border-left: 4px solid #ff9800; padding: 0.75rem 1rem; }
+  </style>
+</head>
+<body>
+
+<h1>Spec: Full-Quant Base Model</h1>
+<div class="draft"><strong>DRAFT</strong> — awaiting founder decisions in [[full_quant_base_model]]. Do not implement until research decisions §9 are recorded.</div>
+
+<p>See research: [[full_quant_base_model]] for thesis, gap table, data vendors, and phased plan.</p>
+
+<h2>Scope (when approved)</h2>
+<ol>
+  <li>M15.1 observation schema <code>options_chain_eod</code> + ingest tool</li>
+  <li>M15.3 rate curve backfill to ≥500 rows per tenor bucket</li>
+  <li>M14.1 <code>graph_builder</code> quant blocks + feature masks</li>
+  <li>Gate D/E scripts (quant block parity, mask sanity)</li>
+  <li>Trainer recipe: base multi-task → checkpoint <code>gnn_model_quant_base.pt</code></li>
+  <li>Niche finetune script: load base, EWC/LoRA, N1 entity filter</li>
+</ol>
+
+<h2>Non-goals (v1 base)</h2>
+<ul>
+  <li>Tick/HFT M15.2 (deferred)</li>
+  <li>M8 RL hedge production</li>
+  <li>Replacing HetTGN with MDGNN</li>
+</ul>
+
+<h2>Related</h2>
+<ul>
+  <li>[[full_quant_base_model]]</li>
+  <li>[[full_quant_base_model_task]]</li>
+  <li>[[math_stack_roadmap]]</li>
+</ul>
+</body>
+</html>

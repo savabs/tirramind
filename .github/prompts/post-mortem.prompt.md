@@ -1,3 +1,5 @@
+> Legacy reference. Use Cursor skill `/post-mortem` — canonical: `.cursor/skills/post-mortem/SKILL.md`
+
 ---
 description: "Post-mortem after a hard bug, failed approach, or wasted session. Capture what happened and what we learned."
 ---

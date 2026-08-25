@@ -449,10 +449,16 @@ class TestLogVarClamp:
         eff = trainer.effective_loss_weights()
 
         cfg = trainer.config
-        hi = math.exp(-cfg.log_var_min)
-        lo = math.exp(-cfg.log_var_max)
+        bounds = {
+            "obs_type": (math.exp(-cfg.log_var_max), math.exp(-cfg.log_var_min)),
+            "time_delta": (math.exp(-cfg.log_var_max), math.exp(-cfg.log_var_min)),
+            "contrastive": (math.exp(-cfg.log_var_max), math.exp(-cfg.contrastive_log_var_min)),
+            "value": (math.exp(-cfg.log_var_max), math.exp(-cfg.log_var_min)),
+            "return": (math.exp(-cfg.return_log_var_max), math.exp(-cfg.log_var_min)),
+        }
         for k, w in eff.items():
-            assert lo - 1e-9 <= w <= hi + 1e-9, f"{k} weight {w} outside clamp window [{lo}, {hi}]"
+            lo, hi = bounds[k]
+            assert lo - 1e-9 <= w <= hi + 1e-9, f"{k} weight {w} outside [{lo}, {hi}]"
 
     def test_total_loss_finite_on_zero_components(self, populated_store):
         """Replay the Phase 40 failure mode: component losses are all
@@ -477,7 +483,14 @@ class TestLogVarClamp:
         # Mirror the clamp logic from Trainer.train() exactly.
         lv_min = cfg.log_var_min
         lv_max = cfg.log_var_max
-        clamped = {k: torch.clamp(p, min=lv_min, max=lv_max) for k, p in lv.items()}
+        clamped = {
+            k: torch.clamp(
+                p,
+                min=(cfg.contrastive_log_var_min if k == "contrastive" else lv_min),
+                max=(cfg.return_log_var_max if k == "return" else lv_max),
+            )
+            for k, p in lv.items()
+        }
         total = (
             torch.exp(-clamped["obs_type"]) * obs_loss
             + clamped["obs_type"]

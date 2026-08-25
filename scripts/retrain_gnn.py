@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import math
 import shutil
 import sys
 import time
@@ -118,6 +119,38 @@ def _print_model_summary(trainer: Trainer) -> None:
     console.print(f"  Hidden dim: {model.hidden_dim}")
 
 
+def _apply_training_preset(args: argparse.Namespace, preset: str) -> None:
+    """Apply named training presets (Phase B stage-1 SSL, etc.)."""
+    if preset == "phase50_stage1_ssl":
+        args.return_weight = 0.0
+        args.csrc_loss = False
+        args.use_concat_head = False
+        args.listnet = False
+        args.direction_loss = False
+        args.residual_returns = False
+        args.auto_tune = False
+        args.use_concat_batchnorm = False
+        args.gdelt_frac = 0.05
+        args.max_windows = 200
+        args.defi_frac = 1.0
+        args.obs_type_weight = 1.0
+        args.time_delta_weight = 1.0
+        args.contrastive_weight = 1.0
+        args.value_weight = 1.0
+        args.hidden_dim = max(args.hidden_dim, 128)
+        args.num_layers = max(args.num_layers, 2)
+        args.num_heads = max(args.num_heads, 4)
+        if args.window_size == 86400.0:
+            args.window_size = 604800.0
+        console.print(
+            "[cyan]Preset phase50_stage1_ssl: SSL-only HetTGN "
+            "(return=0, no CSRC/concat/ListNet)[/]"
+        )
+        return
+    console.print(f"[red]ERROR: unknown --preset {preset!r}[/]")
+    sys.exit(1)
+
+
 def _print_eval_results(metrics: dict[str, float], split: str) -> None:
     """Print evaluation metrics."""
     console.print(f"\n[bold cyan]═══ Evaluation ({split}) ═══[/]")
@@ -187,6 +220,16 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--contrastive-log-var-min",
+        type=float,
+        default=-1.0,
+        help=(
+            "Lower clamp for contrastive/CSRC log-variance under --auto-tune. "
+            "Default -1.0 caps effective contrastive weight at exp(1)≈2.72 "
+            "(V50 fix for V49 collapse when weight reached ~6.8)."
+        ),
+    )
+    parser.add_argument(
         "--return-weight",
         type=float,
         default=1.0,
@@ -203,6 +246,24 @@ def main() -> None:
         "from the return head. Has no effect when --auto-tune is active.",
     )
     parser.add_argument(
+        "--time-delta-weight",
+        type=float,
+        default=0.1,
+        help="Weight for the time_delta regression loss (default: 0.1).",
+    )
+    parser.add_argument(
+        "--contrastive-weight",
+        type=float,
+        default=0.5,
+        help="Weight for the contrastive (CSRC) loss (default: 0.5).",
+    )
+    parser.add_argument(
+        "--value-weight",
+        type=float,
+        default=0.3,
+        help="Weight for the value prediction loss (default: 0.3).",
+    )
+    parser.add_argument(
         "--listnet-temperature",
         type=float,
         default=1.0,
@@ -210,6 +271,13 @@ def main() -> None:
         help="ListNet softmax temperature tau (default: 1.0). "
         "Lower = sharper target distribution → stronger IC gradient. "
         "Try 0.5 when return loss is flat despite balanced losses.",
+    )
+    parser.add_argument(
+        "--preset",
+        type=str,
+        default=None,
+        metavar="NAME",
+        help="Training preset (e.g. phase50_stage1_ssl for Stage-1 SSL-only HetTGN).",
     )
     parser.add_argument(
         "--config-file",
@@ -314,6 +382,30 @@ def main() -> None:
         "GDELT is 92%% of the DB; subsampling prevents OOM during snapshot pre-building.",
     )
     parser.add_argument(
+        "--defi-frac",
+        type=float,
+        default=1.0,
+        metavar="FRAC",
+        help="Fraction of tvl_change (defi_flows) obs to keep (default: 1.0). "
+        "N1 doctrine POC: 0.05–0.10.",
+    )
+    parser.add_argument(
+        "--zero-price-feats",
+        action="store_true",
+        help="Zero PRICE_FEAT block on instrument nodes (outcome≠input doctrine).",
+    )
+    parser.add_argument(
+        "--embedding-only-return",
+        action="store_true",
+        help="Predict returns from GNN embeddings only (no concat/raw price head).",
+    )
+    parser.add_argument(
+        "--n1-doctrine",
+        action="store_true",
+        help="N1 POC bundle: --defi-frac 0.05 --zero-price-feats "
+        "--embedding-only-return (disables concat head).",
+    )
+    parser.add_argument(
         "--max-windows",
         type=int,
         default=200,
@@ -354,6 +446,91 @@ def main() -> None:
         help="Comma-separated list of W&B tags for the run (e.g. 'h-a,phase43').",
     )
     parser.add_argument(
+        "--use-concat-head",
+        action="store_true",
+        help="Option B: use return_concat_head([raw_feats || gnn_emb]) instead of raw head alone. "
+        "Creates a gradient path from the GNN backbone into the return predictor. "
+        "Use when GNN embeddings show positive IC delta over the raw head.",
+    )
+    parser.add_argument(
+        "--csrc-loss",
+        action="store_true",
+        default=True,
+        help="Use Cross-Sectional Ranking Contrastive loss (return-decile-based pairs) "
+        "instead of entity-identity contrastive. Default: True.",
+    )
+    parser.add_argument(
+        "--no-csrc-loss",
+        action="store_false",
+        dest="csrc_loss",
+        help="Disable CSRC loss (use old entity-identity contrastive).",
+    )
+    parser.add_argument(
+        "--csrc-temperature",
+        type=float,
+        default=0.1,
+        help="Temperature for CSRC InfoNCE loss (default: 0.1).",
+    )
+    parser.add_argument(
+        "--csrc-n-deciles",
+        type=int,
+        default=5,
+        help="Number of return deciles for CSRC pairs (default: 5).",
+    )
+    parser.add_argument(
+        "--vicreg-weight",
+        type=float,
+        default=0.0,
+        help="VICReg variance+covariance regularization weight on instrument "
+        "embeddings (Bardes et al. 2021). 0 = disabled.",
+    )
+    parser.add_argument(
+        "--vicreg-var-gamma",
+        type=float,
+        default=1.0,
+        help="VICReg per-dimension std floor γ (default: 1.0).",
+    )
+    parser.add_argument(
+        "--use-contranorm",
+        action="store_true",
+        help="Add ContraNorm layers after each HGT layer to prevent dimensional "
+        "collapse (Guo et al. PKU 2023). Architectural fix, zero parameters. "
+        "Complements VICReg.",
+    )
+    parser.add_argument(
+        "--use-log-loss",
+        action="store_true",
+        help="Apply log transformation to task losses: L_total = sum(w_k * log(L_k + 1)). "
+        "Loss-scale balancing from Dual-Balancing MTL (Lin et al. HKUST 2026). "
+        "Prevents large-scale losses from dominating small-scale losses.",
+    )
+    parser.add_argument(
+        "--use-pcgrad",
+        action="store_true",
+        help="Apply PCGrad (Projecting Conflicting Gradients) to resolve gradient "
+        "conflicts between tasks (Yu et al. NeurIPS 2020). Complements log-loss.",
+    )
+    parser.add_argument(
+        "--return-pred-clamp",
+        type=float,
+        default=5.0,
+        help="Symmetric clamp on return predictions before ListNet (0=disabled). "
+        "V64 showed ±5 causes saturation; V65+ uses 50.",
+    )
+    parser.add_argument(
+        "--use-concat-batchnorm",
+        action="store_true",
+        help="LayerNorm on concat-head input [xsnorm_raw || gnn_emb] before return head.",
+    )
+    parser.add_argument(
+        "--freeze-backbone",
+        action="store_true",
+        help="Freeze all GNN/backbone parameters and only train return_raw_head. "
+        "Completely isolates the ranking head from obs_type explosion spikes "
+        "that starve it via the shared gradient clip. Use with --resume after "
+        "a warm-start checkpoint once backbone embeddings are stable.",
+    )
+    parser.add_argument(
         "--auto-improve",
         action="store_true",
         help="After training completes, run auto_improve.py --no-watch to check for "
@@ -361,6 +538,9 @@ def main() -> None:
         "Requires scripts/auto_improve.py and scripts/auto_research.py.",
     )
     args = parser.parse_args()
+
+    if args.preset:
+        _apply_training_preset(args, args.preset)
 
     # ── Apply agent-recommended config overrides from --config-file ──────────
     # auto_improve.py writes next_config.json with flag_overrides. Loading it
@@ -392,6 +572,16 @@ def main() -> None:
             console.print(f"  [cyan][config-file] resume_epoch={args.resume}[/]")
         console.print(
             f"  [cyan][config-file] applied overrides from {_cf.name} (pattern: {_overrides.get('pattern', '?')})[/]"
+        )
+
+    if args.n1_doctrine:
+        args.defi_frac = 0.05
+        args.zero_price_feats = True
+        args.embedding_only_return = True
+        args.use_concat_head = False
+        console.print(
+            "[cyan]N1 doctrine POC: defi_frac=0.05, zero_price_feats, "
+            "embedding_only_return (no concat head)[/]"
         )
 
     db_path = Path(args.db_path)
@@ -503,17 +693,24 @@ def main() -> None:
             auto_tune_loss_weights=args.auto_tune,
             use_listnet_return_loss=args.listnet,
             return_log_var_max=args.return_log_var_max,
+            contrastive_log_var_min=args.contrastive_log_var_min,
             obs_since=obs_since,
             device=device,
             checkpoint_dir=args.checkpoint_dir,
             resume_from_epoch=args.resume,
             gdelt_subsample_frac=args.gdelt_frac,
+            defi_subsample_frac=args.defi_frac,
+            zero_price_feats=args.zero_price_feats,
+            embedding_only_return=args.embedding_only_return,
             max_windows=args.max_windows,
             use_direction_loss=args.direction_loss,
             direction_loss_weight=args.direction_loss_weight,
             use_residual_returns=args.residual_returns,
             return_weight=args.return_weight,
             obs_type_weight=args.obs_type_weight,
+            time_delta_weight=args.time_delta_weight,
+            contrastive_weight=args.contrastive_weight,
+            value_weight=args.value_weight,
             listnet_temperature=args.listnet_temperature,
             wandb_project=args.wandb_project,
             wandb_run_name=args.wandb_run,
@@ -522,6 +719,18 @@ def main() -> None:
                 if args.wandb_tags
                 else None
             ),
+            freeze_backbone=args.freeze_backbone,
+            use_concat_head=getattr(args, "use_concat_head", False),
+            use_csrc_loss=args.csrc_loss,
+            csrc_temperature=args.csrc_temperature,
+            csrc_n_deciles=args.csrc_n_deciles,
+            vicreg_weight=args.vicreg_weight,
+            vicreg_var_gamma=args.vicreg_var_gamma,
+            use_contranorm=args.use_contranorm,
+            use_log_loss=args.use_log_loss,
+            use_pcgrad=args.use_pcgrad,
+            return_pred_clamp=args.return_pred_clamp,
+            use_concat_batchnorm=args.use_concat_batchnorm,
         )
 
         # ── Write run_config.json (agent reads this to know what was tried) ──
@@ -540,12 +749,25 @@ def main() -> None:
                             "lr": config.learning_rate,
                             "return_weight": float(config.return_weight),
                             "gdelt_frac": float(config.gdelt_subsample_frac),
+                            "defi_frac": float(config.defi_subsample_frac),
                             "listnet_temp": float(config.listnet_temperature),
                             "auto_tune": bool(config.auto_tune_loss_weights),
                             "use_listnet": bool(config.use_listnet_return_loss),
                             "epochs": config.epochs,
                             "hidden_dim": config.hidden_dim,
                             "direction_loss": bool(config.use_direction_loss),
+                            "max_windows": int(config.max_windows),
+                            "n1_doctrine": bool(
+                                config.zero_price_feats and config.embedding_only_return
+                            ),
+                            "embedding_only_return": bool(config.embedding_only_return),
+                            "zero_price_feats": bool(config.zero_price_feats),
+                            "use_concat_head": bool(config.use_concat_head),
+                            "residual_returns": bool(config.use_residual_returns),
+                            "vicreg_weight": float(config.vicreg_weight),
+                            "use_contranorm": bool(config.use_contranorm),
+                            "use_log_loss": bool(config.use_log_loss),
+                            "use_pcgrad": bool(config.use_pcgrad),
                         },
                     },
                     indent=2,
@@ -610,7 +832,11 @@ def main() -> None:
                 f"{history['time_delta'][i]:.4f}",
                 f"{history['contrastive'][i]:.4f}",
                 f"{history['value'][i]:.4f}",
-                f"{_ret_hist[i]:.4f}" if i < len(_ret_hist) else "—",
+                (
+                    f"{_ret_hist[i]:.4f}"
+                    if i < len(_ret_hist) and not math.isnan(_ret_hist[i])
+                    else "—"
+                ),
             )
         console.print(tbl)
 

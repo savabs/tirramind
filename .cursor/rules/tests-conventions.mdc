@@ -1,0 +1,49 @@
+---
+description: Test conventions (pytest edge-case coverage)
+globs: tests/**
+alwaysApply: false
+---
+
+# Test Conventions
+
+## Framework
+- Use `pytest` exclusively. No unittest.TestCase (except for setUp/tearDown when needed).
+- Class-based grouping: `class TestFeatureName:` with descriptive method names.
+- Docstrings on each test method explaining the scenario being tested.
+
+## Edge Case Coverage (Mandatory)
+Every test file must cover:
+- **Invalid inputs**: wrong types, None, missing required fields
+- **Boundary values**: empty collections, single element, maximum size
+- **Numerical edge cases**: NaN, Inf, -Inf, zero, negative, very large/small values
+- **Error paths**: HTTP failures, timeouts, malformed responses, file not found
+- **Type mismatches**: string where int expected, list where dict expected
+- **Concurrency**: race conditions if applicable
+- **Security**: no credential leakage, no path traversal, no injection
+
+## Mocking
+- Mock all external I/O (HTTP, filesystem, databases) — tests must run offline.
+- Use `unittest.mock.patch`, `MagicMock`, or `responses` library.
+- Never mock the unit under test itself.
+
+## Assertions
+- Numerical: `np.testing.assert_allclose` or `pytest.approx` with explicit tolerances.
+- Collections: assert length first, then contents.
+- Exceptions: `pytest.raises(ExactExceptionType)` with match string when possible.
+
+## File Naming
+- `test_<module_name>_edge.py` for edge case suites.
+- `test_<module_name>.py` for core functionality tests.
+
+## Running Tests
+```bash
+pytest tests/ -v --tb=short
+pytest tests/test_specific_file.py -v
+pytest tests/ -k "test_specific_function" -v
+```
+
+## Research Discipline
+- For new testing patterns, unfamiliar libraries, or externally inspired fixtures, search GitHub and official documentation before implementing the test strategy.
+- Record relevant repositories, docs, keyword variants, and reuse constraints in the feature research note.
+- If example repositories are not clearly compatible with commercial use, use them only for concepts and write the tests in TirraMind style.
+- Start the research note from `docs/research/RESEARCH_TEMPLATE.md` unless the feature already has a specialized research format.

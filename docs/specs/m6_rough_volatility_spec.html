@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Specification: M6 Rough Volatility</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 2rem;
+            background-color: #f9f9f9;
+        }
+
+        header {
+            border-bottom: 3px solid #718096;
+            padding-bottom: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        h1 {
+            color: #4a5568;
+            margin-top: 0;
+            font-size: 2.5rem;
+        }
+
+        h2 {
+            color: #2d3748;
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 0.5rem;
+            margin-top: 2rem;
+        }
+
+        .meta {
+            font-size: 0.9rem;
+            color: #666;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            background-color: #eee;
+            padding: 1rem;
+            border-radius: 4px;
+            margin-bottom: 1.5rem;
+        }
+
+        .api {
+            background-color: #f7fafc;
+            border-left: 4px solid #718096;
+            padding: 1rem;
+            font-family: "Courier New", Courier, monospace;
+            margin: 1.5rem 0;
+            border-radius: 0 4px 4px 0;
+            overflow-x: auto;
+        }
+
+        .highlight {
+            font-weight: bold;
+            color: #4a5568;
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <h1>Specification: M6 Rough Volatility</h1>
+        <div class="meta">
+            <div><strong>Phase:</strong> M6 Rough Volatility</div>
+            <div><strong>Status:</strong> APPROVED</div>
+            <div><strong>Module:</strong> <code>agent/quant/rough.py</code></div>
+        </div>
+    </header>
+
+    <h2>1. Design Objectives</h2>
+    <p>
+        The module <code class="highlight">agent/quant/rough.py</code> will provide high-performance, vectorized, and fully differentiable rough volatility simulation and estimation tools in PyTorch.
+        It must support:
+    </p>
+    <ul>
+        <li>Differentiable generation of fractional Volterra paths using the Bennedsen-Lunde-Pakkanen (BLP) hybrid scheme.</li>
+        <li>rBergomi variance path simulation and correlated stock price paths.</li>
+        <li>Empirical Hurst exponent estimation from raw timeseries.</li>
+    </ul>
+
+    <h2>2. Class & Function Specifications</h2>
+
+    <h3>2.1 RoughBergomiModel</h3>
+    <p>Simulates forward variance and stock price paths under rBergomi using the BLP hybrid scheme.</p>
+    <div class="api">
+class RoughBergomiModel(nn.Module):<br>
+&nbsp;&nbsp;&nbsp;&nbsp;def __init__(self, H: float = 0.07, eta: float = 2.0, rho: float = -0.90, xi_0: float = 0.04, learnable: bool = True)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;def generate_paths(self, n_paths: int, n_steps: int, T: float) -> tuple[torch.Tensor, torch.Tensor]<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;# Returns: spot_paths of shape (n_steps+1, n_paths), var_paths of shape (n_steps+1, n_paths)
+    </div>
+
+    <h3>2.2 Bennedsen-Lunde-Pakkanen (BLP) Hybrid Integration Helper</h3>
+    <p>A fast, vectorized PyTorch helper inside <code>RoughBergomiModel</code> that computes the fractional Volterra paths $Y_t$ on a discrete time grid.</p>
+    <div class="api">
+def _simulate_volterra_path(self, n_paths: int, n_steps: int, T: float) -> torch.Tensor<br>
+&nbsp;&nbsp;&nbsp;&nbsp;# Generates Volterra paths of shape (n_steps+1, n_paths)
+    </div>
+
+    <h3>2.3 estimate_hurst_exponent</h3>
+    <p>Estimates the Hurst parameter $H$ of a log-volatility or asset price sequence using linear regression of quadratic log-increments over multiple lags.</p>
+    <div class="api">
+def estimate_hurst_exponent(series: torch.Tensor, max_lag: int = 20) -> torch.Tensor<br>
+&nbsp;&nbsp;&nbsp;&nbsp;# series of shape (N,) - returns H of shape ()
+    </div>
+
+    <h2>3. Numerical Stability & Limit Guards</h2>
+    <ul>
+        <li><strong>Hurst Index Clamp:</strong> $H \in (0, 0.5)$ must be strictly clamped to $[0.01, 0.499]$ inside calculations to prevent NaN division in the singular kernel weight calculation (as $H \rightarrow 0.5$, weight denominators contain $H - 0.5 \rightarrow 0$).</li>
+        <li><strong>Vol-of-Vol Clamp:</strong> $\eta \ge 1e-4$.</li>
+        <li><strong>Correlation Clamp:</strong> $\rho \in [-0.999, 0.999]$.</li>
+    </ul>
+
+    <h2>4. Test Criteria</h2>
+    <ul>
+        <li>Verify <code>estimate_hurst_exponent</code> correctly extracts Hurst $H < 0.5$ on generated fractional paths.</li>
+        <li>Verify <code>RoughBergomiModel</code> generates positive variance paths.</li>
+        <li>Verify ATM implied skew under rBergomi scales roughly as $T^{H-1/2}$ for short maturities (by pricing simulated paths at various maturities and fitting the log-skew vs log-maturity slope).</li>
+    </ul>
+</body>
+
+</html>

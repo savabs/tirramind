@@ -1,3 +1,5 @@
+> Legacy reference. Use Cursor skill `/review-quant` — canonical: `.cursor/skills/review-quant/SKILL.md`
+
 ---
 description: "Review a quant module for numerical stability, correctness, edge cases, and test coverage."
 ---

@@ -29,10 +29,15 @@ References:
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
 import torch
+
+# Ignore corrupt future timestamps when choosing graph reference time
+# (e.g. gov_contracts bad start_date years). Allows 1-day clock slack.
+_REFERENCE_TIME_SLACK_SEC = 86400.0
 from torch_geometric.data import HeteroData
 
 from agent.pipeline.store import PipelineStore
@@ -69,6 +74,7 @@ OBSERVATION_TYPES: list[str] = [
     "contract_award",
     "creditor_filing",
     "cross_entity_pattern",
+    "dividend",
     "dns_change",
     "drug_approval",
     "economic_activity",
@@ -87,6 +93,7 @@ OBSERVATION_TYPES: list[str] = [
     "lobbying_spend",
     "market_probability",
     "migration_pressure",
+    "options_chain_eod",
     "pageview_spike",
     "patent_filing",
     "pathogen_level",
@@ -201,6 +208,25 @@ def _compute_obs_stats(
 # ── Node feature builder ──────────────────────────────────────
 
 
+def _reference_time(observations: list[dict[str, Any]]) -> float:
+    """Latest sane observation timestamp for recency / causal cutoffs.
+
+    Filters observed_at values beyond now + 1 day so one corrupt row
+    (e.g. year 9019 in gov_contracts) cannot zero-out all node features.
+    """
+    if not observations:
+        return 0.0
+    ceiling = time.time() + _REFERENCE_TIME_SLACK_SEC
+    sane = [
+        float(o.get("observed_at", 0.0))
+        for o in observations
+        if 0.0 < float(o.get("observed_at", 0.0)) <= ceiling
+    ]
+    if sane:
+        return max(sane)
+    return max(float(o.get("observed_at", 0.0)) for o in observations)
+
+
 # ── Enrichment feature dimensions ──────────────────────────────
 # When enrichment is provided, these extra features are appended:
 #   cusum_state (1) + hawkes_intensity (1) + event_study_score (1) +
@@ -209,6 +235,58 @@ def _compute_obs_stats(
 ENRICHMENT_DIM = 55
 BASE_FEAT_DIM = len(ENTITY_TYPES) + 3  # one-hot type + count + recency + mean_val
 PRICE_FEAT_DIM = 9  # momentum(3) + volatility(2) + volume(2) + max_dd + sharpe
+# Idea 2 — depth-3 path signature dim (PATH_CHANNELS=3): 3+9+27 = 39
+# Imported lazily inside _build_node_features to avoid circular import.
+_SIGNATURE_DIM_CACHE: int | None = None
+# Idea 5 — TS2Vec output dim (set by GraphBuilder.build() callers; 0 = disabled)
+# Stored here so _build_node_features can read it without an extra argument when
+# ts2vec_embeddings is provided but ts2vec_dim is not yet wired through.
+# Actual value is always passed explicitly — this is just documentation.
+_TS2VEC_DIM: int = 0
+# M9 — Microstructure features (11 dims)
+# spread_cs(1) + spread_roll(1) + ofi_zscore(1) + vpin(1) + vpin_regime(3) + kyle_lambda(1) + lambda_regime(3)
+MICROSTRUCTURE_DIM = 11
+# M14.1 — options(7) + rate(5) + dividend(3) — see agent/quant/gnn_quant_features.py
+M15_QUANT_DIM = 15
+
+
+def xsnorm_price_feats(feats: "torch.Tensor") -> "torch.Tensor":
+    """Cross-sectionally z-score the price feature block before return_raw_head.
+
+    Normalises only dims [BASE_FEAT_DIM : BASE_FEAT_DIM + PRICE_FEAT_DIM] so
+    that all 9 price features are on the same scale within each evaluation
+    window.  Without this, avg_vol_20d (range [37-100]) dominates the gradient
+    signal and the head cannot learn momentum / sharpe factors.
+
+    Must be called at EVERY call site that invokes return_raw_head — both at
+    training time (trainer.py) and inference time (quant_benchmark.py, ic_check.py).
+    The standalone trainer (train_raw_head.py) does this internally in build_panel.
+
+    Args:
+        feats: [N, D] float tensor, N >= 2 instruments in the same window.
+    Returns:
+        [N, D] tensor; price block z-scored, all other dims unchanged.
+    """
+    import torch as _torch  # noqa: PLC0415 — lazy to avoid top-level dep in graph_builder
+
+    if feats.shape[0] < 2:
+        return feats
+    out = feats.clone()
+    block = out[:, BASE_FEAT_DIM : BASE_FEAT_DIM + PRICE_FEAT_DIM]
+    mean = block.mean(0, keepdim=True)
+    std = block.std(0, keepdim=True).clamp(min=1e-8)
+    out[:, BASE_FEAT_DIM : BASE_FEAT_DIM + PRICE_FEAT_DIM] = (block - mean) / std
+    return out
+
+
+def _signature_dim() -> int:
+    """Return SIGNATURE_DIM, importing lazily to avoid circular imports."""
+    global _SIGNATURE_DIM_CACHE
+    if _SIGNATURE_DIM_CACHE is None:
+        from agent.models.gnn.signature_encoder import SIGNATURE_DIM  # noqa: PLC0415
+
+        _SIGNATURE_DIM_CACHE = SIGNATURE_DIM
+    return _SIGNATURE_DIM_CACHE
 
 
 def _compute_distributional_features(
@@ -429,6 +507,11 @@ def _build_node_features(
     observations: list[dict[str, Any]],
     current_time: float,
     enrichment: dict[str, dict[str, float]] | None = None,
+    use_signatures: bool = False,
+    ts2vec_embeddings: dict[str, dict[str, "np.ndarray"]] | None = None,
+    ts2vec_dim: int = 0,
+    *,
+    zero_price_feats: bool = False,
 ) -> torch.Tensor:
     """Build feature matrix for one node type.
 
@@ -438,6 +521,14 @@ def _build_node_features(
     When enrichment is provided, additional features are appended:
         [cusum, hawkes, event_study, bocpd, variance, min, max, iqr,
          num_tools, obs_type_dist(18)] → 27 extra dims.
+
+    When use_signatures=True (Idea 2), depth-3 path signatures are appended:
+        [S^1(3 dims) + S^2(9 dims) + S^3(27 dims)] = 39 extra dims.
+        Captures shape, curvature and texture of the event stream — a
+        provably universal feature map (Lyons & McLeod 2022).
+
+    When ts2vec_embeddings is provided (Idea 5), TS2Vec pretraining vectors
+    are appended (ts2vec_dim extra dims per node).
     """
     type_idx = _ENTITY_TYPE_TO_IDX.get(entity_type)
     if type_idx is None:
@@ -446,12 +537,32 @@ def _build_node_features(
     type_dim = len(ENTITY_TYPES)
     _is_instrument = entity_type == "instrument"
     _price_dim = PRICE_FEAT_DIM if _is_instrument else 0
+    _micro_dim = MICROSTRUCTURE_DIM if _is_instrument else 0
+    _m15_dim = M15_QUANT_DIM if _is_instrument else 0
+    _sig_dim = _signature_dim() if use_signatures else 0
+    # TS2Vec extra dims: only non-zero if caller passed embeddings AND dim > 0
+    _type_embs: dict[str, "np.ndarray"] | None = (
+        ts2vec_embeddings.get(entity_type) if ts2vec_embeddings else None
+    )
+    _ts_dim = ts2vec_dim if (_type_embs is not None and ts2vec_dim > 0) else 0
     feat_dim = (
-        BASE_FEAT_DIM + (ENRICHMENT_DIM if enrichment is not None else 0) + _price_dim
+        BASE_FEAT_DIM
+        + (ENRICHMENT_DIM if enrichment is not None else 0)
+        + _price_dim
+        + _micro_dim
+        + _m15_dim
+        + _sig_dim
+        + _ts_dim
     )
 
     if not entity_ids:
         return torch.zeros(0, feat_dim)
+
+    us_country_eid: str | None = None
+    if _is_instrument:
+        from agent.pipeline.entity import entity_id_from_key  # noqa: PLC0415
+
+        us_country_eid = entity_id_from_key("country", "US")
 
     # Pre-group observations by entity_id for efficiency
     obs_by_entity: dict[str, list[dict[str, Any]]] = {}
@@ -497,9 +608,88 @@ def _build_node_features(
             price_offset = BASE_FEAT_DIM + (
                 ENRICHMENT_DIM if enrichment is not None else 0
             )
-            price_feats = _compute_price_features(eid, observations, current_time)
+            if zero_price_feats:
+                price_feats = [0.0] * PRICE_FEAT_DIM
+            else:
+                price_feats = _compute_price_features(
+                    eid, observations, current_time
+                )
             for pf_idx, pf_val in enumerate(price_feats):
                 features[local_idx, price_offset + pf_idx] = pf_val
+
+        # Microstructure features (M9 — instruments only, daily instrument_daily)
+        if _is_instrument:
+            from agent.quant.microstructure_signals import (  # noqa: PLC0415
+                compute_gnn_micro_features,
+            )
+
+            micro_offset = BASE_FEAT_DIM + (
+                ENRICHMENT_DIM if enrichment is not None else 0
+            ) + _price_dim
+            micro_feats = compute_gnn_micro_features(
+                eid, observations, current_time
+            )
+            for mf_idx, mf_val in enumerate(micro_feats):
+                features[local_idx, micro_offset + mf_idx] = mf_val
+
+        # M14.1 — options / rates / dividends (M15 pipeline data)
+        if _is_instrument:
+            from agent.quant.gnn_quant_features import (  # noqa: PLC0415
+                _latest_close,
+                compute_gnn_m15_features,
+            )
+
+            m15_offset = (
+                BASE_FEAT_DIM
+                + (ENRICHMENT_DIM if enrichment is not None else 0)
+                + _price_dim
+                + _micro_dim
+            )
+            spot = _latest_close(eid, observations, current_time)
+            m15_feats = compute_gnn_m15_features(
+                eid,
+                observations,
+                current_time,
+                spot=spot,
+                us_country_eid=us_country_eid,
+            )
+            for i, val in enumerate(m15_feats):
+                features[local_idx, m15_offset + i] = val
+
+        # Path signature features (Idea 2 — optional)
+        if use_signatures and ent_obs:
+            from agent.models.gnn.signature_encoder import (
+                compute_entity_signature,
+            )  # noqa: PLC0415
+
+            sig_offset = (
+                BASE_FEAT_DIM
+                + (ENRICHMENT_DIM if enrichment is not None else 0)
+                + _price_dim
+                + _micro_dim
+                + _m15_dim
+            )
+            sig = compute_entity_signature(ent_obs)
+            sig_len = min(sig.size(0), _sig_dim)
+            features[local_idx, sig_offset : sig_offset + sig_len] = sig[:sig_len]
+
+        # TS2Vec pretraining features (Idea 5 — optional)
+        if _ts_dim > 0 and _type_embs is not None:
+            import numpy as _np  # noqa: PLC0415
+
+            ts_offset = (
+                BASE_FEAT_DIM
+                + (ENRICHMENT_DIM if enrichment is not None else 0)
+                + _price_dim
+                + _micro_dim
+                + _m15_dim
+                + _sig_dim
+            )
+            emb = _type_embs.get(eid)
+            if emb is not None:
+                emb_t = torch.tensor(emb[:_ts_dim], dtype=torch.float32)
+                fill_len = min(emb_t.size(0), _ts_dim)
+                features[local_idx, ts_offset : ts_offset + fill_len] = emb_t[:fill_len]
 
     return features
 
@@ -586,8 +776,14 @@ class GraphBuilder:
         data, id_map, events = builder.build()
     """
 
-    def __init__(self, store: PipelineStore) -> None:
+    def __init__(
+        self,
+        store: PipelineStore,
+        *,
+        zero_price_feats: bool = False,
+    ) -> None:
         self._store = store
+        self._zero_price_feats = zero_price_feats
 
     def build(
         self,
@@ -595,6 +791,9 @@ class GraphBuilder:
         since: float | None = None,
         until: float | None = None,
         enrichment: dict[str, dict[str, float]] | None = None,
+        use_signatures: bool = False,
+        ts2vec_embeddings: dict | None = None,
+        ts2vec_dim: int = 0,
     ) -> tuple[HeteroData, IDMap, list[dict[str, Any]]]:
         """Build the full heterogeneous graph.
 
@@ -605,6 +804,12 @@ class GraphBuilder:
                 Maps entity_id → {"cusum": float, "hawkes": float,
                 "event_study": float, "bocpd": float}.
                 When provided, node features expand from 12d to 39d.
+            ts2vec_embeddings: Optional TS2Vec pretraining embeddings
+                (Idea 5).  Maps entity_type → {entity_id → ndarray}.
+                When provided, ts2vec_dim extra dims are appended to
+                every node's feature vector.
+            ts2vec_dim: Embedding dimension added per node when
+                ts2vec_embeddings is provided.  0 = disabled.
 
         Returns:
             (HeteroData, IDMap, events) where events is a time-sorted list
@@ -620,11 +825,8 @@ class GraphBuilder:
         for ent in entities:
             id_map.add(ent["entity_type"], ent["entity_id"])
 
-        # 3. Determine current_time for recency features
-        if observations:
-            current_time = max(o.get("observed_at", 0.0) for o in observations)
-        else:
-            current_time = 0.0
+        # 3. Determine current_time for recency features (sanitized)
+        current_time = _reference_time(observations)
 
         # 4. Build HeteroData
         data = HeteroData()
@@ -646,6 +848,10 @@ class GraphBuilder:
                 observations,
                 current_time,
                 enrichment=enrichment,
+                use_signatures=use_signatures,
+                ts2vec_embeddings=ts2vec_embeddings,
+                ts2vec_dim=ts2vec_dim,
+                zero_price_feats=self._zero_price_feats,
             )
             data[etype].x = features
             data[etype].node_ids = ordered_ids
@@ -712,6 +918,9 @@ class GraphBuilder:
         until: float | None = None,
         observations: list[dict[str, Any]] | None = None,
         enrichment: dict[str, dict[str, float]] | None = None,
+        use_signatures: bool = False,
+        ts2vec_embeddings: dict | None = None,
+        ts2vec_dim: int = 0,
     ) -> tuple[HeteroData, IDMap, list[dict[str, Any]]]:
         """Build graph reusing pre-fetched entities/links (skips 2 of 3 DB queries).
 
@@ -724,10 +933,7 @@ class GraphBuilder:
         if observations is None:
             observations = self._store.query_all_observations(since=since, until=until)
 
-        if observations:
-            current_time = max(o.get("observed_at", 0.0) for o in observations)
-        else:
-            current_time = 0.0
+        current_time = _reference_time(observations or [])
 
         data = HeteroData()
 
@@ -745,6 +951,10 @@ class GraphBuilder:
                 observations,
                 current_time,
                 enrichment=enrichment,
+                use_signatures=use_signatures,
+                ts2vec_embeddings=ts2vec_embeddings,
+                ts2vec_dim=ts2vec_dim,
+                zero_price_feats=self._zero_price_feats,
             )
             data[etype].x = features
             data[etype].node_ids = ordered_ids

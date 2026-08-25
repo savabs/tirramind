@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Task: GNN Architecture Overhaul</title>
+</head>
+<body>
+  <h1>Task: GNN Architecture Overhaul</h1>
+  <p>Research: [[gnn_architecture_overhaul]] &nbsp;|&nbsp; Spec: [[gnn_architecture_overhaul_spec]] &nbsp;|&nbsp; Phase B: [[gnn_two_stage_spec]]</p>
+  <p><strong>Trigger:</strong> V72 confirmatory FAIL — stop MTL tuning, pivot to architecture overhaul.</p>
+
+  <h2>Phase A — Honest baselines (current)</h2>
+  <ul>
+    <li>[x] A.1 — Implement <code>scripts/honest_baseline_audit.py</code></li>
+    <li>[x] A.2 — Run smoke audit locally, record results in JSON</li>
+    <li>[x] A.3 — Run full audit (optional Kaggle checkpoint compare)</li>
+    <li>[x] A.4 — Write checkpoint with gate verdict + recommendation</li>
+  </ul>
+
+  <h2>Phase B — Decoupled two-stage (gated on A)</h2>
+  <ul>
+    <li>[x] B.0 — Research + spec for two-stage pipeline (only if Phase A shows signal)</li>
+    <li>[x] B.1 — Stage 1: self-supervised-only HetTGN training config (<code>--preset phase50_stage1_ssl</code>)</li>
+    <li>[x] B.2 — Stage 2: embedding export (<code>export_gnn_embeddings.py</code>)</li>
+    <li>[x] B.3 — Walk-forward eval (<code>stage2_ranker_eval.py</code>)</li>
+    <li>[ ] B.4 — Train Stage-1 SSL on Kaggle + full Stage2 eval on SSL checkpoint</li>
+  </ul>
+
+  <h2>Exit gate</h2>
+  <p>Mean IC &gt; 0.03 and t-stat &gt; 2.0 on purged walk-forward.</p>
+
+  <h2>Related</h2>
+  <ul>
+    <li>[[checkpoint_2026-06-07_v72_architecture_handoff]]</li>
+    <li>[[training_stagnation_root_cause]]</li>
+    <li>[[quant_training_ground]]</li>
+    <li>[[phase41b_gnn_signal_extraction]]</li>
+  </ul>
+</body>
+</html>

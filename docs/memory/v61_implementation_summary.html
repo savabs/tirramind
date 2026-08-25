@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>V61 Implementation Complete — Ready to Push</title>
+<style>
+body { max-width: 1000px; margin: 2rem auto; font-family: system-ui; line-height: 1.6; padding: 0 1rem; }
+h1 { border-bottom: 3px solid #333; padding-bottom: 0.5rem; }
+h2 { border-bottom: 2px solid #666; padding-bottom: 0.3rem; margin-top: 2rem; }
+code { background: #f4f4f4; padding: 0.2rem 0.4rem; border-radius: 3px; font-size: 0.9em; }
+pre { background: #f4f4f4; padding: 1rem; border-radius: 5px; overflow-x: auto; }
+.success { background: #d4edda; padding: 1rem; border-left: 4px solid #155724; margin: 1rem 0; }
+.warning { background: #fff3cd; padding: 1rem; border-left: 4px solid #856404; margin: 1rem 0; }
+table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+th, td { border: 1px solid #ddd; padding: 0.6rem; text-align: left; }
+th { background: #f8f9fa; font-weight: 600; }
+ul { margin: 0.5rem 0; }
+li { margin: 0.3rem 0; }
+</style>
+</head>
+<body>
+
+<h1>V61 Implementation Complete</h1>
+<p><strong>Date:</strong> 2026-06-06</p>
+<p><strong>Status:</strong> ✅ Code complete, ready to push to Kaggle</p>
+
+<div class="success">
+<h3>✅ All Changes Implemented</h3>
+<p>V61 implements a comprehensive solution to the embedding collapse and flat return loss problems observed in V60:</p>
+<ul>
+<li><strong>ContraNorm</strong> architectural anti-collapse layer (Guo et al. PKU 2023)</li>
+<li><strong>Log loss transformation</strong> for multi-task balancing (Lin et al. HKUST 2026)</li>
+<li><strong>Reduced loss weights</strong> to prevent value/obs_type dominance</li>
+<li><strong>Infrastructure for PCGrad</strong> (code added, disabled by default)</li>
+</ul>
+</div>
+
+<h2>1. Changes Summary</h2>
+
+<h3>1.1 Architecture Changes (`het_tgn.py`)</h3>
+<ul>
+<li>✅ Added <code>ContraNorm</code> class (lines 138-200) — zero-parameter normalization layer</li>
+<li>✅ Modified <code>HetTGN.__init__</code> to instantiate ContraNorm layers when <code>use_contranorm=True</code></li>
+<li>✅ Updated <code>HetTGN.forward</code> to apply ContraNorm after each HGT layer</li>
+</ul>
+
+<h3>1.2 Training Logic (`trainer.py`)</h3>
+<ul>
+<li>✅ Added <code>_log_transform_loss()</code> function — applies log(L + 1) transformation</li>
+<li>✅ Added <code>_pcgrad_projection()</code> function — gradient surgery (infrastructure, disabled)</li>
+<li>✅ Modified loss combination to use log transform when <code>use_log_loss=True</code></li>
+<li>✅ Added config flags: <code>use_contranorm</code>, <code>use_log_loss</code>, <code>use_pcgrad</code></li>
+<li>✅ Updated model instantiation to pass <code>use_contranorm</code> parameter</li>
+</ul>
+
+<h3>1.3 CLI Interface (`retrain_gnn.py`)</h3>
+<ul>
+<li>✅ Added <code>--use-contranorm</code> flag</li>
+<li>✅ Added <code>--use-log-loss</code> flag</li>
+<li>✅ Added <code>--use-pcgrad</code> flag (infrastructure only)</li>
+<li>✅ Updated <code>TrainerConfig</code> instantiation to pass new flags</li>
+<li>✅ Updated <code>run_config.json</code> to track new flags</li>
+</ul>
+
+<h3>1.4 Configuration Changes</h3>
+<table>
+<tr><th>File</th><th>Parameter</th><th>V60 Value</th><th>V61 Value</th></tr>
+<tr><td rowspan="7"><code>tirramind_kaggle_phase50.ipynb</code></td><td><code>kernel_version</code></td><td>60</td><td><strong>61</strong></td></tr>
+<tr><td><code>fix</code></td><td>"train_efficiency_v60_concat_vicreg"</td><td><strong>"train_efficiency_v61_contranorm_logloss"</strong></td></tr>
+<tr><td><code>value_weight</code></td><td>1.0</td><td><strong>0.1</strong></td></tr>
+<tr><td><code>obs_type_weight</code></td><td>1.0</td><td><strong>0.5</strong></td></tr>
+<tr><td><code>vicreg_weight</code></td><td>0.25</td><td>0.25 (kept)</td></tr>
+<tr><td><code>use_contranorm</code></td><td>—</td><td><strong>True</strong></td></tr>
+<tr><td><code>use_log_loss</code></td><td>—</td><td><strong>True</strong></td></tr>
+<tr><td><code>kaggle_launch.py</code></td><td><code>CANONICAL_KERNEL_VERSION</code></td><td>60</td><td><strong>61</strong></td></tr>
+<tr><td><code>VERSIONS.md</code></td><td>Current target</td><td>V60</td><td><strong>V61</strong></td></tr>
+</table>
+
+<h2>2. What V61 Fixes</h2>
+
+<h3>Problem 1: Embedding Collapse (48.4% in V60)</h3>
+<div class="success">
+<strong>Solution: ContraNorm</strong><br>
+Architectural anti-collapse layer applied after each HGT message-passing step. Prevents embeddings from collapsing into a narrow cone (dimensional collapse) by implicitly adding a contrastive uniformity pressure.
+<ul>
+<li>Zero parameters (no extra overhead)</li>
+<li>Proven effective in PKU research (2023)</li>
+<li>Complements VICReg (architecture + loss-based approach)</li>
+</ul>
+<strong>Expected:</strong> Collapse fraction drops from 48.4% to <20%, effective rank increases from 3.0/93 to >20/93.
+</div>
+
+<h3>Problem 2: Loss Scale Imbalance (value: 1653 vs return: 210)</h3>
+<div class="success">
+<strong>Solution: Log Loss Transform + Reduced Weights</strong><br>
+Applies <code>log(L + 1)</code> transformation to all task losses before combining, bringing them to comparable scales.
+<ul>
+<li>Prevents large-scale losses (value, obs_type) from dominating gradients</li>
+<li>Allows small-scale losses (return) to contribute effectively</li>
+<li>State-of-the-art from Dual-Balancing MTL (HKUST 2026)</li>
+</ul>
+Additionally:
+<ul>
+<li><code>value_weight</code> reduced from 1.0 to 0.1 (value loss was 8× larger than return)</li>
+<li><code>obs_type_weight</code> reduced from 1.0 to 0.5 to prevent silencing other tasks</li>
+</ul>
+<strong>Expected:</strong> Return loss shows learning curve (not flat), all losses within same order of magnitude.
+</div>
+
+<h3>Problem 3: Flat Return Loss After Epoch 1</h3>
+<div class="success">
+<strong>Solution: Combined Effect</strong><br>
+The log loss transform + reduced value_weight should allow the return loss to receive sufficient gradient flow, enabling it to learn across all epochs instead of being silenced after epoch 1.
+<br><br>
+<strong>Expected:</strong> Return loss decreases over epochs, PurgedRanker IC turns positive (target: >+0.03, approaching V52's +0.047).
+</div>
+
+<h2>3. How to Push V61</h2>
+
+<h3>Step 1: Verify Changes</h3>
+<pre><code># Check that all versions are synced to 61
+python3 scripts/kaggle_launch.py --verify-version
+
+# Expected output:
+# ✓ notebook kernel_version: 61
+# ✓ launcher CANONICAL_KERNEL_VERSION: 61
+# ✓ All version numbers match — ready to push
+</code></pre>
+
+<h3>Step 2: Push to Kaggle</h3>
+<pre><code># Push with 10 epochs, 50 windows (smoke run)
+python3 scripts/kaggle_launch.py --push-only --epochs 10
+
+# The script will:
+# 1. Package all agent/ code
+# 2. Update kernel-metadata.json
+# 3. Push to Kaggle
+# 4. Write .tirra_pipeline/kaggle_state.json with push timestamp
+</code></pre>
+
+<h3>Step 3: Monitor Progress</h3>
+<pre><code># Check kernel status
+python3 scripts/kaggle_launch.py --status
+
+# Tail logs in real-time
+python3 scripts/kaggle_launch.py --tail
+
+# Once complete (~30-40 minutes):
+python3 scripts/kaggle_launch.py --fetch-logs
+</code></pre>
+
+<h2>4. Success Criteria for V61</h2>
+
+<table>
+<tr><th>Metric</th><th>V60 Result</th><th>V61 Target</th><th>Status</th></tr>
+<tr><td><strong>Embedding Collapse</strong></td><td>48.4%</td><td><20%</td><td>⏳ Pending</td></tr>
+<tr><td><strong>Effective Rank</strong></td><td>3.0/93</td><td>>20/93</td><td>⏳ Pending</td></tr>
+<tr><td><strong>Return Loss Curve</strong></td><td>Flat after epoch 1</td><td>Decreasing over epochs</td><td>⏳ Pending</td></tr>
+<tr><td><strong>Loss Balance</strong></td><td>value 8× return</td><td>Within same order of magnitude</td><td>⏳ Pending</td></tr>
+<tr><td><strong>PurgedRanker IC</strong></td><td>-0.0440</td><td>>+0.03 (positive signal)</td><td>⏳ Pending</td></tr>
+</table>
+
+<div class="warning">
+<h3>If V61 Still Fails:</h3>
+<p>If embedding collapse persists or IC remains negative:</p>
+<ul>
+<li><strong>Option A:</strong> Increase <code>vicreg_weight</code> from 0.25 to 1.0</li>
+<li><strong>Option B:</strong> Add Decorrelated BatchNorm (another proven anti-collapse technique from LESSONS.md)</li>
+<li><strong>Option C:</strong> Run a full 90-epoch/200-window baseline with V52 config (known good) to establish upper-bound IC</li>
+<li><strong>Option D:</strong> Enable PCGrad (<code>use_pcgrad: True</code>) to handle gradient conflicts</li>
+</ul>
+</div>
+
+<h2>5. Documentation Created</h2>
+
+<ul>
+<li>✅ <code>docs/research/training_efficiency_v61_solution.html</code> — Full research document with literature review</li>
+<li>✅ <code>docs/research/training_efficiency_v61_solution.md</code> — Obsidian stub with frontmatter and wiki links</li>
+<li>✅ <code>VERSIONS.md</code> — Updated to document V60 completion and V61 pending</li>
+<li>✅ <code>tirramind_kaggle_phase50.ipynb</code> — Config updated for V61</li>
+<li>✅ <code>scripts/kaggle_launch.py</code> — Version bumped to 61</li>
+</ul>
+
+<h2>6. Files Modified</h2>
+
+<table>
+<tr><th>File</th><th>Changes</th></tr>
+<tr><td><code>agent/models/gnn/het_tgn.py</code></td><td>+72 lines (ContraNorm class + integration)</td></tr>
+<tr><td><code>agent/models/gnn/trainer.py</code></td><td>+80 lines (log loss, PCGrad functions, config flags)</td></tr>
+<tr><td><code>scripts/retrain_gnn.py</code></td><td>+30 lines (new CLI args, config passing)</td></tr>
+<tr><td><code>tirramind_kaggle_phase50.ipynb</code></td><td>Config updates (6 parameters changed)</td></tr>
+<tr><td><code>scripts/kaggle_launch.py</code></td><td>Version bump (60 → 61)</td></tr>
+<tr><td><code>VERSIONS.md</code></td><td>V60 marked COMPLETE, V61 added as pending</td></tr>
+<tr><td><code>docs/research/*</code></td><td>2 new files (research doc + stub)</td></tr>
+</table>
+
+<h2>7. References</h2>
+
+<p>All implementation based on peer-reviewed research from 2020-2026:</p>
+<ol>
+<li><strong>ContraNorm:</strong> Guo et al. (PKU 2023) arXiv:2303.06562</li>
+<li><strong>Dual-Balancing MTL:</strong> Lin et al. (HKUST 2026)</li>
+<li><strong>PCGrad:</strong> Yu et al. (NeurIPS 2020) arXiv:2001.06782</li>
+<li><strong>VICReg:</strong> Bardes et al. (ICLR 2022) arXiv:2105.04906</li>
+</ol>
+
+<hr>
+<p><em>Implementation completed: 2026-06-06</em></p>
+<p><strong>Next action:</strong> Push V61 to Kaggle and analyze results.</p>
+
+</body>
+</html>

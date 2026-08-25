@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Spec: Playground Niche Competition</title>
+  <style>
+    body { font-family: system-ui, sans-serif; line-height: 1.6; max-width: 900px; margin: 0 auto; padding: 2rem; }
+    h1 { color: #2c5282; } h2 { color: #2b6cb0; margin-top: 1.5rem; }
+    table { width: 100%; border-collapse: collapse; } th, td { border: 1px solid #e2e8f0; padding: 0.5rem; }
+    th { background: #edf2f7; }
+  </style>
+</head>
+<body>
+
+<h1>Spec: Playground Niche Competition</h1>
+<p><strong>Goal:</strong> Select playground #1’s <em>commercial and evaluation niche</em> by evidence, not narrative. The agent architecture stays general; the niche defines hero entities, hero readouts, and first GTM.</p>
+
+<h2>Non-goals</h2>
+<ul>
+  <li>Do not freeze the global sensor surface to one sector.</li>
+  <li>Do not block engineering that helps all candidates (ℰ, pipeline, alignment).</li>
+  <li>Do not commit to a niche in marketing until the competition exit gate passes.</li>
+</ul>
+
+<h2>Initial candidate niches (equal status until scored)</h2>
+<table>
+  <tr><th>ID</th><th>Niche</th><th>Hero readouts (examples)</th></tr>
+  <tr><td>N1</td><td>Commodity &amp; energy macro cycle</td><td>CFTC extremes + supply/weather/AIS stress; regime breaks on CL/GC/ZS/CC</td></tr>
+  <tr><td>N2</td><td>Volatility &amp; options regime</td><td>Skew/term structure shifts; rough-H flags; needs options data (M15)</td></tr>
+  <tr><td>N3</td><td>Crypto on-chain + macro bridge</td><td>Whale flow + protocol TVL co-movement with BTC/ETH</td></tr>
+  <tr><td>N4</td><td>Geopolitical / sovereign stress</td><td>Country-node fusion → spreads, FX, sanctions chains</td></tr>
+  <tr><td>N5</td><td>Cross-asset liquidity &amp; rates</td><td>Global liquidity composite, curve/regime breaks</td></tr>
+  <tr><td>N6</td><td>Equity microstructure + positioning</td><td>FINRA short, insider, form144 clusters (denser US equities)</td></tr>
+</table>
+<p>Add candidates via research note + one row here; max 8 active at once.</p>
+
+<h2>Scoring dimensions (0–5 each, weighted)</h2>
+<table>
+  <tr><th>Dimension</th><th>Weight</th><th>What to measure</th></tr>
+  <tr><td>Embedding learnability</td><td>25%</td><td>OOS event prediction from <code>h_i</code> (not raw price alone) on niche entities</td></tr>
+  <tr><td>Data density today</td><td>20%</td><td>Observations per hero entity type; backfill completeness</td></tr>
+  <tr><td>Monetization path ≤12mo</td><td>20%</td><td>Credible paid readout (brief, API, fund workflow) without perfect Sharpe</td></tr>
+  <tr><td>Sensor moat</td><td>20%</td><td>Cross-domain fusion advantage vs Bloomberg-only competitors</td></tr>
+  <tr><td>Agent loop stress</td><td>15%</td><td>Regime shift, sparsity, delayed reward — does niche teach general skills?</td></tr>
+</table>
+
+<h2>Process</h2>
+<ol>
+  <li><strong>Baseline scorecard</strong> — per niche, same eval window (e.g. 26-week walk-forward where applicable).</li>
+  <li><strong>ℰ probes</strong> — 2–3 tasks per niche (e.g. CFTC regime shift, supply-stress episode retrieval, vol breakout).</li>
+  <li><strong>Readout prototype</strong> — minimal external-facing signal type + public archive entry format.</li>
+  <li><strong>Timebox:</strong> 4–6 weeks parallel exploration; weekly score update in checkpoint.</li>
+  <li><strong>Exit gate:</strong> Winner = highest weighted total + founder sign-off; document in [[agent_playground_doctrine]] and next checkpoint.</li>
+</ol>
+
+<h2>Deliverables</h2>
+<ul>
+  <li><code>docs/research/niche_playground_competition.html</code> — running score table + notes</li>
+  <li>Update [[revenue_plan_2026-05-08]] only after winner — mark as “winner niche GTM”</li>
+  <li>Active task: [[niche_playground_competition]]</li>
+</ul>
+
+<h2>Related</h2>
+<ul>
+  <li>[[agent_playground_doctrine]]</li>
+  <li>[[world_state_prediction_methodology]]</li>
+  <li>[[revenue_plan_2026-05-08]]</li>
+</ul>
+
+</body>
+</html>

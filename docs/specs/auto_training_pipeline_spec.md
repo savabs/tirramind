@@ -30,7 +30,7 @@ Every fast-path config change runs without human touch.
 | `scripts/sync_training_state.py` | CREATE | P0 |
 | `.github/workflows/training_monitor.yml` | CREATE | P0 |
 | `notebooks/tirramind-h-g/kernel-metadata.json` | CREATE | P0 |
-| `docs/memory/kaggle_runbook.md` | UPDATE — add new workflow | P1 |
+| `[[kaggle_runbook]]` | UPDATE — add new workflow | P1 |
 
 No changes to: `trainer.py`, `auto_improve.py`, `retrain_gnn.py`, `auto_research.py`.
 Those components are already complete. This spec layers orchestration on top of them.

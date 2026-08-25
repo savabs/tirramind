@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>Checkpoint 2026-06-03 — Pre-Train Perfection Handoff (Full Session Dump)</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 960px; margin: 2rem auto; line-height: 1.55; }
+    h1, h2, h3 { color: #1a1a2e; }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: 0.92rem; }
+    th, td { border: 1px solid #ccc; padding: 0.4rem 0.6rem; text-align: left; }
+    th { background: #f0f0f8; }
+    .do { color: #0a6b0a; }
+    .dont { color: #a00; }
+    code, pre { background: #f4f4f8; padding: 0.15rem 0.35rem; border-radius: 3px; }
+    pre { padding: 1rem; overflow-x: auto; }
+    .warn { background: #fff8e6; border-left: 4px solid #e6a800; padding: 0.75rem 1rem; }
+    .ok { background: #e8f5e9; border-left: 4px solid #2e7d32; padding: 0.75rem 1rem; }
+  </style>
+</head>
+<body>
+
+<h1>Checkpoint 2026-06-03 — Pre-Train Perfection Handoff</h1>
+<p><strong>Purpose:</strong> Cold-start for a new chat. Everything learned, decided, built, deferred, and forbidden before GNN training resumes.</p>
+<p><strong>Doctrine:</strong> Markets are playground #1. Core asset = embedding space ℰ. ML-first; hard-code facts/schemas, learn predictive structure. Finance first use case = ghost patterns + IC, not rule watchlists.</p>
+
+<h2>1. Executive summary (30 seconds)</h2>
+<ul>
+  <li>We built <strong>Layer 2 micro + N1 probes</strong> and wired <strong>M9 micro (11 dims)</strong> into <code>graph_builder</code>.</li>
+  <li>We agreed: <strong>STOP GNN training</strong> until Layer 1 (data) + Layer 2 (math on graph) are perfected.</li>
+  <li><strong>Gate A (data)</strong> passed for N1 commodity niche. <strong>Gate B/C</strong> partially done; parity + graph audit next.</li>
+  <li>Fixed critical bugs: GDELT NO_DATA, CFTC rank scale, gov_contracts year-9019 timestamps, <code>_reference_time</code> in graph_builder.</li>
+  <li>N1 watchlist is <strong>ops/debug</strong>, not the product. GNN + surprise + ghost trajectory = product.</li>
+</ul>
+
+<h2>2. Mental model — three parallel tracks</h2>
+<pre>
+Track A  GNN / HetTGN / IC / embeddings     ← MAIN GOAL (paused until L1+L2 perfect)
+Track B  agent/quant math stack (M1–M9…)    ← libraries built; only M9 wired to graph
+Track C  N1 probe (micro+CFTC+GDELT rules)  ← human dashboard; NOT the learner
+</pre>
+<p>They share <code>pipeline.db</code> but serve different jobs. Unification = sensors → graph features → GNN learns combos → optional N1 explains.</p>
+
+<h2>3. The 7-layer stack (repo doctrine)</h2>
+<table>
+  <tr><th>Layer</th><th>Path</th><th>Role</th></tr>
+  <tr><td>1 Surveillance</td><td><code>agent/tools/</code></td><td>Fetch raw data → pipeline.db</td></tr>
+  <tr><td>2 Features</td><td><code>agent/quant/</code>, convergence</td><td>Math on data; feed graph</td></tr>
+  <tr><td>3 World model</td><td><code>agent/models/gnn/</code></td><td>HetTGN — learns cross-domain combos</td></tr>
+  <tr><td>4 Fusion</td><td><code>agent/fusion/</code></td><td>Surprise, Kalman, convergence</td></tr>
+  <tr><td>5 RL</td><td><code>agent/learning/</code></td><td>SAC; Phase 48 Dreamer later</td></tr>
+  <tr><td>6 Adversarial</td><td><code>agent/adversarial/</code></td><td>Edge decay, manipulation</td></tr>
+  <tr><td>7 LLM</td><td><code>agent/reasoning/</code></td><td>Parse/narrate only</td></tr>
+</table>
+
+<h2>4. Bottom-to-top ladder (agreed order)</h2>
+<pre>
+[0] Data in DB           ████████░░  mostly OK; stale ~2026-04-17 daily
+[1] Links + quality      ████████░░  produced_in, CFTC; ghost tools sparse
+[2] Feature math         ██████████  M9 done; BSM/IV library only
+[3] graph_builder feed   ██████████  M9 wired; reference_time fixed
+[4] GNN retrain + IC     ░░░░░░░░░░  BLOCKED until Gate B+C sign-off
+[5] Ghost on embeddings  ░░░░░░░░░░  not built (TDC-AE path in research)
+[6] N1 watchlist tuning  ████████░░  optional; deprioritized
+</pre>
+
+<h2>5. What was built this session arc</h2>
+<table>
+  <tr><th>Item</th><th>Path</th><th>Status</th></tr>
+  <tr><td>M9 micro math</td><td><code>agent/quant/microstructure.py</code></td><td>Done, 15 tests</td></tr>
+  <tr><td>Daily micro signals + alerts</td><td><code>microstructure_signals.py</code></td><td>Done</td></tr>
+  <tr><td>Standalone probes</td><td><code>scripts/microstructure_probe.py</code>, <code>microstructure_alerts.py</code></td><td>Done</td></tr>
+  <tr><td>N1 fuse (micro+CFTC+supply)</td><td><code>n1_probe.py</code>, <code>n1_geo.py</code>, <code>scripts/n1_probe.py</code></td><td>Done</td></tr>
+  <tr><td>GDELT supply fix</td><td><code>n1_geo._gdelt_cutoff_ts</code></td><td>DB-relative window</td></tr>
+  <tr><td>CFTC rank fix</td><td><code>normalize_cftc_rank</code></td><td>0–1 not 0–100</td></tr>
+  <tr><td>GNN micro feed (11 dims)</td><td><code>compute_gnn_micro_features</code> → graph_builder</td><td>Done</td></tr>
+  <tr><td>Gate A audit script</td><td><code>scripts/gate_a_audit.py</code></td><td>Done</td></tr>
+  <tr><td>reference_time sanitizer</td><td><code>graph_builder._reference_time</code></td><td>Done</td></tr>
+  <tr><td>gov_contracts date guard</td><td><code>agent/tools/gov_contracts.py</code></td><td>Done</td></tr>
+  <tr><td>Thresholds JSON</td><td><code>.tirra_pipeline/n1_probe_thresholds.json</code></td><td>Written, NOT tuned</td></tr>
+  <tr><td>BSM/Heston/SVI on graph</td><td>M14.1</td><td>NOT wired (needs M15 options data)</td></tr>
+</table>
+
+<h2>6. M9 GNN vector layout (11 dims)</h2>
+<p><code>spread_cs, spread_roll, ofi_zscore, vpin, vpin_regime×3, kyle_lambda, lambda_regime×3</code></p>
+<p><strong>Daily proxies:</strong> proxy H/L from rolling vol; synthetic one-trade/day for VPIN/OFI. Documented — not exchange tick micro.</p>
+<p><strong>Parity:</strong> <code>spread_roll</code> matches probe vs GNN after reference_time fix. <code>ofi_z</code> may differ (GNN uses synthetic-trade OFI; probe uses signed_flow_z).</p>
+
+<h2>7. Graph — how it helps ghost patterns</h2>
+<ul>
+  <li><strong>Nodes</strong> = entities (instrument, country, cftc_contract, …)</li>
+  <li><strong>Edges</strong> = factual links (produced_in, works_for, …) — mostly from sources/seeds, NOT learned topology yet</li>
+  <li><strong>Node features</strong> = per-entity math summaries</li>
+  <li><strong>Events</strong> = time-ordered observation stream → HetTGN memory</li>
+  <li><strong>Learning</strong> = HGT attention mixes cross-domain; return head optimizes IC</li>
+  <li><strong>Anomaly today</strong> = prediction surprise + convergence clusters on linked nodes</li>
+  <li><strong>Ghost target</strong> = joint embedding trajectory anomaly (TDC-AE) — NOT shipped</li>
+</ul>
+<p><strong>Hard-code OK:</strong> schemas, explicit source facts, link types. <strong>Must learn:</strong> which combos predict, attention weights, surprise.</p>
+
+<h2>8. Gate A results (2026-06-03, pipeline.db)</h2>
+<div class="ok">
+  <strong>PASS</strong> for N1 commodity train scope:<br/>
+  20 commodities, all ≥30 daily bars (~755 days); produced_in 119 links / 19 instruments;<br/>
+  CFTC 5080 raw + 5080 derived; GDELT 90684 events (latest 2026-04-21);<br/>
+  Latest instrument_daily ~2026-04-17.
+</div>
+<div class="warn">
+  <strong>Known gaps (informational):</strong><br/>
+  Ghost tools sparse: ais_vessel 0, energy_supply 0, weather 0, satellite 0, capital_flows 6, central_bank 5.<br/>
+  50 gov_contracts rows had corrupt year-9019 timestamps (graph_builder now ignores; ingest guard added).<br/>
+  density_audit FAIL only on wallet span=3d — irrelevant for commodity GNN.<br/>
+  DB ~6 weeks stale vs wall clock — refresh before live trading, OK for backtest if documented.
+</div>
+
+<h2>9. Gate B/C status</h2>
+<table>
+  <tr><th>Gate</th><th>Status</th><th>Next</th></tr>
+  <tr><td>B — math tests</td><td class="pass">74 tests PASS (2026-06-03)</td><td>—</td></tr>
+  <tr><td>B — parity</td><td class="pass">PASS 20/20 via <code>scripts/gate_b_parity.py</code></td><td>ofi_z intentional diff documented</td></tr>
+  <tr><td>C — graph audit</td><td class="pass">PASS via <code>scripts/gate_c_graph_audit.py</code></td><td>—</td></tr>
+</table>
+<p><strong>Sign-off doc:</strong> [[l1_l2_pretrain_signoff]] — gates A+B+C recorded; GNN retrain unblocked pending user enrichment choice.</p>
+
+<h2>10. Math stack vs data (what exists where)</h2>
+<table>
+  <tr><th>Data</th><th>Math</th><th>On GNN?</th></tr>
+  <tr><td>instrument_daily</td><td>Price 9d + M9 micro 11d</td><td>YES</td></tr>
+  <tr><td>Options chains</td><td>BSM, Heston, SVI, SABR, rough vol</td><td>NO (M15 missing)</td></tr>
+  <tr><td>CFTC</td><td>Derived ranks, labels</td><td>Via obs on cftc nodes + edges</td></tr>
+  <tr><td>GDELT</td><td>Goldstein aggregates</td><td>Country node obs; N1 supply path</td></tr>
+  <tr><td>Event streams</td><td>BOCPD, CUSUM, Hawkes, HMM, spectral</td><td>Enrichment optional</td></tr>
+  <tr><td>Linked pairs</td><td>Vine copula, Wasserstein</td><td>Research / partial</td></tr>
+  <tr><td>Full graph+time</td><td>HetTGN, surprise, IC</td><td>Layer 3 — PAUSED</td></tr>
+</table>
+
+<h2>11. DO — ordered master todo</h2>
+<h3>Phase 0 — Sign-off gates (before ANY GNN train)</h3>
+<ol class="do">
+  <li>☑ Run <code>python3 scripts/gate_a_audit.py</code> — PASS 2026-06-03; stale daily ~2026-04-17</li>
+  <li>☑ pytest gate B suite — 74 passed 2026-06-03</li>
+  <li>☑ <code>scripts/gate_b_parity.py</code> — 20/20 PASS; probe spread_roll aligned to GNN returns</li>
+  <li>☑ <code>scripts/gate_c_graph_audit.py</code> — dim=34, micro≠0, finite OK</li>
+  <li>☑ [[l1_l2_pretrain_signoff]] written with proxy disclaimers</li>
+  <li><strong>NEXT:</strong> resume GNN (<code>tirramind_kaggle_phase50.ipynb</code>) — confirm enrichment on/off + optional DB refresh</li>
+</ol>
+
+<h3>Phase 1 — Layer 1 data refresh (parallel, recommended)</h3>
+<ol class="do">
+  <li>Re-run daily_collection / backfill to update instrument_daily past 2026-04-17</li>
+  <li>Refresh CFTC weekly positioning</li>
+  <li>Refresh GDELT if pipeline supports it</li>
+  <li>Prioritize ONE ghost tool backfill for commodity path: <strong>energy_supply</strong> (EIA) or AIS — pick one, don't boil ocean</li>
+  <li>Fix remaining gov_contracts corrupt rows in DB (optional cleanup script) or rely on reference_time filter</li>
+  <li>Re-run density_audit; document wallet sparse override</li>
+</ol>
+
+<h3>Phase 2 — Layer 2 perfection (no new math unless data justifies)</h3>
+<ol class="do">
+  <li>Confirm enrichment on/off for this train — pick one config, document it</li>
+  <li>Validate walk-forward: features at time T use only obs ≤ T (trainer windows)</li>
+  <li>Do NOT wire BSM/IV until M15 options data in pipeline.db</li>
+  <li>When tick data exists: M9.3 Hawkes OFI, true VPIN — not before</li>
+</ol>
+
+<h3>Phase 3 — GNN train (after sign-off)</h3>
+<ol class="do">
+  <li>Same recipe as phase50 notebook; micro now non-zero</li>
+  <li>Compare IC vs last checkpoint (epoch_086 / V49 baseline)</li>
+  <li>Only if IC improves or failure mode clear → iterate architecture</li>
+  <li>Train surprise extractor; run convergence on real surprises</li>
+</ol>
+
+<h3>Phase 4 — Ghost patterns (after stable L3 IC)</h3>
+<ol class="do">
+  <li>Store embedding snapshots over time (new table per research doc)</li>
+  <li>TDC-AE / trajectory anomaly v0 on pooled graph embedding</li>
+  <li>Lead-lag validation: supply/CFTC/micro flags vs 1–4w forward vol/return</li>
+</ol>
+
+<h3>Phase 5 — Optional product layer</h3>
+<ol class="do">
+  <li>N1 threshold tuning only if human watchlist still wanted</li>
+  <li>Daily cron: n1_probe.py → Slack/dashboard</li>
+  <li>M14 wire IV surface when options ingested</li>
+</ol>
+
+<h2>12. DO NOT — forbidden until further notice</h2>
+<ul class="dont">
+  <li>Long Kaggle/GNN retrains hoping IC fixes bad data or bad math</li>
+  <li>Deep N1 threshold tuning as primary work</li>
+  <li>Treating N1 composite_priority as alpha without lead-lag backtest</li>
+  <li>Wire BSM/Heston to graph without options chain + rates + dividends (M15)</li>
+  <li>Fake tick-level VPIN/OFI claims on daily bars</li>
+  <li>Phase 48 transformer world model before Phase 40 IC + density gates</li>
+  <li>Autopilot agent sprints without user sign-off on scope</li>
+  <li>More probe/dashboard polish while Gate B/C incomplete</li>
+  <li>Hand-code predictive rules where GNN should learn (doctrine violation)</li>
+  <li>Assume micro retrain unnecessary — any graph feature change requires retrain</li>
+</ul>
+
+<h2>13. Key commands</h2>
+<pre>
+# Gate A
+python3 scripts/gate_a_audit.py
+python3 scripts/density_audit.py
+
+# Layer 2 probes (debug only)
+python3 scripts/microstructure_probe.py
+python3 scripts/microstructure_alerts.py --alerts-only
+python3 scripts/n1_probe.py --min-priority 2
+
+# Tests (Gate B)
+python3 -m pytest tests/test_microstructure.py tests/test_microstructure_signals.py \
+  tests/test_gnn_micro_feed.py tests/test_microstructure_gnn.py tests/test_graph_builder.py \
+  tests/test_n1_probe.py -q
+
+# GNN — ONLY AFTER SIGN-OFF
+# tirramind_kaggle_phase50.ipynb / scripts/retrain_gnn.py (other chat)
+</pre>
+
+<h2>14. Key files map</h2>
+<table>
+  <tr><th>Purpose</th><th>Path</th></tr>
+  <tr><td>M9 math</td><td><code>agent/quant/microstructure.py</code></td></tr>
+  <tr><td>Daily micro + GNN vector</td><td><code>agent/quant/microstructure_signals.py</code></td></tr>
+  <tr><td>Graph builder</td><td><code>agent/models/gnn/graph_builder.py</code></td></tr>
+  <tr><td>N1 fuse</td><td><code>agent/quant/n1_probe.py</code>, <code>n1_geo.py</code></td></tr>
+  <tr><td>Surprise / ghost path</td><td><code>agent/fusion/surprise.py</code>, <code>convergence.py</code></td></tr>
+  <tr><td>Math roadmap</td><td><code>tasks/active/math_stack_roadmap.md</code></td></tr>
+  <tr><td>Training ground</td><td><code>tasks/active/quant_training_ground.md</code></td></tr>
+  <tr><td>Gate A script</td><td><code>scripts/gate_a_audit.py</code></td></tr>
+  <tr><td>DB</td><td><code>.tirra_pipeline/pipeline.db</code></td></tr>
+  <tr><td>N1 output</td><td><code>.tirra_pipeline/n1_probe/latest.json</code></td></tr>
+  <tr><td>Thresholds</td><td><code>.tirra_pipeline/n1_probe_thresholds.json</code></td></tr>
+  <tr><td>Kaggle train</td><td><code>tirramind_kaggle_phase50.ipynb</code></td></tr>
+</table>
+
+<h2>15. Brainstorm / strategic insights (keep)</h2>
+<ul>
+  <li><strong>Product ≠ trading bot.</strong> ℰ + ghost patterns + IC; finance scores it.</li>
+  <li><strong>N1/micro probes</strong> = sensor panel + debug; GNN = brain. Don't confuse them.</li>
+  <li><strong>Ghost pattern</strong> = joint state anomaly, not single-feature threshold. Combo only visible on graph.</li>
+  <li><strong>Parallel tracks OK</strong> if they merge: sensors → graph features → train → surprise/ghost.</li>
+  <li><strong>Perfection before train</strong> = wrong math/data guarantees bad IC forever.</li>
+  <li><strong>Commercial niche:</strong> N1 + N4 + microstructure (commodities, geopolitics, tape proxies).</li>
+  <li><strong>IC has been weak/negative</strong> (Phase 41b ~ -0.033) — graph density + feature bugs suspected before blaming HetTGN.</li>
+  <li><strong>GDELT dominates obs count</strong> — may need subsampling or upweighting micro/CFTC in training.</li>
+  <li><strong>Relations:</strong> factual edges in DB; attention learns importance; Phase 48 = learned causal structure from sequences.</li>
+  <li><strong>Retrain rule:</strong> new/changed graph features → must retrain or fine-tune GNN.</li>
+</ul>
+
+<h2>16. Open questions for next session</h2>
+<ul>
+  <li>Enrichment on or off for first post-perfection train?</li>
+  <li>Which ONE ghost tool to backfill first: energy_supply vs ais_vessel?</li>
+  <li>Refresh DB before train or train on frozen April snapshot for IC delta only?</li>
+  <li>Accept daily micro proxies for v1 or block train until tick ingest?</li>
+  <li>Formal sign-off doc location: new task file vs quant_training_ground append?</li>
+</ul>
+
+<h2>17. Cold-start prompt for new chat</h2>
+<pre>
+Read docs/memory/chat_checkpoint_2026-06-03_pretrain_perfection_handoff.html first.
+Phase 0 COMPLETE (2026-06-03): Gates A+B+C PASS. Sign-off: [[l1_l2_pretrain_signoff]].
+NEXT: GNN retrain in tirramind_kaggle_phase50.ipynb — user picks enrichment on/off; optional DB refresh.
+Do NOT skip gate re-run if graph features or pipeline.db change.
+</pre>
+
+<h2>18. Session update — Phase 0 executed (2026-06-03)</h2>
+<ul>
+  <li>Added <code>scripts/gate_b_parity.py</code>, <code>scripts/gate_c_graph_audit.py</code></li>
+  <li>Fixed probe <code>spread_roll</code> to use close-derived returns (parity with GNN extractor)</li>
+  <li>Gate A PASS | Gate B 20/20 | Gate C PASS | 74 pytest pass</li>
+  <li>Canonical sign-off: [[l1_l2_pretrain_signoff]]</li>
+</ul>
+
+<p><em>End checkpoint — 2026-06-03 (Phase 0 complete)</em></p>
+</body>
+</html>

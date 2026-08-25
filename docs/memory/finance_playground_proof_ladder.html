@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Finance Playground — Proof Ladder &amp; Concrete Benefits</title>
+  <style>
+    body { font-family: system-ui, sans-serif; line-height: 1.6; max-width: 900px; margin: 0 auto; padding: 2rem; color: #1a202c; }
+    h1 { color: #2c5282; border-bottom: 3px solid #3182ce; padding-bottom: 0.5rem; }
+    h2 { color: #2b6cb0; margin-top: 2rem; border-bottom: 1px solid #e2e8f0; }
+    h3 { color: #4a5568; }
+    table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.92rem; }
+    th, td { border: 1px solid #e2e8f0; padding: 0.5rem; text-align: left; vertical-align: top; }
+    th { background: #edf2f7; }
+    .canonical { background: #ebf8ff; border-left: 4px solid #3182ce; padding: 1rem; margin: 1rem 0; }
+    .pass { color: #276749; font-weight: 600; }
+    .fail { color: #c53030; }
+    pre { background: #f7fafc; padding: 1rem; overflow-x: auto; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+
+<h1>Finance Playground — Proof Ladder &amp; Concrete Benefits</h1>
+<p><strong>Status:</strong> Canonical owner for <em>what we prove</em> on playground #1 and <em>specific benefits</em> we show buyers.<br>
+<strong>Effective:</strong> 2026-06-09<br>
+<strong>Commercial frame:</strong> [[0003-agents-as-sku]] — we sell the <strong>agent</strong>; finance is the reference proof arena.</p>
+
+<div class="canonical">
+  <strong>Not the pitch:</strong> “AI market intelligence” / “predict the future” / “beat the market.”<br>
+  <strong>The pitch:</strong> “A deployable agent that <em>automatically</em> fuses EIA + CFTC + AIS + GDELT into auditable cross-domain states — and we publish the scorecard.”
+</div>
+
+<h2>1. Who benefits (specific roles, not “traders”)</h2>
+<table>
+  <tr><th>Buyer role</th><th>Concrete task today</th><th>What the agent replaces</th></tr>
+  <tr>
+    <td>Energy <strong>risk analyst</strong></td>
+    <td>Every Wed: read EIA stocks; Fri: read CFTC; mentally combine with positioning velocity</td>
+    <td>One daily run → named chain template fires or silent (no false “newsletter”)</td>
+  </tr>
+  <tr>
+    <td>Commodity <strong>research engineer</strong></td>
+    <td>Maintain spreadsheets wiring COT + inventory + ad-hoc AIS checks</td>
+    <td>Deterministic pipeline + <code>pipeline.db</code> + reproducible JSON alerts</td>
+  </tr>
+  <tr>
+    <td>Quant / ML <strong>infra lead</strong></td>
+    <td>Prototype multi-source features; fight data drift and eval leakage</td>
+    <td>Agent runtime: perceive → ℰ → detect → logged outcomes → retrain hook</td>
+  </tr>
+  <tr>
+    <td>Compliance / <strong>model risk</strong></td>
+    <td>Ask “where’s the evidence this call was made before the move?”</td>
+    <td>Pre-registered alert JSON + public scorecard (G4)</td>
+  </tr>
+</table>
+
+<h2>2. Three concrete benefits (MP-1 Atlantic energy)</h2>
+
+<h3>Benefit A — Cross-domain state in one object (not four tabs)</h3>
+<p><strong>Before:</strong> Analyst opens EIA petroleum status (inventory level/change), CFTC disaggregated (WTI-Physical mm net + weekly Δ), optional AIS/Baltic context, GDELT producer stress — and mentally stitches timing lags.</p>
+<p><strong>After:</strong> Agent emits one auditable record, e.g. template <code>ais_eia_cftc</code>:</p>
+<pre>{
+  "chain_template": "ais_eia_cftc",
+  "nodes": [
+    {"source": "energy_supply", "series": "crude_excl_spr", "z": -1.8, "period": "2026-05-29"},
+    {"source": "cftc", "entity": "WTI-PHYSICAL", "metric": "mm_net", "z": -1.3, "report": "2026-06-02"}
+  ],
+  "readout_instrument": "CL=F",
+  "issued_at": "2026-06-09T..."
+}</pre>
+<p><strong>Measurable:</strong> ≥2 domains in one alert (G1); every node has public URL + timestamp (G3).</p>
+<p><strong>Competitor gap:</strong> COTBase = positioning only. Kpler/AIS vendors = flows only. EIA = inventories only. <em>No single product ships this joint state as a machine record.</em></p>
+
+<h3>Benefit B — Scenario flag before you need the narrative</h3>
+<p><strong>Before:</strong> Desk reacts after Reuters headline or EIA surprise; scenario planning is ad hoc.</p>
+<p><strong>After:</strong> Agent flags <strong>named setups</strong> with falsifiers, e.g.:</p>
+<ul>
+  <li><strong>Low inventory regime + specs not crowded long</strong> (physical tightness + positioning room)</li>
+  <li><strong>Large weekly draw + NG positioning velocity extreme</strong> (Atlantic book composition)</li>
+  <li><strong>Producer-country stress + WTI mm net below mean</strong> (geopolitical + positioning geometry)</li>
+</ul>
+<p><strong>Measurable:</strong> Alert archived <em>before</em> 2–5 session CL=F resolution; outcome appended to same file + scorecard row.</p>
+<p><strong>Not claimed:</strong> “Buy CL=F.” Claimed: <strong>tighten scenario set</strong> — hedgers know which risks to rehearse.</p>
+
+<h3>Benefit C — Reproducible engine, not a one-off analyst note</h3>
+<p><strong>Before:</strong> “Trust me, I saw it in the data” — no pre-registration, no versioned pipeline.</p>
+<p><strong>After:</strong></p>
+<pre>make ghost-pattern-daily   # same inputs → same scan logic
+# → alerts/*.json + scorecard.md updated</pre>
+<p><strong>Measurable:</strong> Re-run on same DB date → same template match (deterministic Phase A chains). Public archive: <code>github.com/dry-clean/tirramind-ghost-archive</code>.</p>
+<p><strong>Agent SKU angle:</strong> Buyer gets the <strong>runtime + templates + eval scripts</strong>, not a PDF brief.</p>
+
+<h2>3. Proof ladder (what we must demonstrate — with pass lines)</h2>
+<table>
+  <tr><th>#</th><th>Proof</th><th>Pass (specific)</th><th>Artifact</th><th>Status</th></tr>
+  <tr>
+    <td>P1</td>
+    <td><strong>Engine runs</strong></td>
+    <td>Daily loop completes: fetch → scan → resolve; no manual steps</td>
+    <td><code>make ghost-pattern-daily</code> log + DB timestamps</td>
+    <td class="pass">Live</td>
+  </tr>
+  <tr>
+    <td>P2</td>
+    <td><strong>Joint detection</strong></td>
+    <td>≥1 chain with ≥2 domains fires on real data; JSON passes G1–G3</td>
+    <td><code>ghost_archive/alerts/*.json</code></td>
+    <td class="pass">3 alerts shipped</td>
+  </tr>
+  <tr>
+    <td>P3</td>
+    <td><strong>Honest scorecard</strong></td>
+    <td>n≥20 resolved alerts; hit rate + baseline noted; misses public</td>
+    <td><code>scorecard.md</code></td>
+    <td class="fail">n=3 — in progress</td>
+  </tr>
+  <tr>
+    <td>P4</td>
+    <td><strong>ℰ adds value</strong></td>
+    <td>Stage-2 ranker on SSL embeddings beats 21d momentum IC on same 40 purged folds</td>
+    <td><code>honest_baseline_audit_full.json</code> + B.4 run</td>
+    <td class="fail">Not run — momentum alone passes (+0.074 IC)</td>
+  </tr>
+  <tr>
+    <td>P5</td>
+    <td><strong>Learn loop closes</strong></td>
+    <td>Month N+1 detector/ranker beats month N on held-out metric</td>
+    <td>Versioned eval JSON</td>
+    <td class="fail">Not started</td>
+  </tr>
+</table>
+
+<h2>4. One demo sentence per proof (for meetings)</h2>
+<table>
+  <tr><th>Proof</th><th>Say this (specific)</th></tr>
+  <tr><td>P1</td><td>“Every weekday our agent ingests EIA, CFTC, AIS, prices, and scans three named Atlantic-energy chain templates — no human in the loop.”</td></tr>
+  <tr><td>P2</td><td>“On 9 June it matched <code>ais_eia_cftc</code>: May 29 crude stocks 1.8σ below 52w mean and June 2 WTI-Physical positioning 1.3σ below mean — logged as JSON before resolution.”</td></tr>
+  <tr><td>P3</td><td>“Here’s the public scorecard: 3 resolved, 33% directional on CL=F over 2–5 sessions — we publish misses too.”</td></tr>
+  <tr><td>P4</td><td>“On 40 purged folds, our embedding ranker beats or loses to 21-day momentum — here’s the JSON; we don’t ship until it beats.”</td></tr>
+  <tr><td>P5</td><td>“Resolved alerts feed back into thresholds / ranker retrain — here’s v2 vs v1 on the same holdout.”</td></tr>
+</table>
+
+<h2>5. What we explicitly do NOT prove on playground #1</h2>
+<ul>
+  <li>Founder can trade profitably without capital</li>
+  <li>Beat SPY / equal-weight portfolio (Phase 40 GNN backtest did not)</li>
+  <li>Discretionary macro calls or newsletter quality prose</li>
+  <li>Generic “LLM understands markets”</li>
+</ul>
+
+<h2>6. Minimum demo package (show, don’t tell)</h2>
+<ol>
+  <li>Screen recording: <code>make ghost-pattern-daily</code> → new or updated alert JSON</li>
+  <li>Open one alert: show 2+ domains, URLs, timestamps</li>
+  <li>Open scorecard: show resolved row with CL=F % move</li>
+  <li>Open <code>honest_baseline_audit_full.json</code>: momentum vs embedding ranker (when B.4 run)</li>
+  <li>Architecture one-pager: agent loop diagram (perceive → represent → detect → act → learn)</li>
+</ol>
+
+<h2>Related</h2>
+<ul>
+  <li>[[0003-agents-as-sku]]</li>
+  <li>[[agent_playground_doctrine]]</li>
+  <li>[[ghost_pattern_income_plan]] — G1–G4 gates</li>
+  <li>[[scorecard]]</li>
+  <li>[[gnn_architecture_overhaul]] — B.4 / honest baseline</li>
+</ul>
+
+</body>
+</html>

@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>TirraMind — Session Checkpoint 2026-05-30 (V44 Full Convergence Launch)</title>
+    <style>
+        :root {
+            --ink: #0a2540;
+            --ink2: #1a3a5c;
+            --paper: #fbfaf6;
+            --border: #d8d3c4;
+            --accent: #b85c2c;
+            --code: #2b2a26;
+            --code-bg: #f3f0e6;
+            --green: #2e7d32;
+            --red: #b71c1c;
+            --orange: #b85c2c;
+            --grey: #6b6657;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Georgia, "Times New Roman", serif;
+            background: var(--paper);
+            color: var(--ink);
+            max-width: 1100px;
+            margin: 2rem auto;
+            padding: 0 2rem;
+            line-height: 1.55;
+        }
+
+        h1 {
+            color: var(--ink);
+            border-bottom: 3px double var(--ink);
+            padding-bottom: .5rem;
+            font-size: 2.1rem;
+        }
+
+        h2 {
+            color: var(--ink);
+            border-bottom: 1px solid var(--border);
+            padding-bottom: .3rem;
+            margin-top: 2.5rem;
+            font-size: 1.6rem;
+        }
+
+        h3 {
+            color: var(--ink2);
+            margin-top: 1.5rem;
+            font-size: 1.2rem;
+        }
+
+        p,
+        li {
+            font-size: 1rem;
+        }
+
+        .meta {
+            font-size: .9rem;
+            color: var(--grey);
+            margin-bottom: 1rem;
+            font-style: italic;
+        }
+
+        .callout {
+            border-left: 4px solid var(--accent);
+            background: #fff7ee;
+            padding: .8rem 1.2rem;
+            margin: 1rem 0;
+            border-radius: 0 4px 4px 0;
+        }
+
+        .ok {
+            border-left: 4px solid var(--green);
+            background: #effbf0;
+            padding: .8rem 1.2rem;
+            margin: 1rem 0;
+            border-radius: 0 4px 4px 0;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 1.5rem 0;
+        }
+
+        th,
+        td {
+            border: 1px solid var(--border);
+            padding: .6rem .8rem;
+            text-align: left;
+        }
+
+        th {
+            background-color: var(--code-bg);
+            font-family: Arial, sans-serif;
+            font-size: .9rem;
+        }
+
+        pre {
+            background: var(--code-bg);
+            color: var(--code);
+            padding: 1rem;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: .9rem;
+            border: 1px solid var(--border);
+        }
+    </style>
+</head>
+
+<body>
+    <h1>TirraMind — Session Checkpoint 2026-05-30</h1>
+    <div class="meta">Date: May 30, 2026 | Topic: V45 Full GNN Convergence Launch | Phase: 50</div>
+
+    <h2>1. Executive Summary</h2>
+    <p>
+        In this session, we transitioned from diagnostic breakthroughs to active training. Following the successful
+        verification that Kaiming initialization of the return head resolved the <strong>F-09 zero-initialization
+            gradient dead zone</strong> (which produced a massive +0.3622/0.3597 IC on a 10-epoch quickrun), we planned
+        and kicked off <strong>V45: Full GNN Convergence (GPU Fixed)</strong> on Kaggle.
+    </p>
+    <p>
+        The GNN will train for <strong>90 epochs from scratch</strong>. This ensures clean parameter convergence under
+        the primary return loss (ListNet + direction BCE) and the contrastive loss (CSRC) with active gradients on the
+        GNN representation layers from epoch 1.
+    </p>
+
+    <h2>2. Key Accomplishments & Changes</h2>
+
+    <h3>Local GNN Verification</h3>
+    <div class="ok">
+        <strong>Smoke Test Verification:</strong> We executed the local smoke test suite
+        (<code>python3 scripts/smoke_test_gnn.py</code>) and confirmed <strong>9/9 PASS</strong>. Gradient flow (T4, T9)
+        and embedding diversity improvement (T7: std 0.1211 &rarr; 0.2058) are fully healthy.
+    </div>
+
+    <h3>Infrastructure & Configuration Hardening</h3>
+    <ul>
+        <li><strong>Notebook Config Alignment (v45)</strong>: Updated <code>_NOTEBOOK_CONFIG</code> in
+            <code>tirramind_kaggle_phase50.ipynb</code> with <code>"kernel_version": 45</code>,
+            <code>"resume_epoch": 0</code>, <code>"epochs": 90</code>, and <code>"phase": "50l"</code>.</li>
+        <li><strong>Robust Clean Starts</strong>: Patched Cell 5 (preflight) in the Kaggle notebook. It now respects
+            <code>resume_epoch = 0</code> from <code>_NOTEBOOK_CONFIG</code> and bypasses input checkpoints gracefully
+            to ensure a completely clean start from epoch 0.</li>
+        <li><strong>Dataset Source Clean Up</strong>: Removed <code>deeperisbetter/tirramind-phase50-ep21</code> from
+            the list of dataset sources in <code>scripts/kaggle_launch.py</code> to prevent checkpoint interference.
+        </li>
+        <li><strong>GPU Acceleration Fix</strong>: Discovered that <code>scripts/kaggle_launch.py</code> had
+            <code>"enable_gpu": False</code> in its dynamic metadata generation, which was forcing runs onto Kaggle CPU
+            nodes. Modified to <code>"enable_gpu": True</code>.</li>
+        <li><strong>Version Tracking</strong>: Logged the V44 (cancelled CPU) and V45 (running GPU) runs in
+            <code>VERSIONS.md</code>.</li>
+    </ul>
+
+    <h2>3. Execution & Deployment</h2>
+    <p>
+        We executed the local deployment script to push V45 with the GPU fix active:
+    </p>
+    <pre>python3 scripts/kaggle_launch.py --epochs 90 --push-only</pre>
+    <p>
+        This successfully packaged the latest <code>agent/</code> and <code>scripts/</code> code, pushed it to the
+        <code>tirramind-code</code> dataset on Kaggle, and pushed the updated notebook to
+        <code>deeperisbetter/tirramind-phase50</code> to run kernel version 45.
+    </p>
+
+    <h2>4. Next Actions for User</h2>
+    <ol>
+        <li><strong>Monitor Kernel Version 45:</strong> Run the log command locally to stream output as it trains:
+            <pre>python3 scripts/kaggle_launch.py --logs-only</pre>
+        </li>
+        <li><strong>Download & Evaluation:</strong> Once training completes successfully (~5-11 hours), download the
+            converged model and run the local IC backtest:
+            <pre>python3 scripts/kaggle_launch.py --download-only</pre>
+        </li>
+        <li><strong>Update Logging:</strong> Record the final Spearman IC and update <code>VERSIONS.md</code> and
+            <code>LESSONS.md</code> with results.</li>
+    </ol>
+</body>
+
+</html>

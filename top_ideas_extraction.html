@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Top Ideas Extraction — TirraMind</title>
+<style>
+:root{--bg:#0d1117;--s:#161b22;--b:#30363d;--t:#c9d1d9;--m:#8b949e;--a:#58a6ff;--g:#3fb950;--o:#d2991d;--p:#a371f7;--gd:#e3b341;--r:#f85149;}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--t);line-height:1.6;max-width:1050px;margin:0 auto;padding:1.5rem;}
+h1{font-size:1.7rem;color:#fff;}
+h2{font-size:1.15rem;color:#fff;margin:2rem 0 0.6rem;border-bottom:1px solid var(--b);padding-bottom:0.3rem;}
+.badge{display:inline-block;padding:.1rem .5rem;border-radius:10px;font-size:.73rem;font-weight:600;margin:0 .1rem;}
+.bg{background:#1a3a2a;color:var(--g);}.bo{background:#3a2e1a;color:var(--o);}.bp{background:#2a1a3a;color:var(--p);}.bb{background:#1a2a3a;color:var(--a);}.bgd{background:#3a3520;color:var(--gd);}
+.idea{background:var(--s);border:1px solid var(--b);border-radius:7px;padding:1rem 1.1rem;margin:.6rem 0;}
+.idea h4{color:#fff;font-size:.95rem;margin-bottom:.3rem;}
+.t1{border-left:3px solid var(--g);}.t2{border-left:3px solid var(--a);}.t3{border-left:3px solid var(--o);}.moon{border-left:3px solid var(--gd);background:#111108;}
+.now{font-size:.8rem;color:var(--m);font-style:italic;border-left:2px solid var(--b);padding-left:.5rem;margin:.3rem 0;}
+.why{font-size:.84rem;margin:.3rem 0;}
+.path{font-size:.8rem;color:var(--a);border-left:2px solid var(--a);padding-left:.5rem;margin-top:.4rem;}
+.ef{display:inline-block;font-size:.7rem;padding:.1rem .4rem;border-radius:7px;font-weight:700;}
+.low{background:#1a3a2a;color:var(--g);}.med{background:#3a2e1a;color:var(--o);}.high{background:#3a1515;color:var(--r);}.res{background:#2a1a3a;color:var(--p);}
+.typ{font-size:.7rem;padding:.1rem .4rem;border-radius:7px;font-weight:700;}
+.upg{background:#1a2a1a;color:#39d353;border:1px solid #39d353;}.nw{background:#1a1a3a;color:var(--p);border:1px solid var(--p);}.ms{background:#2a2515;color:var(--gd);border:1px solid var(--gd);}
+table{width:100%;border-collapse:collapse;font-size:.82rem;margin:.8rem 0;}
+th,td{padding:.45rem .6rem;border:1px solid var(--b);text-align:left;}
+th{background:var(--s);color:var(--a);}
+tr:nth-child(odd){background:#0d1117;}tr:nth-child(even){background:var(--s);}
+footer{margin-top:2rem;padding-top:.8rem;border-top:1px solid var(--b);color:var(--m);font-size:.75rem;}
+</style>
+</head>
+<body>
+
+<header style="border-bottom:1px solid var(--b);padding-bottom:1rem;margin-bottom:1.2rem;">
+  <h1>🧠 Top Ideas Extraction — TirraMind</h1>
+  <p style="color:var(--m);font-size:.9rem;">Synthesized from 80+ repos across 4 survey sessions + codebase analysis. Judged on <strong>future value</strong>, not current similarity.</p>
+  <div style="margin-top:.5rem;">
+    <span class="badge bb">2026-05-24</span>
+    <span class="badge bp">18 ideas · 5 tiers</span>
+    <span class="typ upg">UPGRADE</span> = existing → industry-grade &nbsp;
+    <span class="typ nw">NEW</span> = genuinely new exploration &nbsp;
+    <span class="typ ms">MOONSHOT</span> = novel, PhD-level &nbsp;
+    <span class="ef low">LOW</span> &lt;1wk &nbsp; <span class="ef med">MED</span> 1-4wk &nbsp; <span class="ef high">HIGH</span> 1-3mo &nbsp; <span class="ef res">RES</span> open
+  </div>
+</header>
+
+<!-- ===== TIER 1 ===== -->
+<h2 style="color:var(--g);">🟢 TIER 1 — Transform the Core (Do Now)</h2>
+
+<div class="idea t1">
+  <h4>1. Neural CDEs — Continuous-Time Event Processing <span class="typ upg">UPGRADE</span> <span class="ef high">HIGH</span></h4>
+  <p class="now">Current: <code>_make_windows(window_size=86400)</code> forces all events into fixed 1-day buckets. AIS pings (minutes) and SEC filings (quarters) are treated identically. Events within a window are simultaneous in the model's eyes.</p>
+  <p class="why">💡 Neural Controlled Differential Equations integrate between irregular observations — the model learns dynamics from the <em>shape</em> of the event stream, not just snapshots. One model handles all 51+ sources regardless of sampling frequency. This is the single biggest architectural improvement possible — replaces the fundamental discretization error. <strong>Repo:</strong> patrick-kidger/NeuralCDE (NeurIPS'20 Spotlight)</p>
+  <p class="path">→ Replace <code>_make_windows()</code> with CDE-based event integration. HeteroMemory update becomes a CDE solve. Start: wrap existing HGT convolution as CDEFunc; integrate from t=0 to t=as_of over the event stream.</p>
+</div>
+
+<div class="idea t1">
+  <h4>2. Path Signatures — Universal Node Features from Rough Path Theory <span class="typ nw">NEW</span> <span class="ef med">MED</span></h4>
+  <p class="now">Current: 51+ bespoke per-source feature extractors feeding <code>type_projections[ntype] = nn.Linear(in_dim, hidden_dim)</code>. No principled unified feature representation across domains.</p>
+  <p class="why">💡 Path signatures are a provably universal feature map for any sequential path — invariant to time reparametrization, capturing area, curvature, and higher-order texture. One pipeline replaces 51 hand-crafted extractors. Particularly powerful for AIS vessel trajectories (path shape ≠ endpoint). Used in production at select quant funds, almost unknown in retail quant. <strong>Repo:</strong> kormilitzin/the-signature-method-in-machine-learning | library: <code>signatory</code> (PyTorch-native)</p>
+  <p class="path">→ Install <code>signatory</code>. Compute truncated log-signatures (depth=3) for each entity's event stream. Add as additional input alongside existing features. New feature family: <code>signature.{entity_type}.depth3</code> in GNNFeatureBuilder.</p>
+</div>
+
+<div class="idea t1">
+  <h4>3. Splink Entity Resolution — Probabilistic Cross-Source Linking <span class="typ upg">UPGRADE</span> <span class="ef high">HIGH</span></h4>
+  <p class="now">Current: entities matched by exact <code>entity_id</code> strings. "Apple Inc.", "AAPL", "Apple Computer" across 51+ sources create separate fragmented nodes. Graph edges cannot form across name variants — this silently poisons every graph relationship.</p>
+  <p class="why">💡 Splink (UK Ministry of Justice, 1.5k⭐) uses the Fellegi-Sunter probabilistic model to deduplicate records at national scale. Outputs match probability + confidence score per entity pair. Clean entity identity is the foundation of Palantir's platform. Expected improvement: 20-40% increase in effective graph connectivity. <strong>Repo:</strong> moj-analytical-services/splink</p>
+  <p class="path">→ Build pre-ingestion <code>EntityResolver</code>. Match on company name, ISIN, LEI, MMSI/IMO for vessels. Output canonical entity IDs + confidence scores in a new <code>entity_resolution</code> table. All graph builders read canonical IDs.</p>
+</div>
+
+<div class="idea t1">
+  <h4>4. Mamba/S4 — Replace HeteroMemory Fixed-Size Vectors <span class="typ upg">UPGRADE</span> <span class="ef high">HIGH</span></h4>
+  <p class="now">Current: <code>HeteroMemory</code> compresses each entity's entire history into a fixed <code>memory_dim=64</code> vector. Years of entity history are forced through a 64-float bottleneck. Long-term patterns are structurally unreachable.</p>
+  <p class="why">💡 Mamba's selective state space model has linear-time complexity and theoretically infinite effective context. Can encode years of entity history without O(n²) attention cost. For TirraMind — where a vessel's 3-year routing history predicts current behavior — this is transformative. Mamba-3 (15k⭐) outperforms Transformers on long-range dependencies at a fraction of compute. <strong>Repo:</strong> state-spaces/mamba</p>
+  <p class="path">→ Replace <code>HeteroMemory.update()</code> GRU step with a per-node Mamba block processing the sequence of incoming message vectors. Start: small Mamba-2 block (d_model=64, d_state=16) as drop-in replacement.</p>
+</div>
+
+<div class="idea t1">
+  <h4>5. TS2Vec — Contrastive Pretraining Across All 51+ Sources <span class="typ nw">NEW</span> <span class="ef med">MED</span></h4>
+  <p class="now">Current: GNN trains from scratch. No shared representation space across data domains. Cold-start problem for new entities with sparse history.</p>
+  <p class="why">💡 TS2Vec (AAAI 2022, 800⭐) learns universal embeddings via hierarchical contrastive learning across timestamp and instance levels. Once pretrained, any time series maps to the same space. Enables: (1) cross-domain similarity search — "find entities behaving like this vessel", (2) transfer learning to scarce prediction tasks, (3) cold-start embeddings. <strong>Repo:</strong> zhihanyue/ts2vec</p>
+  <p class="path">→ Pretrain TS2Vec on all time series in PipelineStore (no labels needed). Use learned encoder as initial node features for GNN. Add <code>TS2VecFeatureBuilder</code>. Fine-tune end-to-end.</p>
+</div>
+
+<!-- ===== TIER 2 ===== -->
+<h2 style="color:var(--a);">🔵 TIER 2 — New Capabilities (Plan Next)</h2>
+
+<div class="idea t2">
+  <h4>6. Neural Hawkes Process — Learned Event Timing Prediction <span class="typ upg">UPGRADE</span> <span class="ef med">MED</span></h4>
+  <p class="now">Current: <code>ConvergenceDetector</code> uses hand-coded causal templates for lead/lag identification. Template library is static and manually maintained.</p>
+  <p class="why">💡 Hawkes processes model self-exciting events — one sanctions announcement excites vessel diversions, port closures, commodity moves over a learned decay. Neural Hawkes replaces the hand-coded template library with a fully learned causal event model. Directly answers: "probability of event X in next 3 days given observed stream" — a direct alpha signal. <strong>Repo:</strong> Hongrui24/NeuralHawkesPytorch</p>
+  <p class="path">→ Train Neural Hawkes on TirraMind's convergence event history. Replace <code>best_match()</code> with Hawkes intensity predictions. Output per-event-type probabilities over next T hours.</p>
+</div>
+
+<div class="idea t2">
+  <h4>7. Vine Copulas — Crisis-Aware Tail Dependence Edge Weights <span class="typ nw">NEW</span> <span class="ef med">MED</span></h4>
+  <p class="now">Current: graph edges from domain relationships and linear correlation. Linear correlation misses tail dependence — entities with low average correlation can co-crash violently during crises.</p>
+  <p class="why">💡 Vine copulas model lower tail dependence (λ_L) — how strongly two entities co-crash. This is what institutional risk managers need and what correlation analysis misses entirely. Quarterly copula fits → tail dependence coefficients stored as crisis-weighted edge attributes. <strong>Repo:</strong> vinecopulib/pyvinecopulib (C++ backend, Python interface)</p>
+  <p class="path">→ Add <code>CopulaEdgeBuilder</code> running quarterly. Bivariate copula fits for entity pairs with ≥180 days co-observations. Store λ_L, λ_U as edge attributes for HGT attention weighting.</p>
+</div>
+
+<div class="idea t2">
+  <h4>8. Wasserstein Distribution Shift Detector — Data Quality + Regime Signal <span class="typ nw">NEW</span> <span class="ef low">LOW</span></h4>
+  <p class="now">Current: data quality tracked via staleness flags and manual quality scores on <code>EngineeredFeature</code>. No statistical test distinguishes API failure from regime change from model drift.</p>
+  <p class="why">💡 Wasserstein distance (Earth Mover's Distance) measures distribution shifts with geometric meaning. Sinkhorn approximation is fast. Three use cases: (1) data quality alarm, (2) regime change signal, (3) prediction distribution drift detector. All three from identical infrastructure. <strong>Repo:</strong> PythonOT/POT (2.5k⭐)</p>
+  <p class="path">→ Add <code>WassersteinMonitor</code> computing Sinkhorn distance between last 30-day and rolling 365-day baseline per data feed. Emit as <code>wasserstein.{tool_name}.shift</code> signal into ConvergenceDetector.</p>
+</div>
+
+<div class="idea t2">
+  <h4>9. edgartools — 13F Holdings / 8-K Events / XBRL Financials <span class="typ upg">UPGRADE</span> <span class="ef low">LOW</span></h4>
+  <p class="now">Current: thin <code>insider_filings.py</code> and <code>form144.py</code>. 13F institutional holdings, 8-K material events, and XBRL financials not captured.</p>
+  <p class="why">💡 13F → institution→stock edges (quarterly), 8-K → real-time material event signals, XBRL → structured balance sheet/income statement node features. Three of the richest public datasets in finance. edgartools handles all parsing, rate limiting, and XBRL extraction. MIT license, 1.5k⭐. <strong>Repo:</strong> dgunning/edgartools</p>
+  <p class="path">→ Add <code>agent/tools/edgar_filings.py</code>. Three new observation types: <code>institutional_holding</code>, <code>material_event</code>, <code>financial_statement</code>. Register extractors in <code>convergence/extractors.py</code>.</p>
+</div>
+
+<div class="idea t2">
+  <h4>10. GDN — Live Graph Structure Anomaly Detection <span class="typ nw">NEW</span> <span class="ef med">MED</span></h4>
+  <p class="now">Current: no monitoring of whether TirraMind's learned graph structure is still valid. A structurally changed relationship (company bankrupt, port closed) silently produces wrong predictions until next retrain.</p>
+  <p class="why">💡 Graph Deviation Network learns expected inter-entity relationships, then flags structural deviations in real-time. GDN deviation scores are themselves early warning signals — a structural break often precedes a market event by days. Creates a self-monitoring world model that knows when it's wrong. <strong>Repo:</strong> KatieBuc/gnnad (GDN on PyG)</p>
+  <p class="path">→ Train GDN on TirraMind's graph structure offline. Run in parallel with main GNN. Route deviation scores into ConvergenceDetector as <code>graph_structure.{relation_type}.deviation</code> signal category.</p>
+</div>
+
+<!-- ===== TIER 3 ===== -->
+<h2 style="color:var(--o);">🟠 TIER 3 — Strategic Depth</h2>
+
+<div class="idea" style="border-left:3px solid var(--o);background:var(--s);">
+  <h4>11. HRP + Black-Litterman Portfolio Construction Layer <span class="typ upg">UPGRADE</span> <span class="ef med">MED</span></h4>
+  <p class="now">Current: <code>return_pred_head</code> produces raw return scalars. No translation into actual portfolio weights with risk budgeting.</p>
+  <p class="why">💡 Black-Litterman takes GNN predictions as "views" with confidence = quality score. HRP uses hierarchical clustering — structurally identical to TirraMind's graph community structure. Together they produce institutionally acceptable portfolio weights with turnover constraints. Without this, TirraMind has no actionable financial output. <strong>Repos:</strong> PyPortfolioOpt (5k⭐), Riskfolio-Lib (3.5k⭐)</p>
+  <p class="path">→ Add <code>agent/portfolio/constructor.py</code>. Input: return_pred_head outputs + quality scores. Output: weight vector with confidence intervals. Turnover constraint to prevent over-trading. Run weekly alongside GNN inference.</p>
+</div>
+
+<div class="idea" style="border-left:3px solid var(--o);background:var(--s);">
+  <h4>12. Barra-Style Signal Attribution — "Why Did This Prediction Happen?" <span class="typ nw">NEW</span> <span class="ef med">MED</span></h4>
+  <p class="now">Current: GNN produces return predictions but no attribution of which data sources drove the prediction. HGT attention weights are uncurated.</p>
+  <p class="why">💡 Institutional investors demand attribution: "We're long copper because maritime signals contribute 62%, satellite 23%, macro 15%" is vastly more useful than a raw scalar. Enables rapid diagnosis of prediction errors. The existing <code>AttentionCapturingHGTConv</code> already captures the needed attention weights — they just need organizing into per-source contribution scores.</p>
+  <p class="path">→ Aggregate HGT attention weights by source node type per prediction. Store as per-prediction factor decomposition in <code>EngineeredFeature.source_signals</code>. Add <code>AttributionFeatureBuilder</code>.</p>
+</div>
+
+<div class="idea" style="border-left:3px solid var(--o);background:var(--s);">
+  <h4>13. OpenMetadata — Data Governance for 51+ Sources <span class="typ upg">UPGRADE</span> <span class="ef med">MED</span></h4>
+  <p class="now">Current: data source metadata scattered across individual tool files. No central registry of freshness, schema, or lineage.</p>
+  <p class="why">💡 OpenMetadata (6k⭐, Apache 2.0) tracks freshness, schema changes, column-level lineage, and quality tests. When a prediction unexpectedly changes, the catalog shows which upstream feed caused it. The difference between a research prototype and a production system. <strong>Repo:</strong> open-metadata/OpenMetadata</p>
+  <p class="path">→ Deploy OpenMetadata via Docker. Register each tool in <code>agent/tools/</code> as a data source. Add freshness SLAs. Wire existing <code>source_signals</code> lineage into catalog graph.</p>
+</div>
+
+<div class="idea" style="border-left:3px solid var(--o);background:var(--s);">
+  <h4>14. Satellite Imagery Economic Signals — Nightlights, Parking, Crops <span class="typ nw">NEW</span> <span class="ef high">HIGH</span></h4>
+  <p class="now">Current: <code>satellite_activity.py</code> monitors satellite orbits, not imagery. The physical-world observation layer is blind to what satellites actually see.</p>
+  <p class="why">💡 Satellite imagery provides signals unavailable anywhere else: nightlight intensity (GDP proxy, 2-3 week lead time), industrial emissions (factory activity), parking lot fullness (retail traffic), crop NDVI (agricultural commodity prediction). These are the signals Renaissance Technologies uses. Open via Sentinel-2/Landsat.</p>
+  <p class="path">→ Start with nightlight intensity (easiest) via VIIRS/DMSP. Build <code>NightlightActivityTool</code> monitoring 50 economic zones weekly. Add NDVI crop health for agricultural commodities.</p>
+</div>
+
+<!-- ===== MOONSHOTS ===== -->
+<h2 style="color:var(--gd);">🌙 MOONSHOTS — Highest Risk / Highest Reward</h2>
+
+<div class="idea moon">
+  <h4>🌙 M1. Continuous-Time Heterogeneous World Model <span class="typ ms">MOONSHOT</span> <span class="ef res">RES</span></h4>
+  <p class="why">💡 Synthesize Ideas 1+2+4+6: Neural CDEs (continuous time) + Path Signatures (universal path features) + Mamba (long memory) + Neural Hawkes (event timing) = a fully continuous-time stochastic dynamical system on a heterogeneous graph. Formally: <code>dX(t) = f(X(t), G(t))dt + g(X(t))dW(t)</code>. This doesn't exist in any open-source form. Each component is established; the synthesis is PhD-level novel. Build incrementally — each step is independently valuable.</p>
+</div>
+
+<div class="idea moon">
+  <h4>🌙 M2. Self-Evolving Causal Graph <span class="typ ms">MOONSHOT</span> <span class="ef res">RES</span></h4>
+  <p class="why">💡 Synthesize Neural-GC (causal discovery) + Hawkes (event excitation) + GNN: a graph that discovers its own edges as data accumulates, models how discovered edges excite each other, and prunes edges when relationships decay. TirraMind's current graph topology is hand-defined and static. A self-evolving graph adapts to new markets, geopolitical configurations, and supply chains without human intervention. Repos: iancovert/Neural-GC + NeuralHawkesPytorch.</p>
+</div>
+
+<div class="idea moon">
+  <h4>🌙 M3. Multi-Modal World State — Text + Graph + Imagery <span class="typ ms">MOONSHOT</span> <span class="ef res">RES</span></h4>
+  <p class="why">💡 FinGPT (text→structured events) + TirraMind GNN (structured graph) + Satellite CNN (visual economic signals) → unified world state via cross-modal attention fusion. Three orthogonal observation channels covering narrative, structural, and physical reality. The lead-lag structure across modalities is itself an alpha signal: text responds hours, graph days, imagery weeks. No open-source project has built this combination.</p>
+</div>
+
+<!-- ===== MATRIX ===== -->
+<h2>📊 Decision Matrix</h2>
+<table>
+  <tr><th>#</th><th>Idea</th><th>Type</th><th>Tier</th><th>Effort</th><th>Impact (/5)</th><th>Repo</th></tr>
+  <tr><td>1</td><td>Neural CDEs — Continuous-time events</td><td><span class="typ upg">UPG</span></td><td style="color:var(--g)">T1</td><td><span class="ef high">HIGH</span></td><td>★★★★★</td><td>NeuralCDE</td></tr>
+  <tr><td>2</td><td>Path Signatures — Universal node features</td><td><span class="typ nw">NEW</span></td><td style="color:var(--g)">T1</td><td><span class="ef med">MED</span></td><td>★★★★★</td><td>signature-method</td></tr>
+  <tr><td>3</td><td>Splink — Entity resolution</td><td><span class="typ upg">UPG</span></td><td style="color:var(--g)">T1</td><td><span class="ef high">HIGH</span></td><td>★★★★★</td><td>splink</td></tr>
+  <tr><td>4</td><td>Mamba/S4 — Temporal encoder</td><td><span class="typ upg">UPG</span></td><td style="color:var(--g)">T1</td><td><span class="ef high">HIGH</span></td><td>★★★★</td><td>mamba</td></tr>
+  <tr><td>5</td><td>TS2Vec — Contrastive pretraining</td><td><span class="typ nw">NEW</span></td><td style="color:var(--g)">T1</td><td><span class="ef med">MED</span></td><td>★★★★</td><td>ts2vec</td></tr>
+  <tr><td>6</td><td>Neural Hawkes — Event timing</td><td><span class="typ upg">UPG</span></td><td style="color:var(--a)">T2</td><td><span class="ef med">MED</span></td><td>★★★★</td><td>NeuralHawkesPytorch</td></tr>
+  <tr><td>7</td><td>Vine Copulas — Tail dependence edges</td><td><span class="typ nw">NEW</span></td><td style="color:var(--a)">T2</td><td><span class="ef med">MED</span></td><td>★★★</td><td>pyvinecopulib</td></tr>
+  <tr><td>8</td><td>Wasserstein Shift Detector</td><td><span class="typ nw">NEW</span></td><td style="color:var(--a)">T2</td><td><span class="ef low">LOW</span></td><td>★★★★</td><td>POT</td></tr>
+  <tr><td>9</td><td>edgartools — 13F/8-K/XBRL</td><td><span class="typ upg">UPG</span></td><td style="color:var(--a)">T2</td><td><span class="ef low">LOW</span></td><td>★★★★</td><td>edgartools</td></tr>
+  <tr><td>10</td><td>GDN — Graph health monitor</td><td><span class="typ nw">NEW</span></td><td style="color:var(--a)">T2</td><td><span class="ef med">MED</span></td><td>★★★</td><td>gnnad</td></tr>
+  <tr><td>11</td><td>HRP + Black-Litterman portfolio layer</td><td><span class="typ upg">UPG</span></td><td style="color:var(--o)">T3</td><td><span class="ef med">MED</span></td><td>★★★★</td><td>PyPortfolioOpt</td></tr>
+  <tr><td>12</td><td>Barra-style attribution</td><td><span class="typ nw">NEW</span></td><td style="color:var(--o)">T3</td><td><span class="ef med">MED</span></td><td>★★★</td><td>internal (HGT attn)</td></tr>
+  <tr><td>13</td><td>OpenMetadata — Data governance</td><td><span class="typ upg">UPG</span></td><td style="color:var(--o)">T3</td><td><span class="ef med">MED</span></td><td>★★★</td><td>OpenMetadata</td></tr>
+  <tr><td>14</td><td>Satellite imagery economic signals</td><td><span class="typ nw">NEW</span></td><td style="color:var(--o)">T3</td><td><span class="ef high">HIGH</span></td><td>★★★★</td><td>Sentinel-2/VIIRS</td></tr>
+  <tr><td>15</td><td>TDA — Persistent homology regimes</td><td><span class="typ nw">NEW</span></td><td>T4</td><td><span class="ef res">RES</span></td><td>★★★★</td><td>giotto-tda</td></tr>
+  <tr><td>16</td><td>Wasserstein robust portfolios</td><td><span class="typ nw">NEW</span></td><td>T4</td><td><span class="ef res">RES</span></td><td>★★★</td><td>POT</td></tr>
+  <tr><td>M1</td><td>Continuous-time world model</td><td><span class="typ ms">MOON</span></td><td style="color:var(--gd)">🌙</td><td><span class="ef res">RES</span></td><td>★★★★★</td><td>NeuralCDE+Mamba+Hawkes</td></tr>
+  <tr><td>M2</td><td>Self-evolving causal graph</td><td><span class="typ ms">MOON</span></td><td style="color:var(--gd)">🌙</td><td><span class="ef res">RES</span></td><td>★★★★★</td><td>Neural-GC+Hawkes</td></tr>
+  <tr><td>M3</td><td>Multi-modal world state</td><td><span class="typ ms">MOON</span></td><td style="color:var(--gd)">🌙</td><td><span class="ef res">RES</span></td><td>★★★★★</td><td>FinGPT+GNN+Satellite</td></tr>
+</table>
+
+<div style="background:#0e1e15;border:2px solid var(--g);border-radius:7px;padding:1rem;margin-top:1.2rem;">
+  <h4 style="color:var(--g);margin-bottom:.5rem;">⚡ Recommended Execution Order</h4>
+  <p style="font-size:.87rem;"><strong>Week 1-2:</strong> Ideas 8 (Wasserstein monitor, LOW effort) + 9 (edgartools, LOW effort) → immediate data quality + new data signals with minimal risk.</p>
+  <p style="font-size:.87rem; margin-top:.4rem;"><strong>Month 1:</strong> Idea 3 (Splink entity resolution) — foundational prerequisite. All other improvements compound on top of clean entity identity.</p>
+  <p style="font-size:.87rem; margin-top:.4rem;"><strong>Month 2-3:</strong> Ideas 2 (Path Signatures) + 5 (TS2Vec) — both are additive to the existing pipeline, low disruption, high feature quality improvement.</p>
+  <p style="font-size:.87rem; margin-top:.4rem;"><strong>Month 3-6:</strong> Ideas 1 (Neural CDEs) + 4 (Mamba) — core architectural upgrades. Do after entity resolution is stable. These are the transformative changes.</p>
+  <p style="font-size:.87rem; margin-top:.4rem;"><strong>Parallel research track:</strong> Ideas 15 (TDA) + M1 (continuous-time synthesis) → run as a 20% research allocation alongside production work.</p>
+</div>
+
+<footer>
+  <p>Extraction from: <code>osiris_survey.html</code>, <code>advanced_quant_surveillance_survey.html</code>, <code>math_finance_ml_patterns_survey.html</code> + TirraMind codebase (het_tgn.py, trainer.py, gnn_builder.py, detector.py)</p>
+  <p>Related: <code>[[tirramind_structure]]</code> | Status: active research | 2026-05-24</p>
+</footer>
+
+</body>
+</html>

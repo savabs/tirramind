@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Task: M9 Microstructure Implementation</title>
+  <style>
+    body { font-family: system-ui, sans-serif; line-height: 1.6; max-width: 800px; margin: 0 auto; padding: 2rem; }
+    h1 { color: #2c5282; }
+    h2 { color: #2b6cb0; }
+    li { margin: 0.5rem 0; }
+    input[type="checkbox"] { margin-right: 0.5rem; }
+  </style>
+</head>
+<body>
+
+<h1>Task: M9 Microstructure Implementation</h1>
+<p><strong>Spec:</strong> [[m9_microstructure_implementation]]<br>
+<strong>Research:</strong> [[m9_market_microstructure]]<br>
+<strong>Status:</strong> Active</p>
+
+<h2>Phase 1: Core Module</h2>
+
+<h3>Step 1: Create Base Module Structure</h3>
+<ul>
+  <li>⬜ 1.1: Create <code>agent/quant/microstructure.py</code></li>
+  <li>⬜ 1.2: Add imports (torch, torch.nn, numpy for Kyle's λ)</li>
+  <li>⬜ 1.3: Add docstring header with citations</li>
+</ul>
+
+<h3>Step 2: Implement SpreadEstimator (M9.4)</h3>
+<ul>
+  <li>⬜ 2.1: SpreadEstimator class skeleton</li>
+  <li>⬜ 2.2: corwin_schultz method (CSD variant)</li>
+  <li>⬜ 2.3: roll_measure method</li>
+  <li>⬜ 2.4: Add numerical stability (clamps, NaN handling)</li>
+</ul>
+
+<h3>Step 3: Implement OrderFlowImbalance (M9.1)</h3>
+<ul>
+  <li>⬜ 3.1: OrderFlowImbalance class skeleton</li>
+  <li>⬜ 3.2: compute_ofi_trade_tape with BVC classification</li>
+  <li>⬜ 3.3: compute_ofi_zscore with rolling window</li>
+</ul>
+
+<h3>Step 4: Implement VPINCalculator (M9.2)</h3>
+<ul>
+  <li>⬜ 4.1: VPINCalculator class + VolumeBucket dataclass</li>
+  <li>⬜ 4.2: bucket_trades method</li>
+  <li>⬜ 4.3: classify_buckets_bvc method</li>
+  <li>⬜ 4.4: compute_vpin method</li>
+</ul>
+
+<h3>Step 5: Implement KyleLambdaEstimator (M9.5)</h3>
+<ul>
+  <li>⬜ 5.1: KyleLambdaEstimator class (not nn.Module)</li>
+  <li>⬜ 5.2: estimate_lambda with rolling OLS</li>
+  <li>⬜ 5.3: Add HAC standard errors (optional, for diagnostics)</li>
+</ul>
+
+<h3>Step 6: Implement MicrostructureFeatureExtractor</h3>
+<ul>
+  <li>⬜ 6.1: MicrostructureFeatureExtractor class</li>
+  <li>⬜ 6.2: forward method integrating all extractors</li>
+  <li>⬜ 6.3: Regime classification (vpin_regime, lambda_regime)</li>
+</ul>
+
+<h2>Phase 2: Testing</h2>
+
+<h3>Step 7: Unit Tests</h3>
+<ul>
+  <li>⬜ 7.1: Create <code>tests/test_microstructure.py</code></li>
+  <li>⬜ 7.2: T1: test_corwin_schultz_synthetic</li>
+  <li>⬜ 7.3: T2-T3: test_vpin_balanced/imbalanced</li>
+  <li>⬜ 7.4: T4: test_kyle_lambda_synthetic</li>
+  <li>⬜ 7.5: T5: test_ofi_sign</li>
+  <li>⬜ 7.6-T8: test gradient flow for spread, ofi, vpin</li>
+  <li>⬜ 7.7: Run pytest, fix failures</li>
+</ul>
+
+<h3>Step 8: Graph Builder Integration</h3>
+<ul>
+  <li>⬜ 8.1: Add microstructure_extractor to GraphBuilder.__init__</li>
+  <li>⬜ 8.2: Implement add_microstructure_features method</li>
+  <li>⬜ 8.3: T9: test_graph_builder_integration</li>
+  <li>⬜ 8.4: T10: test_end_to_end_gradient</li>
+</ul>
+
+<h2>Phase 3: Data Pipeline (if needed)</h2>
+
+<h3>Step 9: Backfill Script (optional for now)</h3>
+<ul>
+  <li>⬜ 9.1: Create <code>scripts/backfill_microstructure.py</code></li>
+  <li>⬜ 9.2: Load OHLCV from DB</li>
+  <li>⬜ 9.3: Compute features for all instruments</li>
+  <li>⬜ 9.4: Store in microstructure_features table</li>
+</ul>
+
+<h3>Step 10: Smoke Test</h3>
+<ul>
+  <li>⬜ 10.1: Run GNN training with M9 features enabled</li>
+  <li>⬜ 10.2: Verify loss decreases</li>
+  <li>⬜ 10.3: Check feature distribution (no NaNs, reasonable ranges)</li>
+</ul>
+
+<h2>Done Criteria</h2>
+<ul>
+  <li>✅ All unit tests pass (T1-T8)</li>
+  <li>✅ Integration tests pass (T9-T10)</li>
+  <li>✅ No NumPy in forward passes</li>
+  <li>✅ Docstrings on all public methods</li>
+  <li>✅ graph_builder.py wired</li>
+</ul>
+
+</body>
+</html>

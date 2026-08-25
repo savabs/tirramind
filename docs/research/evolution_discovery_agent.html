@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Research: Evolution Discovery Agent — TirraMind Core Runtime</title>
+  <style>
+    body { font-family: system-ui, sans-serif; line-height: 1.6; max-width: 920px; margin: 0 auto; padding: 2rem; color: #1a202c; }
+    h1 { color: #2c5282; border-bottom: 3px solid #3182ce; padding-bottom: 0.5rem; }
+    h2 { color: #2b6cb0; margin-top: 2rem; border-bottom: 1px solid #e2e8f0; }
+    h3 { color: #4a5568; }
+    table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.9rem; }
+    th, td { border: 1px solid #e2e8f0; padding: 0.5rem; text-align: left; vertical-align: top; }
+    th { background: #edf2f7; }
+    .canonical { background: #ebf8ff; border-left: 4px solid #3182ce; padding: 1rem; margin: 1rem 0; }
+    .warn { background: #fffaf0; border-left: 4px solid #dd6b20; padding: 1rem; margin: 1rem 0; }
+    .ok { color: #276749; }
+    .bad { color: #c53030; }
+    .mid { color: #b7791f; }
+    pre { background: #f7fafc; padding: 1rem; overflow-x: auto; font-size: 0.82rem; }
+  </style>
+</head>
+<body>
+
+<h1>Research: Evolution Discovery Agent — TirraMind Core Runtime</h1>
+<p><strong>Status:</strong> Active — canonical research for the <em>agent engine</em> that makes TirraMind succeed.<br>
+<strong>Date:</strong> 2026-06-09<br>
+<strong>Commercial frame:</strong> [[0003-agents-as-sku]] · <strong>Playground proof:</strong> [[finance_playground_proof_ladder]]</p>
+
+<div class="canonical">
+  <strong>One sentence:</strong> Build an <em>evolution discovery agent</em> — a low-level, hardware-aware runtime that <strong>discovers structure</strong> in multi-domain data through latent world models + RL, closes the loop on real outcomes, and is <strong>not</strong> prompt engineering with extra steps.
+</div>
+
+<h2>1. What “uncensored” means here (technical, not hype)</h2>
+<p><strong>Not:</strong> unfiltered LLM text / ignoring safety on outputs to humans.</p>
+<p><strong>Yes — exploration without artificial ceilings:</strong></p>
+<ul>
+  <li><strong>Sensor access:</strong> agent may query any wired tool in the playground (no “we only look at prices”)</li>
+  <li><strong>Hypothesis space:</strong> may propose new chain templates, features, arms — subject to eval gate, not editorial veto</li>
+  <li><strong>Failure tolerance:</strong> dead ends logged in memory; bandit/RL down-weights, does not hide</li>
+  <li><strong>No narrative layer:</strong> learning signal = numeric outcomes (IC, detection rate, calibration), not “sounds smart”</li>
+</ul>
+<p>Guardrails stay <strong>hard-coded</strong>: schema invariants, leakage checks, deterministic pipeline, no live brokerage without explicit act module.</p>
+
+<h2>2. Agent identity: Evolution Discovery Loop</h2>
+<pre>
+OBSERVE   → pipeline DAG + tools (deterministic L0/L1/L2)
+ENCODE    → graph + ℰ (HetTGN / SSL / JEPA-style latent)
+IMAGINE   → world model rollouts (latent next-state prediction)
+PROPOSE   → detectors, features, goals, policies (evolution / bandit / RL)
+ACT       → fetch, train job, export, alert log (no human prompt per step)
+SCORE     → playground metrics (IC, chain resolution, calibration)
+EVOLVE    → update weights, archive, thresholds, bandit, population
+</pre>
+<p><strong>Anti-pattern:</strong> LLM writes a better prompt → call that “learning.” Real learning = parameters, policies, or population that change behavior on the <em>same</em> held-out eval.</p>
+
+<h2>3. What TirraMind already has (honest inventory)</h2>
+<table>
+  <tr><th>Layer</th><th>Code</th><th>Status</th><th>Gap</th></tr>
+  <tr>
+    <td>Observe</td>
+    <td><code>daily_collection.py</code>, <code>PipelineStore</code>, 50+ tools</td>
+    <td class="ok">Strong</td>
+    <td>95% price-heavy obs; cross-domain thin</td>
+  </tr>
+  <tr>
+    <td>Encode</td>
+    <td><code>HetTGN</code>, <code>continuous_world_model.py</code> (CDE/SDE)</td>
+    <td class="mid">Trains</td>
+    <td>Return IC not proven; MTL stack exhausted (V72)</td>
+  </tr>
+  <tr>
+    <td>Imagine</td>
+    <td><code>WorldModel</code> (Kalman+DAG), <code>ContinuousWorldModel</code></td>
+    <td class="mid">Partial</td>
+    <td>Belief→policy loop was stubbed; Phase 48 transformer WM not built</td>
+  </tr>
+  <tr>
+    <td>Propose</td>
+    <td><code>ghost_chains.py</code>, <code>StrategyBandit</code>, <code>GoalGenerator</code></td>
+    <td class="mid">Mixed</td>
+    <td>Chains hand-YAML; bandit uses LLM for goals (not pure evolution)</td>
+  </tr>
+  <tr>
+    <td>Act</td>
+    <td><code>ghost_pattern_daily</code>, <code>retrain_gnn.py</code></td>
+    <td class="ok">Works</td>
+    <td>Not unified <code>agent step</code></td>
+  </tr>
+  <tr>
+    <td>Score</td>
+    <td><code>honest_baseline_audit.py</code>, scorecard</td>
+    <td class="mid">Started</td>
+    <td>Momentum passes; GNN not; n=3 alerts</td>
+  </tr>
+  <tr>
+    <td>Evolve</td>
+    <td><code>AutonomousRunner</code>, SAC, EWC, bandit persist</td>
+    <td class="mid">Fragmented</td>
+    <td>LLM loop ≠ numeric evolution; RL not closed on finance outcomes</td>
+  </tr>
+</table>
+
+<h2>3b. Existing autonomy loop (important distinction)</h2>
+<p><code>agent/core/autonomous.py</code> implements reflect → bandit arm → LLM goal → orchestrator → reward. That is <strong>meta-level exploration</strong> (what task to run). The evolution discovery agent needs a <strong>lower layer</strong>:</p>
+<ul>
+  <li><strong>Meta loop (existing):</strong> which research arm / tool chain to try</li>
+  <li><strong>Discovery loop (new focus):</strong> which <em>representations, detectors, and policies</em> survive held-out playground eval</li>
+</ul>
+<p>Keep both; do not confuse LLM goal generation with world-model learning.</p>
+
+<h2>4. Research matrix — what works, what doesn’t, what to try</h2>
+<table>
+  <tr><th>Method</th><th>Evidence</th><th>TirraMind fit</th><th>Verdict</th></tr>
+  <tr>
+    <td><strong>JEPA</strong> (latent next-embed prediction; LeCun 2022; V-JEPA 2 arXiv:2506.09985)</td>
+    <td>Predicts in representation space; ignores unpredictable noise; V-JEPA 2-AC does planning</td>
+    <td>Natural fit for ℰ: predict <em>next entity embedding</em> not next pixel/price tick</td>
+    <td class="ok"><strong>Try on MP-1 subgraph</strong> — NE-Dreamer-style next-embed (arXiv:2603.02765) on observation sequences</td>
+  </tr>
+  <tr>
+    <td><strong>NE-Dreamer</strong> (next embedding prediction, decoder-free MBRL)</td>
+    <td>Strong on partial observability (DMLab Rooms); matches POMDP doctrine</td>
+    <td>Finance = POMDP; better than pixel-reconstruction Dreamer</td>
+    <td class="ok"><strong>Phase 48 candidate</strong> over vanilla DreamerV3</td>
+  </tr>
+  <tr>
+    <td><strong>PO-Dreamer / PIGDreamer</strong> (POMDP world models; ICML 2025 PIGDreamer)</td>
+    <td>Memory + privileged info during train; PO-Dreamer withdrawn ICLR 2026</td>
+    <td>“Privileged” = full graph at train, partial at deploy — matches our sensor-rich train</td>
+    <td class="mid">Watch; PIGDreamer code OSS — concept for asymmetric train/deploy</td>
+  </tr>
+  <tr>
+    <td><strong>HetTGN + SSL</strong> (current)</td>
+    <td>obs_type 87%; return IC failed Phase 40–72</td>
+    <td>Good encoder pretrain; bad joint MTL return head</td>
+    <td class="ok"><strong>Stage-1 only</strong> per [[gnn_architecture_overhaul]]</td>
+  </tr>
+  <tr>
+    <td><strong>Continuous CDE/SDE WM</strong> (<code>continuous_world_model.py</code>)</td>
+    <td>Theory solid (Neural CDE, Mamba, Hawkes); integration partial</td>
+    <td>Event-time finance graph — architecturally elegant</td>
+    <td class="mid"><strong>R&amp;D parallel</strong> — prove on toy window before production</td>
+  </tr>
+  <tr>
+    <td><strong>SAC model-free RL</strong> (<code>agent/learning/</code>)</td>
+    <td>Implemented; belief loop was disconnected</td>
+    <td>Finance non-stationary; sparse reward</td>
+    <td class="mid"><strong>Wire beliefs first</strong> ([[learned_vs_handcoded_architecture_spec]] Change 1); MBRL later</td>
+  </tr>
+  <tr>
+    <td><strong>LLM autonomy loop</strong></td>
+    <td>Runs; burns tokens; not falsifiable edge</td>
+    <td>Useful for tool orchestration meta-layer</td>
+    <td class="mid"><strong>Not the discovery engine</strong></td>
+  </tr>
+  <tr>
+    <td><strong>Hand YAML ghost chains</strong></td>
+    <td>3 alerts; deterministic</td>
+    <td>Seed population for evolution, not final form</td>
+    <td class="ok"><strong>Gen-0 detectors</strong> → evolve thresholds/templates via scorecard</td>
+  </tr>
+  <tr>
+    <td><strong>Custom CUDA kernels</strong></td>
+    <td>Not in repo</td>
+    <td>Needed only after profiler shows bottleneck</td>
+    <td class="bad"><strong>Defer</strong> until graph batching / CDE solve profiled</td>
+  </tr>
+</table>
+
+<h2>5. Target architecture (Carmack layers)</h2>
+<pre>
+┌─────────────────────────────────────────────────────────────┐
+│ L4  EVOLVE  — bandit + population + checkpoint lineage      │
+├─────────────────────────────────────────────────────────────┤
+│ L3  IMAGINE — JEPA/NE-Dreamer latent dynamics on ℰ          │
+├─────────────────────────────────────────────────────────────┤
+│ L2  ENCODE  — HetTGN SSL + (optional) CDE event integrator  │
+├─────────────────────────────────────────────────────────────┤
+│ L1  OBSERVE — deterministic DAG (Jane Street layer)           │
+├─────────────────────────────────────────────────────────────┤
+│ L0  STORE   — pipeline.db, WAL, entity graph, replay buffer │
+└─────────────────────────────────────────────────────────────┘
+         ▲ fast path: fused batching, mmap store, torch.compile
+         ▲ later: custom kernel only for hot loop (graph sample / CDE step)
+</pre>
+
+<h3>5.1 JEPA on finance (concrete, not generic)</h3>
+<p><strong>Objective:</strong> Given entity observation sequence <code>o_{t-k:t}</code>, predict <strong>next latent</strong> <code>ẑ_{t+1}</code> in ℰ; align to encoder output <code>z_{t+1}</code> (Barlow Twins / cosine).</p>
+<p><strong>Not:</strong> predict next price tick (too noisy). <strong>Yes:</strong> predict next <em>fused world-state embedding</em> for instrument / country / vessel entity.</p>
+<p><strong>Playground proof:</strong> frozen JEPA encoder → Stage-2 ranker beats momentum on [[finance_playground_proof_ladder]] P4.</p>
+
+<h3>5.2 Evolution discovery (concrete)</h3>
+<p><strong>Population:</strong> detector configs (chain templates, z thresholds, lag windows) + small ranker heads.</p>
+<p><strong>Fitness:</strong> held-out playground score only (IC, chain calibration, false-positive rate).</p>
+<p><strong>Selection:</strong> top-k survive; mutate thresholds/lags; no LLM rewrite of math.</p>
+<p><strong>Gen-0:</strong> current 3 YAML templates in <code>templates/ghost_chains/mp1/</code>.</p>
+
+<h2>6. What “fast” means (ordered)</h2>
+<ol>
+  <li><strong>Algorithmic:</strong> O(n) windowing, graph caching, bisect obs prefetch (Phase 40 wins — keep)</li>
+  <li><strong>Systems:</strong> batch graph samples, pinned memory, <code>torch.compile</code> on encoder forward</li>
+  <li><strong>Store:</strong> mmap SQLite / read replicas for training workers</li>
+  <li><strong>Custom kernels:</strong> only if profiling shows &gt;30% time in one op (graph neighbor gather, CDE solver step)</li>
+</ol>
+<p>Carmack rule: <strong>measure first</strong>; custom CUDA is a badge of honor, not day-one architecture.</p>
+
+<h2>7. Phased build (proof-gated)</h2>
+<table>
+  <tr><th>Phase</th><th>Deliverable</th><th>Pass line</th></tr>
+  <tr><td><strong>E0</strong></td><td>Unified <code>agent step</code> CLI (observe→detect→log)</td><td>One command, reproducible JSON</td></tr>
+  <tr><td><strong>E1</strong></td><td>Stage-1 SSL HetTGN + export embeddings</td><td>B.4 ranker vs momentum (P4)</td></tr>
+  <tr><td><strong>E2</strong></td><td>JEPA next-embed head on entity sequences</td><td>Beats Stage-1 SSL on same eval</td></tr>
+  <tr><td><strong>E3</strong></td><td>Evolution loop on detector population</td><td>Gen-N beats Gen-0 on scorecard @ n≥20</td></tr>
+  <tr><td><strong>E4</strong></td><td>NE-Dreamer-style MBRL in latent space</td><td>Improves act module on sim P&amp;L or detection F1</td></tr>
+  <tr><td><strong>E5</strong></td><td>Hardware hot-path optimization</td><td>Profiled ≥2× speedup on train step</td></tr>
+</table>
+<p><strong>Stop rule:</strong> If E1 fails vs momentum, do not stack E2–E4 until representation source changes (data density or objective).</p>
+
+<h2>8. How this makes TirraMind successful</h2>
+<ul>
+  <li><strong>Product:</strong> Sell deployable evolution-discovery agent on finance playground ([[0003-agents-as-sku]])</li>
+  <li><strong>Proof:</strong> [[finance_playground_proof_ladder]] P1–P5</li>
+  <li><strong>Moat:</strong> closed loop on multi-domain data + honest eval — not a single model weights file</li>
+  <li><strong>Founder fit:</strong> low-level systems, ML math, agent loop — not trader persona</li>
+</ul>
+
+<h2>9. Anti-patterns (reject)</h2>
+<ul>
+  <li>Calling prompt changes “evolution”</li>
+  <li>Stacking architectures before P4 verdict</li>
+  <li>Custom CUDA before profiler</li>
+  <li>LLM-as-oracle for numeric edge</li>
+  <li>Skipping deterministic observe layer (breaks reproducibility)</li>
+</ul>
+
+<h2>10. References (verified)</h2>
+<ul>
+  <li>LeCun (2022) — JEPA position; latent prediction not pixels</li>
+  <li>Assran et al. (2025) — V-JEPA 2, arXiv:2506.09985</li>
+  <li>NE-Dreamer (2026) — next embedding prediction, arXiv:2603.02765</li>
+  <li>Huang et al. (2025) — PIGDreamer, ICML; ACPOMDP + privileged WM</li>
+  <li>Repo: [[gnn_architecture_overhaul]], [[learned_vs_handcoded_architecture_spec]], [[training_stagnation_root_cause]]</li>
+</ul>
+
+<h2>Related</h2>
+<ul>
+  <li>[[0003-agents-as-sku]]</li>
+  <li>[[agent_playground_doctrine]]</li>
+  <li>[[finance_playground_proof_ladder]]</li>
+  <li>[[gnn_architecture_overhaul_task]]</li>
+  <li>[[long_term_vision]]</li>
+</ul>
+
+</body>
+</html>

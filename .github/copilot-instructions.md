@@ -1,8 +1,10 @@
 # TirraMind — Copilot Agent Workflow Instructions
 
-**TirraMind is a predictive AI company.** The mission is to build the most capable real-world prediction system ever constructed — one that watches physical reality, human decisions, information flows, and emergent patterns across every country simultaneously, and turns that understanding into high-confidence probabilistic intelligence about what will happen next.
+**TirraMind is an advanced self-improving agent company.** Canonical identity: [[agent_playground_doctrine]]. **Markets are playground #1** — the first scoring environment for the agent, not the permanent definition of the firm.
 
-**The core product is the prediction engine itself.** Not a trading algorithm. Not a dashboard. Not a generic AI assistant. A living, self-improving intelligence system that observes the world at Layer 0 (physical: ships, weather, factories, grid, disease) and Layer 1 (behavioral: policy, trades, filings, social, production) to produce probability distributions over Layer 2–3 events (information shifts, price moves, geopolitical changes, supply disruptions). Every domain. Every country. No conventional method has done this at this depth.
+**The core asset is raw intelligence:** a learned **cross-domain entity embedding space** (ℰ) from heterogeneous sensors + HetTGN/memory. **ML is the primary R&D path;** quant finance is implemented as constraints and readouts (`agent/quant/`), not as hand-crafted factor research. Commercial **niche is not decided** until [[niche_playground_competition]] completes.
+
+**Outward product:** probability distributions and decision advantage over Layer 0–3 reality (physical → behavioral → information → prices). Not a trading algorithm alone. Not a generic copilot. A living system that compounds from experience on the playground, then generalizes to other domains later.
 
 **The edge is: unconventional observation × SOTA math × living system architecture.** The system combines methods nobody else combines: temporal heterogeneous graph neural networks, Bayesian belief propagation, Kalman signal fusion, RL policy, EWC continuous learning, causal chain detection, and investigative entity linking across 51 data sources. Conventional AI companies use one or two of these. TirraMind uses all of them on data most AI companies never look at.
 

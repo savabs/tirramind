@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Active Task: M5 Implied Volatility Surface</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 2rem;
+            background-color: #f9f9f9;
+        }
+
+        header {
+            border-bottom: 3px solid #e53e3e;
+            padding-bottom: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        h1 {
+            color: #e53e3e;
+            margin-top: 0;
+            font-size: 2.5rem;
+        }
+
+        h2 {
+            color: #333;
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 0.5rem;
+            margin-top: 2rem;
+        }
+
+        .meta {
+            font-size: 0.9rem;
+            color: #666;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            background-color: #eee;
+            padding: 1rem;
+            border-radius: 4px;
+            margin-bottom: 1.5rem;
+        }
+
+        .task-list {
+            list-style-type: none;
+            padding-left: 0;
+        }
+
+        .task-item {
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 1rem;
+            padding: 0.5rem;
+            border-radius: 4px;
+            background-color: #fff;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+
+        .task-checkbox {
+            margin-right: 10px;
+            margin-top: 0.3rem;
+            width: 1.2rem;
+            height: 1.2rem;
+        }
+
+        .task-content {
+            flex-grow: 1;
+        }
+
+        .task-title {
+            font-weight: bold;
+            color: #2d3748;
+        }
+
+        .task-desc {
+            font-size: 0.9rem;
+            color: #718096;
+            margin-top: 0.2rem;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            font-size: 0.8rem;
+            font-weight: bold;
+            border-radius: 4px;
+            text-transform: uppercase;
+        }
+
+        .status-pending {
+            background-color: #feebc8;
+            color: #9c4221;
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <h1>Active Task: M5 Implied Volatility Surface</h1>
+        <div class="meta">
+            <div><strong>Phase:</strong> M5 Volatility Surface</div>
+            <div><strong>Status:</strong> <span class="status-badge"
+                    style="background-color: #c6f6d5; color: #22543d;">COMPLETE</span></div>
+            <div><strong>Progress:</strong> 100% Completed</div>
+        </div>
+    </header>
+
+    <h2>Tasks Breakdown</h2>
+    <ul class="task-list">
+        <li class="task-item">
+            <input type="checkbox" class="task-checkbox" id="task1" checked>
+            <div class="task-content">
+                <span class="task-title">M5.1: Implement SVIParameterization</span>
+                <p class="task-desc">Create the SVI class with Raw SVI formulas, Durrleman's butterfly arbitrage check,
+                    and gradient descent fitting.</p>
+            </div>
+        </li>
+        <li class="task-item">
+            <input type="checkbox" class="task-checkbox" id="task2" checked>
+            <div class="task-content">
+                <span class="task-title">M5.2: Implement SABRModel (Differentiable Hagan Approximation)</span>
+                <p class="task-desc">Write vectorized and fully differentiable SABR Hagan implied volatility formula
+                    with limit protection for ATM singularity.</p>
+            </div>
+        </li>
+        <li class="task-item">
+            <input type="checkbox" class="task-checkbox" id="task3" checked>
+            <div class="task-content">
+                <span class="task-title">M5.3: Implement ImpliedVolatilitySurface</span>
+                <p class="task-desc">Combine SVI parameterization slices, support surface interpolation across k and T,
+                    and extract low-dimensional GNN node features.</p>
+            </div>
+        </li>
+        <li class="task-item">
+            <input type="checkbox" class="task-checkbox" id="task4" checked>
+            <div class="task-content">
+                <span class="task-title">M5.4: Implement Edge Testing</span>
+                <p class="task-desc">Write <code>tests/test_volatility_edge.py</code> to test limits, SGD fitting
+                    convergence, no-arbitrage constraints, and backward gradient flow.</p>
+            </div>
+        </li>
+    </ul>
+</body>
+
+</html>

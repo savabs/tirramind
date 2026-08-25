@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Checkpoint 2026-06-06 — V63/V64 Training Loop Handoff</title>
+</head>
+<body>
+  <h1>Checkpoint 2026-06-06 — V63/V64 Training Loop Handoff</h1>
+  <p><em>Session handoff for new chat. Prior transcript: V58–V62 failure diagnosis → V63 V52-exact gate → V64 grad-flow diagnostics.</em></p>
+
+  <h2>Where we are now</h2>
+  <table border="1" cellpadding="6">
+    <tr><th>Item</th><th>Value</th></tr>
+    <tr><td>Active kernel</td><td><code>deeperisbetter/tirramind-phase50</code></td></tr>
+    <tr><td>Repo <code>kernel_version</code></td><td><strong>V64</strong></td></tr>
+    <tr><td>Last <em>successful</em> training run</td><td><strong>V64</strong> fingerprint <code>e74b4f330dee</code></td></tr>
+    <tr><td>Fix label</td><td><code>grad_flow_diag_v64_import_fix</code></td></tr>
+    <tr><td>Run status</td><td>COMPLETE — 10ep train + smoke eval finished</td></tr>
+    <tr><td>State file</td><td><code>.tirra_pipeline/kaggle_state.json</code></td></tr>
+    <tr><td>Latest logs</td><td><code>.tirra_pipeline/kaggle_logs_latest.txt</code> (also <code>kaggle_logs_v64_retry.txt</code>)</td></tr>
+  </table>
+
+  <h2>User workflow preference (mandatory)</h2>
+  <ul>
+    <li><strong>No automation.</strong> User explicitly rejected the autonomous <code>kaggle_loop.py --loop</code> watcher.</li>
+    <li>Agent checks logs / proposes changes / pushes <strong>only when user asks</strong> (e.g. “check the logs”, “push”).</li>
+    <li>Scripts <code>kaggle_analyze.py</code> and <code>kaggle_loop.py</code> exist for <em>manual</em> one-shot use.</li>
+  </ul>
+
+  <h2>Problem statement (unchanged)</h2>
+  <p>After V60–V62, GNN training shows: embedding collapse, flat return loss, negative PurgedRanker IC. V52 (90ep, 200win, concat+auto_tune) remains the <strong>only promoted run</strong> (IC +0.0474). Goal: validate whether longer training is worth it via cheap 10ep smokes before committing to 90ep.</p>
+
+  <h2>Epoch 3/10 gate (decision rule)</h2>
+  <ul>
+    <li><strong>PASS</strong> (run 90ep): return loss still moving at ep10 <em>and</em> not early-plateau. V52: ep3 105.1 → ep10 115.8.</li>
+    <li><strong>FAIL</strong>: return frozen from ep3 (~209 ListNet floor, or ~109.59 V55/V64 pattern).</li>
+    <li><strong>MARGINAL</strong>: ep3≠ep10 but plateau starts ≤ep7 — do not commit 90ep without config change.</li>
+  </ul>
+
+  <h2>Run history this session</h2>
+
+  <h3>V63 — V52-exact smoke (COMPLETE)</h3>
+  <ul>
+    <li>Fingerprint: <code>7c689eabb6d4</code> · fix: <code>v52_exact_smoke_ep3_gate_v63</code></li>
+    <li>Config: 10ep/200win, weights 3/1/1/1/1, concat+auto_tune, no vicreg/contranorm/log_loss</li>
+    <li>Return: ep3 <strong>113.60</strong> → ep10 <strong>108.61</strong> (plateau@ep7)</li>
+    <li>IC PurgedRanker: <strong>-0.119</strong> · Collapse: 33.2%</li>
+    <li>Gate: <strong>FAIL</strong> — reverted to V52 recipe fixed return dynamics but not signal</li>
+    <li>Logs: <code>.tirra_pipeline/kaggle_logs_v63.txt</code></li>
+  </ul>
+
+  <h3>V64 attempt 1 — infrastructure crash (no training)</h3>
+  <ul>
+    <li>Fingerprint: <code>fad544f95e77</code></li>
+    <li><code>NameError: name 'json' is not defined</code> — banner cell missing <code>import hashlib, json</code></li>
+    <li>Cause: <code>kaggle_loop.py patch_notebook_config()</code> rewrote cell without imports</li>
+    <li>Logs: <code>.tirra_pipeline/kaggle_logs_v64.txt</code> (35 lines only)</li>
+  </ul>
+
+  <h3>V64 attempt 2 — grad-flow diagnostic smoke (COMPLETE)</h3>
+  <ul>
+    <li>Fingerprint: <code>e74b4f330dee</code> · fix: <code>grad_flow_diag_v64_import_fix</code></li>
+    <li>Same V52-exact config + new per-epoch <code>[GRAD_FLOW]</code> logging in trainer</li>
+    <li>Return loss by epoch:</li>
+  </ul>
+  <pre>
+ep1  143.81   ep2  248.09   ep3  126.32   ep4  112.31
+ep5–10  109.59  (frozen — identical to V55)
+  </pre>
+  <ul>
+    <li><strong>Root cause identified:</strong> concat head predictions saturate <code>clamp(-5, 5)</code> → all scores = +5.0 from ep5</li>
+    <li><code>[GRAD_FLOW]</code>: pred_std 1.42→0.00, pred_mean → 5.0000 by ep5</li>
+    <li>IC PurgedRanker: <strong>-0.095</strong> · EmbNorm: +0.042 · Collapse: <strong>49.3%</strong></li>
+    <li>Gate: <strong>FAIL</strong> — worse collapse than V63; pred_std=0 proves zero ranking gradient</li>
+    <li>Clamp location: <code>agent/models/gnn/trainer.py</code> ~line 2555 <code>_ret_pred.clamp(-5.0, 5.0)</code></li>
+  </ul>
+
+  <h2>Reference: V52 baseline (only good full run)</h2>
+  <pre>
+90ep, 200win, return_weight=3, all aux weights=1, listnet τ=0.1
+direction-loss, residual-returns, csrc-loss, use-concat-head, auto-tune
+return-log-var-max=-0.693, gdelt-frac=0.05, NO vicreg/contranorm/log_loss
+Result: PurgedRanker IC +0.0474 (t=1.95)
+  </pre>
+
+  <h2>Code changes made this session</h2>
+  <table border="1" cellpadding="6">
+    <tr><th>File</th><th>Change</th></tr>
+    <tr><td><code>agent/models/gnn/trainer.py</code></td><td>Per-epoch <code>[GRAD_FLOW]</code> (pred_std, tgt_std, active_head, emb_std, eff_rank, listnet_floor) → <code>metrics.jsonl</code></td></tr>
+    <tr><td><code>scripts/kaggle_analyze.py</code></td><td>Parse logs, ep3/10 gate, IC, collapse; <code>decide_next_config()</code></td></tr>
+    <tr><td><code>scripts/kaggle_loop.py</code></td><td>Watch/analyze/patch/push loop — <strong>user declined automation</strong>; import fix in <code>patch_notebook_config</code></td></tr>
+    <tr><td><code>tirramind_kaggle_phase50.ipynb</code></td><td>V63→V64 config; restored <code>import hashlib, json</code> in banner cell</td></tr>
+    <tr><td><code>scripts/kaggle_launch.py</code></td><td><code>CANONICAL_KERNEL_VERSION = 64</code></td></tr>
+    <tr><td><code>Makefile</code></td><td><code>kaggle-analyze</code>, <code>kaggle-loop</code> targets (loop unused per user preference)</td></tr>
+  </table>
+
+  <h2>Prior failure modes (for context)</h2>
+  <table border="1" cellpadding="6">
+    <tr><th>Ver</th><th>Return @ep3</th><th>Pattern</th><th>IC</th></tr>
+    <tr><td>V62</td><td>209.39 frozen</td><td>ListNet entropy floor (no autotune, value_w=0)</td><td>-0.072</td></tr>
+    <tr><td>V55</td><td>109.59 frozen ep3→90</td><td>embedding-only return</td><td>+0.027</td></tr>
+    <tr><td>V63</td><td>113→108 plateau@7</td><td>V52-exact, no clamp saturation visible</td><td>-0.119</td></tr>
+    <tr><td>V64</td><td>126→109.59 plateau@5</td><td><strong>clamp(+5) saturation, pred_std=0</strong></td><td>-0.095</td></tr>
+    <tr><td>V52</td><td>105→116 moving</td><td>healthy trajectory</td><td>+0.047</td></tr>
+  </table>
+
+  <h2>Next step — V65 (not started; user to approve)</h2>
+  <p>Pick <strong>one</strong> hypothesis per V53 methodology lock:</p>
+  <ol>
+    <li><strong>Clamp fix (recommended first):</strong> widen or remove <code>clamp(-5,5)</code> on return preds before ListNet; re-run V52-exact 10ep smoke.</li>
+    <li><strong>Embedding-only ablation:</strong> <code>embedding_only_return=True</code>, <code>use_concat_head=False</code> — test if concat+raw saturates.</li>
+    <li><strong>Both</strong> as two separate versioned runs (not one combined knob).</li>
+  </ol>
+  <p>Do <strong>not</strong> run 90ep until gate PASS + IC &gt; 0.03 on smoke.</p>
+
+  <h2>Commands for new session</h2>
+  <pre>
+# Check version sync before push
+python3 scripts/kaggle_launch.py --verify-version
+
+# Fetch + diagnose latest logs
+python3 scripts/kaggle_analyze.py --log-file .tirra_pipeline/kaggle_logs_latest.txt --kernel-version 64
+
+# Push (only when user asks)
+python3 scripts/kaggle_launch.py --push-only --epochs 10
+
+# Tail live logs
+python3 scripts/kaggle_launch.py --logs-only
+
+# Kaggle status API sometimes 500 — use logs one-shot:
+kaggle kernels logs deeperisbetter/tirramind-phase50
+  </pre>
+
+  <h2>Known infra notes</h2>
+  <ul>
+    <li><code>run_full_backtest: False</code> in notebook — smoke eval only (~13 folds), skips 40-fold backtest.</li>
+    <li>Kaggle UI version counter may differ from repo <code>kernel_version</code> (e.g. push logged as “version 65” while repo says V64).</li>
+    <li><code>GetKernelSessionStatus</code> often returns 500 — rely on log tail for completion.</li>
+    <li>V61 bug: <code>--use-log-loss</code> + <code>--auto-tune</code> made log_loss a no-op until V62 code fix.</li>
+  </ul>
+
+  <h2>VERSIONS.md drift</h2>
+  <p><code>VERSIONS.md</code> rows for V63/V64 may still show “pending” — update on next push with completed_at, fingerprints, and IC from this checkpoint.</p>
+</body>
+</html>

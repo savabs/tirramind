@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 # importing actions with side effects registers them
 from agent.awos.actions import awos_update as _awos_update  # noqa: F401
+from agent.awos.actions import learning as _learning  # noqa: F401
 from agent.awos.actions import proposals as _proposals  # noqa: F401
 from agent.awos.actions.base import ActionResult, build_action
 from agent.awos.config import AWOSConfig
