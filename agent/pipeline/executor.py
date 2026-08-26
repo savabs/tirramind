@@ -13,6 +13,7 @@ Usage:
 
 from __future__ import annotations
 
+import functools
 import logging
 import time
 from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
@@ -168,8 +169,18 @@ class DAGExecutor:
         if not executable:
             return results
 
-        # Execute in parallel
-        with ThreadPoolExecutor(max_workers=min(self._max_workers, len(executable))) as pool:
+        # Execute in parallel. NOTE: this pool is deliberately *not* used as
+        # a context manager. ``ThreadPoolExecutor.__exit__`` calls
+        # ``shutdown(wait=True)``, which blocks until every submitted task
+        # finishes — even ones we already gave up on via
+        # ``future.result(timeout=...)`` below. That defeated the whole
+        # point of a node timeout: a node with timeout=1 whose operator took
+        # ~8s was reported "failed: timed out" immediately, yet the layer
+        # (and the run) didn't actually move on until that operator's
+        # thread finished ~8s later anyway — Python cannot forcibly kill a
+        # running thread, so the only lever we have is not waiting on it.
+        pool = ThreadPoolExecutor(max_workers=min(self._max_workers, len(executable)))
+        try:
             futures: dict[str, Future[NodeResult]] = {}
             for nid in executable:
                 node = dag.nodes[nid]
@@ -179,15 +190,26 @@ class DAGExecutor:
             for nid, future in futures.items():
                 node = dag.nodes[nid]
                 try:
-                    nr = future.result(timeout=node.timeout + 5)  # Extra buffer
+                    nr = future.result(timeout=node.timeout)
                 except TimeoutError:
                     nr = NodeResult(
                         node_id=nid,
                         status="failed",
-                        error=f"Execution timed out (>{node.timeout}s)",
+                        error=(
+                            f"Execution timed out (>{node.timeout}s); the operator "
+                            "keeps running in the background since a thread cannot "
+                            "be forcibly stopped — if it later completes (and "
+                            "commits) this run's record will be corrected rather "
+                            "than left showing a false failure."
+                        ),
                         started_at=time.time(),
                         finished_at=time.time(),
                     )
+                    # The thread behind `future` is still running. Reconcile
+                    # the record once it actually finishes instead of
+                    # permanently reporting "failed" for work that quietly
+                    # succeeds and commits after the deadline.
+                    future.add_done_callback(functools.partial(self._reconcile_timeout, run, node, nr))
                 except Exception as exc:
                     nr = NodeResult(
                         node_id=nid,
@@ -209,8 +231,98 @@ class DAGExecutor:
                         )
                     except Exception as exc:
                         log.warning("Failed to store result for %s: %s", nid, exc)
+        finally:
+            # wait=False: don't block the run on a node that already blew
+            # through its timeout. Its thread finishes on its own; see
+            # _reconcile_timeout for how its eventual outcome gets recorded.
+            pool.shutdown(wait=False)
 
         return results
+
+    def _reconcile_timeout(
+        self,
+        run: DagRun,
+        node: Any,  # Node type
+        nr: NodeResult,
+        future: Future[NodeResult],
+    ) -> None:
+        """Correct a node's recorded outcome once a timed-out operator finishes.
+
+        Runs as a ``Future`` done-callback, potentially from the worker
+        thread that just finished running *node*'s operator (possibly well
+        after this run's layer — and even the whole DAG run — already
+        returned). Mutates *nr* in place: it is the same ``NodeResult``
+        instance already sitting in both ``run.node_results`` and the
+        ``DagRun`` handed back to the caller, so callers holding onto that
+        run see the correction regardless of when it lands. Also re-persists
+        the run record so ``dag_runs`` doesn't keep a stale false failure.
+        """
+        try:
+            # NOTE: `future` wraps `self._execute_node`, whose return value is
+            # itself a NodeResult (not the raw operator output) — `_execute_node`
+            # never lets an operator exception escape (it's caught into a
+            # status="failed" NodeResult after retries), so this call only
+            # raises for something outside that contract. Pull fields back out
+            # of it below rather than assigning it wholesale to `nr.output`:
+            # that previously nested a whole NodeResult inside `nr.output`
+            # (and inside the stored row's data) instead of the operator's
+            # actual output.
+            result = future.result()
+        except Exception as exc:
+            nr.status = "failed"
+            nr.error = f"Failed after exceeding its {node.timeout}s timeout: {exc}"
+            nr.finished_at = time.time()
+            log.warning(
+                "Node %s failed after exceeding its %ss timeout: %s",
+                node.id,
+                node.timeout,
+                exc,
+            )
+        else:
+            nr.status = result.status
+            nr.output = result.output
+            nr.error = result.error
+            nr.retries_used = result.retries_used
+            nr.finished_at = result.finished_at or time.time()
+            if result.status == "completed":
+                log.warning(
+                    "Node %s exceeded its %ss timeout but completed successfully "
+                    "afterward — correcting its recorded status from 'failed' to "
+                    "'completed' (its write, if any, already landed and is not "
+                    "being redone).",
+                    node.id,
+                    node.timeout,
+                )
+                if self._store and node.store_result:
+                    try:
+                        self._store.store_data(
+                            source=node.table_name or node.id,
+                            params=node.params,
+                            data=result.output,
+                        )
+                    except Exception as exc:
+                        log.warning("Failed to store late result for %s: %s", node.id, exc)
+            else:
+                log.warning(
+                    "Node %s exceeded its %ss timeout and ultimately failed anyway: %s",
+                    node.id,
+                    node.timeout,
+                    result.error,
+                )
+
+        if self._store is not None:
+            try:
+                any_failure = any(r.status == "failed" for r in run.node_results.values())
+                run.status = "failed" if any_failure else "completed"
+                result_dicts = {n: r.to_dict() for n, r in run.node_results.items()}
+                self._store.record_run_end(run.run_id, run.status, result_dicts)
+            except Exception:
+                log.warning(
+                    "Failed to persist reconciled status for run %s node %s",
+                    run.run_id,
+                    node.id,
+                    exc_info=True,
+                )
 
     def _execute_node(
         self,
@@ -252,6 +364,19 @@ class DAGExecutor:
                         backoff,
                     )
                     time.sleep(backoff)
+                else:
+                    # Final attempt: no retry follows, so the intermediate
+                    # branch above never fires for it. Without this, a node
+                    # with the default retries=1 (or any node's last attempt)
+                    # fails with zero logged diagnostic — the exception is
+                    # only visible in the returned NodeResult.error, which
+                    # most callers never inspect.
+                    log.warning(
+                        "Node %s attempt %d failed (no retries left): %s",
+                        node.id,
+                        attempt + 1,
+                        exc,
+                    )
 
         # All retries exhausted
         nr.status = "failed"

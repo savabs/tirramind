@@ -173,7 +173,11 @@ class TestDailyCollectionStructure:
         assert dag.validate() == []
 
     def test_node_count(self, dag):
-        assert len(dag.nodes) == 52
+        # 52 -> 56 on 2026-08-26: fetch_us_yield_curve, fetch_options_chains,
+        # fetch_dividends (market-data-engineer, previously-unwired instrument
+        # fetchers) + ingest_evidence_from_gdelt (feeds the Entity Graph from
+        # this cycle's real GDELT events instead of static demo docs).
+        assert len(dag.nodes) == 56
 
     def test_expected_node_ids(self, dag):
         expected = {
@@ -234,21 +238,38 @@ class TestDailyCollectionStructure:
             "fetch_transport_throughput",
             "fetch_treasury_receipts",
             "fetch_weather_alerts",
+            # 2026-08-26 additions (see test_node_count)
+            "fetch_us_yield_curve",
+            "fetch_options_chains",
+            "fetch_dividends",
+            "ingest_evidence_from_gdelt",
         }
         assert set(dag.nodes.keys()) == expected
 
     def test_all_nodes_independent(self, dag):
-        """No dependencies between nodes — single parallel layer."""
+        """No dependencies between nodes — single parallel layer.
+
+        Exception: ingest_evidence_from_gdelt depends on fetch_gdelt by
+        design — it turns that cycle's fetched events into Entity Graph
+        documents, so it must run after fetch_gdelt, not alongside it.
+        """
         for node in dag.nodes.values():
+            if node.id == "ingest_evidence_from_gdelt":
+                continue
             assert node.depends_on == [], f"Node {node.id} has deps: {node.depends_on}"
 
     def test_single_parallel_layer(self, dag):
+        # 2026-08-26: no longer a single layer — ingest_evidence_from_gdelt
+        # deliberately depends on fetch_gdelt (see test_all_nodes_independent's
+        # documented exception), giving 55 roots + 1 dependent layer.
         layers = dag.topo_sort()
-        assert len(layers) == 1
-        assert len(layers[0]) == 52
+        assert len(layers) == 2
+        assert len(layers[0]) == 55
+        assert len(layers[1]) == 1
 
     def test_all_roots(self, dag):
-        assert len(dag.roots()) == 52
+        # 55, not 56: ingest_evidence_from_gdelt is not a root (see above).
+        assert len(dag.roots()) == 55
 
     def test_whale_alert_node_config(self, dag):
         n = dag.nodes["fetch_whale_alert"]
@@ -421,7 +442,12 @@ class TestDailyCollectionNodes:
             assert isinstance(n.operator, str), f"{n.id} operator is not a str"
 
     def test_all_nodes_store_results(self, dag):
+        """Exception: ingest_evidence_from_gdelt's output is a summary dict
+        (doc/sentence counts), not raw source data — nothing meaningful to
+        persist to pipeline_data."""
         for node in dag.nodes.values():
+            if node.id == "ingest_evidence_from_gdelt":
+                continue
             assert node.store_result is True, f"{node.id} should store results"
 
     def test_all_timeouts_positive(self, dag):
@@ -593,7 +619,7 @@ class TestPhase453Nodes:
         return build_daily_collection_dag()
 
     _PHASE_453_NODES = [
-        ("fetch_academic_preprints", "academic_preprints", "papers"),
+        ("fetch_academic_preprints", "academic_preprints", "trending"),
         ("fetch_bankruptcy_court", "bankruptcy_court", "us_bankruptcy"),
         ("fetch_building_permits", "building_permits", "permits"),
         ("fetch_consumer_sentiment", "consumer_sentiment", "us_sentiment"),
@@ -603,11 +629,11 @@ class TestPhase453Nodes:
         ("fetch_earthquake_proximity", "earthquake_proximity", "recent"),
         ("fetch_electricity_monitor", "electricity_monitor", "demand"),
         ("fetch_energy_supply", "energy_supply", "petroleum_stocks"),
-        ("fetch_foia_requests", "foia_requests", "entity_cluster"),
+        ("fetch_foia_requests", "foia_requests", "agency_activity"),
         ("fetch_food_security", "food_security", "production"),
         ("fetch_interconnection_queue", "interconnection_queue", "queue"),
         ("fetch_internet_infrastructure", "internet_infrastructure", "outages"),
-        ("fetch_internet_outages", "internet_outages", "network_health"),
+        ("fetch_internet_outages", "internet_outages", "outage_detection"),
         ("fetch_job_postings", "job_postings", "jolts"),
         ("fetch_labor_disruptions", "labor_disruptions", "work_stoppages"),
         ("fetch_migration_flows", "migration_flows", "displacement"),
@@ -633,9 +659,15 @@ class TestPhase453Nodes:
             assert dag.nodes[node_id].depends_on == []
 
     def test_total_node_count_52(self, dag):
-        assert len(dag.nodes) == 52
+        # 52 -> 56 on 2026-08-26 — see test_node_count in
+        # TestDailyCollectionStructure for what was added; kept this test's
+        # name to avoid churning its history, the assertion is what matters.
+        assert len(dag.nodes) == 56
 
     def test_all_nodes_single_parallel_layer(self, dag):
+        # 2026-08-26: ingest_evidence_from_gdelt depends on fetch_gdelt by
+        # design — see TestDailyCollectionStructure.test_single_parallel_layer.
         layers = dag.topo_sort()
-        assert len(layers) == 1
-        assert len(layers[0]) == 52
+        assert len(layers) == 2
+        assert len(layers[0]) == 55
+        assert len(layers[1]) == 1

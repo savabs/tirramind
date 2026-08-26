@@ -319,7 +319,11 @@ class ConvergenceDetector:
                 data = row.get("data")
                 if data is None:
                     continue
-                evidence = extract_evidence(tool_name, data)
+                # Use the row's actual fetch time, not wall-clock time at
+                # extraction — `compute()` below discards any evidence
+                # with timestamp > as_of as look-ahead, so stamping "now"
+                # here would make every item look future-dated.
+                evidence = extract_evidence(tool_name, data, observed_at=row.get("fetched_at"))
                 all_evidence.extend(evidence)
 
         log.debug(

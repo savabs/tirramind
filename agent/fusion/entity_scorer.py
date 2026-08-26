@@ -108,8 +108,21 @@ class EntityAnomalyScorer:
 
         enrichment = self._compute_enrichment(observations, as_of)
 
-        # 2. Build enriched graph
-        data, id_map, events = self._graph_builder.build(since=since, until=as_of, enrichment=enrichment)
+        # 2. Build the graph WITHOUT enrichment for the forward pass.
+        #
+        # The enrichment block (ENRICHMENT_DIM extra dims per node) is used for
+        # alert construction in step 6, NOT as model input. Passing it here
+        # widened every node vector — e.g. cftc_contract 15 -> 76 — while the
+        # GNN's type_projections were trained on the un-enriched widths, giving:
+        #
+        #   RuntimeError: mat1 and mat2 shapes cannot be multiplied (40x76 and 15x64)
+        #
+        # This scorer was the ONLY caller building with enrichment; no training
+        # path supports it at all (`grep enrich trainer.py` → zero hits), so the
+        # model has never seen an enriched feature vector and cannot consume one.
+        # The mismatch was misread as checkpoint schema drift requiring a
+        # retrain; it is neither — the model's own widths are self-consistent.
+        data, id_map, events = self._graph_builder.build(since=since, until=as_of)
 
         if id_map.num_nodes == 0:
             return [], []

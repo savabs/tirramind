@@ -11,7 +11,6 @@ Schedule: weekdays at 19:15 UTC (between convergence detection and RL training).
 
 from __future__ import annotations
 
-import json
 import logging
 import time
 
@@ -37,40 +36,44 @@ def run_adversarial_scan(params: dict, upstream: dict) -> dict:
     """
     db_path = params.get("db_path", ".tirra_pipeline/pipeline.db")
     store = PipelineStore(db_path)
-    scanner = AdversarialScanner()
+    try:
+        scanner = AdversarialScanner()
 
-    flags = scanner.scan(
-        signal_returns={},  # populated from PipelineStore in production
-        market_returns=np.array([]),
-        market_volumes=np.array([]),
-        clusters=[],  # populated from PipelineStore in production
-        position_weights={},  # populated from PipelineStore in production
-        volume_history={},
-        timestamp=time.time(),
-    )
-
-    # Store flags
-    for flag in flags:
-        store.put(
-            "adversarial_flags",
-            json.dumps(
-                {
-                    "flag_type": flag.flag_type,
-                    "severity": flag.severity,
-                    "confidence": flag.confidence,
-                    "entity_id": flag.entity_id,
-                    "signal_name": flag.signal_name,
-                    "evidence": flag.evidence,
-                    "timestamp": flag.timestamp,
-                }
-            ),
+        flags = scanner.scan(
+            signal_returns={},  # populated from PipelineStore in production
+            market_returns=np.array([]),
+            market_volumes=np.array([]),
+            clusters=[],  # populated from PipelineStore in production
+            position_weights={},  # populated from PipelineStore in production
+            volume_history={},
+            timestamp=time.time(),
         )
 
-    log.info("Adversarial scan complete: %d flags produced", len(flags))
-    return {
-        "n_flags": len(flags),
-        "flag_types": [f.flag_type for f in flags],
-    }
+        # Store flags. PipelineStore has no ``put()`` method (that call
+        # always raised AttributeError, and adversarial_flags did not exist
+        # as a table) — the real writer is ``store_adversarial_flag``, which
+        # also owns the adversarial_flags schema in agent/pipeline/store.py.
+        flags_stored = 0
+        for flag in flags:
+            store.store_adversarial_flag(
+                flag_type=flag.flag_type,
+                severity=flag.severity,
+                confidence=flag.confidence,
+                flagged_at=flag.timestamp,
+                entity_id=flag.entity_id,
+                signal_name=flag.signal_name,
+                evidence=flag.evidence,
+            )
+            flags_stored += 1
+
+        log.info("Adversarial scan complete: %d flags produced, %d stored", len(flags), flags_stored)
+        return {
+            "n_flags": len(flags),
+            "flags_stored": flags_stored,
+            "flag_types": [f.flag_type for f in flags],
+        }
+    finally:
+        store.close()
 
 
 def build_adversarial_scan_dag(

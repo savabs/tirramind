@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import threading
 import time
-from datetime import timezone; UTC = timezone.utc
+from datetime import UTC
+
+UTC = UTC
 
 import pytest
 
@@ -270,6 +272,21 @@ class TestPipelineData:
         conn = store._get_conn()
         row = conn.execute("SELECT params_json FROM pipeline_data").fetchone()
         assert row[0] == '{"a": 2, "z": 1}'
+
+    def test_list_sources_empty(self, store: PipelineStore):
+        assert store.list_sources() == []
+
+    def test_list_sources_counts_and_sorts(self, store: PipelineStore):
+        store.store_data("gdelt", {}, {"a": 1})
+        store.store_data("cftc", {}, {"a": 1})
+        store.store_data("cftc", {}, {"a": 2})
+
+        sources = store.list_sources()
+        assert [s["source"] for s in sources] == ["cftc", "gdelt"]  # alphabetical
+        by_name = {s["source"]: s for s in sources}
+        assert by_name["cftc"]["rows"] == 2
+        assert by_name["gdelt"]["rows"] == 1
+        assert by_name["cftc"]["last_fetched_at"] > 0
 
 
 # ── Signals ────────────────────────────────────────────────────

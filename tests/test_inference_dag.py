@@ -12,7 +12,9 @@ Covers:
 from __future__ import annotations
 
 import time
-from datetime import date, timezone; UTC = timezone.utc
+from datetime import UTC, date
+
+UTC = UTC
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -186,6 +188,104 @@ class TestLoadModels:
 # ──────────────────────────────────────────────────────────────
 # Node 2: gnn_inference
 # ──────────────────────────────────────────────────────────────
+
+
+class TestModelNodeTimeouts:
+    """Model-heavy nodes must not inherit the 60s fetch-sized default.
+
+    Regression (2026-08-26): `Node.timeout` defaults to 60 — right for a single
+    HTTP call in daily_collection, far too short for building a 5.6k-node
+    heterogeneous graph and running a GNN forward pass. A real chain run killed
+    `gnn_inference` at 69.6s with "Execution timed out (>60s)", which cascaded:
+    sac_inference and emit_portfolio were skipped as upstream-failed, so
+    portfolio_weights and paper_trade_pnl stayed empty for a reason that had
+    nothing to do with the model.
+    """
+
+    _MIN_MODEL_NODE_TIMEOUT = 300
+
+    def test_gnn_inference_node_has_generous_timeout(self):
+        dag = build_inference_dag()
+        node = dag.nodes["gnn_inference"]
+        assert (
+            node.timeout >= self._MIN_MODEL_NODE_TIMEOUT
+        ), f"gnn_inference timeout={node.timeout}s — a real graph build exceeded 69s; this node will be killed mid-run"
+
+    def test_all_inference_nodes_exceed_fetch_default(self):
+        dag = build_inference_dag()
+        for node_id in ("gnn_inference", "sac_inference", "emit_portfolio"):
+            node = dag.nodes[node_id]
+            assert node.timeout > 60, f"{node_id} still uses the 60s fetch default"
+
+
+class TestFailuresAreNotSilent:
+    """A present-but-throwing model must FAIL the node, not report success.
+
+    Regression (2026-08-26): each of the three inference operators caught every
+    exception and returned ``{"status": "error", ...}``. DAGExecutor fails a node
+    only when its operator *raises* — a returned dict is always recorded as
+    ``completed``. So a real GNN shape mismatch produced:
+
+        run.status = completed
+          [completed] load_models
+          [completed] gnn_inference     <- actually threw
+          [completed] sac_inference
+          [completed] emit_portfolio
+        --> portfolio_weights: 0, paper_trade_pnl: 0
+
+    Green pipeline, zero output, indefinitely. The `skipped` paths (model
+    genuinely absent) are deliberate degradation and must keep working.
+    """
+
+    @patch("agent.pipeline.dags.inference.PipelineStore")
+    @patch("agent.models.gnn.trainer.Trainer")
+    def test_gnn_inference_raises_instead_of_returning_error(self, MockTrainer, MockStore):
+        MockStore.return_value.close.return_value = None
+        MockTrainer.load_model.side_effect = RuntimeError("mat1 and mat2 shapes cannot be multiplied (93x49 and 23x64)")
+        with pytest.raises(RuntimeError, match="cannot be multiplied"):
+            _gnn_inference(
+                {"db_path": ":memory:"},
+                {"load_models": {"status": "ready", "has_gnn": True, "has_sac": True}},
+            )
+
+    @patch("agent.pipeline.dags.inference.PipelineStore")
+    def test_emit_portfolio_raises_instead_of_returning_error(self, MockStore):
+        """emit_portfolio is the node that actually writes the output tables."""
+        MockStore.return_value.close.return_value = None
+        MockStore.return_value.store_portfolio_weights.side_effect = RuntimeError("db is locked")
+        with pytest.raises(RuntimeError, match="db is locked"):
+            _emit_portfolio(
+                {"db_path": ":memory:"},
+                {
+                    "sac_inference": {
+                        "status": "completed",
+                        "weights": {"ES=F": 1.0},
+                        "instrument_tickers": ["ES=F"],
+                        "state_vector": [0.0],
+                        "action_vector": [1.0],
+                    }
+                },
+            )
+
+    def test_skipped_path_still_degrades_gracefully(self):
+        """The intended graceful-degradation path must NOT start raising."""
+        result = _gnn_inference(
+            {"db_path": ":memory:"},
+            {"load_models": {"status": "ready", "has_gnn": False}},
+        )
+        assert result["status"] == "skipped"
+        assert result["reason"] == "no_gnn_model"
+
+    def test_no_operator_returns_status_error(self):
+        """Guard the contract itself: 'error' is not a valid operator return."""
+        import inspect
+
+        from agent.pipeline.dags import inference as inference_mod
+
+        src = inspect.getsource(inference_mod)
+        assert (
+            '"status": "error"' not in src
+        ), "an operator returns status='error'; the executor records that as completed — raise instead"
 
 
 class TestGNNInference:

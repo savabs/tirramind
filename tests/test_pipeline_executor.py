@@ -508,3 +508,95 @@ class TestEdgeCases:
         assert nr.started_at is not None
         assert nr.finished_at is not None
         assert nr.finished_at >= nr.started_at
+
+
+# ── Timeout reconciliation ──────────────────────────────────────
+#
+# A node with timeout=1 whose operator actually takes ~2s used to be
+# reported "failed: timed out" even though the operator kept running
+# in its worker thread, finished, and its DB write landed — the run
+# record was left showing a false failure forever. These verify the
+# fix: the node's *initial* result is still "failed" (execute() must
+# return promptly, bounded by the timeout, not block for the full
+# operator duration), but once the background thread actually
+# finishes, `_reconcile_timeout` corrects the NodeResult in place and
+# re-persists the dag_runs row.
+
+
+class TestTimeoutReconciliation:
+    def test_execute_returns_promptly_not_after_full_duration(self, registry, store):
+        """execute() must not block for the operator's full ~2s runtime
+        just because its timeout (1s) was exceeded — that would defeat
+        the whole point of a node timeout."""
+        dag = DAG(name="slow_bounded")
+        dag.add("slow", operator="slow", params={"sleep": 2.0}, timeout=1, retries=1)
+        executor = DAGExecutor(tool_registry=registry, store=store)
+
+        started = time.time()
+        run = executor.execute(dag)
+        elapsed = time.time() - started
+
+        assert elapsed < 1.9, f"execute() blocked for {elapsed:.2f}s; timeout should have bounded it near 1s"
+        assert run.node_results["slow"].status == "failed"
+        assert "timed out" in (run.node_results["slow"].error or "")
+
+    def test_late_success_reconciles_to_completed_and_stores_output(self, registry, store):
+        """Once the timed-out operator actually finishes and succeeds, its
+        NodeResult flips from 'failed' to 'completed' and its output is
+        persisted — the write is not silently dropped nor redone."""
+        dag = DAG(name="slow_reconcile")
+        dag.add(
+            "slow",
+            operator="slow",
+            params={"sleep": 1.5},
+            timeout=1,
+            retries=1,
+            table_name="slow_output",
+        )
+        executor = DAGExecutor(tool_registry=registry, store=store)
+        run = executor.execute(dag)
+
+        # Transient state immediately after execute() returns.
+        assert run.node_results["slow"].status == "failed"
+
+        # Give the background thread (operator sleeps 1.5s, timeout was 1s)
+        # time to finish and for its done-callback to fire.
+        deadline = time.time() + 5.0
+        while run.node_results["slow"].status != "completed" and time.time() < deadline:
+            time.sleep(0.05)
+
+        nr = run.node_results["slow"]
+        assert nr.status == "completed", "late success was never reconciled"
+        assert nr.error is None
+        assert nr.output == {"slept": True}
+
+        # The late write actually landed in the store...
+        rows = store.query_data("slow_output", limit=10)
+        assert len(rows) == 1
+        assert rows[0]["data"] == {"slept": True}
+
+        # ...and the persisted dag_runs record was corrected too, not left
+        # showing the transient false failure forever.
+        persisted = store.get_run(run.run_id)
+        assert persisted["status"] == "completed"
+
+    def test_downstream_of_late_success_was_skipped_not_rerun(self, registry, store):
+        """Documents the known, accepted limitation: downstream nodes are
+        evaluated synchronously right after the timeout fires, before the
+        slow node's reconciliation can land, so they are skipped rather
+        than retroactively executed. The fix only corrects the false
+        failure report for the timed-out node itself."""
+        dag = DAG(name="slow_then_downstream")
+        dag.add("slow", operator="slow", params={"sleep": 1.5}, timeout=1, retries=1)
+        dag.add("downstream", operator="echo", depends_on=["slow"])
+        executor = DAGExecutor(tool_registry=registry, store=store)
+        run = executor.execute(dag)
+
+        assert run.node_results["downstream"].status == "skipped"
+
+        deadline = time.time() + 5.0
+        while run.node_results["slow"].status != "completed" and time.time() < deadline:
+            time.sleep(0.05)
+        assert run.node_results["slow"].status == "completed"
+        # downstream is not retroactively executed by reconciliation.
+        assert run.node_results["downstream"].status == "skipped"

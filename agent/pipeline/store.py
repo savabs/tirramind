@@ -41,9 +41,7 @@ log = logging.getLogger(__name__)
 _DEFAULT_DB_PATH = ".tirra_pipeline/pipeline.db"
 _PIPELINE_SCHEMA_NAME = "pipeline_store"
 _PIPELINE_SCHEMA_VERSION = 1
-_PIPELINE_SCHEMA_DESCRIPTION = (
-    "Baseline portable schema: epoch timestamps, integer booleans, JSON text payloads"
-)
+_PIPELINE_SCHEMA_DESCRIPTION = "Baseline portable schema: epoch timestamps, integer booleans, JSON text payloads"
 
 _SCHEMA_MIGRATIONS_SQL = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -371,6 +369,27 @@ CREATE TABLE IF NOT EXISTS entity_type_registry (
     active INTEGER NOT NULL DEFAULT 1,
     metadata_json TEXT
 );
+
+-- Adversarial flags (Phase 22 – adversarial robustness scan)
+
+CREATE TABLE IF NOT EXISTS adversarial_flags (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    flag_type TEXT NOT NULL,
+    severity REAL NOT NULL,
+    confidence REAL NOT NULL,
+    entity_id TEXT,
+    signal_name TEXT,
+    flagged_at REAL NOT NULL,
+    evidence_json TEXT NOT NULL,
+    metadata_json TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_adversarial_flags_time
+    ON adversarial_flags(flagged_at);
+CREATE INDEX IF NOT EXISTS idx_adversarial_flags_entity
+    ON adversarial_flags(entity_id, flagged_at);
+CREATE INDEX IF NOT EXISTS idx_adversarial_flags_type
+    ON adversarial_flags(flag_type, flagged_at);
 """
 
 
@@ -518,9 +537,7 @@ class PipelineStore:
     def get_run(self, run_id: str) -> dict[str, Any] | None:
         """Get a specific run by ID."""
         conn = self._get_conn()
-        row = conn.execute(
-            "SELECT * FROM dag_runs WHERE run_id=?", (run_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM dag_runs WHERE run_id=?", (run_id,)).fetchone()
         if row is None:
             return None
         return self._row_to_dict(row)
@@ -596,6 +613,19 @@ class PipelineStore:
         ).fetchall()
         return [self._data_row_to_dict(r) for r in rows]
 
+    def list_sources(self) -> list[dict[str, Any]]:
+        """Enumerate distinct sources with row count + latest fetch time.
+
+        Used to publish a source catalog to API consumers (Data Platform tier)
+        so they don't have to guess valid `source` values for query_data().
+        """
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT source, COUNT(*) AS rows, MAX(fetched_at) AS last_fetched_at "
+            "FROM pipeline_data GROUP BY source ORDER BY source"
+        ).fetchall()
+        return [{"source": r["source"], "rows": r["rows"], "last_fetched_at": r["last_fetched_at"]} for r in rows]
+
     # ── signals ────────────────────────────────────────────────
 
     def store_signal(
@@ -664,10 +694,7 @@ class PipelineStore:
         """
         errors = validate_feature(feature)
         if errors:
-            raise ValueError(
-                f"Feature '{feature.feature_name}' failed validation: "
-                + "; ".join(errors)
-            )
+            raise ValueError(f"Feature '{feature.feature_name}' failed validation: " + "; ".join(errors))
         conn = self._get_conn()
         cursor = conn.execute(
             "INSERT OR REPLACE INTO features "
@@ -717,10 +744,7 @@ class PipelineStore:
             if errs:
                 all_errors.append(f"[{idx}] {feat.feature_name}: {'; '.join(errs)}")
         if all_errors:
-            raise ValueError(
-                f"Batch validation failed ({len(all_errors)} feature(s)): "
-                + " | ".join(all_errors)
-            )
+            raise ValueError(f"Batch validation failed ({len(all_errors)} feature(s)): " + " | ".join(all_errors))
 
         conn = self._get_conn()
         row_ids: list[int] = []
@@ -744,11 +768,7 @@ class PipelineStore:
                         json.dumps(list(feat.source_signals)),
                         feat.builder,
                         feat.unit,
-                        (
-                            json.dumps(feat.metadata, default=str)
-                            if feat.metadata
-                            else None
-                        ),
+                        (json.dumps(feat.metadata, default=str) if feat.metadata else None),
                     ),
                 )
                 row_ids.append(cursor.lastrowid)  # type: ignore[arg-type]
@@ -817,10 +837,7 @@ class PipelineStore:
         """
         errors = validate_belief(belief)
         if errors:
-            raise ValueError(
-                f"Belief '{belief.variable_name}' failed validation: "
-                + "; ".join(errors)
-            )
+            raise ValueError(f"Belief '{belief.variable_name}' failed validation: " + "; ".join(errors))
         conn = self._get_conn()
         cursor = conn.execute(
             "INSERT OR REPLACE INTO beliefs "
@@ -836,11 +853,7 @@ class PipelineStore:
                 belief.dist_type,
                 belief.mean,
                 belief.variance,
-                (
-                    json.dumps(belief.probabilities)
-                    if belief.probabilities is not None
-                    else None
-                ),
+                (json.dumps(belief.probabilities) if belief.probabilities is not None else None),
                 belief.evidence_count,
                 belief.model_graph_hash,
                 belief.confidence,
@@ -873,10 +886,7 @@ class PipelineStore:
             if errs:
                 all_errors.append(f"[{idx}] {b.variable_name}: {'; '.join(errs)}")
         if all_errors:
-            raise ValueError(
-                f"Batch validation failed ({len(all_errors)} belief(s)): "
-                + " | ".join(all_errors)
-            )
+            raise ValueError(f"Batch validation failed ({len(all_errors)} belief(s)): " + " | ".join(all_errors))
 
         conn = self._get_conn()
         row_ids: list[int] = []
@@ -896,11 +906,7 @@ class PipelineStore:
                         b.dist_type,
                         b.mean,
                         b.variance,
-                        (
-                            json.dumps(b.probabilities)
-                            if b.probabilities is not None
-                            else None
-                        ),
+                        (json.dumps(b.probabilities) if b.probabilities is not None else None),
                         b.evidence_count,
                         b.model_graph_hash,
                         b.confidence,
@@ -1138,9 +1144,7 @@ class PipelineStore:
     def query_all_entity_aliases(self) -> list[dict[str, Any]]:
         """Return every row in entity_aliases — used by EntityResolver."""
         conn = self._get_conn()
-        rows = conn.execute(
-            "SELECT * FROM entity_aliases ORDER BY entity_id"
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM entity_aliases ORDER BY entity_id").fetchall()
         return [
             {
                 "alias_id": r["alias_id"],
@@ -1156,9 +1160,7 @@ class PipelineStore:
     def get_entity(self, entity_id: str) -> dict[str, Any] | None:
         """Get a single entity record by ID."""
         conn = self._get_conn()
-        row = conn.execute(
-            "SELECT * FROM entities WHERE entity_id=?", (entity_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM entities WHERE entity_id=?", (entity_id,)).fetchone()
         if row is None:
             return None
         return self._entity_row_to_dict(row)
@@ -1324,9 +1326,7 @@ class PipelineStore:
         ``"both"`` (default) — either side.
         """
         if direction not in ("outgoing", "incoming", "both"):
-            raise ValueError(
-                f"direction must be outgoing/incoming/both, got {direction!r}"
-            )
+            raise ValueError(f"direction must be outgoing/incoming/both, got {direction!r}")
 
         conn = self._get_conn()
         parts: list[str] = []
@@ -1338,9 +1338,7 @@ class PipelineStore:
             if link_type is not None:
                 clauses.append("link_type=?")
                 p.append(link_type)
-            parts.append(
-                f"SELECT * FROM entity_links WHERE {' AND '.join(clauses)}"
-            )  # noqa: S608
+            parts.append(f"SELECT * FROM entity_links WHERE {' AND '.join(clauses)}")  # noqa: S608
             params.extend(p)
 
         if direction in ("incoming", "both"):
@@ -1349,9 +1347,7 @@ class PipelineStore:
             if link_type is not None:
                 clauses.append("link_type=?")
                 p.append(link_type)
-            parts.append(
-                f"SELECT * FROM entity_links WHERE {' AND '.join(clauses)}"
-            )  # noqa: S608
+            parts.append(f"SELECT * FROM entity_links WHERE {' AND '.join(clauses)}")  # noqa: S608
             params.extend(p)
 
         sql = " UNION ".join(parts) + " ORDER BY created_at DESC LIMIT ?"
@@ -1664,6 +1660,27 @@ class PipelineStore:
         conn.commit()
         return cursor.lastrowid  # type: ignore[return-value]
 
+    def delete_entity_alerts(self, *, since: float, until: float) -> int:
+        """Delete entity_alerts rows with ``alert_time`` in ``[since, until)``.
+
+        Used by entity_scoring to make same-day reruns idempotent: a plain
+        INSERT with no key here previously meant running the DAG twice in
+        one day silently doubled ``entity_alerts`` (9,704 rows for 4,852
+        distinct entities after two runs). The caller deletes the current
+        scoring day's window before re-inserting, so a rerun replaces that
+        day's alerts instead of duplicating them, while alerts from other
+        days (the 7-day rolling window `inference` reads) are untouched.
+
+        Returns the number of rows deleted.
+        """
+        conn = self._get_conn()
+        cursor = conn.execute(
+            "DELETE FROM entity_alerts WHERE alert_time >= ? AND alert_time < ?",
+            (since, until),
+        )
+        conn.commit()
+        return cursor.rowcount
+
     def query_entity_alerts(
         self,
         *,
@@ -1763,6 +1780,79 @@ class PipelineStore:
             params,
         ).fetchall()
         return [self._convergence_cluster_row_to_dict(r) for r in rows]
+
+    # ── adversarial flags (Phase 22) ───────────────────────────
+
+    def store_adversarial_flag(
+        self,
+        flag_type: str,
+        severity: float,
+        confidence: float,
+        flagged_at: float,
+        *,
+        entity_id: str | None = None,
+        signal_name: str | None = None,
+        evidence: dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> int:
+        """Store an adversarial detection flag. Returns row ID."""
+        conn = self._get_conn()
+        cursor = conn.execute(
+            "INSERT INTO adversarial_flags "
+            "(flag_type, severity, confidence, entity_id, signal_name, "
+            "flagged_at, evidence_json, metadata_json) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (
+                flag_type,
+                severity,
+                confidence,
+                entity_id,
+                signal_name,
+                flagged_at,
+                json.dumps(evidence, default=str) if evidence else "{}",
+                json.dumps(metadata, default=str) if metadata else None,
+            ),
+        )
+        conn.commit()
+        return cursor.lastrowid  # type: ignore[return-value]
+
+    def query_adversarial_flags(
+        self,
+        *,
+        flag_type: str | None = None,
+        entity_id: str | None = None,
+        since: float | None = None,
+        until: float | None = None,
+        min_severity: float | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Query adversarial flags with optional filters."""
+        conn = self._get_conn()
+        clauses: list[str] = []
+        params: list[Any] = []
+        if flag_type is not None:
+            clauses.append("flag_type=?")
+            params.append(flag_type)
+        if entity_id is not None:
+            clauses.append("entity_id=?")
+            params.append(entity_id)
+        if since is not None:
+            clauses.append("flagged_at >= ?")
+            params.append(since)
+        if until is not None:
+            clauses.append("flagged_at <= ?")
+            params.append(until)
+        if min_severity is not None:
+            clauses.append("severity >= ?")
+            params.append(min_severity)
+        where = " AND ".join(clauses) if clauses else "1=1"
+        params.append(limit)
+        rows = conn.execute(
+            f"SELECT * FROM adversarial_flags WHERE {where} "  # noqa: S608
+            "ORDER BY flagged_at DESC LIMIT ?",
+            params,
+        ).fetchall()
+        return [self._adversarial_flag_row_to_dict(r) for r in rows]
 
     # ── helpers ────────────────────────────────────────────────
 
@@ -1872,9 +1962,7 @@ class PipelineStore:
     def _entity_alert_row_to_dict(row: Any) -> dict[str, Any]:
         d = dict(row)
         try:
-            d["evidence_sources"] = tuple(
-                json.loads(d.pop("evidence_sources_json", "[]"))
-            )
+            d["evidence_sources"] = tuple(json.loads(d.pop("evidence_sources_json", "[]")))
         except (json.JSONDecodeError, TypeError):
             d["evidence_sources"] = ()
         try:
@@ -1891,17 +1979,26 @@ class PipelineStore:
         except (json.JSONDecodeError, TypeError):
             d["member_entity_ids"] = []
         try:
-            d["contributing_domains"] = tuple(
-                json.loads(d.pop("contributing_domains_json", "[]"))
-            )
+            d["contributing_domains"] = tuple(json.loads(d.pop("contributing_domains_json", "[]")))
         except (json.JSONDecodeError, TypeError):
             d["contributing_domains"] = ()
         try:
-            d["contributing_tools"] = tuple(
-                json.loads(d.pop("contributing_tools_json", "[]"))
-            )
+            d["contributing_tools"] = tuple(json.loads(d.pop("contributing_tools_json", "[]")))
         except (json.JSONDecodeError, TypeError):
             d["contributing_tools"] = ()
+        try:
+            d["metadata"] = json.loads(d.pop("metadata_json", "null"))
+        except (json.JSONDecodeError, TypeError):
+            d["metadata"] = None
+        return d
+
+    @staticmethod
+    def _adversarial_flag_row_to_dict(row: Any) -> dict[str, Any]:
+        d = dict(row)
+        try:
+            d["evidence"] = json.loads(d.pop("evidence_json", "{}"))
+        except (json.JSONDecodeError, TypeError):
+            d["evidence"] = {}
         try:
             d["metadata"] = json.loads(d.pop("metadata_json", "null"))
         except (json.JSONDecodeError, TypeError):
@@ -2052,15 +2149,11 @@ class PipelineStore:
 
         for val in pending["state"]:
             if not math.isfinite(val):
-                log.warning(
-                    "Pending state for %s contains non-finite value, skipping", date
-                )
+                log.warning("Pending state for %s contains non-finite value, skipping", date)
                 return False
         for val in next_state:
             if not math.isfinite(val):
-                log.warning(
-                    "next_state for %s contains non-finite value, skipping", date
-                )
+                log.warning("next_state for %s contains non-finite value, skipping", date)
                 return False
 
         # Store the completed transition
@@ -2396,9 +2489,7 @@ class PipelineStore:
                 (status,),
             ).fetchall()
         else:
-            rows = conn.execute(
-                "SELECT * FROM discovered_sources ORDER BY discovered_at"
-            ).fetchall()
+            rows = conn.execute("SELECT * FROM discovered_sources ORDER BY discovered_at").fetchall()
         return [self._source_row_to_dict(r) for r in rows]
 
     @staticmethod
@@ -2525,13 +2616,9 @@ class PipelineStore:
         """Query registered entity types."""
         conn = self._get_conn()
         if active_only:
-            rows = conn.execute(
-                "SELECT * FROM entity_type_registry WHERE active=1 ORDER BY type_name"
-            ).fetchall()
+            rows = conn.execute("SELECT * FROM entity_type_registry WHERE active=1 ORDER BY type_name").fetchall()
         else:
-            rows = conn.execute(
-                "SELECT * FROM entity_type_registry ORDER BY type_name"
-            ).fetchall()
+            rows = conn.execute("SELECT * FROM entity_type_registry ORDER BY type_name").fetchall()
         result = []
         for r in rows:
             d = dict(r)

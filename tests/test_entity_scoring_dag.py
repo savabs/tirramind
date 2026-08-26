@@ -70,7 +70,7 @@ class TestConstants:
         assert DAG_NAME == "entity_scoring"
 
     def test_depends_on(self) -> None:
-        assert DEPENDS_ON == ["gnn_inference"]
+        assert ["gnn_inference"] == DEPENDS_ON
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -590,6 +590,150 @@ class TestSuccessfulScoring:
         assert result["clusters_stored"] == 0
         assert result["clusters_total"] == 1
         assert result["alerts_stored"] == 2  # alerts still stored
+
+
+# ═══════════════════════════════════════════════════════════════
+# Idempotency — rerunning the DAG must not double entity_alerts
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestIdempotentRerun:
+    """Running the DAG twice for the same scoring day must not double
+    entity_alerts. Before the fix, ``store_entity_alert`` was a plain
+    INSERT with no key, so a real chain re-run produced 9,704 rows for
+    4,852 distinct entities — exactly 2x. ``run_entity_scoring`` now
+    clears the UTC calendar day's existing rows before re-inserting.
+    """
+
+    _make_mock_alert = TestSuccessfulScoring._make_mock_alert
+
+    def _run_twice(self, populated_store, model_path, alerts, clusters, as_of):
+        with (
+            patch("agent.models.gnn.trainer.Trainer") as MockTrainer,
+            patch("agent.fusion.entity_scorer.EntityAnomalyScorer") as MockScorer,
+        ):
+            mock_trainer_inst = MagicMock()
+            MockTrainer.load_model.return_value = mock_trainer_inst
+            mock_scorer_inst = MagicMock()
+            MockScorer.return_value = mock_scorer_inst
+            mock_scorer_inst.score_entities.return_value = (alerts, clusters)
+
+            params = {
+                "db_path": str(populated_store._db_path),
+                "model_path": str(model_path),
+                "as_of": as_of,
+            }
+            first = run_entity_scoring(params=params, upstream={})
+            second = run_entity_scoring(params=params, upstream={})
+        return first, second
+
+    def test_same_as_of_rerun_does_not_double_row_count(
+        self,
+        populated_store: PipelineStore,
+        tmp_path: Path,
+    ) -> None:
+        alerts = [self._make_mock_alert("ent_0", 3.5), self._make_mock_alert("ent_1", 2.0)]
+        model_path = tmp_path / "model.pt"
+        model_path.write_bytes(b"fake")
+
+        first, second = self._run_twice(populated_store, model_path, alerts, [], as_of=1700000000.0)
+
+        assert first["alerts_stored"] == 2
+        assert second["alerts_stored"] == 2
+
+        stored = populated_store.query_entity_alerts(limit=100)
+        assert len(stored) == 2, f"expected 2 rows after 2 reruns, got {len(stored)} (doubling regression)"
+        assert {r["entity_id"] for r in stored} == {"ent_0", "ent_1"}
+
+    def test_different_as_of_same_day_does_not_double(
+        self,
+        populated_store: PipelineStore,
+        tmp_path: Path,
+    ) -> None:
+        """Real reruns via time.time() get a slightly different as_of each
+        call (never bit-identical) — the fix must key on the calendar day,
+        not the exact timestamp, or this still doubles."""
+        alerts = [self._make_mock_alert("ent_0", 3.5)]
+        model_path = tmp_path / "model.pt"
+        model_path.write_bytes(b"fake")
+
+        base = 1700000000.0  # 2023-11-14 22:13:20 UTC
+        with (
+            patch("agent.models.gnn.trainer.Trainer") as MockTrainer,
+            patch("agent.fusion.entity_scorer.EntityAnomalyScorer") as MockScorer,
+        ):
+            mock_trainer_inst = MagicMock()
+            MockTrainer.load_model.return_value = mock_trainer_inst
+            mock_scorer_inst = MagicMock()
+            MockScorer.return_value = mock_scorer_inst
+            mock_scorer_inst.score_entities.return_value = (alerts, [])
+
+            run_entity_scoring(
+                params={
+                    "db_path": str(populated_store._db_path),
+                    "model_path": str(model_path),
+                    "as_of": base,
+                },
+                upstream={},
+            )
+            run_entity_scoring(
+                params={
+                    "db_path": str(populated_store._db_path),
+                    "model_path": str(model_path),
+                    "as_of": base + 45.0,  # same UTC day, 45s later
+                },
+                upstream={},
+            )
+
+        stored = populated_store.query_entity_alerts(limit=100)
+        assert len(stored) == 1
+
+    def test_next_day_rerun_preserves_history(
+        self,
+        populated_store: PipelineStore,
+        tmp_path: Path,
+    ) -> None:
+        """A scoring run on a later day must NOT delete the prior day's
+        alerts — inference reads a 7-day rolling window over alert_time,
+        so history across days must survive same-day dedup."""
+        model_path = tmp_path / "model.pt"
+        model_path.write_bytes(b"fake")
+
+        day1 = 1700000000.0
+        day2 = day1 + 86400.0
+
+        with (
+            patch("agent.models.gnn.trainer.Trainer") as MockTrainer,
+            patch("agent.fusion.entity_scorer.EntityAnomalyScorer") as MockScorer,
+        ):
+            mock_trainer_inst = MagicMock()
+            MockTrainer.load_model.return_value = mock_trainer_inst
+            mock_scorer_inst = MagicMock()
+            MockScorer.return_value = mock_scorer_inst
+
+            mock_scorer_inst.score_entities.return_value = ([self._make_mock_alert("ent_0", 3.5)], [])
+            run_entity_scoring(
+                params={
+                    "db_path": str(populated_store._db_path),
+                    "model_path": str(model_path),
+                    "as_of": day1,
+                },
+                upstream={},
+            )
+
+            mock_scorer_inst.score_entities.return_value = ([self._make_mock_alert("ent_1", 2.0)], [])
+            run_entity_scoring(
+                params={
+                    "db_path": str(populated_store._db_path),
+                    "model_path": str(model_path),
+                    "as_of": day2,
+                },
+                upstream={},
+            )
+
+        stored = populated_store.query_entity_alerts(limit=100)
+        assert len(stored) == 2
+        assert {r["entity_id"] for r in stored} == {"ent_0", "ent_1"}
 
 
 # ═══════════════════════════════════════════════════════════════

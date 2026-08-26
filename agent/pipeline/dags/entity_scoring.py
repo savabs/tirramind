@@ -14,6 +14,7 @@ All functions follow the FunctionOperator contract:
 from __future__ import annotations
 
 import logging
+import math
 import time
 from pathlib import Path
 from typing import Any
@@ -28,6 +29,10 @@ DEPENDS_ON = ["gnn_inference"]
 
 # Minimum entity count to justify scoring
 _MIN_ENTITY_COUNT = 5
+
+# UTC calendar-day bucket width used to scope the idempotent
+# delete-then-insert in run_entity_scoring (see call site below).
+_DAY_SECONDS = 86400.0
 
 # Default model checkpoint location (must match gnn_inference DAG)
 _DEFAULT_MODEL_PATH = ".tirra_pipeline/gnn_model.pt"
@@ -177,6 +182,26 @@ def run_entity_scoring(params: dict, upstream: dict) -> dict:
 
         alerts, clusters = scorer.score_entities(as_of)
 
+        # Clear any alerts already written for this scoring day before
+        # re-inserting. Without this, a plain INSERT per alert meant
+        # re-running the DAG (e.g. manual retrigger, or a scheduler firing
+        # twice) doubled entity_alerts on every rerun — 9,704 rows for
+        # 4,852 distinct entities after two runs, growing without bound.
+        # Scoping the delete to the UTC calendar day containing `as_of`
+        # (rather than all rows, or an exact-timestamp match that would
+        # never collide) makes same-day reruns idempotent while preserving
+        # the multi-day history `inference` reads via a 7-day rolling
+        # window over alert_time.
+        day_start = math.floor(as_of / _DAY_SECONDS) * _DAY_SECONDS
+        day_end = day_start + _DAY_SECONDS
+        cleared = store.delete_entity_alerts(since=day_start, until=day_end)
+        if cleared:
+            log.info(
+                "Cleared %d entity_alerts row(s) already stored for this scoring day " "before rewrite (as_of=%.0f).",
+                cleared,
+                as_of,
+            )
+
         # Persist alerts
         alerts_stored = 0
         for alert in alerts:
@@ -272,6 +297,10 @@ def build_entity_scoring_dag(
         "score_entities",
         operator=run_entity_scoring,
         params={"db_path": db_path, "model_path": model_path},
+        # See the note in gnn_inference: the 60s Node.timeout default is sized
+        # for an HTTP fetch, not for loading a checkpoint and scoring every
+        # entity in the graph.
+        timeout=900,
     )
 
     return dag

@@ -58,7 +58,10 @@ def _load_evidence_from_store(
             data = row.get("data")
             if data is None:
                 continue
-            evidence = extract_evidence(tool_name, data)
+            # Stamp evidence with the row's actual fetch time, not the
+            # wall clock at extraction time — otherwise every item looks
+            # future-dated relative to `as_of` and gets filtered out.
+            evidence = extract_evidence(tool_name, data, observed_at=row.get("fetched_at"))
             all_evidence.extend(evidence)
 
     log.debug("Pre-loaded %d evidence items from store.", len(all_evidence))

@@ -10,6 +10,7 @@ Unknown tools yield an empty list.
 
 from __future__ import annotations
 
+import contextvars
 import logging
 import time
 from collections.abc import Callable
@@ -18,6 +19,23 @@ from typing import Any
 from agent.convergence.evidence import Evidence
 
 log = logging.getLogger(__name__)
+
+# Evidence.timestamp must reflect *when the event happened* (the row's
+# real fetched_at/observed_at), not when the extractor happened to run.
+# Detection windows filter out any evidence with timestamp > as_of (no
+# look-ahead) — if extraction stamps wall-clock time, and extraction runs
+# even a moment after the `as_of` a caller captured earlier, every single
+# item looks "from the future" relative to that window and gets discarded.
+#
+# All 60+ extractor functions below call the module-level `_now_ts()`
+# helper. Rather than threading an `observed_at` parameter through every
+# one of them, `extract_evidence()` stashes the caller-supplied event
+# timestamp here for the duration of one extraction call, and `_now_ts()`
+# reads it back. Falls back to real wall-clock time only when no caller
+# provided one (e.g. calling an extractor directly in a unit test).
+_current_observed_at: contextvars.ContextVar[float | None] = contextvars.ContextVar(
+    "_current_observed_at", default=None
+)
 
 # ── Type alias + registry ──────────────────────────────────────
 
@@ -33,8 +51,24 @@ def register_extractor(tool_name: str, fn: ExtractorFn) -> None:
     _REGISTRY[tool_name] = fn
 
 
-def extract_evidence(tool_name: str, tool_data: Any) -> list[Evidence]:
+def extract_evidence(
+    tool_name: str,
+    tool_data: Any,
+    observed_at: float | None = None,
+) -> list[Evidence]:
     """Extract evidence from a tool's data dict.
+
+    Parameters
+    ----------
+    tool_name : registered extractor to use.
+    tool_data : the tool's raw output payload.
+    observed_at : the event's actual timestamp — typically the stored
+        row's ``fetched_at`` — stamped onto every ``Evidence`` this call
+        produces. Defaults to wall-clock time (``time.time()``) only when
+        omitted, which is correct for ad-hoc/unit-test use but NOT for
+        pipeline callers replaying historical rows: those must pass the
+        row's own timestamp so evidence doesn't appear future-dated
+        relative to whatever ``as_of`` window it's later filtered against.
 
     Returns an empty list if the tool has no extractor or if
     extraction fails. Never raises.
@@ -47,6 +81,7 @@ def extract_evidence(tool_name: str, tool_data: Any) -> list[Evidence]:
         log.debug("No extractor registered for tool %r", tool_name)
         return []
 
+    token = _current_observed_at.set(observed_at)
     try:
         result = fn(tool_name, tool_data)
         if not isinstance(result, list):
@@ -60,6 +95,8 @@ def extract_evidence(tool_name: str, tool_data: Any) -> list[Evidence]:
     except Exception:
         log.warning("Extractor for %r failed", tool_name, exc_info=True)
         return []
+    finally:
+        _current_observed_at.reset(token)
 
 
 def registered_tools() -> list[str]:
@@ -91,8 +128,14 @@ def _safe_int(val: Any, default: int = 0) -> int:
 
 
 def _now_ts() -> float:
-    """Current unix timestamp."""
-    return time.time()
+    """Timestamp to stamp on newly extracted Evidence.
+
+    Uses the event's actual timestamp when ``extract_evidence`` was called
+    with one (the normal pipeline path — see ``_current_observed_at``).
+    Falls back to wall-clock time when none is available.
+    """
+    observed_at = _current_observed_at.get()
+    return observed_at if observed_at is not None else time.time()
 
 
 # ══════════════════════════════════════════════════════════════
@@ -3062,7 +3105,7 @@ def _extract_satellite_vegetation(tool_name: str, data: dict) -> list[Evidence]:
     ttl = 604_800  # 7 days — MODIS 16-day cycle
 
     observation_count = data.get("observation_count", 0)
-    if not isinstance(observation_count, (int, float)) or observation_count == 0:
+    if not isinstance(observation_count, int | float) or observation_count == 0:
         # No observations → can still emit if latest_ndvi is present
         # (e.g. single-observation case), but if truly empty, bail
         if data.get("latest_ndvi") is None and data.get("avg_ndvi") is None:
@@ -4331,7 +4374,7 @@ def _extract_labor_disruptions(tool_name: str, data: Any) -> list[Evidence]:
 
         # Consecutive active months (overview only)
         consec = signals.get("consecutive_active_months")
-        if isinstance(consec, (int, float)) and consec > 0:
+        if isinstance(consec, int | float) and consec > 0:
             results.append(
                 Evidence(
                     source=tool_name,

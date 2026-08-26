@@ -28,7 +28,9 @@ disable the source.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone; UTC = timezone.utc
+from datetime import UTC, datetime
+
+UTC = UTC
 from typing import TYPE_CHECKING, Any
 
 from agent.pipeline.dag import DAG
@@ -112,6 +114,78 @@ def run_cert_domain_collection(
         }
     finally:
         store.close()
+
+
+def run_evidence_ingest_from_gdelt(
+    params: dict[str, Any],
+    upstream_results: dict[str, Any],
+) -> dict[str, Any]:
+    """FunctionOperator callback: turn this cycle's GDELT events into an
+    Entity Graph (evidence) document.
+
+    Builds one deterministic sentence per event
+    ("{actor1} {event_description} {actor2} in {location}.") from real,
+    already-fetched GDELT rows, then ingests the day's events as a single
+    document via the existing deterministic extractor (agent/evidence/). This
+    is what actually populates the Entity Graph tier with live content — the
+    same cross-document co-occurrence signal (a recurring entity pair across
+    many days' events is the alpha) now backed by continuously-refreshed real
+    data instead of a handful of static demo documents.
+
+    params:
+        db_path         : str — PipelineStore database path (injected by DAG builder)
+        evidence_db_path: str — EvidenceGraphStore database path
+        max_events      : int — cap events processed per cycle (default 200)
+    """
+    from agent.evidence import EvidenceGraphStore, EvidenceIngestor, ingest_to_store
+    from agent.pipeline.store import PipelineStore
+
+    db_path = params.get("db_path", ".tirra_pipeline/pipeline.db")
+    evidence_db_path = params.get("evidence_db_path", ".tirra_pipeline/evidence.db")
+    max_events = params.get("max_events", 200)
+
+    store = PipelineStore(db_path)
+    rows = store.query_data("gdelt", limit=1)  # this cycle's fetch_gdelt result
+    if not rows:
+        return {"ingested_docs": 0, "reason": "no gdelt data yet"}
+
+    evidence_store = EvidenceGraphStore(evidence_db_path)
+    ingestor = EvidenceIngestor.from_registry(db_path=db_path)
+
+    ingested = 0
+    total_sentences = 0
+    for row in rows:
+        events = (row.get("data") or {}).get("events", [])
+        sentences = []
+        for e in events[:max_events]:
+            a1 = (e.get("actor1") or {}).get("name")
+            a2 = (e.get("actor2") or {}).get("name")
+            if not a1 or not a2:
+                continue
+            desc = (e.get("event_description") or "interacted with").lower()
+            loc = (e.get("location") or {}).get("name") or ""
+            sentence = f"{a1} {desc} {a2}"
+            if loc:
+                sentence += f" in {loc}"
+            sentences.append(sentence + ".")
+        if not sentences:
+            continue
+
+        doc_id = f"gdelt_{row.get('fetched_at')}"
+        new = ingest_to_store(
+            evidence_store,
+            ingestor,
+            doc_id=doc_id,
+            text=" ".join(sentences),
+            source="gdelt",
+            title=f"GDELT events @ {row.get('fetched_at')}",
+            doc_type="text",
+        )
+        if new:
+            ingested += 1
+            total_sentences += len(sentences)
+
+    return {"ingested_docs": ingested, "sentences": total_sentences, "stats": evidence_store.stats()}
 
 
 # ── Quarantine constants ──────────────────────────────────
@@ -267,6 +341,17 @@ def build_daily_collection_dag(
         params={"mode": "events", "hours_back": 24, "limit": 500},
         timeout=120,
         retries=2,
+    )
+
+    # ── Entity Graph: ingest today's GDELT events as evidence ──
+    dag.add(
+        "ingest_evidence_from_gdelt",
+        operator=run_evidence_ingest_from_gdelt,
+        depends_on=["fetch_gdelt"],
+        params={"db_path": db_path},
+        timeout=60,
+        retries=1,
+        store_result=False,
     )
 
     # ── Polymarket Prediction Markets ──────────────────────
@@ -561,15 +646,13 @@ def build_daily_collection_dag(
         params: dict[str, Any],
         upstream_results: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         from agent.pipeline.store import PipelineStore
         from agent.tools.sovereign_debt import SovereignDebtTool
 
         db_path = params.get("db_path", ".tirra_pipeline/pipeline.db")
-        month = params.get("month") or datetime.now(tz=timezone.utc).strftime(
-            "%Y-%m"
-        )
+        month = params.get("month") or datetime.now(tz=UTC).strftime("%Y-%m")
         store = PipelineStore(db_path)
         try:
             tool = SovereignDebtTool(pipeline_store=store)
@@ -653,7 +736,11 @@ def build_daily_collection_dag(
         "fetch_academic_preprints",
         operator="academic_preprints",
         table_name="academic_preprints",
-        params={"mode": "papers"},
+        # "papers" mode requires a specific search query (no sensible daily
+        # default without a defined watchlist topic); "trending" needs no
+        # query — it returns broadly trending arXiv papers, a genuinely
+        # useful zero-argument daily signal.
+        params={"mode": "trending"},
         timeout=60,
         retries=1,
     )
@@ -757,7 +844,11 @@ def build_daily_collection_dag(
         "fetch_foia_requests",
         operator="foia_requests",
         table_name="foia_requests",
-        params={"mode": "entity_cluster"},
+        # Every mode needs a specific target (query, agency, or entity) — no
+        # zero-argument mode exists. SEC is the one agency whose FOIA request
+        # volume is a direct market signal per this tool's own docstring
+        # ("FOIA surge + insider selling + DNS changes = crisis").
+        params={"mode": "agency_activity", "agency": "SEC"},
         timeout=90,
         retries=1,
     )
@@ -767,7 +858,10 @@ def build_daily_collection_dag(
         "fetch_food_security",
         operator="food_security",
         table_name="food_security",
-        params={"mode": "production"},
+        # "country" is required; "WLD" (world aggregate) is the tool's own
+        # documented option for a global daily signal, not one arbitrary
+        # country.
+        params={"mode": "production", "country": "WLD"},
         timeout=60,
         retries=1,
     )
@@ -797,7 +891,11 @@ def build_daily_collection_dag(
         "fetch_internet_outages",
         operator="internet_outages",
         table_name="internet_outages",
-        params={"mode": "network_health"},
+        # "network_health" (RIPE probes) requires a specific country with no
+        # global option. "outage_detection" (OONI) works with no country —
+        # a global web_connectivity aggregate — the right zero-argument
+        # default for unconditional daily collection.
+        params={"mode": "outage_detection"},
         timeout=60,
         retries=2,
     )
