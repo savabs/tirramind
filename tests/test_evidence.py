@@ -11,6 +11,7 @@ from agent.evidence import (
     ingest_to_store,
     neighbors,
 )
+from agent.evidence.ingest import MAX_LINKS_PER_DOCUMENT, MAX_MENTIONS_PER_SENTENCE
 
 
 @pytest.fixture
@@ -131,3 +132,88 @@ def test_degree_centrality_and_neighbors(tmp_path):
     assert nbrs["found"] is True
     names = {n["entity"] for n in nbrs["neighbors"]}
     assert "microsoft" in names and "apple" in names
+
+
+# ── Regression tests: unbounded O(mentions^2) relation growth ────────────────
+#
+# _build_relations used to link EVERY pair of mentions anywhere in a document,
+# with no cap. Confirmed in production: a single 267-mention document produced
+# 31,685 links (89% of all 35,511 possible pairs), 99.9% of the entire
+# evidence_links table. These tests pin the fix: relations are now scoped to
+# same/adjacent-sentence proximity, with hard caps (MAX_MENTIONS_PER_SENTENCE,
+# MAX_LINKS_PER_DOCUMENT) as a backstop against silent regression.
+
+
+def _dense_text(n_entities: int, per_sentence: int) -> str:
+    """A document with n_entities distinct capitalized entity names, spread
+    `per_sentence` to a sentence (each entity mentioned exactly once)."""
+    names = [f"Entity{i:04d} Corp" for i in range(n_entities)]
+    sentences = []
+    for start in range(0, n_entities, per_sentence):
+        chunk = names[start : start + per_sentence]
+        sentences.append(" and ".join(chunk) + " announced a deal today.")
+    return " ".join(sentences)
+
+
+def test_relations_do_not_scale_as_full_pairwise(ingestor):
+    """Reproduces the production bug shape: ~267 mentions spread through a
+    document. Full whole-document pairwise would be C(267,2) == 35,511 (the
+    exact count observed in production). The fix must land nowhere near that,
+    regardless of how mentions are distributed through the document."""
+    n = 267
+    text = _dense_text(n, per_sentence=3)
+    ext = ingestor.ingest_text(doc_id="dense", text=text)
+
+    assert len(ext.mentions) == n
+    full_pairwise = n * (n - 1) // 2
+    assert full_pairwise == 35511  # sanity-check against the reported production number
+
+    n_relations = len(ext.relations)
+    # Before the fix this was 31,685 (89% of full_pairwise) for a real production
+    # document of this mention count. After the fix, relations only span
+    # same-sentence + immediately-adjacent-sentence mentions, so growth is
+    # linear in sentence count, not quadratic in mention count.
+    assert n_relations < full_pairwise * 0.05, (
+        f"{n_relations} relations is too close to full pairwise ({full_pairwise}); "
+        "relation-building is not properly bounded"
+    )
+    # Concrete real bound, not just "fewer than before": per-sentence cap
+    # (per_sentence=3, well under MAX_MENTIONS_PER_SENTENCE) means each sentence
+    # contributes C(3,2)=3 same_sentence links, and each adjacent sentence pair
+    # contributes at most 3*3=9 nearby links.
+    n_sentences = -(-n // 3)  # ceil
+    expected_max = n_sentences * 3 + (n_sentences - 1) * 9
+    assert n_relations <= expected_max
+
+
+def test_sentence_mention_cap_bounds_intra_sentence_pairs(ingestor):
+    """A single pathological 'sentence' (no punctuation) with far more entities
+    than MAX_MENTIONS_PER_SENTENCE must still be bounded, not O(k^2) in k."""
+    n = 30
+    assert n > MAX_MENTIONS_PER_SENTENCE
+    names = [f"Entity{i:04d} Corp" for i in range(n)]
+    text = " and ".join(names) + " signed a deal"  # one giant sentence, no period
+    ext = ingestor.ingest_text(doc_id="one-sentence", text=text)
+
+    assert len(ext.mentions) == n
+    uncapped_pairs = n * (n - 1) // 2
+    capped_pairs = MAX_MENTIONS_PER_SENTENCE * (MAX_MENTIONS_PER_SENTENCE - 1) // 2
+    assert capped_pairs < uncapped_pairs
+    assert len(ext.relations) == capped_pairs
+
+
+def test_document_link_hard_cap_enforced(ingestor):
+    """Even when per-sentence counts stay within MAX_MENTIONS_PER_SENTENCE, a
+    long enough document must not exceed MAX_LINKS_PER_DOCUMENT in total."""
+    per_sentence = MAX_MENTIONS_PER_SENTENCE  # at the cap, so no per-sentence truncation
+    n_sentences = 12
+    n = per_sentence * n_sentences
+    text = _dense_text(n, per_sentence=per_sentence)
+    ext = ingestor.ingest_text(doc_id="long-doc", text=text)
+
+    same_sentence = n_sentences * (per_sentence * (per_sentence - 1) // 2)
+    nearby = (n_sentences - 1) * (per_sentence * per_sentence)
+    uncapped_total = same_sentence + nearby
+    assert uncapped_total > MAX_LINKS_PER_DOCUMENT  # confirm this scenario would exceed the cap
+
+    assert len(ext.relations) == MAX_LINKS_PER_DOCUMENT

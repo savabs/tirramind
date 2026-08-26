@@ -18,6 +18,7 @@ Extraction approach:
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -25,8 +26,27 @@ from typing import Any
 
 from agent.pipeline.entity import normalize_company_name
 
+logger = logging.getLogger(__name__)
+
 _SENT_SPLIT = re.compile(r"(?<=[.!?])\s+")
 _UPPER_WORDS = re.compile(r"\b[A-Z][A-Za-z0-9&\'.\-]{1,}(?:\s+[A-Z][A-Za-z0-9&\'.\-]{1,}){0,3}\b")
+
+# Hard bounds on relation-building, enforced regardless of document size.
+#
+# _build_relations used to pair EVERY mention against every other mention in
+# the whole document -- O(mentions^2) with no cap. Confirmed in production:
+# a single 267-mention document produced 31,685 links (89% of all 35,511
+# possible pairs), 99.9% of the entire evidence_links table.
+#
+# Two entities mentioned in unrelated parts of a long document aren't good
+# evidence of a relationship anyway, so linking is now scoped to sentence
+# proximity (same sentence = strong, adjacent sentence = weak) -- a
+# signal-quality fix that happens to also be the cost fix. The per-sentence
+# and per-document caps below are the hard backstop: even a pathological
+# "sentence" (e.g. a flattened CSV row with no punctuation) can't regress
+# this back to unbounded growth.
+MAX_MENTIONS_PER_SENTENCE = 12  # bounds same-sentence/adjacent-sentence pairing
+MAX_LINKS_PER_DOCUMENT = 2000  # absolute backstop; should rarely trigger given the cap above
 
 # Known entities to match before falling back to case-detection. Extensible;
 # seeded with a few so the demo is meaningful.
@@ -149,7 +169,7 @@ class EvidenceIngestor:
         # 1. Seed matches (canonical, high confidence)
         for key, label in self._seed.items():
             if re.search(rf"\b{re.escape(label)}\b", sentence, re.IGNORECASE):
-                ext.mentions.append(self._mention("company", key, label, sentence, 0, 0.95))
+                ext.mentions.append(self._mention("company", key, label, sentence, 0, 0.95, si))
         # 2. Capitalized-name fallback (lower confidence, audit-flagged)
         for match in _UPPER_WORDS.finditer(sentence):
             raw = match.group().strip()
@@ -162,10 +182,12 @@ class EvidenceIngestor:
                 continue
             if key in {m["entity_key"] for m in ext.mentions}:
                 continue
-            ext.mentions.append(self._mention("org", key, raw, sentence, match.start(), 0.6))
+            ext.mentions.append(self._mention("org", key, raw, sentence, match.start(), 0.6, si))
 
     @staticmethod
-    def _mention(entity_type: str, key: str, raw: str, sentence: str, pos: int, confidence: float) -> dict[str, Any]:
+    def _mention(
+        entity_type: str, key: str, raw: str, sentence: str, pos: int, confidence: float, sentence_index: int
+    ) -> dict[str, Any]:
         return {
             "entity_type": entity_type,
             "entity_key": key,
@@ -173,30 +195,76 @@ class EvidenceIngestor:
             "sentence": sentence[:200],
             "position": pos,
             "confidence": confidence,
+            "sentence_index": sentence_index,
         }
 
     def _build_relations(self, ext: Extraction) -> None:
-        mentions = ext.mentions
-        for i in range(len(mentions)):
-            for j in range(i + 1, len(mentions)):
-                mi, mj = mentions[i], mentions[j]
-                if mi["entity_key"] == mj["entity_key"]:
-                    continue
-                # same sentence = strong; different sentence within window = weak
-                if mi["sentence"] == mj["sentence"]:
-                    relation, conf, snip = "same_sentence", 0.9, (mi["sentence"] or "")[:200]
-                else:
-                    relation, conf, snip = "nearby", 0.4, f"{mi['raw_name']} .. {mj['raw_name']}"
-                ext.relations.append(
-                    {
-                        "doc_id": ext.doc_id,
-                        "entity_a": mi["entity_key"],
-                        "entity_b": mj["entity_key"],
-                        "relation": relation,
-                        "confidence": conf,
-                        "evidence": snip,
-                    }
+        """Link mentions that co-occur within the same sentence (strong signal)
+        or in immediately adjacent sentences (weak signal) -- NOT anywhere else
+        in the document. See module-level comment on MAX_MENTIONS_PER_SENTENCE
+        for why (this used to be unbounded whole-document pairwise linking).
+        """
+        by_sentence: dict[int, list[dict[str, Any]]] = {}
+        for m in ext.mentions:
+            by_sentence.setdefault(m["sentence_index"], []).append(m)
+
+        for si, ms in by_sentence.items():
+            if len(ms) > MAX_MENTIONS_PER_SENTENCE:
+                logger.warning(
+                    "evidence ingest: doc=%s sentence=%d has %d entity mentions; "
+                    "capping to %d for linking (dropping %d) to bound pairwise growth",
+                    ext.doc_id,
+                    si,
+                    len(ms),
+                    MAX_MENTIONS_PER_SENTENCE,
+                    len(ms) - MAX_MENTIONS_PER_SENTENCE,
                 )
+                by_sentence[si] = ms[:MAX_MENTIONS_PER_SENTENCE]
+
+        relations: list[dict[str, Any]] = []
+
+        def _pair(mi: dict[str, Any], mj: dict[str, Any], relation: str, conf: float, snip: str) -> None:
+            if mi["entity_key"] == mj["entity_key"]:
+                return
+            relations.append(
+                {
+                    "doc_id": ext.doc_id,
+                    "entity_a": mi["entity_key"],
+                    "entity_b": mj["entity_key"],
+                    "relation": relation,
+                    "confidence": conf,
+                    "evidence": snip,
+                }
+            )
+
+        indices = sorted(by_sentence)
+        for si in indices:
+            ms = by_sentence[si]
+            for i in range(len(ms)):
+                for j in range(i + 1, len(ms)):
+                    _pair(ms[i], ms[j], "same_sentence", 0.9, (ms[i]["sentence"] or "")[:200])
+
+        # Adjacent sentences only (weaker signal) -- not the whole document.
+        for si, nxt in zip(indices, indices[1:]):
+            if nxt - si != 1:
+                continue
+            for mi in by_sentence[si]:
+                for mj in by_sentence[nxt]:
+                    _pair(mi, mj, "nearby", 0.4, f"{mi['raw_name']} .. {mj['raw_name']}")
+
+        if len(relations) > MAX_LINKS_PER_DOCUMENT:
+            logger.warning(
+                "evidence ingest: doc=%s produced %d candidate links (> cap %d); "
+                "truncating to the highest-confidence %d",
+                ext.doc_id,
+                len(relations),
+                MAX_LINKS_PER_DOCUMENT,
+                MAX_LINKS_PER_DOCUMENT,
+            )
+            relations.sort(key=lambda r: r["confidence"], reverse=True)
+            relations = relations[:MAX_LINKS_PER_DOCUMENT]
+
+        ext.relations = relations
 
 
 def _is_likely_ticker(raw: str) -> bool:
