@@ -119,16 +119,16 @@ without much notice (see UptimeRobot).
 
 Do these in order; later steps depend on earlier ones.
 
-### 1.1 Cloudflare — DNS + Pages (if not already set up)
+### 1.1 Cloudflare — DNS + Pages
 
-1. Create a free Cloudflare account at <https://dash.cloudflare.com/sign-up>
-   if you don't have one.
-2. Add `tirramind.com` as a site (free plan). Cloudflare scans existing DNS
-   records and shows you nameservers.
-3. At your domain registrar (wherever `tirramind.com` is currently
-   registered — this does **not** need to move, only the nameservers do),
-   set the nameservers to the two Cloudflare gives you. Propagation is
-   usually under an hour, sometimes up to 24.
+**Steps 1-3 below are already done** — verified live 2026-08-27:
+`dig +short NS tirramind.com` returns `gabriel.ns.cloudflare.com` /
+`autumn.ns.cloudflare.com`, so the zone is already on Cloudflare. No account
+creation or nameserver change needed. Skip straight to step 4.
+
+1. ~~Create a free Cloudflare account~~ — already done, the zone exists.
+2. ~~Add `tirramind.com` as a site~~ — already done.
+3. ~~Switch nameservers at the registrar~~ — already done and propagated.
 4. **Pages project:** Cloudflare dashboard → Workers & Pages → Create →
    Pages → Connect to Git → pick this repo → set:
    - Build output directory: `products/brief_subscription`
@@ -137,10 +137,15 @@ Do these in order; later steps depend on earlier ones.
      `products/brief_subscription/` — is picked up from the output directory
      above)
    Deploy. Pages gives you a `*.pages.dev` URL immediately — confirm the site
-   loads there before wiring the real domain.
+   loads there, and that `/pricing` shows the four real tiers, before wiring
+   the real domain.
 5. Pages project → Custom domains → Add `tirramind.com` and `www.tirramind.com`.
-   Cloudflare adds the DNS records for you automatically since the zone is
-   already on Cloudflare.
+   **Note:** the domain currently points at a Vercel project (the live-fix
+   stopgap from 2026-08-26 — see docs/research/production_deployment.md). Adding
+   it here will have Cloudflare either prompt to update the existing DNS
+   records or add conflicting ones — let Cloudflare replace the record
+   pointing at Vercel with the one pointing at Pages; don't leave both. This
+   is the actual cutover moment, so re-verify `/pricing` immediately after.
 
 **Verify (✅ 1.1):** `https://tirramind.com` loads the storefront over valid
 TLS, and `/pricing` shows the four real tiers.
