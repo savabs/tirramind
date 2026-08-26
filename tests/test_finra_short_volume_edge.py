@@ -981,7 +981,7 @@ class TestCLIRegistration(unittest.TestCase):
         self.assertIn("finra_short_volume", tool_names)
 
     def test_total_tool_count(self):
-        """Should now have 60 registered tools."""
+        """Should now have 61 registered tools."""
         try:
             from agent.cli import build_tool_registry
         except (ImportError, ModuleNotFoundError, AttributeError):
@@ -991,7 +991,7 @@ class TestCLIRegistration(unittest.TestCase):
         config = AgentConfig()
         registry = build_tool_registry(config)
         count = len(registry._tools) if hasattr(registry, "_tools") else 0
-        self.assertEqual(count, 60)
+        self.assertEqual(count, 61)
 
 
 # ──────────────────────────────────────────────────────────────────

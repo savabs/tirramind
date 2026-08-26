@@ -15,7 +15,9 @@ from __future__ import annotations
 
 import logging
 import statistics
-from datetime import datetime, timedelta, timezone; UTC = timezone.utc
+from datetime import UTC, datetime, timedelta
+
+UTC = UTC
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -41,6 +43,7 @@ _SHORT_INTEREST_ENDPOINT = f"{_BASE_URL}/consolidatedShortInterest"
 _REQUEST_DELAY = 0.12  # seconds between requests
 _MAX_PAGES = 6  # 6 × 5000 = 30,000 records max for scan mode
 _PAGE_SIZE = 5000
+_SCAN_LOOKBACK_DAYS = 5  # trading days to walk back if the target date isn't published yet
 
 
 class FinraShortVolumeTool(Tool):
@@ -300,26 +303,41 @@ class FinraShortVolumeTool(Tool):
         min_vol: int,
         limit: int,
     ) -> ToolResult:
-        """Scan all tickers for a single day, rank by short ratio."""
-        date_str = target_date.strftime("%Y-%m-%d")
+        """Scan all tickers for a single day, rank by short ratio.
+
+        FINRA publishes Reg SHO daily short volume with a same-day-evening
+        cutoff: querying "today" (the common no-date-given default) returns
+        204/empty until the file is published, and can stay empty all day
+        for a holiday. Walk backward across trading days until one actually
+        has data instead of reporting empty on the first miss.
+        """
+        candidate_dates = self._trading_dates(target_date, _SCAN_LOOKBACK_DAYS)
+        date_str = candidate_dates[0].strftime("%Y-%m-%d")
         all_records: list[dict] = []
 
-        # Paginate to get all records
-        for page in range(_MAX_PAGES):
-            records = self._fetch_reg_sho(date_str, ticker=None, offset=page * _PAGE_SIZE)
-            if not records:
-                break
-            all_records.extend(records)
-            if len(records) < _PAGE_SIZE:
-                break
-            import time
+        for d in candidate_dates:
+            date_str = d.strftime("%Y-%m-%d")
+            all_records = []
+            # Paginate to get all records
+            for page in range(_MAX_PAGES):
+                records = self._fetch_reg_sho(date_str, ticker=None, offset=page * _PAGE_SIZE)
+                if not records:
+                    break
+                all_records.extend(records)
+                if len(records) < _PAGE_SIZE:
+                    break
+                import time
 
-            time.sleep(_REQUEST_DELAY)
+                time.sleep(_REQUEST_DELAY)
+            if all_records:
+                break
 
         if not all_records:
             return ToolResult(
                 True,
-                f"No Reg SHO data found for {date_str}. May be a weekend/holiday.",
+                f"No Reg SHO data found in the last {_SCAN_LOOKBACK_DAYS} trading days "
+                f"back from {target_date.strftime('%Y-%m-%d')}. FINRA may not have "
+                "published yet, or this is a holiday stretch.",
                 data={"date": date_str, "results": []},
             )
 

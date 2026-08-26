@@ -23,7 +23,9 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timedelta, timezone; UTC = timezone.utc
+from datetime import UTC, datetime, timedelta
+
+UTC = UTC
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -123,30 +125,37 @@ CB_REGISTRY: dict[str, dict[str, str]] = {
     },
     "snb": {
         "name": "Swiss National Bank",
-        "bs_series": "SNBASSETM",  # Total Assets, Millions CHF, Monthly
+        "bs_series": "SNBASSETM",  # Confirmed 400 on FRED — doesn't exist.
         "currency": "CHF",
         "fx_series": "DEXSZUS",  # CHF per USD (we need 1/this)
         "rate_series": "",
         "unit_scale": "1e6",
         "frequency": "monthly",
+        # Searched FRED for a substitute (total assets / balance sheet,
+        # any frequency) — nothing beyond annual bank-sector ratios exists.
+        # Skip rather than eat a guaranteed-failing request + traceback
+        # every run; still reported as "FRED series unavailable" downstream.
+        "_skip_bs": "true",
     },
     "boc": {
         "name": "Bank of Canada",
-        "bs_series": "BCBASSETM",  # May not exist — graceful fallback
+        "bs_series": "BCBASSETM",  # Confirmed 400 on FRED — doesn't exist.
         "currency": "CAD",
         "fx_series": "DEXCAUS",  # CAD per USD (we need 1/this)
         "rate_series": "",
         "unit_scale": "1e6",
         "frequency": "monthly",
+        "_skip_bs": "true",  # see snb comment above — no FRED substitute found
     },
     "rba": {
         "name": "Reserve Bank of Australia",
-        "bs_series": "RBASSETSM",  # May not exist — graceful fallback
+        "bs_series": "RBASSETSM",  # Confirmed 400 on FRED — doesn't exist.
         "currency": "AUD",
         "fx_series": "DEXUSAL",  # USD per AUD
         "rate_series": "",
         "unit_scale": "1e6",
         "frequency": "monthly",
+        "_skip_bs": "true",  # see snb comment above — no FRED substitute found
     },
 }
 

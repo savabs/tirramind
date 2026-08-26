@@ -199,9 +199,7 @@ class DefiFlowsTool(Tool):
             elif mode == "chain":
                 return self._chain_tvl(limit)
             elif mode == "history":
-                return self._tvl_history(
-                    limit, days_back, chain_filter, category_filter
-                )
+                return self._tvl_history(limit, days_back, chain_filter, category_filter)
         except httpx.TimeoutException:
             return ToolResult(success=False, output="DefiLlama API timed out.")
         except httpx.HTTPError as exc:
@@ -219,11 +217,7 @@ class DefiFlowsTool(Tool):
 
         if chain_filter:
             cf_lower = chain_filter.lower()
-            data = [
-                p
-                for p in data
-                if cf_lower in [c.lower() for c in (p.get("chains") or [])]
-            ]
+            data = [p for p in data if cf_lower in [c.lower() for c in (p.get("chains") or [])]]
         if category_filter:
             cat_lower = category_filter.lower()
             data = [p for p in data if (p.get("category") or "").lower() == cat_lower]
@@ -244,12 +238,8 @@ class DefiFlowsTool(Tool):
                     "category": p.get("category"),
                     "chain": p.get("chain"),
                     "chains": p.get("chains", []),
-                    "change_1d_pct": (
-                        round(change_1d, 2) if change_1d is not None else None
-                    ),
-                    "change_7d_pct": (
-                        round(change_7d, 2) if change_7d is not None else None
-                    ),
+                    "change_1d_pct": (round(change_1d, 2) if change_1d is not None else None),
+                    "change_7d_pct": (round(change_7d, 2) if change_7d is not None else None),
                 }
             )
 
@@ -299,9 +289,7 @@ class DefiFlowsTool(Tool):
                 }
             )
 
-        total_supply = sum(
-            (c.get("circulating") or {}).get("peggedUSD") or 0 for c in coins
-        )
+        total_supply = sum((c.get("circulating") or {}).get("peggedUSD") or 0 for c in coins)
         summary = f"Top {len(results)} stablecoins by circulating supply. Total stablecoin supply: ${total_supply:,.0f}"
         return ToolResult(
             success=True,
@@ -321,19 +309,20 @@ class DefiFlowsTool(Tool):
         protocols = raw.get("protocols", [])
         if chain_filter:
             cf_lower = chain_filter.lower()
-            protocols = [
-                p
-                for p in protocols
-                if cf_lower in [c.lower() for c in (p.get("chains") or [])]
-            ]
+            protocols = [p for p in protocols if cf_lower in [c.lower() for c in (p.get("chains") or [])]]
 
         # Sort by 24h volume descending
-        protocols.sort(key=lambda p: p.get("totalVolume24h") or 0, reverse=True)
+        # NOTE: the DefiLlama /overview/dexs response names this field
+        # "total24h" (both per-protocol and at the top level) — it has never
+        # been "totalVolume24h"/"totalVolume". The old keys always missed,
+        # so every protocol volume defaulted to 0/None, the sort was a
+        # no-op, and total 24h volume always printed as $0.
+        protocols.sort(key=lambda p: p.get("total24h") or 0, reverse=True)
         top = protocols[:limit]
 
         results = []
         for p in top:
-            vol = p.get("totalVolume24h") or 0
+            vol = p.get("total24h") or 0
             results.append(
                 {
                     "name": p.get("name"),
@@ -344,7 +333,7 @@ class DefiFlowsTool(Tool):
                 }
             )
 
-        total_vol = raw.get("totalVolume", 0) or 0
+        total_vol = raw.get("total24h", 0) or 0
         summary = (
             f"Top {len(results)} DEXes by 24h volume"
             f"{f' on {chain_filter}' if chain_filter else ''}"
@@ -423,18 +412,10 @@ class DefiFlowsTool(Tool):
 
         if chain_filter:
             cf_lower = chain_filter.lower()
-            protocols_data = [
-                p
-                for p in protocols_data
-                if cf_lower in [c.lower() for c in (p.get("chains") or [])]
-            ]
+            protocols_data = [p for p in protocols_data if cf_lower in [c.lower() for c in (p.get("chains") or [])]]
         if category_filter:
             cat_lower = category_filter.lower()
-            protocols_data = [
-                p
-                for p in protocols_data
-                if (p.get("category") or "").lower() == cat_lower
-            ]
+            protocols_data = [p for p in protocols_data if (p.get("category") or "").lower() == cat_lower]
 
         protocols_data.sort(key=lambda p: p.get("tvl") or 0, reverse=True)
         top_protocols = protocols_data[:limit]

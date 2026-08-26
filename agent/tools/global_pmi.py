@@ -46,16 +46,28 @@ log = logging.getLogger(__name__)
 _SDMX_BASE = "https://sdmx.oecd.org/public/rest/data"
 
 # Dataflow identifiers
+# NOTE: "bci"/"cci" used to point at DF_BCI / DF_CCI, which don't exist in
+# OECD's SDMX catalog (404 on every request — OECD's own dataflow list for
+# agency OECD.SDD.STES only has DF_CLI, DF_BTS, DF_CS, DF_KEI, etc). Business
+# and consumer confidence live under DF_BTS ("Business tendency surveys") and
+# DF_CS ("Consumer opinion surveys") respectively.
 _DATAFLOWS = {
     "cli": "OECD.SDD.STES,DSD_STES@DF_CLI",
-    "bci": "OECD.SDD.STES,DSD_STES@DF_BCI",
-    "cci": "OECD.SDD.STES,DSD_STES@DF_CCI",
+    "bci": "OECD.SDD.STES,DSD_STES@DF_BTS",
+    "cci": "OECD.SDD.STES,DSD_STES@DF_CS",
 }
 
-# Dimension selection: country.freq.measure...adjustment...transformation
-# CLI amplitude-adjusted: {country}.M.LI...AA...H
-# BCI/CCI: {country}.M.LI...AA...H (same pattern)
-_DIM_PATTERN = "{countries}.M.LI...AA...H"
+# Dimension selection: REF_AREA.FREQ.MEASURE.UNIT_MEASURE.ACTIVITY.ADJUSTMENT.
+# TRANSFORMATION.TIME_HORIZ.METHODOLOGY (9 dims, confirmed against the
+# DSD_STES 4.0 data structure — the old code used the CLI key verbatim for
+# BCI/CCI too ("LI...AA...H"), which doesn't resolve on DF_BTS/DF_CS: their
+# MEASURE codes are BCICP/CCICP, not LI, and their ACTIVITY/METHODOLOGY
+# dimensions differ from CLI's.
+_DIM_PATTERNS = {
+    "cli": "{countries}.M.LI...AA...H",
+    "bci": "{countries}.M.BCICP.PB.C.Y._Z._Z.N",
+    "cci": "{countries}.M.CCICP.PB._Z.Y._Z._Z.N",
+}
 
 _UA = "TirraMind/0.1 (research)"
 _TIMEOUT = 30  # OECD can be slow
@@ -335,7 +347,7 @@ class GlobalPmiTool(Tool):
                 return cached
 
         dataflow = _DATAFLOWS[mode]
-        dim_selection = _DIM_PATTERN.format(countries=country_key)
+        dim_selection = _DIM_PATTERNS[mode].format(countries=country_key)
         url = f"{_SDMX_BASE}/{dataflow}/{dim_selection}"
 
         params: dict[str, str] = {

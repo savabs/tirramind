@@ -106,26 +106,31 @@ SAMPLE_STABLECOINS = {
     ]
 }
 
+# NOTE: the real DefiLlama /overview/dexs response names this field
+# "total24h" (both per-protocol and at the top level), never
+# "totalVolume24h"/"totalVolume" — this fixture used to use the wrong
+# (guessed) names, which matched the tool's old bug instead of the live API,
+# so this suite never caught it. See agent/tools/defi_flows.py::_dex_volume.
 SAMPLE_DEXS = {
-    "totalVolume": 8_000_000_000,
+    "total24h": 8_000_000_000,
     "protocols": [
         {
             "name": "Uniswap",
-            "totalVolume24h": 3_000_000_000,
+            "total24h": 3_000_000_000,
             "change_1d": 5.2,
             "change_7d": -2.1,
             "chains": ["Ethereum", "Polygon"],
         },
         {
             "name": "PancakeSwap",
-            "totalVolume24h": 1_500_000_000,
+            "total24h": 1_500_000_000,
             "change_1d": -3.0,
             "change_7d": 1.5,
             "chains": ["Binance"],
         },
         {
             "name": "SushiSwap",
-            "totalVolume24h": 500_000_000,
+            "total24h": 500_000_000,
             "change_1d": 0.0,
             "change_7d": -5.0,
             "chains": ["Ethereum", "Arbitrum"],
@@ -155,7 +160,7 @@ class TestToolMetadata:
 
     def test_mode_enum(self):
         modes = _tool().parameters["properties"]["mode"]["enum"]
-        assert set(modes) == {"tvl", "stablecoins", "dex_volume", "chain"}
+        assert set(modes) == {"tvl", "stablecoins", "dex_volume", "chain", "history"}
 
     def test_required_fields(self):
         assert _tool().parameters["required"] == ["mode"]
@@ -381,8 +386,8 @@ class TestDEXVolumeMode:
 
     def test_dex_volume_null_volume(self):
         data = {
-            "totalVolume": 0,
-            "protocols": [{"name": "X", "totalVolume24h": None, "chains": []}],
+            "total24h": 0,
+            "protocols": [{"name": "X", "total24h": None, "chains": []}],
         }
         with patch.object(DefiFlowsTool, "_fetch_json", return_value=data):
             r = _tool().execute(mode="dex_volume")
@@ -543,7 +548,7 @@ class TestOutputFormatting:
 
 class TestConstants:
     def test_valid_modes(self):
-        assert {"tvl", "stablecoins", "dex_volume", "chain"} == VALID_MODES
+        assert {"tvl", "stablecoins", "dex_volume", "chain", "history"} == VALID_MODES
 
     def test_market_categories(self):
         assert "Lending" in _MARKET_CATEGORIES
@@ -583,7 +588,7 @@ class TestMalformedData:
         with patch.object(
             DefiFlowsTool,
             "_fetch_json",
-            return_value={"totalVolume": 0, "protocols": []},
+            return_value={"total24h": 0, "protocols": []},
         ):
             r = _tool().execute(mode="dex_volume")
             assert r.success
@@ -605,7 +610,7 @@ class TestRegistryAndBandit:
         mock_config.tool_timeout = 30
         mock_config.fred_api_key = ""
         registry = build_tool_registry(mock_config)
-        assert len(registry._tools) == 60
+        assert len(registry._tools) == 61
 
     def test_defi_flows_registered(self):
         try:

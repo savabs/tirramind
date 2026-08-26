@@ -18,7 +18,9 @@ Tests cover:
 from __future__ import annotations
 
 import unittest
-from datetime import datetime, timedelta, timezone; UTC = timezone.utc
+from datetime import UTC, datetime, timedelta
+
+UTC = UTC
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -981,7 +983,7 @@ class TestRegistration(unittest.TestCase):
         registry = build_tool_registry(config)
         names = registry.list_names()
         assert "central_bank_balance" in names
-        assert len(names) == 60, f"Expected 60 tools, got {len(names)}: {sorted(names)}"
+        assert len(names) == 61, f"Expected 61 tools, got {len(names)}: {sorted(names)}"
 
     def test_bandit_arm_exists(self):
         from agent.learning.bandit import DEFAULT_ARMS

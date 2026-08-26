@@ -1181,7 +1181,7 @@ class TestRegistry(unittest.TestCase):
             pytest.skip("optional dependency")
             return
         names = registry.list_names()
-        self.assertEqual(len(names), 60, f"Expected 60 tools, got {len(names)}: {sorted(names)}")
+        self.assertEqual(len(names), 61, f"Expected 61 tools, got {len(names)}: {sorted(names)}")
 
     def test_sovereign_debt_in_registry(self):
         try:

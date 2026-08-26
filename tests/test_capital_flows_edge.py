@@ -543,7 +543,10 @@ class TestIntegration:
         from agent.cli import build_tool_registry
 
         reg = build_tool_registry()
-        assert len(reg.list_names()) == 60
+        # 60 -> 61 on 2026-08-26: nightlight_activity was 100% dead code
+        # (constructor kwarg mismatch meant registration TypeErrored and was
+        # skipped) — now correctly registered.
+        assert len(reg.list_names()) == 61
 
     def test_arm_count(self):
         from agent.learning.bandit import DEFAULT_ARMS

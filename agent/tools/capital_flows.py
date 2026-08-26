@@ -33,7 +33,9 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timedelta, timezone; UTC = timezone.utc
+from datetime import UTC, datetime, timedelta
+
+UTC = UTC
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -77,42 +79,60 @@ _PERIOD_DAYS: dict[str, int] = {
 # ---------------------------------------------------------------------------
 
 HOLDINGS_SERIES: dict[str, dict[str, str]] = {
+    # NOTE: previously these all pointed at guessed series IDs (FDHBFIN /
+    # FDHBFCH / FDHBFUK). FDHBFCH and FDHBFUK don't exist on FRED (400s on
+    # every request) and FDHBFIN is a real series but is "Federal Debt Held
+    # by Foreign and International Investors" — a quarterly, whole-of-market
+    # total — so it was wired up as Japan's number *and* the Total row,
+    # making the two identical every run. The correct FRED home for
+    # per-country TIC treasury holdings is the FORTREASPOS* series
+    # (Foreign Portfolio Holdings of U.S. Long/Short-Term Treasury
+    # Securities), which is monthly and genuinely per-country. Values are
+    # reported in *millions* of dollars (see the /1000 conversion below —
+    # the old series was in billions).
     "japan": {
-        "series_id": "FDHBFIN",
+        "series_id": "FORTREASPOS42609",
         "name": "Japan",
         "description": "Japan holdings of US Treasury securities",
     },
     "china": {
-        "series_id": "FDHBFCH",
+        "series_id": "FORTREASPOS41408",
         "name": "China (Mainland)",
         "description": "China mainland holdings of US Treasury securities",
     },
     "uk": {
-        "series_id": "FDHBFUK",
+        "series_id": "FORTREASPOS13005",
         "name": "United Kingdom",
         "description": "UK holdings of US Treasury securities",
     },
     "total": {
-        "series_id": "FDHBFIN",  # Total foreign holdings — grand total
+        "series_id": "FORTREASPOS69995",  # All Countries — grand total
         "name": "Total Foreign",
         "description": "Total foreign holdings of US Treasury securities",
     },
 }
 
 # FRED series for net capital flows (TIC flows)
+# NOTE: previously NETFI/BOPFOIA/BOPPRIA. NETFI is a real series but is
+# "Balance on Current Account, NIPA's" — quarterly BEA data, not TIC net
+# purchases. BOPFOIA/BOPPRIA don't exist on FRED (400 on every request).
+# Replaced with the FORTREASNET* series (Foreign Net Transactions of U.S.
+# Treasury Securities), which is the actual monthly TIC net-purchases data
+# these were meant to be, already in millions of dollars matching the "M"
+# labels used in _flows()'s output formatting.
 FLOW_SERIES: dict[str, dict[str, str]] = {
     "net_foreign_purchases": {
-        "series_id": "NETFI",
+        "series_id": "FORTREASNET99996",
         "name": "Net Foreign Investment",
         "description": "Net foreign purchases of US long-term securities",
     },
     "foreign_official": {
-        "series_id": "BOPFOIA",
+        "series_id": "FORTREASNET99990",
         "name": "Foreign Official Institutions",
         "description": "Foreign official institution net acquisitions of US assets",
     },
     "foreign_private": {
-        "series_id": "BOPPRIA",
+        "series_id": "FORTREASNET99991",
         "name": "Foreign Private",
         "description": "Foreign private net acquisitions of US assets",
     },
@@ -372,12 +392,15 @@ class CapitalFlowsTool(Tool):
                 continue
 
             latest = _latest(obs)
-            latest_val = float(latest["value"]) if latest else 0
+            # FORTREASPOS* reports in millions of dollars; this field is
+            # displayed as billions ("latest_value_billions" / "$X.XB"), so
+            # convert here rather than change the display format.
+            latest_val = float(latest["value"]) / 1000.0 if latest else 0
 
             # MoM change (compare last two observations)
             mom_chg = None
             if len(obs) >= 2:
-                prev_val = float(obs[-2]["value"])
+                prev_val = float(obs[-2]["value"]) / 1000.0
                 mom_chg = _pct_change(prev_val, latest_val)
 
             country_changes[info["name"]] = mom_chg

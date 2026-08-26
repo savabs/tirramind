@@ -250,7 +250,12 @@ class TreasuryReceiptsTool(Tool):
         for r in records:
             date = r.get("record_date", "?")
             acct = r.get("account_type", "?")
-            today_bal = _parse_amount(r.get("close_today_bal"))
+            # NOTE: the DTS operating_cash_balance endpoint always returns the
+            # literal string "null" for close_today_bal — every row's real
+            # balance figure (for both "Opening Balance" and "Closing
+            # Balance" account_type rows) lives in open_today_bal instead.
+            # Reading close_today_bal made every row print "N/A".
+            today_bal = _parse_amount(r.get("open_today_bal"))
             month_bal = _parse_amount(r.get("open_month_bal"))
             fy_bal = _parse_amount(r.get("open_fiscal_year_bal"))
 
@@ -298,7 +303,13 @@ class TreasuryReceiptsTool(Tool):
         for r in records:
             date = r.get("record_date", "?")
             txn_type = r.get("transaction_type", "?")
-            catg = r.get("transaction_catg_desc", r.get("transaction_catg", "?"))
+            # NOTE: the DTS deposits_withdrawals_operating_cash endpoint
+            # always sends the literal string "null" for
+            # transaction_catg_desc (a present, truthy value — `.get()`'s
+            # default never kicks in), while the real category label lives
+            # in transaction_catg. Preferring transaction_catg_desc made
+            # every row print "null" as its category.
+            catg = r.get("transaction_catg") or r.get("transaction_catg_desc") or "?"
             today_amt = _parse_amount(r.get("transaction_today_amt"))
             mtd_amt = _parse_amount(r.get("transaction_mtd_amt"))
             fytd_amt = _parse_amount(r.get("transaction_fytd_amt"))
