@@ -393,7 +393,7 @@ class TestConstants:
         assert {"recent", "top", "agency", "search"} == VALID_MODES
 
     def test_contract_codes(self):
-        assert _CONTRACT_CODES == ["A", "B", "C", "D"]
+        assert ["A", "B", "C", "D"] == _CONTRACT_CODES
 
     def test_fields_nonempty(self):
         assert len(_FIELDS) >= 5
@@ -416,7 +416,7 @@ class TestRegistryAndBandit:
         mock_config.tool_timeout = 30
         mock_config.fred_api_key = ""
         registry = build_tool_registry(mock_config)
-        assert len(registry._tools) == 60
+        assert len(registry._tools) == 61
 
     def test_gov_contracts_registered(self):
         try:

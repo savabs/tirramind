@@ -63,6 +63,7 @@ from agent.tools.lobbying import LobbyingTool
 from agent.tools.macro_data import MacroDataTool
 from agent.tools.market_data import MarketDataTool
 from agent.tools.migration_flows import MigrationFlowsTool
+from agent.tools.nightlight_activity import NightlightActivityTool
 from agent.tools.patent_filings import PatentFilingsTool
 from agent.tools.pipeline_query import PipelineQueryTool
 from agent.tools.political_risk import PoliticalRiskTool
@@ -144,6 +145,7 @@ def build_tool_registry(config: AgentConfig | None = None) -> ToolRegistry:
     registry.register(PatentFilingsTool(cache=cache, pipeline_store=pipeline_store))
     registry.register(LobbyingTool(cache=cache, pipeline_store=pipeline_store))
     registry.register(SatelliteActivityTool(cache=cache))
+    registry.register(NightlightActivityTool(cache=cache, pipeline_store=pipeline_store))
     registry.register(ElectricityMonitorTool(cache=cache, pipeline_store=pipeline_store))
     registry.register(InterconnectionQueueTool(cache=cache, pipeline_store=pipeline_store))
     registry.register(DiseaseSurveillanceTool(cache=cache, pipeline_store=pipeline_store))

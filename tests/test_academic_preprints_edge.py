@@ -577,7 +577,7 @@ class TestRegistryAndBandit:
         mock_config.tool_timeout = 30
         mock_config.fred_api_key = ""
         registry = build_tool_registry(mock_config)
-        assert len(registry._tools) == 60
+        assert len(registry._tools) == 61
 
     def test_academic_preprints_registered(self):
         try:

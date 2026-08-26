@@ -105,12 +105,12 @@ class TestModeValidation:
         # Fire mode without key returns API key error, proving mode was recognized
         tool._firms_key = None
         r = tool.execute(mode="FIRE")
-        assert "API key" in r.output
+        assert "TIRRA_NASA_FIRMS_KEY" in r.output
 
     def test_mode_whitespace(self, tool):
         tool._firms_key = None
         r = tool.execute(mode="  fire  ")
-        assert "API key" in r.output
+        assert "TIRRA_NASA_FIRMS_KEY" in r.output
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -122,7 +122,7 @@ class TestFireMode:
     def test_no_api_key(self, tool_no_key):
         r = tool_no_key.execute(mode="fire", area="USA")
         assert not r.success
-        assert "API key" in r.output
+        assert "TIRRA_NASA_FIRMS_KEY" in r.output
 
     def test_missing_area(self, tool):
         r = tool.execute(mode="fire")
@@ -794,7 +794,7 @@ class TestIntegration:
 
         registry = build_tool_registry()
         names = registry.list_names()
-        assert len(names) == 60, f"Expected 60 tools, got {len(names)}: {names}"
+        assert len(names) == 61, f"Expected 61 tools, got {len(names)}: {names}"
 
     def test_arm_count(self):
         from agent.learning.bandit import DEFAULT_ARMS

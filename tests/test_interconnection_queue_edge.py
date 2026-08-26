@@ -542,7 +542,7 @@ class TestIntegration:
 
         registry = build_tool_registry()
         names = registry.list_names()
-        assert len(names) == 60, f"Expected 60, got {len(names)}: {names}"
+        assert len(names) == 61, f"Expected 61, got {len(names)}: {names}"
 
     def test_arm_count(self):
         from agent.learning.bandit import DEFAULT_ARMS

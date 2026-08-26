@@ -6,7 +6,9 @@ filtering, named areas, vessel lookup, port calls, destination flow,
 cache integration, HTTP errors, schema validation, registry integration.
 """
 
-from datetime import datetime, timedelta, timezone; UTC = timezone.utc
+from datetime import UTC, datetime, timedelta
+
+UTC = UTC
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -858,6 +860,7 @@ class TestToolSchema:
         assert "mode" in props
         assert set(props["mode"]["enum"]) == {
             "area",
+            "area_daily_snapshot",
             "vessel",
             "port_calls",
             "destination_flow",
@@ -915,8 +918,8 @@ class TestRegistryIntegration:
 
         assert "ais_vessel_tracking" in names
         assert (
-            len(names) == 60
-        )  # was 27, +3 for defi/gov_contracts/academic_preprints, +1 sanctions_monitor, +1 cert_transparency, +1 sovereign_debt, +1 central_bank_balance, +1 foia_requests
+            len(names) == 61
+        )  # was 27, +3 for defi/gov_contracts/academic_preprints, +1 sanctions_monitor, +1 cert_transparency, +1 sovereign_debt, +1 central_bank_balance, +1 foia_requests, +1 nightlight_activity
 
     def test_tool_executes_from_registry(self):
         try:

@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -50,7 +50,7 @@ try:
 except ImportError:  # pragma: no cover
     entity_id_from_key = None  # type: ignore[misc, assignment]
 
-UTC = timezone.utc
+UTC = UTC
 
 log = logging.getLogger(__name__)
 
@@ -78,6 +78,13 @@ SUPPLY_SERIES: dict[str, str] = {
     "crude_imports": "WCEIMUS2",
     "refinery_inputs": "WGIRIUS2",
 }
+
+# EIA natural-gas/enr/drill/data/ returns every rig-count series
+# (oil-only, gas-only, onshore, offshore, well-service, ...) unless
+# facets[series][] pins it down. This is the U.S. total — crude oil AND
+# natural gas rotary rigs in operation — matching the module docstring's
+# "monthly US rotary rig count".
+RIG_COUNT_SERIES = "E_ERTRR0_XR0_NUS_C"
 
 
 def _get_api_key() -> str:
@@ -217,6 +224,7 @@ class EnergySupplyTool(Tool):
             "api_key": _get_api_key(),
             "frequency": "monthly",
             "data[0]": "value",
+            "facets[series][]": RIG_COUNT_SERIES,
             "length": str(months),
             "sort[0][column]": "period",
             "sort[0][direction]": "desc",
@@ -323,16 +331,12 @@ class EnergySupplyTool(Tool):
             return None
         return entity_id_from_key("country", "US")
 
-    def _persist_petroleum_series(
-        self, label: str, all_records: dict[str, list[dict]]
-    ) -> int:
+    def _persist_petroleum_series(self, label: str, all_records: dict[str, list[dict]]) -> int:
         if self._store is None or entity_id_from_key is None:
             return 0
         return self._persist_petroleum_series_inner(label, all_records)
 
-    def _persist_petroleum_series_inner(
-        self, label: str, all_records: dict[str, list[dict]]
-    ) -> int:
+    def _persist_petroleum_series_inner(self, label: str, all_records: dict[str, list[dict]]) -> int:
         assert self._store is not None
         eid = self._us_country_entity_id()
         if not eid:
@@ -660,15 +664,15 @@ def _format_petroleum_summary(
         latest = signals.get("latest_value", "N/A")
         units = signals.get("units", "")
         lines.append(
-            f"    Latest: {latest:,.0f} {units}" if isinstance(latest, (int, float)) else f"    Latest: {latest}"
+            f"    Latest: {latest:,.0f} {units}" if isinstance(latest, int | float) else f"    Latest: {latest}"
         )
         avg = signals.get("period_average", "N/A")
-        lines.append(f"    Average: {avg:,.0f}" if isinstance(avg, (int, float)) else f"    Average: {avg}")
+        lines.append(f"    Average: {avg:,.0f}" if isinstance(avg, int | float) else f"    Average: {avg}")
 
         wow = signals.get("wow_change")
         wow_pct = signals.get("wow_pct")
         if wow is not None:
-            pct_str = f" ({wow_pct:+.2f}%)" if isinstance(wow_pct, (int, float)) else ""
+            pct_str = f" ({wow_pct:+.2f}%)" if isinstance(wow_pct, int | float) else ""
             lines.append(f"    WoW change: {wow:+,.0f}{pct_str}")
 
         direction = signals.get("direction")

@@ -837,7 +837,7 @@ class TestRegistryIntegration:
         from agent.cli import build_tool_registry
 
         registry = build_tool_registry()
-        assert len(registry.list_names()) == 60
+        assert len(registry.list_names()) == 61
 
     def test_weather_alerts_registered(self):
         from agent.cli import build_tool_registry

@@ -1265,7 +1265,7 @@ class TestRegistryIntegration:
     def test_tool_count(self):
         registry = self._build_registry()
         names = registry.list_names()
-        assert len(names) == 60, f"Expected 60 tools, got {len(names)}: {sorted(names)}"
+        assert len(names) == 61, f"Expected 61 tools, got {len(names)}: {sorted(names)}"
 
     def test_dns_monitor_in_registry(self):
         registry = self._build_registry()

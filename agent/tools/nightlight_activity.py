@@ -55,11 +55,10 @@ from __future__ import annotations
 import csv
 import io
 import logging
-import math
 import os
 import time
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -117,9 +116,7 @@ ECONOMIC_ZONES: list[EconomicZone] = [
         "industrial",
         ("crude_oil", "nat_gas"),
     ),
-    EconomicZone(
-        "cushing_ok", "Cushing, OK Hub", 36.0, -96.8, 0.5, "industrial", ("crude_oil",)
-    ),
+    EconomicZone("cushing_ok", "Cushing, OK Hub", 36.0, -96.8, 0.5, "industrial", ("crude_oil",)),
     EconomicZone(
         "rotterdam_port",
         "Rotterdam Refinery Cluster",
@@ -686,7 +683,7 @@ def _fetch_zone_ndvi(
     days_back: int = 32,
 ) -> float | None:
     """Fetch recent MODIS NDVI for an agricultural zone centre."""
-    end_dt = datetime.now(tz=timezone.utc)
+    end_dt = datetime.now(tz=UTC)
     start_dt = end_dt - timedelta(days=days_back)
     start_str = start_dt.strftime("%Y-%m-%d")
     end_str = end_dt.strftime("%Y-%m-%d")
@@ -784,8 +781,7 @@ class NightlightActivityTool(Tool):
                 "zone_ids": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Optional list of zone IDs to restrict scan. "
-                    "Omit to scan all zones.",
+                    "description": "Optional list of zone IDs to restrict scan. Omit to scan all zones.",
                 },
                 "days": {
                     "type": "integer",
@@ -803,9 +799,17 @@ class NightlightActivityTool(Tool):
         firms_api_key: str | None = None,
         store: Any = None,
         cache: DataCache | None = None,
+        pipeline_store: Any = None,
     ) -> None:
+        # ``pipeline_store`` is accepted as an alias for ``store`` — every
+        # other L1 tool's registration in cli.py's build_tool_registry()
+        # passes `pipeline_store=pipeline_store`, and this tool's ``store``-
+        # only signature TypeErrors on that call. That mismatch is why this
+        # tool was never wired into the production ToolRegistry (see
+        # docs/memory checkpoint on the L1 dark-fetcher audit). ``store``
+        # is kept as the primary name since tests already construct with it.
         self._firms_key = firms_api_key or os.getenv("FIRMS_API_KEY", "")
-        self._store = store
+        self._store = store or pipeline_store
         self._cache = cache
 
     def execute(self, **kwargs: Any) -> ToolResult:
@@ -851,9 +855,7 @@ class NightlightActivityTool(Tool):
             if not self._firms_key:
                 errors.append("FIRMS_API_KEY not set — nightlight mode skipped.")
             else:
-                industrial_zones = [
-                    z for z in zones if z.category in ("industrial", "port")
-                ]
+                industrial_zones = [z for z in zones if z.category in ("industrial", "port")]
                 for zone in industrial_zones:
                     frp_data = _fetch_zone_frp(zone, self._firms_key, days=days)
                     if frp_data:
@@ -861,9 +863,7 @@ class NightlightActivityTool(Tool):
                             {
                                 "frp_total_mw": frp_data.get("frp_total_mw", 0.0),
                                 "hotspot_count": frp_data.get("hotspot_count", 0),
-                                "industrial_ratio": frp_data.get(
-                                    "industrial_ratio", 0.0
-                                ),
+                                "industrial_ratio": frp_data.get("industrial_ratio", 0.0),
                                 "zone_name": zone.name,
                                 "category": zone.category,
                                 "commodities": list(zone.commodities),
@@ -902,19 +902,14 @@ class NightlightActivityTool(Tool):
         summary_parts = []
         if errors:
             summary_parts.append(f"Warnings: {'; '.join(errors)}")
-        summary_parts.append(
-            f"Retrieved activity data for {n_zones} zones "
-            f"(mode={mode}, days={days})."
-        )
+        summary_parts.append(f"Retrieved activity data for {n_zones} zones (mode={mode}, days={days}).")
         if results:
             top = sorted(
                 [(zid, d.get("frp_total_mw", 0.0)) for zid, d in results.items()],
                 key=lambda x: -x[1],
             )[:3]
             if any(v > 0 for _, v in top):
-                summary_parts.append(
-                    "Top FRP zones: " + ", ".join(f"{z}={v:.1f}MW" for z, v in top)
-                )
+                summary_parts.append("Top FRP zones: " + ", ".join(f"{z}={v:.1f}MW" for z, v in top))
 
         return ToolResult(
             success=True,
@@ -924,9 +919,7 @@ class NightlightActivityTool(Tool):
 
     # ── Persistence helpers ────────────────────────────────────────────────
 
-    def _persist_nightlight(
-        self, zone: EconomicZone, frp_data: dict, ts: float
-    ) -> None:
+    def _persist_nightlight(self, zone: EconomicZone, frp_data: dict, ts: float) -> None:
         if self._store is None:
             return
         for sig_suffix, val in [
@@ -938,8 +931,7 @@ class NightlightActivityTool(Tool):
                 self._store.store_signal(
                     signal_name=f"nightlight.{zone.zone_id}.{sig_suffix}",
                     value=val,
-                    observed_at=ts,
-                    source_tool="nightlight_activity",
+                    metadata={"observed_at": ts, "source_tool": "nightlight_activity"},
                 )
             except Exception:
                 log.warning(
@@ -949,9 +941,7 @@ class NightlightActivityTool(Tool):
                     exc_info=True,
                 )
 
-    def _persist_ndvi(
-        self, zone: EconomicZone, ndvi: float, health: float, ts: float
-    ) -> None:
+    def _persist_ndvi(self, zone: EconomicZone, ndvi: float, health: float, ts: float) -> None:
         if self._store is None:
             return
         for sig_suffix, val in [("value", ndvi), ("health", health)]:
@@ -959,8 +949,7 @@ class NightlightActivityTool(Tool):
                 self._store.store_signal(
                     signal_name=f"ndvi.{zone.zone_id}.{sig_suffix}",
                     value=val,
-                    observed_at=ts,
-                    source_tool="nightlight_activity",
+                    metadata={"observed_at": ts, "source_tool": "nightlight_activity"},
                 )
             except Exception:
                 log.warning(
