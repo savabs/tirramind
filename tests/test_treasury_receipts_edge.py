@@ -20,19 +20,27 @@ import httpx
 
 
 def _make_cash_balance_response(entries=None):
+    # NOTE: the real DTS operating_cash_balance endpoint always sends the
+    # literal string "null" for close_today_bal — every row's real balance
+    # figure lives in open_today_bal instead. Mocks include both fields,
+    # matching the live shape, so this suite would have caught the
+    # close_today_bal/open_today_bal field-name bug instead of passing
+    # against a mock that only existed in the test.
     if entries is None:
         entries = [
             {
                 "record_date": "2026-03-28",
                 "account_type": "Federal Reserve Account",
-                "close_today_bal": "750000",
+                "close_today_bal": "null",
+                "open_today_bal": "750000",
                 "open_month_bal": "700000",
                 "open_fiscal_year_bal": "600000",
             },
             {
                 "record_date": "2026-03-27",
                 "account_type": "Federal Reserve Account",
-                "close_today_bal": "740000",
+                "close_today_bal": "null",
+                "open_today_bal": "740000",
                 "open_month_bal": "700000",
                 "open_fiscal_year_bal": "600000",
             },
@@ -41,13 +49,18 @@ def _make_cash_balance_response(entries=None):
 
 
 def _make_deposits_withdrawals_response(entries=None):
+    # NOTE: the real deposits_withdrawals_operating_cash endpoint always
+    # sends the literal string "null" for transaction_catg_desc — the
+    # category label that's actually populated is transaction_catg. Mocks
+    # match the live shape so this suite catches a regression to the
+    # transaction_catg_desc-first field-name bug.
     if entries is None:
         entries = [
             {
                 "record_date": "2026-03-28",
                 "transaction_type": "Deposits",
                 "transaction_catg": "Tax",
-                "transaction_catg_desc": "Individual Income and Employment Taxes, Not Withheld",
+                "transaction_catg_desc": "null",
                 "transaction_today_amt": "5000",
                 "transaction_mtd_amt": "150000",
                 "transaction_fytd_amt": "1200000",
@@ -56,7 +69,7 @@ def _make_deposits_withdrawals_response(entries=None):
                 "record_date": "2026-03-28",
                 "transaction_type": "Withdrawals",
                 "transaction_catg": "DoD",
-                "transaction_catg_desc": "Dept of Defense Vendor Payments",
+                "transaction_catg_desc": "null",
                 "transaction_today_amt": "3000",
                 "transaction_mtd_amt": "90000",
                 "transaction_fytd_amt": "720000",
@@ -65,7 +78,7 @@ def _make_deposits_withdrawals_response(entries=None):
                 "record_date": "2026-03-28",
                 "transaction_type": "Deposits",
                 "transaction_catg": "Customs",
-                "transaction_catg_desc": "Customs Duties",
+                "transaction_catg_desc": "null",
                 "transaction_today_amt": "200",
                 "transaction_mtd_amt": "6000",
                 "transaction_fytd_amt": "48000",
@@ -403,7 +416,8 @@ class TestTreasuryReceiptsTool(unittest.TestCase):
             {
                 "record_date": f"2026-03-{20 + i:02d}",
                 "account_type": "Federal Reserve Account",
-                "close_today_bal": str(700000 + i * 1000),
+                "close_today_bal": "null",
+                "open_today_bal": str(700000 + i * 1000),
             }
             for i in range(5)
         ]
