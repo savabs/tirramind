@@ -1466,17 +1466,40 @@ class PipelineStore:
         self,
         *,
         entity_type: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
     ) -> list[dict[str, Any]]:
-        """Return all entities, optionally filtered by type."""
+        """Return all entities, optionally filtered by type.
+
+        *limit*/*offset* page the result at the SQL level (default: return
+        everything, unchanged from prior behaviour — existing training-code
+        callers pass neither).
+        """
+        conn = self._get_conn()
+        clauses: list[str] = []
+        params: list[Any] = []
+        if entity_type is not None:
+            clauses.append("entity_type=?")
+            params.append(entity_type)
+        where = f"WHERE {' AND '.join(clauses)} " if clauses else ""
+        sql = f"SELECT * FROM entities {where}ORDER BY created_at"  # noqa: S608
+        if limit is not None:
+            sql += " LIMIT ? OFFSET ?"
+            params.extend([limit, offset])
+        rows = conn.execute(sql, params).fetchall()
+        return [self._entity_row_to_dict(r) for r in rows]
+
+    def count_all_entities(self, *, entity_type: str | None = None) -> int:
+        """Return the total entity count, optionally filtered by type.
+
+        Used for pagination metadata without materializing every row.
+        """
         conn = self._get_conn()
         if entity_type is not None:
-            rows = conn.execute(
-                "SELECT * FROM entities WHERE entity_type=? ORDER BY created_at",
-                (entity_type,),
-            ).fetchall()
+            row = conn.execute("SELECT COUNT(*) FROM entities WHERE entity_type=?", (entity_type,)).fetchone()
         else:
-            rows = conn.execute("SELECT * FROM entities ORDER BY created_at").fetchall()
-        return [self._entity_row_to_dict(r) for r in rows]
+            row = conn.execute("SELECT COUNT(*) FROM entities").fetchone()
+        return row[0] if row else 0
 
     def query_all_observations(
         self,
@@ -1510,8 +1533,15 @@ class PipelineStore:
         *,
         link_type: str | None = None,
         min_confidence: float = 0.0,
+        limit: int | None = None,
+        offset: int = 0,
     ) -> list[dict[str, Any]]:
-        """Return all entity links, optionally filtered by type and confidence."""
+        """Return all entity links, optionally filtered by type and confidence.
+
+        *limit*/*offset* page the result at the SQL level (default: return
+        everything, unchanged from prior behaviour — existing training-code
+        callers pass neither).
+        """
         conn = self._get_conn()
         clauses: list[str] = []
         params: list[Any] = []
@@ -1522,12 +1552,38 @@ class PipelineStore:
             clauses.append("confidence >= ?")
             params.append(min_confidence)
         where = " AND ".join(clauses) if clauses else "1=1"
-        rows = conn.execute(
-            f"SELECT * FROM entity_links WHERE {where} "  # noqa: S608
-            "ORDER BY created_at",
-            params,
-        ).fetchall()
+        sql = f"SELECT * FROM entity_links WHERE {where} ORDER BY created_at"  # noqa: S608
+        if limit is not None:
+            sql += " LIMIT ? OFFSET ?"
+            params = [*params, limit, offset]
+        rows = conn.execute(sql, params).fetchall()
         return [self._entity_link_row_to_dict(r) for r in rows]
+
+    def count_all_entity_links(
+        self,
+        *,
+        link_type: str | None = None,
+        min_confidence: float = 0.0,
+    ) -> int:
+        """Return the total entity-link count matching the given filters.
+
+        Used for pagination metadata without materializing every row.
+        """
+        conn = self._get_conn()
+        clauses: list[str] = []
+        params: list[Any] = []
+        if link_type is not None:
+            clauses.append("link_type=?")
+            params.append(link_type)
+        if min_confidence > 0.0:
+            clauses.append("confidence >= ?")
+            params.append(min_confidence)
+        where = " AND ".join(clauses) if clauses else "1=1"
+        row = conn.execute(
+            f"SELECT COUNT(*) FROM entity_links WHERE {where}",  # noqa: S608
+            params,
+        ).fetchone()
+        return row[0] if row else 0
 
     # ── depth evaluations ──────────────────────────────────────
 

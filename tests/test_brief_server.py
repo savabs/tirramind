@@ -253,6 +253,62 @@ def test_data_api_rejects_unknown_source(tmp_path, monkeypatch):
     httpd.shutdown()
 
 
+def test_internal_telemetry_sources_not_customer_queryable(tmp_path, monkeypatch):
+    """Internal DAG-stage telemetry (source="train_gnn" etc.) must not be
+    reachable through the paid Data Platform API, in the catalog or by name.
+
+    Regression for a real leak found 2026-08-27: GET /api/v1/data?source=
+    train_gnn returned {"trained": false, "loss_ewc": 579753920.0, ...} —
+    the model's own untrained-state defect, readable through the endpoint a
+    Data Platform customer pays $500/mo for.
+    """
+    from agent.brief_server import _Handler as H
+    from agent.delivery.brief_deliverer import BriefDeliverer
+    from agent.payments.handler import SubscriberStore
+    from agent.pipeline.store import PipelineStore
+
+    out = tmp_path / "del"
+    d = BriefDeliverer(out_dir=str(out), render_md=lambda b: "# x")
+
+    monkeypatch.setenv("TIRRA_PADDLE_WEBHOOK_SECRET", "whatever")
+    monkeypatch.chdir(tmp_path)
+    store = PipelineStore()
+    store.store_data("cftc", {"mode": "latest"}, {"z": 1.0})
+    store.store_data("train_gnn", {}, {"trained": False, "loss_ewc": 579753920.0})
+
+    sub_store = SubscriberStore(str(tmp_path / "subs.json"))
+    monkeypatch.setattr("agent.payments.handler.SubscriberStore", lambda: sub_store)
+    sub_store.set_active("sub_data", active=True, tier="data")
+    data_key = sub_store.api_key_of("sub_data")
+
+    class Handler(H):
+        deliverer = d
+
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    port = httpd.server_address[1]
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{port}"
+
+    import urllib.error
+
+    # Not in the catalog.
+    _, body = _get(base + f"/api/v1/sources?key={data_key}")
+    parsed = json.loads(body)
+    assert "train_gnn" not in {s["source"] for s in parsed["sources"]}
+    assert "cftc" in {s["source"] for s in parsed["sources"]}
+
+    # Rejected by name exactly like an unknown source — not a quiet 200.
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        _get(base + f"/api/v1/data?source=train_gnn&key={data_key}")
+    assert exc.value.code == 400
+
+    # A real source still works.
+    _, real_body = _get(base + f"/api/v1/data?source=cftc&key={data_key}")
+    assert json.loads(real_body)["ok"] is True
+
+    httpd.shutdown()
+
+
 def test_sources_endpoint_lists_catalog(tmp_path, monkeypatch):
     """GET /api/v1/sources returns every distinct source with row counts."""
     from agent.brief_server import _Handler as H
@@ -326,6 +382,137 @@ def test_data_api_caps_limit(tmp_path, monkeypatch):
     status, body = _get(base + f"/api/v1/data?source=cftc&limit={huge}&key={data_key}")
     assert status == 200
     assert json.loads(body)["ok"] is True  # would only matter at scale; asserts it doesn't error
+
+    httpd.shutdown()
+
+
+def test_entity_graph_endpoints_gated_and_scoped(tmp_path, monkeypatch):
+    """/api/v1/entity-graph/* requires the Entity Graph tier and serves the
+    REAL pipeline graph (entities + entity_links), scoped down: no
+    entity_observations, no metadata_json — see
+    docs/research/entity_graph_tier_mismatch.md."""
+    import urllib.error
+
+    from agent.brief_server import _Handler as H
+    from agent.delivery.brief_deliverer import BriefDeliverer
+    from agent.payments.handler import SubscriberStore
+    from agent.pipeline.store import PipelineStore
+
+    out = tmp_path / "del"
+    d = BriefDeliverer(out_dir=str(out), render_md=lambda b: "# x")
+
+    monkeypatch.setenv("TIRRA_PADDLE_WEBHOOK_SECRET", "whatever")
+    monkeypatch.chdir(tmp_path)
+    p = PipelineStore()
+    p.register_entity("company", "Acme Corp", "company:acme", metadata={"secret_note": "should never leak"})
+    p.register_entity("country", "USA", "country:usa")
+    p.link_entities("company:acme", "country:usa", "headquartered_in", "seed", confidence=0.9, metadata={"cik": "0001"})
+    p.store_entity_observation("company:acme", "some_tool", 1.0, "signal", {"alpha": 42})
+
+    store = SubscriberStore(str(tmp_path / "subs.json"))
+    monkeypatch.setattr("agent.payments.handler.SubscriberStore", lambda: store)
+    store.set_active("sub_brief", active=True, tier="brief")
+    store.set_active("sub_entity", active=True, tier="entity")
+    brief_key = store.api_key_of("sub_brief")
+    entity_key = store.api_key_of("sub_entity")
+
+    class Handler(H):
+        deliverer = d
+
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    port = httpd.server_address[1]
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{port}"
+
+    # Wrong tier → 403, on every entity-graph path.
+    for path in (
+        "/api/v1/entity-graph/entities",
+        "/api/v1/entity-graph/entity?id=company:acme",
+        "/api/v1/entity-graph/links",
+    ):
+        sep = "&" if "?" in path else "?"
+        with pytest.raises(urllib.error.HTTPError) as exc:
+            _get(base + path + f"{sep}key={brief_key}")
+        assert exc.value.code == 403
+
+    # Entity tier → 200, real data, scoped fields only.
+    status, body = _get(base + f"/api/v1/entity-graph/entities?key={entity_key}")
+    assert status == 200
+    d1 = json.loads(body)
+    assert d1["total"] == 2
+    by_id = {e["entity_id"]: e for e in d1["entities"]}
+    assert by_id["company:acme"]["canonical_name"] == "Acme Corp"
+    assert set(by_id["company:acme"]) == {"entity_id", "entity_type", "canonical_name", "created_at"}
+    assert "metadata" not in by_id["company:acme"]
+    assert "secret_note" not in body  # entity metadata_json must never leak
+    assert d1["dataset_scope"]["dataset"] == "production_entity_graph"
+
+    status, body = _get(base + f"/api/v1/entity-graph/entity?id=company:acme&key={entity_key}")
+    assert status == 200
+    d2 = json.loads(body)
+    assert d2["entity"]["canonical_name"] == "Acme Corp"
+    assert len(d2["links"]) == 1
+    link = d2["links"][0]
+    assert link["link_type"] == "headquartered_in"
+    assert set(link) == {"link_id", "entity_id_a", "entity_id_b", "link_type", "confidence", "source", "created_at"}
+    assert "metadata" not in link  # cik must not leak — unreviewed per-source metadata is stripped
+
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        _get(base + f"/api/v1/entity-graph/entity?id=does-not-exist&key={entity_key}")
+    assert exc.value.code == 404
+
+    status, body = _get(base + f"/api/v1/entity-graph/links?key={entity_key}")
+    assert status == 200
+    d3 = json.loads(body)
+    assert d3["total"] == 1
+
+    # The raw observation VALUE is never reachable through this surface —
+    # only the dataset_scope disclosure is allowed to *name* entity_observations
+    # (to explain why it's excluded), never its content.
+    assert "some_tool" not in body
+    assert '"alpha"' not in body
+
+    httpd.shutdown()
+
+
+def test_entity_graph_entities_pagination(tmp_path, monkeypatch):
+    """limit/offset page the real entity list rather than silently truncating."""
+    from agent.brief_server import _Handler as H
+    from agent.delivery.brief_deliverer import BriefDeliverer
+    from agent.payments.handler import SubscriberStore
+    from agent.pipeline.store import PipelineStore
+
+    out = tmp_path / "del"
+    d = BriefDeliverer(out_dir=str(out), render_md=lambda b: "# x")
+
+    monkeypatch.setenv("TIRRA_PADDLE_WEBHOOK_SECRET", "whatever")
+    monkeypatch.chdir(tmp_path)
+    p = PipelineStore()
+    for i in range(5):
+        p.register_entity("company", f"Company {i}", f"company:{i}")
+
+    store = SubscriberStore(str(tmp_path / "subs.json"))
+    monkeypatch.setattr("agent.payments.handler.SubscriberStore", lambda: store)
+    store.set_active("sub_entity", active=True, tier="entity")
+    entity_key = store.api_key_of("sub_entity")
+
+    class Handler(H):
+        deliverer = d
+
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    port = httpd.server_address[1]
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{port}"
+
+    status, body = _get(base + f"/api/v1/entity-graph/entities?limit=2&offset=0&key={entity_key}")
+    page1 = json.loads(body)
+    assert page1["total"] == 5
+    assert len(page1["entities"]) == 2
+
+    status, body = _get(base + f"/api/v1/entity-graph/entities?limit=2&offset=2&key={entity_key}")
+    page2 = json.loads(body)
+    assert len(page2["entities"]) == 2
+    assert {e["entity_id"] for e in page1["entities"]}.isdisjoint({e["entity_id"] for e in page2["entities"]})
 
     httpd.shutdown()
 

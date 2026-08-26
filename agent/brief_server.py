@@ -14,7 +14,10 @@ Endpoints:
     GET /api/v1/data        → Data Platform tier: query pipeline data by source
     GET /api/v1/dag/runs    → Scheduler tier: DAG run history
     GET /api/v1/usage       → any tier: caller's own usage summary
-    GET /evidence/*         → Entity Graph tier: evidence graph + analytics
+    GET /evidence/*         → Entity Graph tier: document-evidence graph + analytics
+    GET /api/v1/entity-graph/*  → Entity Graph tier: REAL production graph,
+                                  scoped to entities + entity_links (see
+                                  docs/research/entity_graph_tier_mismatch.md)
 
 Usage:
     .venv/bin/python -m agent.delivery.brief_server --port 8777
@@ -44,10 +47,54 @@ _SCHEDULER_TIERS = {"scheduler"}
 # let a single request pull an unbounded number of rows.
 _MAX_DATA_LIMIT = 1000
 
+# agent/pipeline/store.py's `pipeline_data` table is shared by two very
+# different kinds of writer: L1 tools storing real external data (source=
+# "cftc", "gdelt", ...) and internal DAG-stage operators storing their own
+# execution telemetry under the node/operator name as `source` (found live,
+# 2026-08-27: GET /api/v1/data?source=train_gnn returned
+# {"trained": false, "loss_ewc": 579753920.0, ...} — a paying Data Platform
+# customer reading the model's own untrained-state defect through the API
+# they're paying for). Every name below is a DAG operator/stage id, not an
+# external data source, confirmed by cross-referencing agent/pipeline/dags/.
+# Excluded from BOTH the source catalog and direct /api/v1/data queries —
+# querying one of these by name now 400s exactly like an unknown source,
+# rather than silently working. New DAG stages must be added here; this is
+# a denylist specifically because the failure mode (a new internal stage
+# silently becoming customer-queryable) is worse than a stage briefly not
+# being addable to a future admin/debug surface.
+_INTERNAL_TELEMETRY_SOURCES = {
+    "train_gnn",
+    "gnn_inference",
+    "score_entities",
+    "generate_features",
+    "run_detection",
+    "scan_adversarial",
+    "sac_inference",
+    "train_rl_policy",
+    "emit_portfolio",
+    "update_beliefs",
+    "load_models",
+    "component_perf_gnn_epochs",
+}
+
 
 def _truthy(value: str | None) -> bool:
     """Permissive truthy parse for env flags ('1', 'true', 'yes', 'on')."""
     return (value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _safe_int(value: str | None, default: int) -> int:
+    """Parse a query-param int, falling back to *default* on bad input.
+
+    Never raises — a malformed `?limit=abc` must 400/clamp, not 500 with a
+    stack trace.
+    """
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _valid_key(request_key: str | None) -> bool:
@@ -173,6 +220,23 @@ class _Handler(BaseHTTPRequestHandler):
                 self._serve_evidence_centrality(query)
             return
 
+        if path in (
+            "/api/v1/entity-graph/entities",
+            "/api/v1/entity-graph/entity",
+            "/api/v1/entity-graph/links",
+        ):
+            if not _authorized_for(key, _ENTITY_GRAPH_TIERS):
+                self._send(403, "text/plain", "subscribe (Entity Graph tier) required — see /buy\n")
+                return
+            _log_usage(key, path)
+            if path == "/api/v1/entity-graph/entities":
+                self._serve_entity_graph_entities(query)
+            elif path == "/api/v1/entity-graph/entity":
+                self._serve_entity_graph_entity(query)
+            else:
+                self._serve_entity_graph_links(query)
+            return
+
         if path == "/api/v1/sources":
             if not _authorized_for(key, _DATA_PLATFORM_TIERS):
                 self._send(403, "text/plain", "subscribe (Data Platform tier) required — see /buy\n")
@@ -289,32 +353,27 @@ class _Handler(BaseHTTPRequestHandler):
         ack = {k: v for k, v in result.items() if k != "api_key"}
         self._send(200, "application/json", json.dumps({**ack, "ok": True}))
 
-    # ── Evidence Graph ───────────────────────────────────────────────────────
+    # ── Evidence Graph (document-evidence extraction store) ─────────────────
     #
-    # KNOWN MISMATCH (flagged 2026-08-26, unresolved — see
-    # docs/research/entity_graph_tier_mismatch.md): the "Entity Graph" tier
-    # (products/brief_subscription/pricing.html) is marketed as the real,
-    # learned entity/relationship graph — agent/models/gnn/graph_builder.py
-    # reading agent/pipeline/store.py, currently 5,628 entities / 16,870
-    # links / 365K+ observations. These `/evidence/*` routes do NOT serve
-    # that graph. They serve `agent/evidence/`: a separate, much smaller
-    # document store built in an unrelated session — regex-based entity
-    # extraction (~155 distinct entity strings live right now) over
-    # manually-POSTed documents (5 of them live right now). The two were
-    # never reconciled, and gating both under `_ENTITY_GRAPH_TIERS` sells
-    # access to the wrong dataset.
+    # PARTIALLY RESOLVED (flagged 2026-08-26, see
+    # docs/research/entity_graph_tier_mismatch.md): as of this pass, a
+    # scoped slice of the REAL production graph is now served too — see
+    # `/api/v1/entity-graph/*` below (`_serve_entity_graph_entities` etc.),
+    # reading `entities`/`entity_links` straight from `agent/pipeline/store.py`
+    # (the same tables `agent/models/gnn/graph_builder.py` trains on).
     #
-    # Wiring the *real* graph here is more than a routing fix: `entities` /
-    # `entity_links` are plausibly safe to expose, but `entity_observations`
-    # carries raw pipeline signal values — deciding what's safe to expose to
-    # a paid tier is a product/security call, not something to decide
-    # silently in this file. Until that's spec'd and reviewed, every
-    # response below carries an explicit `dataset_scope` block so the API
-    # contract itself is honest even though the marketing copy is not yet
-    # fixed. Do not remove `dataset_scope` without either (a) replacing
-    # these routes with real pipeline-graph data under the same review, or
-    # (b) correcting the tier's marketing/pricing to match what's actually
-    # sold here.
+    # These `/evidence/*` routes are a DIFFERENT, smaller thing: `agent/
+    # evidence/`, a standalone document store built in an unrelated
+    # session — regex-based entity extraction (~155 distinct entity strings
+    # live right now) over manually-POSTed documents (5 of them live right
+    # now). Both are gated under `_ENTITY_GRAPH_TIERS` (the tier now
+    # genuinely includes both a document-evidence feature and real-graph
+    # read access), and each carries its own honest `dataset_scope` block so
+    # neither is mistaken for the other. `entity_observations` (365K+ rows of
+    # raw pipeline signal values) remains deliberately unexposed everywhere —
+    # see the comment above `_serve_entity_graph_entities`. Do not remove
+    # either `dataset_scope` block without updating the pricing copy to
+    # match whatever is actually served at the time.
     def _evidence_store(self):
         from agent.evidence import EvidenceGraphStore
 
@@ -474,11 +533,167 @@ class _Handler(BaseHTTPRequestHandler):
             ),
         )
 
+    # ── Entity Graph tier: REAL production entity graph (scoped) ────────────
+    #
+    # Added per docs/research/entity_graph_tier_mismatch.md, resolving part of
+    # the mismatch flagged there: these routes serve the ACTUAL graph
+    # agent/models/gnn/graph_builder.py trains on (agent/pipeline/store.py —
+    # currently 5,628 entities / 16,870 links), not the small document-
+    # evidence demo above. Deliberately scoped to two tables only:
+    #
+    #   - `entities`     (entity_id, entity_type, canonical_name, created_at)
+    #   - `entity_links` (entity_id_a/b, link_type, confidence, source,
+    #                     created_at)
+    #
+    # Deliberately EXCLUDED, and not a future TODO for this pass:
+    #   - `entity_observations` (365K+ rows) — raw pipeline signal/feature
+    #     values keyed by entity. That's the system's proprietary alpha
+    #     input, not a "graph," and whether any of it should ever be
+    #     customer-facing is a product/security decision, not a routing one.
+    #   - each row's `metadata_json` — populated ad hoc by 20+ independent
+    #     `agent/tools/*` call sites (tx hashes, CIKs, exchange names, ...)
+    #     never audited as a set for tier-safety. Stripped unconditionally
+    #     via `_project_entity`/`_project_link` below; add specific fields
+    #     back only after someone actually reviews what each source puts
+    #     there.
+    #
+    # This is additive — `/evidence/*` above is untouched and still serves
+    # the document-evidence store under its own honest `dataset_scope`.
+    _ENTITY_FIELDS = ("entity_id", "entity_type", "canonical_name", "created_at")
+    _ENTITY_LINK_FIELDS = (
+        "link_id",
+        "entity_id_a",
+        "entity_id_b",
+        "link_type",
+        "confidence",
+        "source",
+        "created_at",
+    )
+
+    @staticmethod
+    def _real_graph_dataset_scope() -> dict:
+        return {
+            "dataset": "production_entity_graph",
+            "scope": "entities + entity_links only",
+            "excludes": [
+                "entity_observations (raw pipeline signal/feature values)",
+                "per-row metadata_json (unreviewed free-form tool fields)",
+            ],
+            "note": (
+                "This is the real graph agent/models/gnn/graph_builder.py trains on "
+                "(agent/pipeline/store.py), scoped down to entities and typed "
+                "relationship links for this tier. See "
+                "docs/research/entity_graph_tier_mismatch.md."
+            ),
+        }
+
+    @classmethod
+    def _project_entity(cls, entity: dict) -> dict:
+        return {k: entity[k] for k in cls._ENTITY_FIELDS if k in entity}
+
+    @classmethod
+    def _project_link(cls, link: dict) -> dict:
+        return {k: link[k] for k in cls._ENTITY_LINK_FIELDS if k in link}
+
+    def _serve_entity_graph_entities(self, query) -> None:
+        from agent.pipeline.store import PipelineStore
+
+        entity_type = (query.get("type") or [None])[0]
+        limit = max(1, min(_safe_int((query.get("limit") or [None])[0], 100), _MAX_DATA_LIMIT))
+        offset = max(0, _safe_int((query.get("offset") or [None])[0], 0))
+
+        store = PipelineStore()
+        rows = store.query_all_entities(entity_type=entity_type, limit=limit, offset=offset)
+        total = store.count_all_entities(entity_type=entity_type)
+        self._send(
+            200,
+            "application/json",
+            json.dumps(
+                {
+                    "ok": True,
+                    "entities": [self._project_entity(e) for e in rows],
+                    "count": len(rows),
+                    "total": total,
+                    "limit": limit,
+                    "offset": offset,
+                    "dataset_scope": self._real_graph_dataset_scope(),
+                }
+            ),
+        )
+
+    def _serve_entity_graph_entity(self, query) -> None:
+        entity_id = (query.get("id") or [None])[0]
+        if not entity_id:
+            self._send(400, "application/json", json.dumps({"ok": False, "error": "id required"}))
+            return
+
+        from agent.pipeline.store import PipelineStore
+
+        store = PipelineStore()
+        entity = store.get_entity(entity_id)
+        if entity is None:
+            self._send(
+                404,
+                "application/json",
+                json.dumps({"ok": False, "error": f"no entity {entity_id!r} — see /api/v1/entity-graph/entities"}),
+            )
+            return
+
+        limit = max(1, min(_safe_int((query.get("limit") or [None])[0], 100), _MAX_DATA_LIMIT))
+        links = store.query_entity_links(entity_id, direction="both", limit=limit)
+        self._send(
+            200,
+            "application/json",
+            json.dumps(
+                {
+                    "ok": True,
+                    "entity": self._project_entity(entity),
+                    "links": [self._project_link(link) for link in links],
+                    "dataset_scope": self._real_graph_dataset_scope(),
+                }
+            ),
+        )
+
+    def _serve_entity_graph_links(self, query) -> None:
+        link_type = (query.get("link_type") or [None])[0]
+        min_confidence = 0.0
+        raw_min_conf = (query.get("min_confidence") or [None])[0]
+        if raw_min_conf is not None:
+            try:
+                min_confidence = float(raw_min_conf)
+            except ValueError:
+                min_confidence = 0.0
+        limit = max(1, min(_safe_int((query.get("limit") or [None])[0], 100), _MAX_DATA_LIMIT))
+        offset = max(0, _safe_int((query.get("offset") or [None])[0], 0))
+
+        from agent.pipeline.store import PipelineStore
+
+        store = PipelineStore()
+        rows = store.query_all_entity_links(
+            link_type=link_type, min_confidence=min_confidence, limit=limit, offset=offset
+        )
+        total = store.count_all_entity_links(link_type=link_type, min_confidence=min_confidence)
+        self._send(
+            200,
+            "application/json",
+            json.dumps(
+                {
+                    "ok": True,
+                    "links": [self._project_link(link) for link in rows],
+                    "count": len(rows),
+                    "total": total,
+                    "limit": limit,
+                    "offset": offset,
+                    "dataset_scope": self._real_graph_dataset_scope(),
+                }
+            ),
+        )
+
     # ── Data Platform tier: query already-collected pipeline data ───────────
     def _serve_sources(self) -> None:
         from agent.pipeline.store import PipelineStore
 
-        sources = PipelineStore().list_sources()
+        sources = [s for s in PipelineStore().list_sources() if s["source"] not in _INTERNAL_TELEMETRY_SOURCES]
         self._send(200, "application/json", json.dumps({"ok": True, "sources": sources}))
 
     def _serve_data_api(self, query) -> None:
@@ -486,11 +701,23 @@ class _Handler(BaseHTTPRequestHandler):
         if not source:
             self._send(400, "application/json", json.dumps({"ok": False, "error": "source required"}))
             return
+        if source in _INTERNAL_TELEMETRY_SOURCES:
+            self._send(
+                400,
+                "application/json",
+                json.dumps(
+                    {
+                        "ok": False,
+                        "error": f"unknown source {source!r} — see /api/v1/sources for valid values",
+                    }
+                ),
+            )
+            return
         from agent.pipeline.store import PipelineStore
 
         store = PipelineStore()
 
-        known = {s["source"] for s in store.list_sources()}
+        known = {s["source"] for s in store.list_sources()} - _INTERNAL_TELEMETRY_SOURCES
         if source not in known:
             self._send(
                 400,

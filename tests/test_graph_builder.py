@@ -174,6 +174,49 @@ class TestQueryAllEntities:
         assert entities[0]["metadata"] is not None
         assert "company" in entities[0]["metadata"]
 
+    def test_limit_offset_paginate_without_duplicates(self, store: PipelineStore):
+        """Added for /api/v1/entity-graph/entities — limit/offset must page at
+        the SQL level, not silently truncate or repeat rows across pages."""
+        _seed_graph(store)
+        all_entities = store.query_all_entities()
+        assert len(all_entities) == 5
+
+        page1 = store.query_all_entities(limit=2, offset=0)
+        page2 = store.query_all_entities(limit=2, offset=2)
+        page3 = store.query_all_entities(limit=2, offset=4)
+        assert [len(page1), len(page2), len(page3)] == [2, 2, 1]
+        ids = [e["entity_id"] for e in page1 + page2 + page3]
+        assert len(ids) == len(set(ids))  # no duplicates across pages
+        assert set(ids) == {e["entity_id"] for e in all_entities}  # covers everything
+
+    def test_limit_none_default_returns_unbounded(self, store: PipelineStore):
+        """Existing callers (graph_builder, trainer, ...) pass no limit and
+        must keep getting every row — this is the load-bearing default."""
+        _seed_graph(store)
+        assert len(store.query_all_entities()) == 5
+
+
+class TestCountAllEntities:
+    def test_empty_store(self, store: PipelineStore):
+        assert store.count_all_entities() == 0
+
+    def test_matches_query_all_length(self, store: PipelineStore):
+        _seed_graph(store)
+        assert store.count_all_entities() == len(store.query_all_entities())
+
+    def test_filtered_by_type(self, store: PipelineStore):
+        _seed_graph(store)
+        assert store.count_all_entities(entity_type="country") == 2
+
+    def test_count_unaffected_by_limit(self, store: PipelineStore):
+        """total must reflect ALL matching rows, not just the current page —
+        a customer paging through /api/v1/entity-graph/entities relies on
+        `total` to know how many pages exist."""
+        _seed_graph(store)
+        page = store.query_all_entities(limit=1, offset=0)
+        assert len(page) == 1
+        assert store.count_all_entities() == 5
+
 
 class TestQueryAllObservations:
     def test_empty_store(self, store: PipelineStore):
@@ -240,6 +283,39 @@ class TestQueryAllEntityLinks:
         links = store.query_all_entity_links()
         # Links from _seed_graph have no metadata (None)
         assert all(link["metadata"] is None for link in links)
+
+    def test_limit_offset_paginate_without_duplicates(self, store: PipelineStore):
+        """Added for /api/v1/entity-graph/links."""
+        _seed_graph(store)
+        all_links = store.query_all_entity_links()
+        assert len(all_links) == 3
+
+        page1 = store.query_all_entity_links(limit=2, offset=0)
+        page2 = store.query_all_entity_links(limit=2, offset=2)
+        assert [len(page1), len(page2)] == [2, 1]
+        ids = [link["link_id"] for link in page1 + page2]
+        assert len(ids) == len(set(ids))
+        assert set(ids) == {link["link_id"] for link in all_links}
+
+    def test_limit_none_default_returns_unbounded(self, store: PipelineStore):
+        _seed_graph(store)
+        assert len(store.query_all_entity_links()) == 3
+
+
+class TestCountAllEntityLinks:
+    def test_empty_store(self, store: PipelineStore):
+        assert store.count_all_entity_links() == 0
+
+    def test_matches_query_all_length(self, store: PipelineStore):
+        _seed_graph(store)
+        assert store.count_all_entity_links() == len(store.query_all_entity_links())
+
+    def test_filtered_by_type_and_confidence(self, store: PipelineStore):
+        ids = _seed_graph(store)
+        _link(store, ids["exxon"], ids["ru"], "operates_in", conf=0.3)
+        assert store.count_all_entity_links() == 4
+        assert store.count_all_entity_links(min_confidence=0.5) == 3
+        assert store.count_all_entity_links(link_type="headquartered_in") == 1
 
 
 # ═══════════════════════════════════════════════════════════════
