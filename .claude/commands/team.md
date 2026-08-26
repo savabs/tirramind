@@ -46,6 +46,14 @@ The EXCLUDED line is what forces real triage. Do not omit it.
 - Use the routing table in your agent definition.
 - Each specialist has an exclusive domain and a `## Boundaries` section. Give
   each one only work it owns.
+- **If the specialist this work belongs to is already busy** (check
+  `journal.jsonl`/`agent-*.jsonl` ground truth, never `git status`), a second
+  instance of that role may be cloned — but only if the new work is provably
+  disjoint from what the busy instance is touching (say so explicitly: "clone
+  owns X, original owns Y, disjoint because Z"), and only up to 2 total
+  instances of that role (original + at most one clone, counted from the
+  journal). If the work can't be cleanly separated, queue and wait instead.
+  Label the clone `<role>#2`. Full policy: CLAUDE.md §12.
 
 **Step 5 — report.**
 Synthesise into one answer. Deduplicate across specialists (agreement between

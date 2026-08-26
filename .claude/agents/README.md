@@ -52,6 +52,15 @@ SEQUENCE:   parallel | <a> then <b> (because <dependency>)
 A full-roster audit once cost 1.6M tokens and 40 minutes to answer questions
 three agents owned. Breadth is not thoroughness. Enforced by CLAUDE.md §12.
 
+**A busy specialist can be cloned — carefully.** A specialist is a role file,
+not an employee; running a second instance is allowed when new work in its
+domain is provably disjoint from what the busy instance is touching (state the
+split in the triage block, don't just assert it). Cap: 2 total instances of one
+role (original + at most one clone), counted from `journal.jsonl` ground truth,
+never from `git status`. Only the top-level dispatcher decides to clone — no
+specialist lists `Agent`/`Workflow` in its `tools:`, so none can spawn its own
+clone. Full policy: CLAUDE.md §12.
+
 **Every agent has an exclusive domain.** Each file carries a `## Boundaries —
 you do NOT own` section naming which specialist owns adjacent territory. If two
 agents could both answer a question, that is a bug in the roster — fix the

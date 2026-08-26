@@ -168,7 +168,7 @@ Link commits to task/spec: `Closes tasks/active/xyz.md` in the message.
 
 ## 12. The Agent Team: Triage Before Dispatch
 
-There are 20 specialists in `.claude/agents/`, each with an exclusive domain and
+There are 23 specialists in `.claude/agents/`, each with an exclusive domain and
 a documented `## Boundaries` section.
 
 **"Ask the team" NEVER means "run every agent."**
@@ -186,6 +186,36 @@ a documented `## Boundaries` section.
 
 A full-roster fan-out once cost 1.6M tokens and 40 minutes to answer questions
 three agents owned. Breadth is not thoroughness.
+
+### Cloning a busy specialist
+
+A specialist is a role file, not an employee — nothing stops running a second
+instance of it. When new work arrives for a specialist that is already busy
+(check `agent-*.jsonl`/`journal.jsonl` ground truth, never `git status` — a
+file untouched for an hour looks identical to one mid-edit), cloning it is
+allowed, under all of these:
+
+- **Disjoint scope only.** The clone's files/subsystem must not overlap what
+  the busy original is currently touching. State the split explicitly in the
+  triage block — "original owns X, clone owns Y, disjoint because Z" — never
+  just assert it. If the new work can't be cleanly separated from the
+  original's in-flight scope, queue and wait instead of cloning; cloning into
+  overlapping scope recreates the exact file-collision risk two concurrent
+  writers create.
+- **Cap: 2 total instances of one role, full stop** — the original plus at
+  most one clone. Never clone a clone. Enforced by counting, not memory:
+  before dispatching, count `started`-without-`result` entries for that role
+  in the journal; at the cap, no clone.
+- **Only the top-level dispatcher (me / `principal-architect`) may decide to
+  clone.** A worker never spawns its own replacement or helper — this is
+  already a structural wall, not just a rule: no agent in `.claude/agents/`
+  lists `Agent` or `Workflow` in its `tools:` frontmatter, so a specialist
+  (cloned or not) is physically incapable of spawning anything. Never add
+  `Agent`/`Workflow` to a specialist's tool list — that would remove this
+  guardrail.
+- **Label clones distinctly** — `<role>#2` in the triage block and in the
+  `agent()` call's `label` — so status checks and the owner can always tell
+  instances apart.
 
 ---
 
