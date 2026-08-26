@@ -98,24 +98,19 @@
         </ul>
         <div class="endpoint-block">GET /evidence/graph?q=nvidia&#10;GET /evidence/analytics?q=nvidia&#10;GET /evidence/graph/centrality?top=10&#10;Header: X-Brief-Key: &lt;your key&gt;</div>
         <!--
-          payments-auditor, 2026-08-26: checkout paused, not deleted.
-          See docs/research/entity_graph_tier_mismatch.md. UPDATE 2026-08-26:
-          product-strategist has since rewritten the tagline/bullets above to
-          accurately describe the document-evidence-extraction product this
-          tier actually is (no entity/link counts claimed) — the false
-          "4,800+ entities / learned graph" claim is gone. The underlying
-          mismatch (this tier still gates the small agent/evidence/ store,
-          not the 5,628-entity/16,870-link production graph) is unchanged;
-          brief_server.py's dataset_scope disclosure still only fires
-          *after* a card would be charged. Re-enabling the checkout now that
-          the copy is honest is an owner decision, not something to flip
-          automatically just because the copy fix landed — do not
-          re-enable by editing this comment away without checking the copy
-          actually matches the served data.
+          Checkout was paused 2026-08-26 by payments-auditor pending a copy
+          fix — see docs/research/entity_graph_tier_mismatch.md. product-
+          strategist rewrote the tagline/bullets above to accurately describe
+          the document-evidence-extraction product this tier actually is (no
+          entity/link counts claimed; the false "4,800+ entities / learned
+          graph" claim is gone). Re-enabled 2026-08-26 by explicit owner
+          decision now that the copy is honest. The underlying mismatch
+          (this tier still gates the small agent/evidence/ store, not the
+          production graph) is unchanged and still disclosed honestly via
+          brief_server.py's dataset_scope on every /evidence/* response.
         -->
         <div class="plan-cta" style="margin-top:16px;">
-          <button class="cta" disabled title="Checkout paused pending a copy correction — see contact link">Subscribe</button>
-          <span class="note">Checkout temporarily paused while we correct this tier's description to match what the API serves. <a href="mailto:support@tirramind.com?subject=Entity%20Graph%20tier">Contact us</a> to be notified when it reopens.</span>
+          <button class="cta" onclick="openCheckout('entity')">Subscribe</button>
         </div>
       </div>
 
@@ -195,14 +190,12 @@
       brief: "pri_01m0xg0rn6w31kh6bhf9k39sk8",
     };
 
-    // payments-auditor, 2026-08-26: tiers paused at checkout despite having a
-    // configured price ID — see docs/research/entity_graph_tier_mismatch.md.
-    // Kept server-side (not just the disabled button above) so this can't be
-    // reopened by deleting one HTML attribute; the guard has to be removed
-    // here too, which forces whoever re-enables it to see this comment.
-    const PAUSED_TIERS = {
-      entity: "This tier's description doesn't yet match what the API serves — being corrected. Contact support@tirramind.com to be notified when it reopens.",
-    };
+    // Server-side checkout pause guard — empty now. The Entity Graph tier
+    // was paused here 2026-08-26 (bad copy vs. what the API actually serves)
+    // and re-enabled the same day by explicit owner decision once
+    // product-strategist's copy fix landed. See the HTML comment above the
+    // Entity Graph plan block, and docs/research/entity_graph_tier_mismatch.md.
+    const PAUSED_TIERS = {};
 
     if (PADDLE_ENV === "sandbox") Paddle.Environment.set("sandbox");
     if (!PADDLE_CLIENT_TOKEN.startsWith("REPLACE_")) {
