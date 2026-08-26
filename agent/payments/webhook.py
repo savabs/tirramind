@@ -1,14 +1,15 @@
-"""Paddle webhook signature verification (v2, Ed25519).
+"""Paddle webhook signature verification (v2, HMAC-SHA256).
 
 Paddle signs every webhook delivery with the notification destination's
-endpoint_secret_key. Verification:
+endpoint_secret_key (a "pdl_ntfset_..." string, not hex). Verification per
+https://developer.paddle.com/webhooks/signature-verification:
 
     headers:  Paddle-Signature = ts=<unix_seconds>;h1=<hex sig>
-    message:  ts:<timestamp>; <raw request body>
-    verify   h1 with Ed25519(public_key = hex(endpoint_secret_key))
+    message:  <timestamp>:<raw request body>
+    verify   h1 == hex(HMAC-SHA256(key=endpoint_secret_key, message))
 
-This prevents forged webhooks. The endpoint_secret_key is a 64-hex-char string
-used as the Ed25519 public key; h1 is a 128-hex-char signature.
+This prevents forged webhooks. The endpoint_secret_key is used directly as
+the HMAC key (its raw utf-8 bytes) — it is not hex-decoded.
 
 For a live endpoint, verification is mandatory (fail-closed). In sandbox/dev
 without a secret configured, verification is skipped (fail-open) so local
@@ -17,10 +18,9 @@ testing works — but never in live.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import time
-
-from cryptography.exceptions import InvalidSignature
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 
 class WebhookVerificationError(ValueError):
@@ -52,7 +52,7 @@ def verify_webhook_signature(
     Args:
         body: the raw request body (exactly as received, bytes).
         signature_header: the `Paddle-Signature` header value.
-        secret: the endpoint_secret_key (64 hex chars).
+        secret: the endpoint_secret_key (e.g. "pdl_ntfset_...").
         max_timestamp_age_s: reject signatures older than this (replay guard).
         now: override clock (for tests).
 
@@ -78,14 +78,12 @@ def verify_webhook_signature(
     if abs(now_i - ts_i) > max_timestamp_age_s:
         raise WebhookVerificationError("webhook signature timestamp is stale")
 
-    # Message to sign: ts:<timestamp>; <body>
+    # Message to sign: <timestamp>:<raw body>
     message = f"{ts}:{body.decode('utf-8', errors='replace')}".encode()
 
-    try:
-        public_key = Ed25519PublicKey.from_public_bytes(bytes.fromhex(secret))
-        public_key.verify(bytes.fromhex(h1), message)
-    except (InvalidSignature, ValueError) as exc:
-        raise WebhookVerificationError("invalid webhook signature") from exc
+    expected = hmac.new(secret.encode("utf-8"), message, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, h1):
+        raise WebhookVerificationError("invalid webhook signature")
 
     return True
 

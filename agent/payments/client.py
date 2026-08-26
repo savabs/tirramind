@@ -50,6 +50,49 @@ class PaddleClient:
         r.raise_for_status()
         return r.json().get("data", [])
 
+    def create_product(
+        self,
+        *,
+        name: str,
+        tax_category: str = "standard",
+        description: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a product in the catalog. Returns the created product (id prefixed 'pro_')."""
+        url = f"{self.config.api_base}/products"
+        payload: dict[str, Any] = {"name": name, "tax_category": tax_category}
+        if description:
+            payload["description"] = description
+        r = httpx.post(url, headers=self._headers, json=payload, timeout=30)
+        r.raise_for_status()
+        return r.json().get("data", {})
+
+    def create_price(
+        self,
+        *,
+        product_id: str,
+        description: str,
+        amount: str,
+        currency_code: str = "USD",
+        interval: str = "month",
+        frequency: int = 1,
+        name: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a recurring price for a product. `amount` is a string in the
+        lowest currency denomination (e.g. "50000" = $500.00 USD).
+        Returns the created price (id prefixed 'pri_')."""
+        url = f"{self.config.api_base}/prices"
+        payload: dict[str, Any] = {
+            "product_id": product_id,
+            "description": description,
+            "unit_price": {"amount": amount, "currency_code": currency_code},
+            "billing_cycle": {"interval": interval, "frequency": frequency},
+        }
+        if name:
+            payload["name"] = name
+        r = httpx.post(url, headers=self._headers, json=payload, timeout=30)
+        r.raise_for_status()
+        return r.json().get("data", {})
+
     # ── Subscriptions ──────────────────────────────────────────────────────
     def get_subscription(self, subscription_id: str) -> dict[str, Any]:
         """Fetch a subscription by ID (status, customer, items)."""
