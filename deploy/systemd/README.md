@@ -11,6 +11,7 @@ fields — edit those if your deployment differs.
 | `tirra-chain.service` + `.timer` | **Collect + every downstream DAG in dependency order** | Weekdays 18:00 UTC |
 | `tirra-collect.service` + `.timer` | `daily_collection` only — 40+ public data sources | Weekdays 18:00 UTC |
 | `tirra-backup.service` + `.timer` | Snapshot the pipeline DB + subscriber/usage state to Cloudflare R2 (`deploy/backup_to_r2.sh`) | Daily 22:00 UTC |
+| `tirra-disk-check.service` + `.timer` | Warn (journal + optional email) when the disk holding the pipeline DB crosses 85% (`deploy/disk_space_check.sh`) | Daily 06:00 UTC |
 
 ## Pick `tirra-chain` OR `tirra-collect`, not both
 
@@ -61,6 +62,10 @@ sudo systemctl enable --now tirra-chain.timer
 # place first (see deploy/backup_to_r2.sh); without it every run fails closed
 # (missing R2 credentials), once per day, until the file is there:
 sudo systemctl enable --now tirra-backup.timer
+
+# Disk-space monitor — no secrets required, safe to enable immediately.
+# deploy/provision_vm.sh already does this for you.
+sudo systemctl enable --now tirra-disk-check.timer
 ```
 
 ## Verify

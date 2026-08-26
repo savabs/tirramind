@@ -1,0 +1,11 @@
+[Unit]
+Description=TirraMind — disk space guard (warns at 85% usage; see deploy/disk_space_check.sh)
+After=local-fs.target
+
+[Service]
+Type=oneshot
+User=tirra
+WorkingDirectory=/opt/tirramind
+# Reads .env.production itself (for optional SMTP alert vars) — does not need
+# it as an EnvironmentFile, and must not fail if it's absent yet.
+ExecStart=/opt/tirramind/deploy/disk_space_check.sh

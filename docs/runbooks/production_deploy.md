@@ -320,11 +320,15 @@ Back on the VM:
 systemctl enable --now tirra-api.service
 systemctl enable --now tirra-chain.timer
 systemctl enable --now tirra-backup.timer
+systemctl enable --now tirra-disk-check.timer
 ```
 
 Skip `tirra-collect.timer` — `tirra-chain` already runs collection as its
 first step; enabling both means running the 40+-source collection twice a
 day for no reason.
+
+`tirra-disk-check.timer` needs no secrets — `provision_vm.sh` already enables
+it for you, this line is only here in case you're wiring units up by hand.
 
 ---
 
