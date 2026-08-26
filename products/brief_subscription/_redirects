@@ -27,6 +27,11 @@
 /api/v1/*           https://api.tirramind.com/api/v1/:splat         200
 /evidence/*         https://api.tirramind.com/evidence/:splat       200
 
-# ── Clean URLs ────────────────────────────────────────────────────────────
-# /pricing -> pricing.html. Must be last: it matches everything.
-/*                  /:splat.html                                    200
+# No catch-all clean-URL rule here on purpose: Cloudflare Pages already
+# serves foo.html at extension-less /foo automatically, with no _redirects
+# entry needed (confirmed live 2026-08-27 — / and /pricing.html both serve
+# correctly with zero explicit rules for them). A custom `/* /:splat.html
+# 200` rule here collided with that built-in behavior and produced an
+# infinite redirect loop on every clean URL (e.g. /pricing -> /pricing).
+# Removed rather than reconciled with Pages' own logic -- it was solving a
+# problem the platform already solves.
