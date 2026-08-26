@@ -290,10 +290,58 @@ class _Handler(BaseHTTPRequestHandler):
         self._send(200, "application/json", json.dumps({**ack, "ok": True}))
 
     # ── Evidence Graph ───────────────────────────────────────────────────────
+    #
+    # KNOWN MISMATCH (flagged 2026-08-26, unresolved — see
+    # docs/research/entity_graph_tier_mismatch.md): the "Entity Graph" tier
+    # (products/brief_subscription/pricing.html) is marketed as the real,
+    # learned entity/relationship graph — agent/models/gnn/graph_builder.py
+    # reading agent/pipeline/store.py, currently 5,628 entities / 16,870
+    # links / 365K+ observations. These `/evidence/*` routes do NOT serve
+    # that graph. They serve `agent/evidence/`: a separate, much smaller
+    # document store built in an unrelated session — regex-based entity
+    # extraction (~155 distinct entity strings live right now) over
+    # manually-POSTed documents (5 of them live right now). The two were
+    # never reconciled, and gating both under `_ENTITY_GRAPH_TIERS` sells
+    # access to the wrong dataset.
+    #
+    # Wiring the *real* graph here is more than a routing fix: `entities` /
+    # `entity_links` are plausibly safe to expose, but `entity_observations`
+    # carries raw pipeline signal values — deciding what's safe to expose to
+    # a paid tier is a product/security call, not something to decide
+    # silently in this file. Until that's spec'd and reviewed, every
+    # response below carries an explicit `dataset_scope` block so the API
+    # contract itself is honest even though the marketing copy is not yet
+    # fixed. Do not remove `dataset_scope` without either (a) replacing
+    # these routes with real pipeline-graph data under the same review, or
+    # (b) correcting the tier's marketing/pricing to match what's actually
+    # sold here.
     def _evidence_store(self):
         from agent.evidence import EvidenceGraphStore
 
         return EvidenceGraphStore()
+
+    @staticmethod
+    def _evidence_dataset_scope(store) -> dict:
+        """Explicit, non-silent disclosure of what this dataset actually is.
+
+        See the KNOWN MISMATCH note above `_evidence_store`. Computed fresh
+        per request (cheap COUNT queries) so the disclosure never drifts
+        stale relative to what the endpoint actually returned.
+        """
+        stats = store.stats()
+        return {
+            "dataset": "document_evidence_sample",
+            "documents_ingested": stats["documents"],
+            "mentions": stats["mentions"],
+            "links": stats["links"],
+            "note": (
+                "This is a small, manually-ingested document-evidence sample "
+                "(regex-based extraction), NOT the production entity/relationship "
+                "graph described in the Entity Graph tier's marketing. Confidence "
+                "scores here are co-occurrence heuristics, not model output. See "
+                "docs/research/entity_graph_tier_mismatch.md."
+            ),
+        }
 
     def _single_body(self, body: bytes) -> dict:
         try:
@@ -351,11 +399,25 @@ class _Handler(BaseHTTPRequestHandler):
 
         key = urllib.parse.unquote(q).strip().lower()
         self._send(
-            200, "application/json", json.dumps({"ok": True, **store.search_entity(key), "related": store.related(key)})
+            200,
+            "application/json",
+            json.dumps(
+                {
+                    "ok": True,
+                    **store.search_entity(key),
+                    "related": store.related(key),
+                    "dataset_scope": self._evidence_dataset_scope(store),
+                }
+            ),
         )
 
     def _serve_evidence_stats(self) -> None:
-        self._send(200, "application/json", json.dumps({"ok": True, "stats": self._evidence_store().stats()}))
+        store = self._evidence_store()
+        self._send(
+            200,
+            "application/json",
+            json.dumps({"ok": True, "stats": store.stats(), "dataset_scope": self._evidence_dataset_scope(store)}),
+        )
 
     def _serve_evidence_analytics(self, query) -> None:
         store = self._evidence_store()
@@ -364,10 +426,28 @@ class _Handler(BaseHTTPRequestHandler):
         q = (query.get("q") or [None])[0]
         co = store.co_occurrences(urllib.parse.unquote(q).strip().lower()) if q else []
         pairs = store.cross_doc_pairs(min_docs=int((query.get("min_docs") or ["2"])[0]))
-        self._send(200, "application/json", json.dumps({"ok": True, "co_occurrences": co, "cross_doc_pairs": pairs}))
+        self._send(
+            200,
+            "application/json",
+            json.dumps(
+                {
+                    "ok": True,
+                    "co_occurrences": co,
+                    "cross_doc_pairs": pairs,
+                    "dataset_scope": self._evidence_dataset_scope(store),
+                }
+            ),
+        )
 
     def _serve_evidence_export(self) -> None:
-        self._send(200, "application/json", json.dumps({"ok": True, "graph": self._evidence_store().graph_export()}))
+        store = self._evidence_store()
+        self._send(
+            200,
+            "application/json",
+            json.dumps(
+                {"ok": True, "graph": store.graph_export(), "dataset_scope": self._evidence_dataset_scope(store)}
+            ),
+        )
 
     def _serve_evidence_centrality(self, query) -> None:
         from agent.evidence import degree_centrality, neighbors
@@ -384,7 +464,14 @@ class _Handler(BaseHTTPRequestHandler):
         self._send(
             200,
             "application/json",
-            json.dumps({"ok": True, "top_by_degree": degree_centrality(store, top_n=top), "neighbors": n}),
+            json.dumps(
+                {
+                    "ok": True,
+                    "top_by_degree": degree_centrality(store, top_n=top),
+                    "neighbors": n,
+                    "dataset_scope": self._evidence_dataset_scope(store),
+                }
+            ),
         )
 
     # ── Data Platform tier: query already-collected pipeline data ───────────
