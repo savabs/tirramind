@@ -1,0 +1,51 @@
+# TirraMind — reverse proxy + automatic TLS for the API backend.
+#
+# brief_server.py binds 127.0.0.1:8787 ONLY (see tirra-api.service) — it is
+# never directly exposed. Caddy terminates TLS and proxies to it.
+#
+# Caddy provisions and renews Let's Encrypt certificates automatically; there
+# is no cert to manage or rotate by hand.
+#
+# Install: /etc/caddy/Caddyfile   then: sudo systemctl reload caddy
+#
+# NOTE ON CLOUDFLARE: if api.tirramind.com is proxied through Cloudflare
+# (orange cloud), set the SSL/TLS mode to "Full (strict)". In "Flexible" mode
+# Cloudflare speaks plain HTTP to this origin, which breaks the ACME challenge
+# and leaves the Cloudflare<->origin hop unencrypted. Grey-cloud (DNS-only) is
+# the simplest correct option for an API host.
+
+api.tirramind.com {
+	encode gzip
+
+	# The webhook needs the RAW request body byte-for-byte — Paddle's
+	# HMAC-SHA256 signature is computed over "<ts>:<raw body>". Any rewriting
+	# or re-encoding of the body invalidates every signature. reverse_proxy
+	# streams it through untouched, which is what we want; do NOT add body
+	# manipulation directives here.
+	reverse_proxy 127.0.0.1:8787 {
+		header_up X-Real-IP {remote_host}
+		# The collection chain and evidence queries can be slow.
+		transport http {
+			read_timeout 300s
+		}
+	}
+
+	log {
+		output file /var/log/caddy/tirra-api.log {
+			roll_size 50MiB
+			roll_keep 5
+		}
+	}
+}
+
+# Optional: serve the static site from this VM too, instead of Cloudflare Pages.
+# Left commented — Pages is free, commercially licensed, and CDN-backed, so it
+# is the better home for the storefront. Uncomment only if consolidating.
+#
+# tirramind.com, www.tirramind.com {
+# 	root * /opt/tirramind/products/brief_subscription
+# 	try_files {path} {path}.html {path}/index.html
+# 	file_server
+# 	encode gzip
+# 	redir /buy /pricing 302
+# }

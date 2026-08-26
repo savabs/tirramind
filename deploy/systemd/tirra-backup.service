@@ -1,0 +1,14 @@
+[Unit]
+Description=TirraMind — back up pipeline state to Cloudflare R2
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=tirra
+WorkingDirectory=/opt/tirramind
+# Storage write credentials live in their own root-owned 600 file — the API
+# server must never hold them. See deploy/backup_to_r2.sh.
+EnvironmentFile=/opt/tirramind/.env.backup
+ExecStart=/opt/tirramind/deploy/backup_to_r2.sh
+TimeoutStartSec=1800

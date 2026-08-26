@@ -1,0 +1,11 @@
+[Unit]
+Description=Back up TirraMind pipeline state to R2 daily
+
+[Timer]
+# 22:00 UTC — after the 18:00 chain has finished (it can run ~90 min), so the
+# snapshot captures that day's collected data rather than racing it.
+OnCalendar=*-*-* 22:00:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target

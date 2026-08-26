@@ -1,0 +1,11 @@
+[Unit]
+Description=Run tirra-collect.service weekdays at 18:00 UTC
+
+[Timer]
+# Matches the cadence documented in agent/pipeline/dags/daily_collection.py:
+# "weekdays at 18:00 UTC (after US market close, CFTC/FINRA publish windows)".
+OnCalendar=Mon..Fri 18:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target

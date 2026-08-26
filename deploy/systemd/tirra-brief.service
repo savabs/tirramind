@@ -1,0 +1,12 @@
+[Unit]
+Description=TirraMind — fast refresh + build + deliver the Intelligence Brief
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=tirra
+WorkingDirectory=/opt/tirramind
+EnvironmentFile=/opt/tirramind/.env.production
+ExecStart=/opt/tirramind/scripts/run_scheduled.sh
+TimeoutStartSec=120

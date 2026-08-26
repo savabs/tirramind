@@ -1,0 +1,15 @@
+[Unit]
+Description=TirraMind — full daily_collection DAG (40+ sources)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Adjust User/WorkingDirectory to match your deployment.
+User=tirra
+WorkingDirectory=/opt/tirramind
+EnvironmentFile=/opt/tirramind/.env.production
+ExecStart=/opt/tirramind/scripts/run_scheduled.sh collect
+# A full collection run is slow (network calls to 40+ public APIs) — give it
+# real headroom. It exits on its own once every source has been fetched.
+TimeoutStartSec=1800

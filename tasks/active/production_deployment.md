@@ -51,11 +51,29 @@ between "verified in Paddle" and "a customer can pay and use the product."
 - [x] `deploy/Caddyfile` — TLS termination for `api.tirramind.com`
 - [x] `deploy/provision_vm.sh` — idempotent bootstrap, does not touch DNS/secrets
 - [x] `deploy/backup_to_r2.sh` — refuses to prune retention on an empty
-      snapshot or failed upload (previously could delete backups on a bad run)
+      snapshot or failed upload (previously could delete backups on a bad
+      run); also fixed a missing-DB case that bypassed that guard, and a
+      `grep -q`/`pipefail` race that could falsely report a good upload as
+      unverifiable — both caught by `tests/test_backup_to_r2.py`, added this
+      pass
+- [x] `deploy/provision_vm.sh` — also fixed `/var/log/caddy` being created
+      owned by the app user instead of `caddy:caddy`, which left the Caddy
+      process unable to write its own log file (the official Debian package
+      runs it as `User=caddy`)
 - [x] `deploy/systemd/*` — `tirra-api`, `tirra-collect`, `tirra-chain`,
-      `tirra-backup` services + timers
+      `tirra-backup` services + timers; `deploy/systemd/README.md` now also
+      documents `tirra-backup` (previously undocumented there)
+- [x] Budget re-checked at $30/mo (was $10/mo) — `docs/research/production_deployment.md`
+      §0 superseded by `docs/runbooks/production_deploy.md` §0.2: Hetzner
+      CAX21 (4 vCPU/8 GB, ~$11.50/mo, current Aug-2026 pricing) + HetrixTools
+      free uptime monitoring (commercial-use-safe, unlike UptimeRobot's free
+      tier) — total ~$12/mo, headroom left deliberately unspent
+- [x] `docs/runbooks/production_deploy.md` — the single ordered, copy-paste
+      runbook: owner-only account/DNS/VM steps, then scripted provisioning,
+      then a from-outside-the-box verification checklist
 - [ ] Actually provision the VM, DNS record, R2 bucket — needs the operator's
-      own cloud accounts/credentials (explicitly out of scope for Claude)
+      own cloud accounts/credentials (explicitly out of scope for Claude;
+      `docs/runbooks/production_deploy.md` is the handoff)
 
 ### Free data API keys (unblocks 4 of 54 daily_collection sources)
 - [x] `.env.example` documents `TIRRA_NASA_FIRMS_KEY` / `FIRMS_API_KEY` /

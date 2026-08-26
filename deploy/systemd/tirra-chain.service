@@ -1,0 +1,21 @@
+[Unit]
+Description=TirraMind — full DAG chain (collect + all downstream intelligence layers)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Adjust User/WorkingDirectory to match your deployment.
+User=tirra
+WorkingDirectory=/opt/tirramind
+# TIRRA_FRED_API_KEY / TIRRA_NASA_FIRMS_KEY / TIRRA_EIA_API_KEY — without this
+# the collection step silently runs with those sources dark.
+EnvironmentFile=/opt/tirramind/.env.production
+ExecStart=/opt/tirramind/scripts/run_scheduled.sh chain
+# The chain runs 40+ network sources plus GNN inference, entity scoring, world
+# model updates and RL training. Give it real headroom — it exits on its own.
+TimeoutStartSec=5400
+
+# run_chain.py exits non-zero when any DAG fails, so a failure is visible in
+# `systemctl status` instead of silently reporting success — which is exactly
+# how the inference DAG hid an empty-output bug indefinitely.

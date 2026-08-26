@@ -1,0 +1,32 @@
+# Cloudflare Pages redirects/rewrites for the TirraMind public site.
+#
+# Pages uses this Netlify-compatible file, NOT vercel.json or netlify.toml.
+# Those two are left in the repo unused, so either vendor stays available.
+#
+# Syntax:  <from>  <to>  <status>
+#   200 with an absolute destination = proxy (rewrite, URL stays put)
+#   301/302                          = visible redirect
+# Order matters: first match wins, so the catch-all must come last.
+#
+# LIMIT: Cloudflare Pages caps this file at 2000 rules (100 dynamic). We use
+# well under that, but keep it in mind before adding per-path entries.
+
+# Checkout is the Paddle.js overlay on /pricing — Paddle Billing has no static
+# reusable checkout links. Keep old /buy links working.
+/buy                /pricing                                        302
+
+# ── Backend proxy ─────────────────────────────────────────────────────────
+# Status 200 = the browser stays on tirramind.com while Pages fetches from the
+# API host. This keeps the API same-origin from the browser's perspective, so
+# subscriber keys aren't sent cross-origin and CORS never enters the picture.
+#
+# REQUIRES api.tirramind.com to exist and serve TLS. Until the VM is deployed
+# these four rules resolve to nothing — see docs/research/production_deployment.md.
+/brief.json         https://api.tirramind.com/brief.json            200
+/brief.md           https://api.tirramind.com/brief.md              200
+/api/v1/*           https://api.tirramind.com/api/v1/:splat         200
+/evidence/*         https://api.tirramind.com/evidence/:splat       200
+
+# ── Clean URLs ────────────────────────────────────────────────────────────
+# /pricing -> pricing.html. Must be last: it matches everything.
+/*                  /:splat.html                                    200

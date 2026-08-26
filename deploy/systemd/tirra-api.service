@@ -1,0 +1,20 @@
+[Unit]
+Description=TirraMind API — brief_server.py (webhook, /brief, /api/v1/*, /evidence/*)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tirra
+WorkingDirectory=/opt/tirramind
+# Paddle keys, TIRRA_TIER_PRICE_MAP, TIRRA_SUB_KEYS, TIRRA_INGEST_TOKEN, etc.
+# Deliberately NOT /opt/tirramind/.env — that also holds WANDB/HF/GITHUB/
+# KAGGLE/Anthropic training credentials, which have no business being
+# reachable from an internet-facing process. See deploy/env.production.example.
+EnvironmentFile=/opt/tirramind/.env.production
+ExecStart=/opt/tirramind/.venv/bin/python agent/brief_server.py --host 127.0.0.1 --port 8787 --out .tirra_delivery
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
