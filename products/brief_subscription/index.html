@@ -3,77 +3,120 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>TirraMind — Opportunity Brief</title>
-  <meta name="description" content="Weekly government-contract and market intelligence, scored by expected value. Small, overlooked federal contracts ranked for win-probability. Deterministic math on public data.">
+  <title>TirraMind — Signal Infrastructure</title>
+  <meta name="description" content="60+ integrated data sources, deterministic feature extraction, a learned entity graph, and the pipeline scheduler that runs it — licensed as an API instead of built in-house.">
   <style>
-    :root { --ink:#111; --mut:#666; --acc:#3730a3; --bg:#fafafa; --line:#e5e5e5; }
+    :root { --ink:#111; --mut:#666; --acc:#3730a3; --acc-soft:#eef2ff; --bg:#fafafa; --line:#e5e5e5; --good:#0a7a4b; }
     * { box-sizing: border-box; margin: 0; }
     body { font-family: -apple-system, ui-sans-serif, system-ui, "Segoe UI", sans-serif; background:var(--bg); color:var(--ink); line-height:1.6; -webkit-font-smoothing:antialiased; }
-    .wrap { max-width:760px; margin:0 auto; padding:0 24px; }
-    header { padding:28px 0 8px; }
+    .wrap { max-width:860px; margin:0 auto; padding:0 24px; }
+    header { padding:28px 0 8px; display:flex; align-items:center; justify-content:space-between; }
     .brand { font-weight:700; font-size:17px; letter-spacing:-0.01em; }
     .brand em { font-style:normal; color:var(--acc); }
-    main { padding:64px 0 40px; }
-    .tag { display:inline-block; background:#eef2ff; color:var(--acc); border-radius:999px; padding:3px 12px; font-size:12.5px; font-weight:600; letter-spacing:0.02em; }
-    h1 { font-size:38px; line-height:1.15; letter-spacing:-0.02em; margin:14px 0 14px; font-weight:750; }
-    h1 .sub { display:block; font-size:19px; font-weight:450; color:var(--mut); letter-spacing:0; line-height:1.4; margin-top:10px; max-width:560px; }
-    .cols { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:28px 0 8px; }
-    .card { background:#fff; border:1px solid var(--line); border-radius:12px; padding:16px 18px; }
-    .card strong { display:block; font-size:15px; margin-bottom:3px; }
-    .card span { font-size:13.5px; color:var(--mut); }
-    .price-box { background:#fff; border:1px solid var(--line); border-radius:14px; padding:24px; margin-top:22px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
-    .price .amt { font-size:30px; font-weight:750; }
-    .price .per { color:var(--mut); font-size:14px; }
-    .price .note { display:block; color:var(--mut); font-size:13px; margin-top:2px; }
+    nav a { color:var(--mut); text-decoration:none; font-size:14px; margin-left:20px; }
+    nav a:hover { color:var(--ink); }
+    main { padding:56px 0 40px; }
+    .tag { display:inline-block; background:var(--acc-soft); color:var(--acc); border-radius:999px; padding:3px 12px; font-size:12.5px; font-weight:600; letter-spacing:0.02em; }
+    h1 { font-size:40px; line-height:1.15; letter-spacing:-0.02em; margin:14px 0 14px; font-weight:750; max-width:680px; }
+    h1 .sub { display:block; font-size:19px; font-weight:450; color:var(--mut); letter-spacing:0; line-height:1.45; margin-top:12px; max-width:600px; }
+    .hero-cta { display:flex; gap:12px; margin-top:26px; flex-wrap:wrap; }
     .cta { display:inline-block; background:var(--acc); color:#fff; padding:13px 26px; border-radius:9px; text-decoration:none; font-weight:600; font-size:15px; }
     .cta:hover { background:#2c2588; }
-    .no-risk { font-size:12.5px; color:var(--mut); margin-top:10px; }
-    .how { margin-top:42px; }
-    .how h2 { font-size:15px; text-transform:uppercase; letter-spacing:0.06em; color:var(--mut); margin-bottom:14px; }
-    .how ol { padding-left:20px; }
-    .how li { margin:10px 0; font-size:14.5px; }
-    footer { border-top:1px solid var(--line); padding:22px 0 36px; color:var(--mut); font-size:13px; }
+    .cta.ghost { background:#fff; color:var(--acc); border:1px solid var(--line); }
+    .cta.ghost:hover { border-color:var(--acc); }
+
+    .tiers { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin:52px 0 8px; }
+    .tier { background:#fff; border:1px solid var(--line); border-radius:14px; padding:22px 20px; display:flex; flex-direction:column; }
+    .tier .kicker { font-size:11.5px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:var(--acc); }
+    .tier h3 { font-size:19px; margin:8px 0 6px; letter-spacing:-0.01em; }
+    .tier p.desc { font-size:13.5px; color:var(--mut); flex-grow:1; margin-bottom:14px; }
+    .tier .price { font-size:22px; font-weight:750; margin-bottom:2px; }
+    .tier .price span { font-size:13px; font-weight:450; color:var(--mut); }
+    .tier a.link { font-size:13.5px; color:var(--acc); text-decoration:none; font-weight:600; margin-top:10px; }
+    .tier a.link:hover { text-decoration:underline; }
+
+    .why { margin-top:56px; }
+    .why h2 { font-size:15px; text-transform:uppercase; letter-spacing:0.06em; color:var(--mut); margin-bottom:16px; }
+    .why-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+    .why-item { background:#fff; border:1px solid var(--line); border-radius:12px; padding:16px 18px; }
+    .why-item strong { display:block; font-size:14.5px; margin-bottom:4px; }
+    .why-item span { font-size:13px; color:var(--mut); }
+
+    .brief-note { margin-top:52px; background:#fff; border:1px dashed var(--line); border-radius:12px; padding:18px 20px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+    .brief-note div strong { display:block; font-size:14.5px; }
+    .brief-note div span { font-size:13px; color:var(--mut); }
+    .brief-note a { font-size:13.5px; color:var(--acc); text-decoration:none; font-weight:600; white-space:nowrap; }
+    .brief-note a:hover { text-decoration:underline; }
+
+    footer { border-top:1px solid var(--line); padding:22px 0 36px; color:var(--mut); font-size:13px; margin-top:40px; }
     footer a { color:var(--mut); text-decoration:none; margin-right:18px; }
     footer a:hover { color:var(--ink); }
     .contact { margin-top:8px; font-size:12.5px; }
-    @media (max-width:560px){ .cols { grid-template-columns:1fr; } h1 { font-size:30px; } }
+
+    @media (max-width:720px){ .tiers { grid-template-columns:1fr; } .why-grid { grid-template-columns:1fr; } h1 { font-size:32px; } }
   </style>
 </head>
 <body>
   <div class="wrap">
     <header>
       <div class="brand">Tirra<em>Mind</em></div>
+      <nav>
+        <a href="/pricing.html">Pricing</a>
+        <a href="/status">Status</a>
+      </nav>
     </header>
     <main>
-      <span class="tag">WEEKLY INTELLIGENCE BRIEF</span>
-      <h1>Opportunity Brief
-        <span class="sub">Weekly signals on government contracts and market positioning — scored by expected value, grounded in public data.</span>
+      <span class="tag">SIGNAL INFRASTRUCTURE</span>
+      <h1>The data + feature layer quant teams license instead of build
+        <span class="sub">60+ integrated public data sources, deterministic feature extraction (BOCPD, HMM, spectral), a learned entity graph, and the pipeline scheduler that runs it all — as an API.</span>
       </h1>
 
-      <div class="cols">
-        <div class="card"><strong>Contract opportunities</strong><span>Small, overlooked federal contracts, ranked by expected value and win-probability.</span></div>
-        <div class="card"><strong>Market anomalies</strong><span>Positioning extremes and regime changes from real public data — not guesswork.</span></div>
-        <div class="card"><strong>Expected-value scoring</strong><span>EV = P(win) · (Bid − Cost) − Risk, with a win-probability model that learns from outcomes.</span></div>
-        <div class="card"><strong>Honest math</strong><span>Every number traces to a public source. No hype, no black box.</span></div>
+      <div class="hero-cta">
+        <a class="cta" href="/pricing.html">See pricing</a>
+        <a class="cta ghost" href="mailto:support@tirramind.com">Talk to us</a>
       </div>
 
-      <div class="price-box">
-        <div class="price">
-          <span class="amt">$19</span><span class="per"> / month</span>
-          <span class="note">One short brief every week. Cancel anytime.</span>
+      <div class="tiers">
+        <div class="tier">
+          <span class="kicker">Data Platform</span>
+          <h3>Surveillance + Features API</h3>
+          <p class="desc">Query deterministic signals — changepoints, regime states, z-scores — computed daily across 60+ free public data sources. Skip the integration work.</p>
+          <div class="price">$500<span>/mo, up to full stack</span></div>
+          <a class="link" href="/pricing.html#data">Details →</a>
         </div>
-        <a class="cta" href="/buy">Subscribe</a>
+        <div class="tier">
+          <span class="kicker">Entity Graph</span>
+          <h3>Evidence &amp; Relationship API</h3>
+          <p class="desc">A learned, queryable graph of 4,800+ entities. Cross-document co-occurrence, confidence-scored links, and audit-traceable evidence for every claim.</p>
+          <div class="price">$300<span>/mo, up to enterprise</span></div>
+          <a class="link" href="/pricing.html#entity">Details →</a>
+        </div>
+        <div class="tier">
+          <span class="kicker">Scheduler</span>
+          <h3>Pipeline Run Visibility</h3>
+          <p class="desc">Read-only monitoring into our DAG-based execution engine — run history, status, timing. Custom DAG submission is in beta.</p>
+          <div class="price">$50<span>/mo, up to $2k</span></div>
+          <a class="link" href="/pricing.html#scheduler">Details →</a>
+        </div>
       </div>
-      <p class="no-risk">No commitment. Pause or cancel whenever you like.</p>
 
-      <section class="how">
-        <h2>How it works</h2>
-        <ol>
-          <li>We pull the week's contract awards and market-positioning data from public sources.</li>
-          <li>We score every opportunity by expected value and your estimated win-probability.</li>
-          <li>You get one short brief — what changed, what's worth your time, and why.</li>
-        </ol>
+      <section class="why">
+        <h2>Why this isn't a weekend project</h2>
+        <div class="why-grid">
+          <div class="why-item"><strong>60 integrated APIs</strong><span>SEC EDGAR, CFTC, GDELT, AIS vessel tracking, sanctions, bankruptcy court, and more — normalized, monitored, and running in production.</span></div>
+          <div class="why-item"><strong>A trained entity graph</strong><span>A heterogeneous temporal graph neural network learned cross-type attention over months of data. Training from scratch takes 30+ GPU hours.</span></div>
+          <div class="why-item"><strong>Deterministic, auditable math</strong><span>BOCPD, HMM, spectral analysis — no LLM, no black box. Every number traces to a public source.</span></div>
+          <div class="why-item"><strong>Runs for $95/month</strong><span>Free data + free training compute. We pass that cost advantage through instead of pricing like an enterprise data vendor.</span></div>
+        </div>
       </section>
+
+      <div class="brief-note">
+        <div>
+          <strong>Just want the weekly brief?</strong>
+          <span>Ranked federal contracts + market anomalies, delivered every week.</span>
+        </div>
+        <a href="/pricing.html#brief">$19/mo →</a>
+      </div>
     </main>
 
     <footer>

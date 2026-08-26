@@ -1,16 +1,41 @@
-# Opportunity Brief — subscription product
+# TirraMind infrastructure products
 
-Self-serve weekly government-contract intelligence. Sold via a hosted checkout
-buy-link; delivered and served automatically by the engine. **No selling** —
-buyers find it, pay, and get a subscriber key.
+Self-serve infrastructure + intelligence products. Sold via hosted checkout
+buy-links (one per tier); delivered and served automatically by the engine.
+**No selling** — buyers find a tier, pay, and get a subscriber key scoped to
+that tier.
 
 ## What it is
 
-A weekly brief with:
-- **Contract opportunities** — small, overlooked federal contracts ranked by
-  expected value (`EV = P(win)·(Bid−Cost)−Risk`) and learned win-probability.
-- **Market signals** — real anomalies (positioning extremes, regime changes).
-- Deterministic math on public data. No LLM, no black box.
+Four independently-billed tiers, gated by subscriber key + tier on the same
+backend (`agent/brief_server.py`):
+
+| Tier | Price | Surface | Gate |
+|---|---|---|---|
+| **Data Platform** | $500–5,000/mo | `GET /api/v1/data`, `GET /api/v1/sources` — pre-computed deterministic signals from 47 sources | `tier ∈ {data, scheduler}` |
+| **Entity Graph** | $300–2,000/mo | `GET /evidence/*` — learned entity graph, cross-doc co-occurrence | `tier ∈ {entity, data, scheduler}` |
+| **Scheduler** | $50–2,000/mo | `GET /api/v1/dag/runs` — pipeline run visibility (custom DAG submission: beta) | `tier == scheduler` |
+| **Opportunity Brief** | $19/mo | `GET /brief.json` / `/brief.md` — weekly ranked contracts + market anomalies | any active subscriber |
+| *(all tiers)* | — | `GET /api/v1/usage` — caller's own metered call summary | any active subscriber |
+
+A subscriber's tier is set by the Paddle price they bought, mapped via
+`TIRRA_TIER_PRICE_MAP` (see below) and stored alongside their access record.
+
+**Auth model:** each subscriber authenticates with an opaque `tirra_...` API
+key minted on first activation (`SubscriberStore.set_active`) — never with
+the raw Paddle `subscription_id`. The key is stable across cancel/reactivate
+cycles and is returned once, in the webhook handler's result (`api_key`),
+for support/ops tooling to hand to the customer — there is no email-delivery
+flow yet, so retrieving a customer's key today means reading it from
+`.tirra_opportunities/subscribers.json` or the webhook handler result.
+
+**Usage metering:** every authorized call to a metered endpoint (Data
+Platform, Entity Graph, Scheduler, Brief) is logged to
+`.tirra_opportunities/usage.db` (`agent/payments/usage.py`) keyed by the
+caller's API key. Nothing is enforced yet (no hard quotas) — it's
+visibility only, via `GET /api/v1/usage`.
+
+Deterministic math on public data. No LLM, no black box.
 
 ## The "ghost" architecture
 
@@ -81,12 +106,20 @@ Update `vercel.json`/`netlify.toml` so `/brief.json` proxies to
 
 ### 3. Configure Paddle (after domain is live + approved)
 
-1. Create the Paddle product/price "Opportunity Brief — weekly" at $19/month.
-2. Get the live payment link → paste into `vercel.json`/`netlify.toml` redirect
-   for `/buy` (and set `TIRRA_BUY_URL` on the backend).
-3. Create a live notification destination → `https://api.tirramind.com/webhook`,
+1. Create one Paddle product/price per tier (Data Platform, Entity Graph,
+   Scheduler, Opportunity Brief).
+2. Get each live payment link → set `TIRRA_BUY_URL_<TIER>` per tier (e.g.
+   `TIRRA_BUY_URL_DATA`, `TIRRA_BUY_URL_ENTITY`, `TIRRA_BUY_URL_SCHEDULER`,
+   `TIRRA_BUY_URL_BRIEF`). `/buy?tier=data` reads `TIRRA_BUY_URL_DATA`,
+   falling back to `TIRRA_BUY_URL` if unset — the pricing page links to
+   `/buy?tier=<name>` for each plan.
+3. Map each Paddle price ID to its tier name via `TIRRA_TIER_PRICE_MAP`
+   (`pri_xxx:data,pri_yyy:entity,pri_zzz:scheduler`) so the webhook grants the
+   right tier automatically. Unmapped/legacy prices default to the `brief`
+   tier.
+4. Create a live notification destination → `https://api.tirramind.com/webhook`,
    capture `endpoint_secret_key` → set `TIRRA_PADDLE_WEBHOOK_SECRET`.
-4. Request domain approval in Paddle (Checkout → Request domain approval) —
+5. Request domain approval in Paddle (Checkout → Request domain approval) —
    **required for live checkouts**; sandbox auto-approves, live does not.
 
 ### 4. Set backend env (live)
@@ -96,8 +129,13 @@ TIRRA_PADDLE_MODE=live
 TIRRA_PADDLE_API_KEY=<live api key>
 TIRRA_PADDLE_CLIENT_TOKEN=live_...
 TIRRA_PADDLE_WEBHOOK_SECRET=<endpoint_secret_key>
-TIRRA_PADDLE_PRICE_ID=pri_...
-TIRRA_BUY_URL=https://checkout.paddle.com/...
+TIRRA_TIER_PRICE_MAP=pri_data:data,pri_entity:entity,pri_scheduler:scheduler,pri_brief:brief
+TIRRA_BUY_URL_DATA=https://checkout.paddle.com/...
+TIRRA_BUY_URL_ENTITY=https://checkout.paddle.com/...
+TIRRA_BUY_URL_SCHEDULER=https://checkout.paddle.com/...
+TIRRA_BUY_URL_BRIEF=https://checkout.paddle.com/...
+TIRRA_BUY_URL=https://checkout.paddle.com/...   # fallback if a tier-specific link is unset
+TIRRA_INGEST_TOKEN=<random admin token>          # required to call POST /evidence/ingest in live
 ```
 
 No code changes needed for sandbox → live; it's all env/config.
@@ -122,7 +160,8 @@ a valid key, 200 with it.
 | `products/brief_subscription/refunds.html` | Refund policy (verification) |
 | `products/brief_subscription/vercel.json` | Vercel routes (`/buy`, `/brief` proxy) |
 | `products/brief_subscription/netlify.toml` | Netlify routes (alt) |
-| `agent/brief_server.py` | Backend: /webhook, /brief (gated), /status |
+| `agent/brief_server.py` | Backend: /webhook, /brief (gated), /status, /api/v1/sources + /api/v1/data (Data tier), /api/v1/dag/runs (Scheduler tier), /evidence/* (Entity Graph tier), /api/v1/usage (any tier) |
+| `agent/payments/usage.py` | `UsageStore` — SQLite log of metered API calls per subscriber key |
 | `agent/payments/` | Paddle integration (config, client, webhook verify) |
 | `scripts/tirra_engine.py` | Build + deliver + serve engine |
 | `scripts/run_scheduled.sh` | Scheduled runner |

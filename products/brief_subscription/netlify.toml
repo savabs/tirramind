@@ -4,10 +4,11 @@
 [build]
   publish = "."
 
-# Redirect /buy to the Paddle checkout once live
+# Checkout moved to the Paddle.js overlay on /pricing — Paddle Billing has no
+# static reusable checkout links. Keep old /buy links working.
 [[redirects]]
   from = "/buy"
-  to = "https://checkout.paddle.com/YOUR-LIVE-PAYMENT-LINK"
+  to = "/pricing"
   status = 302
 
 # Proxy the protected brief + webhook to the separate Tirra backend
@@ -19,6 +20,16 @@
 [[redirects]]
   from = "/brief.md"
   to = "https://api.tirramind.com/brief.md"
+  status = 200
+
+[[redirects]]
+  from = "/api/v1/*"
+  to = "https://api.tirramind.com/api/v1/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/evidence/*"
+  to = "https://api.tirramind.com/evidence/:splat"
   status = 200
 
 # Clean URLs

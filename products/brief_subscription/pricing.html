@@ -3,76 +3,168 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>TirraMind — Opportunity Brief</title>
-  <meta name="description" content="Weekly government-contract and market intelligence, scored by expected value. Small, overlooked federal contracts ranked for win-probability. Deterministic math on public data.">
+  <title>Pricing — TirraMind</title>
+  <meta name="description" content="Data Platform, Entity Graph, and Scheduler API pricing — plus the weekly Opportunity Brief. Infrastructure quant teams license instead of build.">
   <style>
-    :root { --ink:#111; --mut:#666; --acc:#3730a3; --bg:#fafafa; --line:#e5e5e5; }
+    :root { --ink:#111; --mut:#666; --acc:#3730a3; --acc-soft:#eef2ff; --bg:#fafafa; --line:#e5e5e5; --code-bg:#f3f3f6; }
     * { box-sizing: border-box; margin: 0; }
     body { font-family: -apple-system, ui-sans-serif, system-ui, "Segoe UI", sans-serif; background:var(--bg); color:var(--ink); line-height:1.6; -webkit-font-smoothing:antialiased; }
-    .wrap { max-width:760px; margin:0 auto; padding:0 24px; }
-    header { padding:28px 0 8px; }
+    .wrap { max-width:860px; margin:0 auto; padding:0 24px; }
+    header { padding:28px 0 8px; display:flex; align-items:center; justify-content:space-between; }
     .brand { font-weight:700; font-size:17px; letter-spacing:-0.01em; }
     .brand em { font-style:normal; color:var(--acc); }
-    main { padding:64px 0 40px; }
-    .tag { display:inline-block; background:#eef2ff; color:var(--acc); border-radius:999px; padding:3px 12px; font-size:12.5px; font-weight:600; letter-spacing:0.02em; }
-    h1 { font-size:38px; line-height:1.15; letter-spacing:-0.02em; margin:14px 0 14px; font-weight:750; }
-    h1 .sub { display:block; font-size:19px; font-weight:450; color:var(--mut); letter-spacing:0; line-height:1.4; margin-top:10px; max-width:560px; }
-    .cols { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:28px 0 8px; }
-    .card { background:#fff; border:1px solid var(--line); border-radius:12px; padding:16px 18px; }
-    .card strong { display:block; font-size:15px; margin-bottom:3px; }
-    .card span { font-size:13.5px; color:var(--mut); }
-    .price-box { background:#fff; border:1px solid var(--line); border-radius:14px; padding:24px; margin-top:22px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
-    .price .amt { font-size:30px; font-weight:750; }
-    .price .per { color:var(--mut); font-size:14px; }
-    .price .note { display:block; color:var(--mut); font-size:13px; margin-top:2px; }
-    .cta { display:inline-block; background:var(--acc); color:#fff; padding:13px 26px; border-radius:9px; text-decoration:none; font-weight:600; font-size:15px; }
+    nav a { color:var(--mut); text-decoration:none; font-size:14px; }
+    nav a:hover { color:var(--ink); }
+    main { padding:44px 0 40px; }
+    h1 { font-size:32px; letter-spacing:-0.02em; margin-bottom:8px; }
+    .lede { color:var(--mut); font-size:16px; max-width:560px; margin-bottom:44px; }
+
+    .plan { background:#fff; border:1px solid var(--line); border-radius:16px; padding:26px 26px 24px; margin-bottom:22px; }
+    .plan-head { display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:10px; }
+    .plan-head h2 { font-size:21px; letter-spacing:-0.01em; }
+    .plan-head .price { font-size:24px; font-weight:750; }
+    .plan-head .price span { font-size:13px; font-weight:450; color:var(--mut); }
+    .plan .tagline { color:var(--mut); font-size:14.5px; margin:6px 0 18px; max-width:520px; }
+    .plan ul { list-style:none; display:grid; gap:9px; margin-bottom:20px; }
+    .plan li { font-size:14px; padding-left:22px; position:relative; }
+    .plan li::before { content:"✓"; position:absolute; left:0; color:var(--acc); font-weight:700; }
+    .plan code { background:var(--code-bg); padding:2px 6px; border-radius:5px; font-size:12.5px; }
+    .plan-cta { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+    .cta { display:inline-block; background:var(--acc); color:#fff; padding:11px 22px; border-radius:9px; text-decoration:none; font-weight:600; font-size:14.5px; border:none; font-family:inherit; cursor:pointer; }
     .cta:hover { background:#2c2588; }
-    .no-risk { font-size:12.5px; color:var(--mut); margin-top:10px; }
-    .how { margin-top:42px; }
-    .how h2 { font-size:15px; text-transform:uppercase; letter-spacing:0.06em; color:var(--mut); margin-bottom:14px; }
-    .how ol { padding-left:20px; }
-    .how li { margin:10px 0; font-size:14.5px; }
-    footer { border-top:1px solid var(--line); padding:22px 0 36px; color:var(--mut); font-size:13px; }
+    .cta:disabled { opacity:0.5; cursor:not-allowed; }
+    .note { font-size:12.5px; color:var(--mut); }
+    .beta-flag { display:inline-block; background:#fff4e5; color:#92400e; border-radius:6px; padding:2px 8px; font-size:11.5px; font-weight:600; margin-left:8px; vertical-align:middle; }
+
+    .endpoint-block { background:var(--code-bg); border-radius:10px; padding:14px 16px; margin-top:4px; font-size:12.5px; font-family:ui-monospace, SFMono-Regular, Menlo, monospace; color:#333; overflow-x:auto; }
+
+    .brief-plan { border-style:dashed; }
+
+    .faq { margin-top:50px; }
+    .faq h2 { font-size:15px; text-transform:uppercase; letter-spacing:0.06em; color:var(--mut); margin-bottom:16px; }
+    .faq-item { margin-bottom:18px; }
+    .faq-item strong { display:block; font-size:14.5px; margin-bottom:3px; }
+    .faq-item span { font-size:13.5px; color:var(--mut); }
+
+    footer { border-top:1px solid var(--line); padding:22px 0 36px; color:var(--mut); font-size:13px; margin-top:40px; }
     footer a { color:var(--mut); text-decoration:none; margin-right:18px; }
     footer a:hover { color:var(--ink); }
     .contact { margin-top:8px; font-size:12.5px; }
-    @media (max-width:560px){ .cols { grid-template-columns:1fr; } h1 { font-size:30px; } }
+
+    @media (max-width:560px){ .plan-head { flex-direction:column; align-items:flex-start; } }
   </style>
+  <script src="https://cdn.paddle.com/paddle/v2/paddle.js"></script>
 </head>
 <body>
   <div class="wrap">
     <header>
       <div class="brand">Tirra<em>Mind</em></div>
+      <nav><a href="/">&larr; Home</a></nav>
     </header>
     <main>
-      <span class="tag">WEEKLY INTELLIGENCE BRIEF</span>
-      <h1>Opportunity Brief
-        <span class="sub">Weekly signals on government contracts and market positioning — scored by expected value, grounded in public data.</span>
-      </h1>
+      <h1>Pricing</h1>
+      <p class="lede">Three infrastructure tiers you license instead of build, plus a lightweight weekly brief. Every tier is billed monthly via Paddle; cancel anytime.</p>
 
-      <div class="cols">
-        <div class="card"><strong>Contract opportunities</strong><span>Small, overlooked federal contracts, ranked by expected value and win-probability.</span></div>
-        <div class="card"><strong>Market anomalies</strong><span>Positioning extremes and regime changes from real public data — not guesswork.</span></div>
-        <div class="card"><strong>Expected-value scoring</strong><span>EV = P(win) · (Bid − Cost) − Risk, with a win-probability model that learns from outcomes.</span></div>
-        <div class="card"><strong>Honest math</strong><span>Every number traces to a public source. No hype, no black box.</span></div>
-      </div>
-
-      <div class="price-box">
-        <div class="price">
-          <span class="amt">$19</span><span class="per"> / month</span>
-          <span class="note">One short brief every week. Cancel anytime.</span>
+      <div class="plan" id="data">
+        <div class="plan-head">
+          <h2>Data Platform</h2>
+          <div class="price">$500<span> / month, up to $5,000 (enterprise)</span></div>
         </div>
-        <a class="cta" href="/buy">Subscribe</a>
+        <p class="tagline">Query pre-computed, deterministic signals — changepoints, HMM regime states, z-scores — from 60+ integrated public data sources. No API integration, no feature-engineering pipeline to maintain.</p>
+        <ul>
+          <li>Daily-refreshed data across 47 sources — SEC EDGAR, CFTC, GDELT, AIS, and more</li>
+          <li>Deterministic feature extraction (BOCPD, HMM, spectral) — no LLM, fully auditable</li>
+          <li>Query by source, time range, and row limit; a source catalog endpoint lists everything queryable</li>
+          <li>Higher tiers: custom universe, batch delivery, dedicated support</li>
+        </ul>
+        <div class="endpoint-block">GET /api/v1/sources&#10;GET /api/v1/data?source=cftc&amp;since=&lt;epoch&gt;&amp;limit=100&#10;GET /api/v1/usage&#10;Header: X-Brief-Key: &lt;your key&gt;</div>
+        <div class="plan-cta" style="margin-top:16px;">
+          <button class="cta" onclick="openCheckout('data')">Subscribe</button>
+          <span class="note">Sandboxed access available for evaluation — contact us.</span>
+        </div>
       </div>
-      <p class="no-risk">No commitment. Pause or cancel whenever you like.</p>
 
-      <section class="how">
-        <h2>How it works</h2>
-        <ol>
-          <li>We pull the week's contract awards and market-positioning data from public sources.</li>
-          <li>We score every opportunity by expected value and your estimated win-probability.</li>
-          <li>You get one short brief — what changed, what's worth your time, and why.</li>
-        </ol>
+      <div class="plan" id="entity">
+        <div class="plan-head">
+          <h2>Entity Graph</h2>
+          <div class="price">$300<span> / month, up to $2,000 (enterprise)</span></div>
+        </div>
+        <p class="tagline">A deterministic, no-LLM pipeline that extracts entities and relationships from ingested documents — PDF, news, CSV, plain text — with every mention and link tracing back to the exact source sentence it came from. Cross-document co-occurrence — the same pair recurring across sources, not just one — is the signal.</p>
+        <ul>
+          <li>Entity search — every mention and relationship cites its source document and sentence; confidence scores are deterministic (co-occurrence-based), not model output</li>
+          <li>Cross-document co-occurrence analytics — surfaces entities and relationships that recur across the ingested corpus</li>
+          <li>Graph export (adjacency list) and degree-centrality / hub analysis</li>
+          <li>Enterprise: custom entity types, private document ingestion, on-prem option</li>
+        </ul>
+        <div class="endpoint-block">GET /evidence/graph?q=nvidia&#10;GET /evidence/analytics?q=nvidia&#10;GET /evidence/graph/centrality?top=10&#10;Header: X-Brief-Key: &lt;your key&gt;</div>
+        <!--
+          payments-auditor, 2026-08-26: checkout paused, not deleted.
+          See docs/research/entity_graph_tier_mismatch.md. UPDATE 2026-08-26:
+          product-strategist has since rewritten the tagline/bullets above to
+          accurately describe the document-evidence-extraction product this
+          tier actually is (no entity/link counts claimed) — the false
+          "4,800+ entities / learned graph" claim is gone. The underlying
+          mismatch (this tier still gates the small agent/evidence/ store,
+          not the 5,628-entity/16,870-link production graph) is unchanged;
+          brief_server.py's dataset_scope disclosure still only fires
+          *after* a card would be charged. Re-enabling the checkout now that
+          the copy is honest is an owner decision, not something to flip
+          automatically just because the copy fix landed — do not
+          re-enable by editing this comment away without checking the copy
+          actually matches the served data.
+        -->
+        <div class="plan-cta" style="margin-top:16px;">
+          <button class="cta" disabled title="Checkout paused pending a copy correction — see contact link">Subscribe</button>
+          <span class="note">Checkout temporarily paused while we correct this tier's description to match what the API serves. <a href="mailto:support@tirramind.com?subject=Entity%20Graph%20tier">Contact us</a> to be notified when it reopens.</span>
+        </div>
+      </div>
+
+      <div class="plan" id="scheduler">
+        <div class="plan-head">
+          <h2>Scheduler</h2>
+          <div class="price">$50<span> / month, up to $2,000 (enterprise)</span></div>
+        </div>
+        <p class="tagline">Read-only visibility into the DAG-based execution engine that runs our own pipeline in production — run history, status, and timing per DAG.</p>
+        <ul>
+          <li>List recent runs by DAG name, with status and timing</li>
+          <li>Inspect a specific run's node-level results</li>
+        </ul>
+        <p class="tagline" style="margin-top:-8px;"><span class="beta-flag">BETA</span> Submitting your own custom DAGs for execution is in closed beta — <a href="mailto:support@tirramind.com" style="color:var(--acc);">contact us</a> if you want in.</p>
+        <div class="endpoint-block">GET /api/v1/dag/runs?dag_name=daily_collection&amp;limit=20&#10;Header: X-Brief-Key: &lt;your key&gt;</div>
+        <div class="plan-cta" style="margin-top:16px;">
+          <button class="cta" onclick="openCheckout('scheduler')">Subscribe</button>
+        </div>
+      </div>
+
+      <div class="plan brief-plan" id="brief">
+        <div class="plan-head">
+          <h2>Opportunity Brief</h2>
+          <div class="price">$19<span> / month</span></div>
+        </div>
+        <p class="tagline">The lightweight weekly digest: ranked federal contracts by expected value, plus real market anomalies. Deterministic math, no black box. A good starting point if you don't need the API tiers yet.</p>
+        <ul>
+          <li>Weekly contract opportunities, EV-ranked with learned win-probability</li>
+          <li>Live market anomalies (positioning extremes, regime changes)</li>
+        </ul>
+        <div class="plan-cta">
+          <button class="cta" onclick="openCheckout('brief')">Subscribe</button>
+        </div>
+      </div>
+
+      <section class="faq">
+        <h2>Questions</h2>
+        <div class="faq-item">
+          <strong>Can I combine tiers?</strong>
+          <span>Yes — each tier is billed and gated independently by your subscriber key. Contact us for a bundled rate across two or more tiers.</span>
+        </div>
+        <div class="faq-item">
+          <strong>What does "up to $X enterprise" mean?</strong>
+          <span>The listed price is the entry point. Larger universes, custom integrations, dedicated support, or on-prem deployment move you up within that tier's range — priced per engagement.</span>
+        </div>
+        <div class="faq-item">
+          <strong>Is any of this LLM-generated?</strong>
+          <span>No. Every tier is built on deterministic math (BOCPD, HMM, spectral, graph analytics) or a trained model with auditable weights. Nothing here hallucinates a fact.</span>
+        </div>
       </section>
     </main>
 
@@ -85,5 +177,50 @@
       <div class="contact">Contact: support@tirramind.com</div>
     </footer>
   </div>
+
+  <script>
+    // ── Paddle checkout config ──────────────────────────────────────────────
+    // PADDLE_ENV: "sandbox" while testing, switch to "live" (and see the note
+    // below) once you go live. PADDLE_CLIENT_TOKEN is a *public* client-side
+    // token (Paddle > Developer Tools > Authentication) — safe to ship in
+    // this file, it cannot create charges on its own.
+    //
+    // Filled in automatically by: .venv/bin/python scripts/setup_paddle_products.py
+    const PADDLE_ENV = "sandbox";
+    const PADDLE_CLIENT_TOKEN = "test_d1612d7ed73a6badc2b2d42e76b";
+    const TIER_PRICE_IDS = {
+      data: "pri_01m0xg0kmxgwka7tafgs28qkwp",
+      entity: "pri_01m0xg0n0q1aw68qnzk97et1ff",
+      scheduler: "pri_01m0xg0pv444hfvy45fadzf74n",
+      brief: "pri_01m0xg0rn6w31kh6bhf9k39sk8",
+    };
+
+    // payments-auditor, 2026-08-26: tiers paused at checkout despite having a
+    // configured price ID — see docs/research/entity_graph_tier_mismatch.md.
+    // Kept server-side (not just the disabled button above) so this can't be
+    // reopened by deleting one HTML attribute; the guard has to be removed
+    // here too, which forces whoever re-enables it to see this comment.
+    const PAUSED_TIERS = {
+      entity: "This tier's description doesn't yet match what the API serves — being corrected. Contact support@tirramind.com to be notified when it reopens.",
+    };
+
+    if (PADDLE_ENV === "sandbox") Paddle.Environment.set("sandbox");
+    if (!PADDLE_CLIENT_TOKEN.startsWith("REPLACE_")) {
+      Paddle.Initialize({ token: PADDLE_CLIENT_TOKEN });
+    }
+
+    function openCheckout(tier) {
+      if (PAUSED_TIERS[tier]) {
+        alert(PAUSED_TIERS[tier]);
+        return;
+      }
+      const priceId = TIER_PRICE_IDS[tier];
+      if (!priceId || priceId.startsWith("REPLACE_") || PADDLE_CLIENT_TOKEN.startsWith("REPLACE_")) {
+        alert("Checkout isn't configured yet for this tier — contact support@tirramind.com.");
+        return;
+      }
+      Paddle.Checkout.open({ items: [{ priceId, quantity: 1 }] });
+    }
+  </script>
 </body>
 </html>
