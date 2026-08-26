@@ -26,7 +26,9 @@ import csv
 import io
 import logging
 import re
-from datetime import datetime, timedelta, timezone; UTC = timezone.utc
+from datetime import UTC, datetime, timedelta
+
+UTC = UTC
 from typing import TYPE_CHECKING, Any
 
 import defusedxml.ElementTree as ET
@@ -850,7 +852,7 @@ class SanctionsMonitorTool(Tool):
             return [], "OFAC SDN: parsed 0 records (unexpected)."
 
         if self._cache:
-            self._cache.put("sanctions_monitor", cache_key, records, ttl=_CACHE_TTL)
+            self._cache.put("sanctions_monitor", cache_key, records)
 
         return records, None
 
@@ -882,6 +884,6 @@ class SanctionsMonitorTool(Tool):
             return [], "UN SC: parsed 0 records (unexpected)."
 
         if self._cache:
-            self._cache.put("sanctions_monitor", cache_key, records, ttl=_CACHE_TTL)
+            self._cache.put("sanctions_monitor", cache_key, records)
 
         return records, None

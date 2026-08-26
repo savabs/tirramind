@@ -56,6 +56,10 @@ _CACHE_TTL = 7200  # 2 hours — FEC data updates daily
 _FEC_BASE = "https://api.open.fec.gov/v1"
 
 VALID_MODES = {"candidates", "filings", "expenditures"}
+
+# Valid sort key for /candidates/search/.  The API rejects "-election_year"
+# (singular) with HTTP 422 and lists the accepted fields in the error body.
+_CANDIDATE_SORT = "-election_years"
 VALID_OFFICES = {"P", "S", "H"}  # President, Senate, House
 
 
@@ -176,7 +180,10 @@ class PoliticalRiskTool(Tool):
         params: dict[str, str] = {
             "api_key": _get_api_key(),
             "per_page": str(limit),
-            "sort": "-election_year",
+            # /candidates/search/ has no "election_year" sort key — sorting on
+            # it returns HTTP 422.  The valid (plural) field, per the 422 body
+            # the API itself returns, is "election_years".
+            "sort": _CANDIDATE_SORT,
         }
         if query:
             params["q"] = query
@@ -277,9 +284,15 @@ class PoliticalRiskTool(Tool):
                 output=("FEC API rate limit reached. Set TIRRA_FEC_API_KEY for higher limits."),
             )
         if resp.status_code == 422:
+            # Surface the API's own message — it names the offending parameter
+            # and lists the accepted values, which a generic string hides.
+            try:
+                detail = str(resp.json().get("message", ""))[:400]
+            except Exception:  # noqa: BLE001
+                detail = ""
             return ToolResult(
                 success=False,
-                output="FEC API validation error — check parameters.",
+                output=("FEC API validation error — check parameters." + (f" API said: {detail}" if detail else "")),
             )
         if resp.status_code != 200:
             return ToolResult(

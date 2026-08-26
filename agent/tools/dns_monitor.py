@@ -919,11 +919,10 @@ class DnsMonitorTool(Tool):
         self._persist_entities(domain, analysis)
 
         if self._cache:
-            self._cache.set(
+            self._cache.put(
                 "dns_monitor",
                 cache_key,
                 {"output": output, "data": data},
-                ttl=_CACHE_TTL_RESOLVE,
             )
 
         return ToolResult(success=True, output=output, data=data)
@@ -1024,11 +1023,10 @@ class DnsMonitorTool(Tool):
 
         # Store current as new snapshot (long TTL)
         if self._cache:
-            self._cache.set(
+            self._cache.put(
                 "dns_monitor",
                 snapshot_key,
                 current_records,
-                ttl=_CACHE_TTL_SNAPSHOT,
             )
 
         if previous is None:

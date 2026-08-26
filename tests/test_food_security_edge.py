@@ -18,7 +18,6 @@ import httpx
 import pytest
 
 from agent.tools.food_security import (
-    _CACHE_TTL,
     _CEREAL_INDICATORS,
     _PRODUCTION_INDICATORS,
     _TRADE_INDICATORS,
@@ -656,9 +655,9 @@ class TestCache:
             mock_client.return_value.get.return_value = _mock_resp(body)
             r = _tool(cache=cache).execute(mode="production", country="US")
         assert r.success
-        cache.set.assert_called_once()
-        call_args = cache.set.call_args
-        assert call_args[1]["ttl"] == _CACHE_TTL
+        cache.put.assert_called_once()
+        call_args = cache.put.call_args
+        assert call_args[0][0] == "food_security"
 
     def test_no_cache_still_works(self):
         body = _wb_response([_wb_record()])

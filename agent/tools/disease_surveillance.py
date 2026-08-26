@@ -38,7 +38,9 @@ from __future__ import annotations
 import logging
 import re
 import time
-from datetime import datetime, timedelta, timezone; UTC = timezone.utc
+from datetime import UTC, datetime, timedelta
+
+UTC = UTC
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -647,7 +649,7 @@ class DiseaseSurveillanceTool(Tool):
             return [], "CDC Socrata: Unexpected response format."
 
         if self._cache and data:
-            self._cache.put("disease_surveillance_cdc", cache_key, data, ttl=ttl)
+            self._cache.put("disease_surveillance_cdc", cache_key, data)
 
         return data, None
 
@@ -716,7 +718,6 @@ class DiseaseSurveillanceTool(Tool):
                 "disease_surveillance_who",
                 cache_key,
                 entries,
-                ttl=21600,
             )
 
         return self._format_who_results(entries, disease)
@@ -848,7 +849,6 @@ class DiseaseSurveillanceTool(Tool):
                 "disease_surveillance_ecdc",
                 cache_key,
                 data,
-                ttl=43200,
             )
 
         return self._format_ecdc_results(data, dataset_lower, country)
@@ -1054,7 +1054,6 @@ class DiseaseSurveillanceTool(Tool):
                 "disease_surveillance_ncbi",
                 cache_key,
                 result,
-                ttl=86400,
             )
 
         return self._format_genomics_results(result)

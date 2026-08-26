@@ -32,7 +32,9 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timedelta, timezone; UTC = timezone.utc
+from datetime import UTC, datetime, timedelta
+
+UTC = UTC
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -630,7 +632,7 @@ class TransportThroughputTool(Tool):
             return [], "BTS API: Unexpected response format."
 
         if self._cache and data:
-            self._cache.put("transport_throughput", cache_key, data, ttl=7200)
+            self._cache.put("transport_throughput", cache_key, data)
 
         return data, None
 

@@ -27,7 +27,7 @@ See `[[AGENTS]]` and `[[copilot-instructions]]` for the Single-Owner Rule.
 | Test pass count | 10461 passing | Fast suite (excludes slow/live/integration), verified 2026-08-23 after fresh 3.12 venv |
 | Test fail count | 59 failing | Env/network-key + stale structural-count tests; not signal-blocking |
 | DAG node count | 52-node DAG | Per pipeline_registry TestPhase453Nodes expectations |
-| ENRICHMENT_DIM | 55 | After Phase 34+ observation type additions |
+| ENRICHMENT_DIM | 61 | Derived `_ENRICHMENT_SCALAR_DIM (9) + len(OBSERVATION_TYPES) (52)` as of F-12 fix, 2026-08-26. Never hardcode this — see LESSONS.md F-12. |
 | Data tool count | 63 | Free no-auth public-API data tools in `agent/tools/` |
 | Live-fired signals | 3 families verified | `gov_contracts` (US awards), `cftc` (commodity positioning), `ais_vessel` (shipping) — all real data 2026-08-23 |
 

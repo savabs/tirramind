@@ -34,7 +34,9 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, timedelta, timezone; UTC = timezone.utc
+from datetime import UTC, datetime, timedelta
+
+UTC = UTC
 from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
 
@@ -587,11 +589,10 @@ class CreditorFilingsTool(Tool):
                 log.warning("Companies House error: %s", exc)
 
         if self._cache:
-            self._cache.set(
+            self._cache.put(
                 "creditor_filings",
                 cache_key,
                 {"entries": entries, "total": total, "ch_charges": ch_charges},
-                ttl=_CACHE_TTL,
             )
 
         # Persist entities (L2)
@@ -719,11 +720,10 @@ class CreditorFilingsTool(Tool):
             )
 
         if self._cache:
-            self._cache.set(
+            self._cache.put(
                 "creditor_filings",
                 cache_key,
                 {"charges": charges, "company_info": company_info},
-                ttl=_CACHE_TTL,
             )
 
         # Persist entities (L2)
@@ -811,11 +811,10 @@ class CreditorFilingsTool(Tool):
         clusters = _detect_filing_clusters(entries)
 
         if self._cache:
-            self._cache.set(
+            self._cache.put(
                 "creditor_filings",
                 cache_key,
                 {"entries": entries, "total": total, "clusters": clusters},
-                ttl=_CACHE_TTL,
             )
 
         # Persist entities (L2)

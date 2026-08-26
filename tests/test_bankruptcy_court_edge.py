@@ -1067,7 +1067,7 @@ class TestCacheIntegration:
             tool = BankruptcyCourtTool(cache=cache)
             r = tool.execute(mode="us_bankruptcy", court="sdny")
             assert r.success
-            cache.set.assert_called_once()
+            cache.put.assert_called_once()
 
     def test_sec_enforcement_cache_hit(self):
         cache = MagicMock()

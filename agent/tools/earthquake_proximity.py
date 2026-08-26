@@ -26,7 +26,9 @@ Signal theory:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone; UTC = timezone.utc
+from datetime import UTC, datetime, timedelta
+
+UTC = UTC
 from typing import Any
 
 import httpx
@@ -606,6 +608,6 @@ class EarthquakeProximityTool(Tool):
         features = data.get("features", [])
 
         if self._cache and features:
-            self._cache.put("earthquake_proximity", cache_key, {"features": features}, ttl=1800)
+            self._cache.put("earthquake_proximity", cache_key, {"features": features})
 
         return features, None

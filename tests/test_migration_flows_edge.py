@@ -673,7 +673,7 @@ class TestCache:
         tool = _tool(cache=cache)
         result = tool.execute(mode="displacement")
         assert result.success
-        cache.set.assert_called_once()
+        cache.put.assert_called_once()
 
     @patch("agent.tools.migration_flows._fetch_wb_remittances")
     def test_remittance_cache_hit(self, mock_fetch):

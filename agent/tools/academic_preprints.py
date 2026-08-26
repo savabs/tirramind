@@ -396,7 +396,7 @@ class AcademicPreprintsTool(Tool):
             import json
 
             cache_key = f"{url}?{json.dumps(params, sort_keys=True)}"
-            cached = self._cache.get(cache_key)
+            cached = self._cache.get("academic_preprints", {"key": cache_key})
             if cached is not None:
                 return cached
 
@@ -409,7 +409,7 @@ class AcademicPreprintsTool(Tool):
             data = resp.json()
 
         if self._cache and data is not None:
-            self._cache.set(cache_key, data)
+            self._cache.put("academic_preprints", {"key": cache_key}, data)
         return data
 
     # ------------------------------------------------------------------

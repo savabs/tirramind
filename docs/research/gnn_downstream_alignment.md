@@ -35,7 +35,7 @@ It does not address representational alignment. These are distinct problems.
 - `agent/models/gnn/trainer.py` — `Trainer.train()` runs self-supervised loss only
 - `agent/models/gnn/gnn_inference.py` — DAG operator: trains, saves, does EWC online update
 - Downstream consumers of GNN embeddings:
-  - `agent/pipeline/dags/feature_generation.py` — reads entity embeddings from PipelineStore, assembles ENRICHMENT_DIM=41 feature matrix
+  - `agent/pipeline/dags/feature_generation.py` — reads entity embeddings from PipelineStore, assembles an `ENRICHMENT_DIM`-wide feature matrix (value was 41 at Phase 49; current value is derived — see `[[project_metrics]]`)
   - `agent/pipeline/dags/world_model_update.py` — injects features into pgmpy Bayesian DAG as evidence
   - `agent/pipeline/dags/rl_training.py` — SAC consumes belief states from world model (not raw embeddings)
 

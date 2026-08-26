@@ -78,9 +78,9 @@ def parse_task_metadata(repo_root: Path, task_file: str | Path) -> TaskMetadata:
 
     for line in task_path.read_text(encoding="utf-8").splitlines():
         if line.startswith("Research:"):
-            research_ref = line.split(":", 1)[1].strip()
+            research_ref = line.split(":", 1)[1].strip().strip("`")
         elif line.startswith("Spec:"):
-            spec_ref = line.split(":", 1)[1].strip()
+            spec_ref = line.split(":", 1)[1].strip().strip("`")
 
     if not research_ref:
         raise ValueError(f"Task file is missing a Research: line: {task_relative}")

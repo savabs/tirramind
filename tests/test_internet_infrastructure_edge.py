@@ -16,7 +16,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from agent.tools.internet_infrastructure import (
-    CACHE_OONI_AGGREGATION,
     GTR_NORM_CRITICAL,
     GTR_NORM_WARNING,
     VALID_MODES,
@@ -865,18 +864,19 @@ class TestCacheInteraction:
         with patch("httpx.get") as mock:
             mock.return_value = _mock_response(200, _ooni_aggregation_response([_ooni_agg_row()]))
             tool.execute(mode="censorship", country="US")
-        assert cache.set.called
+        assert cache.put.called
 
-    def test_cache_set_with_correct_ttl_ooni(self):
+    def test_cache_put_uses_correct_source(self):
+        """DataCache.put() takes no per-call ttl (fixed at construction);
+        this only verifies the cache is written under the right source."""
         cache = MagicMock()
         cache.get.return_value = None
         tool = _tool(cache=cache)
         with patch("httpx.get") as mock:
             mock.return_value = _mock_response(200, _ooni_aggregation_response([_ooni_agg_row()]))
             tool.execute(mode="censorship", country="US")
-        # Check ttl was CACHE_OONI_AGGREGATION
-        for call in cache.set.call_args_list:
-            assert call[1].get("ttl") == CACHE_OONI_AGGREGATION
+        assert cache.put.called
+        assert cache.put.call_args[0][0] == "internet_infrastructure"
 
     def test_no_cache_still_works(self):
         tool = _tool(cache=None)

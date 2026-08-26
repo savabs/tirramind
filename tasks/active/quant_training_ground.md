@@ -1337,8 +1337,8 @@ Layer 7: LLM (support only — unstructured→structured, hypothesis generation,
 
 ## Revised Roadmap — Approved 2026-04-22
 
-**Why revised:** Phase 40 (Real Data Model Refresh) is DATA-GATED, not code-gated. The 27-node DAG only
-became fully populated on 2026-04-22. Running Phase 40 against 3-day-old data produces meaningless
+**Why revised:** Phase 40 (Real Data Model Refresh) is DATA-GATED, not code-gated. The DAG (27 nodes at
+the time; see `[[project_metrics]]` for the current count) only became fully populated on 2026-04-22. Running Phase 40 against 3-day-old data produces meaningless
 walk-forward results and junk GNN embeddings. The 4–6 week data accumulation window must be used
 productively — not idled waiting for GNN guidance that can't exist until Phase 40 is done.
 

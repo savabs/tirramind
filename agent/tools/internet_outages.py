@@ -36,7 +36,9 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timedelta, timezone; UTC = timezone.utc
+from datetime import UTC, datetime, timedelta
+
+UTC = UTC
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -270,7 +272,7 @@ class InternetOutagesTool(Tool):
         country: str,
     ) -> ToolResult:
         if self._cache:
-            hit = self._cache.get(cache_key)
+            hit = self._cache.get("internet_outages", {"key": cache_key})
             if hit is not None:
                 return ToolResult(
                     success=True,
@@ -327,10 +329,10 @@ class InternetOutagesTool(Tool):
         }
 
         if self._cache:
-            self._cache.set(
-                cache_key,
+            self._cache.put(
+                "internet_outages",
+                {"key": cache_key},
                 {"output": summary, "data": result_data},
-                ttl=_CACHE_TTL,
             )
 
         return ToolResult(success=True, output=summary, data=result_data)
@@ -345,7 +347,7 @@ class InternetOutagesTool(Tool):
         test_name: str,
     ) -> ToolResult:
         if self._cache:
-            hit = self._cache.get(cache_key)
+            hit = self._cache.get("internet_outages", {"key": cache_key})
             if hit is not None:
                 return ToolResult(
                     success=True,
@@ -420,10 +422,10 @@ class InternetOutagesTool(Tool):
         }
 
         if self._cache:
-            self._cache.set(
-                cache_key,
+            self._cache.put(
+                "internet_outages",
+                {"key": cache_key},
                 {"output": summary, "data": result_data},
-                ttl=_CACHE_TTL,
             )
 
         return ToolResult(success=True, output=summary, data=result_data)
@@ -437,7 +439,7 @@ class InternetOutagesTool(Tool):
         country: str,
     ) -> ToolResult:
         if self._cache:
-            hit = self._cache.get(cache_key)
+            hit = self._cache.get("internet_outages", {"key": cache_key})
             if hit is not None:
                 return ToolResult(
                     success=True,
@@ -505,10 +507,10 @@ class InternetOutagesTool(Tool):
         }
 
         if self._cache:
-            self._cache.set(
-                cache_key,
+            self._cache.put(
+                "internet_outages",
+                {"key": cache_key},
                 {"output": summary, "data": result_data},
-                ttl=_CACHE_TTL,
             )
 
         return ToolResult(success=True, output=summary, data=result_data)

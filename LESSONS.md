@@ -20,7 +20,7 @@ Each entry: **Symptom → Root Cause → Fix → Prevention Rule**
 
 ---
 
-### F-01 · Entity-Identity Contrastive Loss → Embedding Collapse  
+### F-01 · Entity-Identity Contrastive Loss → Embedding Collapse
 *Discovered: Phase 47-48*
 
 **Symptom:** All 89 instrument embeddings identical (cosine sim ≈ 1.0 across all pairs).
@@ -42,7 +42,7 @@ InfoNCE formulation. See `trainer.py::_cross_sectional_ranking_contrastive()`.
 
 ---
 
-### F-02 · Return Head Bypassing GNN Entirely  
+### F-02 · Return Head Bypassing GNN Entirely
 *Discovered: Phase 48-50*
 
 **Symptom:** Return loss converging, IC improving, but GNN embeddings contributing ZERO.
@@ -70,7 +70,7 @@ Verified via: check that `model.return_concat_head` is not None in trainer.
 
 ---
 
-### F-03 · Loss History Column Shift (10-row offset)  
+### F-03 · Loss History Column Shift (10-row offset)
 *Discovered: V40 training run*
 
 **Symptom:** In the printed loss table, the `return` column values were shifted UP by 10 rows —
@@ -95,7 +95,7 @@ Table renderer: check `math.isnan(val)` → display `"—"`.
 
 ---
 
-### F-04 · Data Leakage in IC Evaluation  
+### F-04 · Data Leakage in IC Evaluation
 *Discovered: Phase 47 post-mortem*
 
 **Symptom:** Ridge regression showed IC=+0.48, ICIR=+2.1. Looked amazing. Was fake.
@@ -114,7 +114,7 @@ Corrected values logged in memory: `corrected ridge IC=+0.07, ICIR=+0.40`.
 
 ---
 
-### F-05 · Evaluation Window Too Short for 60d Features  
+### F-05 · Evaluation Window Too Short for 60d Features
 *Discovered: Phase 47-50 IC check*
 
 **Symptom:** IC from `ic_check.py` showed ICIR=+0.14. After fix: ICIR=+0.44. Same model.
@@ -133,7 +133,7 @@ Production minimum: `history ≥ max_lookback_days / 5 * 1.5` (add 50% buffer).
 
 ---
 
-### F-06 · obs_type CE Loss Dominating / Gradient Starvation  
+### F-06 · obs_type CE Loss Dominating / Gradient Starvation
 *Discovered: Phase 46-47 loss analysis*
 
 **Symptom:** `obs_type` classification loss at ~2.5 (2145-class CE). Return loss at ~0.05.
@@ -154,7 +154,7 @@ True fix: gradient normalization (GradNorm) or task-specific learning rates.
 
 ---
 
-### F-07 · GDELT Flooding the Graph  
+### F-07 · GDELT Flooding the Graph
 *Discovered: Phase 45-46 graph analysis*
 
 **Symptom:** Graph snapshots OOM or extremely slow. 92% of all observations were GDELT events.
@@ -173,7 +173,7 @@ Still not fully resolved — event relevance scoring needed.
 
 ---
 
-### F-08 · Snapshot Caching Hides Per-Window Bugs  
+### F-08 · Snapshot Caching Hides Per-Window Bugs
 *Discovered: Phase 48 debugging*
 
 **Symptom:** Epochs running at 60s/epoch (previously 10+ min). Looked like great speedup.
@@ -383,7 +383,7 @@ message passing must span ≥ 2 hops. Both are true in our architecture.
 
 ---
 
-### F-09 · Zero-Init Last Layer → Gradient Dead Zone in Concat Head  
+### F-09 · Zero-Init Last Layer → Gradient Dead Zone in Concat Head
 *Discovered: V42 smoke test (2026-05-29)*
 
 **Symptom:** T4 smoke test FAIL: `type_projections['instrument'].weight.grad = 0.0` even with
@@ -401,9 +401,9 @@ dL/d_hidden = dL/d_scores @ weight_last.T = dL/d_scores @ zeros.T = 0
 Gradient stops at the last linear layer. All upstream layers (HGTConv, type_projections,
 combiner) receive ZERO gradient from the return loss. Only the last layer's OWN weight
 receives gradient. Until that weight grows non-zero (takes 10-50+ epochs), the backbone
-is completely disconnected from the return objective. 
+is completely disconnected from the return objective.
 
-Direct inspection of `epoch_090.pt` (V42) confirmed `return_pred_head.4.weight` was exactly `0.0` (standard deviation 0.0) resulting in constant `0.0` predictions and a `+nan` IC. 
+Direct inspection of `epoch_090.pt` (V42) confirmed `return_pred_head.4.weight` was exactly `0.0` (standard deviation 0.0) resulting in constant `0.0` predictions and a `+nan` IC.
 
 **Fix:** Removed both `nn.init.zeros_` calls from `return_concat_head`. Kaiming default
 init now used. Gradient flows from epoch 1. A quick 10-epoch training run from scratch (V43 quickrun) confirmed `return_concat_head.4.weight` std became non-zero (0.0653) and generated a powerful, non-nan cross-sectional IC of **+0.3622**!
@@ -419,7 +419,7 @@ init now used. Gradient flows from epoch 1. A quick 10-epoch training run from s
 
 ---
 
-### F-10 · The GDELT Noise Flood & Portfolio Concentration Illusion  
+### F-10 · The GDELT Noise Flood & Portfolio Concentration Illusion
 *Discovered: Phase 50m "Full Graph Unleashed" (V46) analysis*
 
 **Symptom:** Mean Spearman IC flipped negative (-0.0190) across the 40 rolling backtest folds, but the GNN-ValueHead strategy actually printed a massive **40.64% total return** (beating the Equal-Weight baseline of 23.14% by nearly double).
@@ -434,7 +434,7 @@ init now used. Gradient flows from epoch 1. A quick 10-epoch training run from s
 
 ---
 
-### F-11 · Parallel Batching Write Collisions → Intra-Window Temporal Blind Spot in GRU Memory Updates  
+### F-11 · Parallel Batching Write Collisions → Intra-Window Temporal Blind Spot in GRU Memory Updates
 *Discovered: Sequential logic deep-dive (2026-05-31)*
 
 **Symptom:** The GNN was structurally unable to capture sequential events (e.g., sequence of 4–5 events) within a single training window. The temporal dynamics of multi-event sequences were lost, preventing the GNN from learning event valuations or conditional arrival intensities.
@@ -455,6 +455,77 @@ Since `node_ids` contained duplicate entries for entities with multiple events:
 **Prevention Rules:**
 - **Always group and sequence duplicate node IDs:** When processing event-based sequential updates within a single batch, group events by node and process them in sequential chronological steps (step $k$ of sequence) to guarantee recursive memory updates.
 - **Never perform batch updates with duplicate keys:** Ensure any direct buffer or parameter update using indexing (`self.memory[node_ids] = ...`) has completely unique elements.
+
+---
+
+### F-12 · Schema Drift Silently Invalidated Every Checkpoint
+*Discovered: 2026-08-26, during intelligence-layer reactivation*
+
+**Symptom:** Three DAGs (`gnn_inference`, `entity_scoring`, `inference`) failed or
+silently produced nothing. `entity_scoring` crashed with
+`index 69 is out of bounds for dimension 1 with size 69`; the other two threw
+`mat1 and mat2 shapes cannot be multiplied (93x49 and 23x64)`. `signals`,
+`beliefs`, `entity_alerts`, `convergence_clusters`, `portfolio_weights` and
+`paper_trade_pnl` had **zero rows** despite 365k healthy `entity_observations`.
+
+**Root Cause:** Three registries drifted apart with nothing comparing them:
+
+| | live DB | code constants | trained weights |
+|---|---:|---:|---:|
+| entity types | 12 | 11 | 12 |
+| observation types | 38 present, 4 unknown to code | 48 | 48 |
+| instrument feature dim | 49 | 49 | **23** |
+
+Three distinct failures fell out of that:
+
+1. **Instrument features grew 14 → 23 → 49 across checkpoint generations and
+   nothing was ever retrained after the last step.** `load_model` used
+   `strict=False` and *skipped* the mismatched `type_projections.instrument`
+   weight, leaving it randomly initialised, then logged a generic "skipped N
+   keys" line naming no entity type. The failure surfaced much later as an
+   opaque torch shape error.
+2. **`ENRICHMENT_DIM` was hardcoded to 55** — correct only while
+   `len(OBSERVATION_TYPES) == 46`. The writer indexes `offset + 9 + ot_idx` over
+   the *live* list, so once the registry grew to 48 the block overflowed. With
+   `BASE_FEAT_DIM=14` the tensor was `14+55=69` wide and `ot_idx=46` addressed
+   index 69 — the exact crash. For instrument nodes the same overflow instead
+   ran into the price-feature block that follows: **silent corruption, not a
+   crash**, depending only on node type.
+3. **`maritime_area` was in the DB but not in `ENTITY_TYPES`**, so
+   `_build_node_features` fell back to `type_idx = 0` and one-hot encoded it as
+   `cftc_contract`. A `log.warning` fired and the run continued. It trained and
+   scored as the wrong entity kind for months.
+
+A test asserted the buggy behaviour (`assert features[0, 0] == 1.0`), so the
+suite was green over the corruption — the same pattern as the DataCache tests.
+
+**Fix:**
+- `ENRICHMENT_DIM` is now **derived**: `9 + len(OBSERVATION_TYPES)`.
+- Unknown entity type → **all-zero one-hot** (claims no identity) instead of
+  `ENTITY_TYPES[0]`. Feature building stays non-fatal because runtime discovery
+  of new types is a supported feature.
+- New `validate_schema_against_store(store)` raises `SchemaDriftError` listing
+  every DB type the code cannot encode. Called before anything trains or scores.
+- `load_model` now names the drift explicitly:
+  `instrument: trained_weights=23 expected_by_model=49`.
+- Registries synced: 12 entity types, 52 observation types.
+
+**Prevention Rules:**
+- **Any dimension derived from a registry must be computed, never hardcoded.**
+  The formula `_ENRICHMENT_SCALAR_DIM + len(OBSERVATION_TYPES)` computes
+  `ENRICHMENT_DIM` — a bare literal is a time bomb that detonates one registry
+  edit later. Current canonical value: see `[[project_metrics]]`.
+- **Never degrade an unknown categorical to index 0.** Claiming no identity is
+  honest; claiming the wrong one is corruption that trains cleanly.
+- **Compare checkpoint `in_channels` against live `GraphBuilder` output before
+  loading weights.** A skipped key in `load_state_dict(strict=False)` means a
+  randomly-initialised layer, not a harmless omission — it must name the layer.
+- **Editing `ENTITY_TYPES` / `OBSERVATION_TYPES` invalidates every checkpoint.**
+  One-hot position derives from list index, so an insertion shifts every later
+  index. Keep both lists alphabetically sorted so insertions are reviewable, and
+  retrain in the same change.
+- **If a test asserts a fallback/default behaviour, check the fallback is
+  actually correct** before treating a green suite as evidence.
 
 ---
 
@@ -522,7 +593,7 @@ Before implementing anything, read these 3 questions:
 ### M3: Advanced Pricing Models & Fourier-Cosine (COS) Pricing
 *Completed: 2026-05-31*
 
-**Key Insight:** 
+**Key Insight:**
 - Standard Monte Carlo option pricing via Euler-Maruyama discretization (with clamping) is highly biased (positive bias on volatility due to clamping negative variance paths), whereas the Fourier-Cosine (COS) method achieves near-exact analytical precision in a fraction of a second ($O(1)$ Python overhead).
 - To maintain differentiability across parameters in Heston/Bates models, Albrecher's "Little Trap" formulation of the complex logarithm is mandatory to prevent branch-cut discontinuities (which would break gradient flow and cause NaN gradients in autograd).
 - Martingale drift correction terms for diffusion ($-0.5 \sigma^2 T$) and jumps ($-\lambda_j k_j T$) must be meticulously accounted for in the risk-neutral characteristic function to ensure option prices do not drift or overstate the underlying expectation.

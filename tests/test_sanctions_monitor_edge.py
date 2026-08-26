@@ -13,7 +13,9 @@ cache interaction, tool metadata, output formatting, limit/bounds.
 
 from __future__ import annotations
 
-from datetime import timezone; UTC = timezone.utc
+from datetime import UTC
+
+UTC = UTC
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -37,20 +39,20 @@ from agent.tools.sanctions_monitor import (
 
 
 MOCK_OFAC_CSV = """\
-36,"AEROCARIBBEAN AIRLINES",-0- ,"CUBA",-0- ,-0- ,-0- ,-0- ,-0- ,-0- ,-0- ,-0- 
-173,"ANGLO-CARIBBEAN CO., LTD.",-0- ,"CUBA",-0- ,-0- ,-0- ,-0- ,-0- ,-0- ,-0- ,-0- 
+36,"AEROCARIBBEAN AIRLINES",-0- ,"CUBA",-0- ,-0- ,-0- ,-0- ,-0- ,-0- ,-0- ,-0-
+173,"ANGLO-CARIBBEAN CO., LTD.",-0- ,"CUBA",-0- ,-0- ,-0- ,-0- ,-0- ,-0- ,-0- ,-0-
 9000,"HUAWEI TECHNOLOGIES CO., LTD.",-0- ,"SDGT] [CYBER2",-0- ,-0- ,-0- ,-0- ,-0- ,-0- ,-0- ,"a.k.a. 'HUAWEI'; a.k.a. 'HW TECH'."
 10001,"KIM, Jong Un",individual,"DPRK3] [DPRK4",-0- ,-0- ,-0- ,-0- ,-0- ,-0- ,-0- ,"DOB 08 Jan 1984; nationality North Korea; Additional Sanctions Information - Subject to Secondary Sanctions."
 10002,"IVANOV, Sergey Borisovich",individual,"UKRAINE-EO13662",-0- ,-0- ,-0- ,-0- ,-0- ,-0- ,-0- ,"DOB 31 Jan 1953; nationality Russia; a.k.a. 'IVANOV S.B.'."
 10003,"AL-RAHMAN, Abd",individual,"SDGT",-0- ,-0- ,-0- ,-0- ,-0- ,-0- ,-0- ,"DOB circa 1975; nationality Syria."
-20001,"M/V OCEAN PRIDE",vessel,"IRAN",-0- ,"H3DZ","Bulk Carrier","45000","28000","Iran",-0- ,-0- 
-20002,"BOEING 737",aircraft,"SDGT",-0- ,-0- ,-0- ,-0- ,-0- ,-0- ,-0- ,-0- 
+20001,"M/V OCEAN PRIDE",vessel,"IRAN",-0- ,"H3DZ","Bulk Carrier","45000","28000","Iran",-0- ,-0-
+20002,"BOEING 737",aircraft,"SDGT",-0- ,-0- ,-0- ,-0- ,-0- ,-0- ,-0- ,-0-
 """
 
 MOCK_OFAC_CSV_UNICODE = """\
 30001,"БАНК РОССИЯ",individual,"UKRAINE-EO13662",-0- ,-0- ,-0- ,-0- ,-0- ,-0- ,-0- ,"nationality Russia."
 30002,"محمد علي",individual,"SDGT",-0- ,-0- ,-0- ,-0- ,-0- ,-0- ,-0- ,"nationality Iran."
-30003,"北京科技有限公司",-0- ,"CHINA-EO",-0- ,-0- ,-0- ,-0- ,-0- ,-0- ,-0- ,-0- 
+30003,"北京科技有限公司",-0- ,"CHINA-EO",-0- ,-0- ,-0- ,-0- ,-0- ,-0- ,-0- ,-0-
 """
 
 MOCK_OFAC_CSV_EMPTY = ""
@@ -963,14 +965,15 @@ class TestCacheInteraction:
             result = tool.execute(mode="programs")
         assert result.success
 
-    def test_cache_put_with_ttl(self, tool_cached):
+    def test_cache_put_called_on_miss(self, tool_cached):
+        """DataCache.put() takes no per-call ttl (fixed at construction);
+        this only verifies the cache is actually written on a miss."""
         tool_cached._cache.get.return_value = None
         with patch("httpx.get", side_effect=_mock_responses()):
             tool_cached.execute(mode="search", query="test", source="ofac")
-        # Verify TTL is set
         call_args = tool_cached._cache.put.call_args
         assert call_args is not None
-        assert call_args.kwargs.get("ttl", call_args[1].get("ttl", 0)) > 0
+        assert call_args[0][0] == "sanctions_monitor"
 
 
 # ══════════════════════════════════════════════════════════════

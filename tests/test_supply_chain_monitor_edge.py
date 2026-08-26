@@ -470,7 +470,7 @@ class TestCache:
             r = _tool(cache).execute(mode="producer_prices")
 
         assert r.success
-        cache.set.assert_called_once()
+        cache.put.assert_called_once()
 
     def test_no_cache(self):
         with patch("agent.tools.supply_chain_monitor._fetch_bls_multi") as m:

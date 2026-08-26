@@ -33,7 +33,9 @@ Market relevance:
 from __future__ import annotations
 
 import logging
-from datetime import timezone; UTC = timezone.utc
+from datetime import UTC
+
+UTC = UTC
 from typing import Any
 
 import httpx
@@ -154,7 +156,7 @@ class LaborDisruptionsTool(Tool):
     ) -> ToolResult:
         cache_key = f"labor:{label}:{start}-{end}"
         if self._cache:
-            hit = self._cache.get(cache_key)
+            hit = self._cache.get("labor_disruptions", {"key": cache_key})
             if hit is not None:
                 return ToolResult(
                     success=True,
@@ -180,10 +182,10 @@ class LaborDisruptionsTool(Tool):
         }
 
         if self._cache:
-            self._cache.set(
-                cache_key,
+            self._cache.put(
+                "labor_disruptions",
+                {"key": cache_key},
                 {"output": summary, "data": result_data},
-                ttl=_CACHE_TTL,
             )
 
         return ToolResult(success=True, output=summary, data=result_data)
@@ -191,7 +193,7 @@ class LaborDisruptionsTool(Tool):
     def _handle_overview(self, start: int, end: int) -> ToolResult:
         cache_key = f"labor:overview:{start}-{end}"
         if self._cache:
-            hit = self._cache.get(cache_key)
+            hit = self._cache.get("labor_disruptions", {"key": cache_key})
             if hit is not None:
                 return ToolResult(
                     success=True,
@@ -221,10 +223,10 @@ class LaborDisruptionsTool(Tool):
         }
 
         if self._cache:
-            self._cache.set(
-                cache_key,
+            self._cache.put(
+                "labor_disruptions",
+                {"key": cache_key},
                 {"output": summary, "data": result_data},
-                ttl=_CACHE_TTL,
             )
 
         return ToolResult(success=True, output=summary, data=result_data)

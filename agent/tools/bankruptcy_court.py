@@ -29,7 +29,9 @@ import logging
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta, timezone; UTC = timezone.utc
+from datetime import UTC, datetime, timedelta
+
+UTC = UTC
 from typing import TYPE_CHECKING, Any
 
 import defusedxml.ElementTree as ET
@@ -401,7 +403,7 @@ class BankruptcyCourtTool(Tool):
             min(
                 (
                     int(days_back)
-                    if isinstance(days_back, (int, float, str)) and str(days_back).lstrip("-").isdigit()
+                    if isinstance(days_back, int | float | str) and str(days_back).lstrip("-").isdigit()
                     else 7
                 ),
                 90,
@@ -410,7 +412,7 @@ class BankruptcyCourtTool(Tool):
         limit = max(
             1,
             min(
-                (int(limit) if isinstance(limit, (int, float, str)) and str(limit).lstrip("-").isdigit() else 25),
+                (int(limit) if isinstance(limit, int | float | str) and str(limit).lstrip("-").isdigit() else 25),
                 100,
             ),
         )
@@ -474,7 +476,7 @@ class BankruptcyCourtTool(Tool):
                             log.warning("PACER %s failed: %s", cc, exc)
 
         if self._cache:
-            self._cache.set("bankruptcy_court", cache_key, all_entries, ttl=600)
+            self._cache.put("bankruptcy_court", cache_key, all_entries)
 
         entries = all_entries[:limit]
         return self._format_pacer_result(entries, limit)
@@ -557,7 +559,7 @@ class BankruptcyCourtTool(Tool):
         all_entries.sort(key=lambda e: e.get("pub_date", ""), reverse=True)
 
         if self._cache:
-            self._cache.set("bankruptcy_court", cache_key, all_entries, ttl=1800)
+            self._cache.put("bankruptcy_court", cache_key, all_entries)
 
         entries = all_entries[:limit]
         return self._format_sec_enforce_result(entries, limit)
@@ -634,7 +636,7 @@ class BankruptcyCourtTool(Tool):
         total = data.get("hits", {}).get("total", {}).get("value", 0)
 
         if self._cache:
-            self._cache.set("bankruptcy_court", cache_key, all_entries, ttl=3600)
+            self._cache.put("bankruptcy_court", cache_key, all_entries)
 
         entries = all_entries[:limit]
         return self._format_sec_bk_result(entries, limit, days_back, total=total)
@@ -717,7 +719,7 @@ class BankruptcyCourtTool(Tool):
         all_entries.sort(key=lambda e: e.get("pub_date", ""), reverse=True)
 
         if self._cache:
-            self._cache.set("bankruptcy_court", cache_key, all_entries, ttl=3600)
+            self._cache.put("bankruptcy_court", cache_key, all_entries)
 
         entries = all_entries[:limit]
         return self._format_uk_result(entries, limit)

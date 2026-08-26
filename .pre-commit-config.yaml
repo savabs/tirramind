@@ -7,21 +7,21 @@ repos:
     hooks:
       - id: tirramind-workflow-preflight
         name: TirraMind workflow preflight
-        entry: python3 -m agent.workflow_guard --staged
+        entry: .venv/bin/python3 -m agent.workflow_guard --staged
         language: system
         pass_filenames: false
         stages: [pre-commit]
 
       - id: tirramind-obsidian-lint
         name: TirraMind obsidian lint (FM01/FM02 blocking)
-        entry: python3 scripts/obsidian_lint.py --strict --no-stale
+        entry: .venv/bin/python3 scripts/obsidian_lint.py --strict --no-stale
         language: system
         pass_filenames: false
         stages: [pre-commit]
 
       - id: tirramind-fact-lint
         name: TirraMind fact drift lint (FL01/FL03)
-        entry: python3 scripts/fact_lint.py
+        entry: .venv/bin/python3 scripts/fact_lint.py
         language: system
         pass_filenames: false
         stages: [pre-commit]

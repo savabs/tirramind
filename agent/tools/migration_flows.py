@@ -38,7 +38,9 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import timezone; UTC = timezone.utc
+from datetime import UTC
+
+UTC = UTC
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -207,7 +209,7 @@ class MigrationFlowsTool(Tool):
     ) -> ToolResult:
         cache_key = f"migration:displacement:{country}:{year}:{role}:{limit}"
         if self._cache:
-            hit = self._cache.get(cache_key)
+            hit = self._cache.get("migration_flows", {"key": cache_key})
             if hit is not None:
                 return ToolResult(success=True, output=hit["output"], data=hit["data"])
 
@@ -238,7 +240,7 @@ class MigrationFlowsTool(Tool):
         }
 
         if self._cache:
-            self._cache.set(cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL)
+            self._cache.put("migration_flows", {"key": cache_key}, {"output": summary, "data": result_data})
 
         return ToolResult(success=True, output=summary, data=result_data)
 
@@ -251,7 +253,7 @@ class MigrationFlowsTool(Tool):
     ) -> ToolResult:
         cache_key = f"migration:asylum:{country}:{year}:{role}:{limit}"
         if self._cache:
-            hit = self._cache.get(cache_key)
+            hit = self._cache.get("migration_flows", {"key": cache_key})
             if hit is not None:
                 return ToolResult(success=True, output=hit["output"], data=hit["data"])
 
@@ -282,7 +284,7 @@ class MigrationFlowsTool(Tool):
         }
 
         if self._cache:
-            self._cache.set(cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL)
+            self._cache.put("migration_flows", {"key": cache_key}, {"output": summary, "data": result_data})
 
         return ToolResult(success=True, output=summary, data=result_data)
 
@@ -311,7 +313,7 @@ class MigrationFlowsTool(Tool):
 
         cache_key = f"migration:remittances:{country}:{start_year}-{end_year}"
         if self._cache:
-            hit = self._cache.get(cache_key)
+            hit = self._cache.get("migration_flows", {"key": cache_key})
             if hit is not None:
                 return ToolResult(success=True, output=hit["output"], data=hit["data"])
 
@@ -332,7 +334,7 @@ class MigrationFlowsTool(Tool):
         }
 
         if self._cache:
-            self._cache.set(cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL)
+            self._cache.put("migration_flows", {"key": cache_key}, {"output": summary, "data": result_data})
 
         return ToolResult(success=True, output=summary, data=result_data)
 

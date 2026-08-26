@@ -281,7 +281,7 @@ class JobPostingsTool(Tool):
             results[series_id] = obs
 
         if self._cache:
-            self._cache.set("job_postings", cache_key, results, ttl=_CACHE_TTL)
+            self._cache.put("job_postings", cache_key, results)
 
         return self._format_jolts(results)
 
@@ -289,7 +289,7 @@ class JobPostingsTool(Tool):
         """JOLTS via BLS Public API (no key needed)."""
         import datetime
 
-        now = datetime.datetime.now(UTC)
+        now = datetime.datetime.now(datetime.UTC)
         end_year = now.year
         start_year = max(end_year - (months // 12) - 1, end_year - 10)
 
@@ -311,7 +311,7 @@ class JobPostingsTool(Tool):
             results[fred_id] = sorted(obs, key=lambda x: x.get("date", ""), reverse=True)[:months]
 
         if self._cache:
-            self._cache.set("job_postings", cache_key, results, ttl=_CACHE_TTL)
+            self._cache.put("job_postings", cache_key, results)
 
         return self._format_jolts(results)
 
@@ -362,7 +362,7 @@ class JobPostingsTool(Tool):
 
         import datetime
 
-        now = datetime.datetime.now(UTC)
+        now = datetime.datetime.now(datetime.UTC)
         end_year = now.year
         start_year = max(end_year - (months // 12) - 1, end_year - 3)
 
@@ -375,7 +375,7 @@ class JobPostingsTool(Tool):
             results[sid] = sorted(obs, key=lambda x: x.get("date", ""), reverse=True)[:months]
 
         if self._cache:
-            self._cache.set("job_postings", cache_key, results, ttl=_CACHE_TTL)
+            self._cache.put("job_postings", cache_key, results)
 
         return self._format_sector(results)
 
@@ -442,7 +442,7 @@ class JobPostingsTool(Tool):
             results[series_id] = obs
 
         if self._cache:
-            self._cache.set("job_postings", cache_key, results, ttl=_CACHE_TTL)
+            self._cache.put("job_postings", cache_key, results)
 
         return self._format_labor_market(results)
 

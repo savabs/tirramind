@@ -31,7 +31,9 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timezone; UTC = timezone.utc
+from datetime import UTC, datetime
+
+UTC = UTC
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -61,6 +63,17 @@ _CACHE_TTL = 7200  # 2 hours — trade data is slow-moving
 _MAX_LIMIT = 100
 
 VALID_MODES = frozenset({"flows", "commodity", "partners"})
+
+_FLOW_LABELS: dict[str, str] = {"X": "Export", "M": "Import", "RX": "Re-export", "RM": "Re-import"}
+
+# Pin every sub-aggregate dimension so one row == one (reporter, partner,
+# commodity) triple.  C00 = all customs procedures, motCode 0 = all modes of
+# transport, partner2Code 0 = world as second partner.
+_AGGREGATE_PINS: dict[str, str] = {
+    "customsCode": "C00",
+    "motCode": "0",
+    "partner2Code": "0",
+}
 
 # Key M49 country codes (ISO-3166 numeric, which Comtrade uses)
 M49_CODES: dict[str, int] = {
@@ -191,6 +204,70 @@ def _resolve_country(code_or_name: str) -> int | None:
     return None
 
 
+_PARTNER_REF_URL = "https://comtradeapi.un.org/files/v1/app/reference/partnerAreas.json"
+_REPORTER_REF_URL = "https://comtradeapi.un.org/files/v1/app/reference/Reporters.json"
+
+# Populated lazily from the free Comtrade reference files.  The
+# public *preview* endpoint returns reporterDesc / partnerDesc / cmdDesc
+# as explicit ``null`` on every row, so the only way to label a row is to
+# resolve its numeric M49 code locally.
+_AREA_NAMES: dict[int, str] | None = None
+
+
+def _fallback_area_names() -> dict[int, str]:
+    """Offline M49 → label map (ISO-3 codes we already know)."""
+    names = {code: iso for code, iso in _M49_TO_ISO.items()}
+    names[0] = "World"
+    return names
+
+
+def _area_names() -> dict[int, str]:
+    """M49 code → area name, loaded once from Comtrade's free reference files.
+
+    Best-effort: on any failure we fall back to the built-in ISO-3 map so a
+    label is never silently wrong (a missing code renders as ``M49:<code>``).
+    """
+    global _AREA_NAMES
+    if _AREA_NAMES is not None:
+        return _AREA_NAMES
+
+    names: dict[int, str] = {}
+    try:
+        with httpx.Client(timeout=_TIMEOUT, headers={"User-Agent": _UA}, follow_redirects=True) as client:
+            for url, code_key, desc_key in (
+                (_PARTNER_REF_URL, "PartnerCode", "PartnerDesc"),
+                (_REPORTER_REF_URL, "reporterCode", "reporterDesc"),
+            ):
+                resp = client.get(url)
+                if resp.status_code != 200:
+                    continue
+                for row in resp.json().get("results", []):
+                    code = row.get(code_key)
+                    desc = row.get(desc_key) or row.get("text")
+                    if isinstance(code, int) and isinstance(desc, str) and desc:
+                        names.setdefault(code, desc)
+    except Exception:  # noqa: BLE001 -- reference lookup must never break a fetch
+        log.warning("Comtrade area reference unavailable — using built-in ISO map")
+
+    for code, iso in _fallback_area_names().items():
+        names.setdefault(code, iso)
+
+    _AREA_NAMES = names
+    return names
+
+
+def _label_area(code: Any) -> str:
+    """Human label for an M49 area code.  Never invents 'World'."""
+    if code is None or code == "":
+        return "Unknown"
+    try:
+        code_int = int(code)
+    except (TypeError, ValueError):
+        return str(code)
+    name = _area_names().get(code_int)
+    return name if name else f"M49:{code_int}"
+
+
 def _fetch_json(url: str, client: httpx.Client, **params: Any) -> dict | None:
     """Fetch URL and parse as JSON.  Returns dict or None."""
     try:
@@ -208,20 +285,27 @@ def _parse_trade_records(data: dict) -> list[dict[str, Any]]:
     """Parse Comtrade response into clean trade records."""
     records = []
     for item in data.get("data", []):
+        # The public preview endpoint sends reporterDesc / partnerDesc /
+        # cmdDesc / flowDesc as explicit ``null`` on EVERY row.  `.get(k, d)`
+        # only applies `d` when the key is *missing*, so these must be
+        # resolved from the numeric codes with `or`, never a bare default.
+        reporter_code = item.get("reporterCode")
+        partner_code = item.get("partnerCode")
+        flow_code = item.get("flowCode") or ""
         records.append(
             {
-                "period": item.get("period", ""),
-                "reporter": item.get("reporterDesc", "Unknown"),
-                "reporter_code": item.get("reporterCode", 0),
-                "partner": item.get("partnerDesc", "Unknown"),
-                "partner_code": item.get("partnerCode", 0),
-                "flow": item.get("flowDesc", ""),
-                "flow_code": item.get("flowCode", ""),
-                "commodity_code": item.get("cmdCode", ""),
-                "commodity": item.get("cmdDesc", ""),
-                "trade_value_usd": item.get("primaryValue", 0),
-                "quantity": item.get("qty", 0),
-                "quantity_unit": item.get("qtUnit", ""),
+                "period": item.get("period") or "",
+                "reporter": item.get("reporterDesc") or _label_area(reporter_code),
+                "reporter_code": reporter_code or 0,
+                "partner": item.get("partnerDesc") or _label_area(partner_code),
+                "partner_code": partner_code or 0,
+                "flow": item.get("flowDesc") or _FLOW_LABELS.get(flow_code, flow_code),
+                "flow_code": flow_code,
+                "commodity_code": item.get("cmdCode") or "",
+                "commodity": item.get("cmdDesc") or "",
+                "trade_value_usd": item.get("primaryValue") or 0,
+                "quantity": item.get("qty") or 0,
+                "quantity_unit": item.get("qtUnit") or "",
             }
         )
     return records
@@ -369,7 +453,7 @@ class ComtradeTool(Tool):
         records = self._query_comtrade(params)
 
         if self._cache and records is not None:
-            self._cache.set("comtrade", cache_key, records, ttl=_CACHE_TTL)
+            self._cache.put("comtrade", cache_key, records)
 
         if records is None:
             return ToolResult(success=False, output="Comtrade API unavailable.")
@@ -454,7 +538,7 @@ class ComtradeTool(Tool):
         records = self._query_comtrade(params)
 
         if self._cache and records is not None:
-            self._cache.set("comtrade", cache_key, records, ttl=_CACHE_TTL)
+            self._cache.put("comtrade", cache_key, records)
 
         if records is None:
             return ToolResult(success=False, output="Comtrade API unavailable.")
@@ -522,14 +606,19 @@ class ComtradeTool(Tool):
         if flow not in ("X", "M"):
             flow = "X"
 
-        cache_key = f"ct_partners_{reporter_m49}_{flow}_{period}"
+        cache_key = f"ct_partners_v2_{reporter_m49}_{flow}_{period}"
         if self._cache:
             cached = self._cache.get("comtrade", cache_key)
             if cached is not None:
                 return self._format_partners(cached, reporter_raw, flow, from_cache=True)
 
+        # `cmdCode=TOTAL` is required for a partner breakdown.  Without it the
+        # API returns a partner x HS-chapter grid which the preview endpoint
+        # truncates at its 500-row cap, so most partners are simply missing.
+        # With it, one row per partner (~224 for a large reporter).
         params: dict[str, str] = {
             "reporterCode": str(reporter_m49),
+            "cmdCode": "TOTAL",
             "flowCode": flow,
             "period": period,
         }
@@ -537,7 +626,7 @@ class ComtradeTool(Tool):
         records = self._query_comtrade(params)
 
         if self._cache and records is not None:
-            self._cache.set("comtrade", cache_key, records, ttl=_CACHE_TTL)
+            self._cache.put("comtrade", cache_key, records)
 
         if records is None:
             return ToolResult(success=False, output="Comtrade API unavailable.")
@@ -559,11 +648,23 @@ class ComtradeTool(Tool):
             f"Records: {len(records)}",
             "",
         ]
+        # The World row (partner_code 0) is the reporter's global total, not a
+        # partner — keep it, but label it as the total it is and rank it apart.
         sorted_recs = sorted(records, key=lambda r: r.get("trade_value_usd", 0) or 0, reverse=True)
-        for r in sorted_recs[:15]:
+        world = [r for r in sorted_recs if r.get("partner_code") == 0]
+        if world:
+            wv = world[0].get("trade_value_usd") or 0
+            lines.append(f"  World (all partners) — ${wv:,.0f}")
+            lines.append("")
+        for r in [r for r in sorted_recs if r.get("partner_code") != 0][:15]:
             val = r.get("trade_value_usd", 0) or 0
             val_str = f"${val:,.0f}" if val else "N/A"
-            lines.append(f"  {r.get('partner', '?')} — {val_str} ({r.get('commodity', 'TOTAL')[:40]})")
+            # `.get(key, default)`'s default only applies when the key is
+            # missing.  The preview endpoint sends partnerDesc / cmdDesc as
+            # explicit null on every row, so the label is resolved from the
+            # numeric code in _parse_trade_records — never defaulted to
+            # "World", which mislabelled every partner as the global total.
+            lines.append(f"  {r.get('partner') or 'Unknown'} — {val_str} ({r.get('commodity_code') or 'TOTAL'})")
         if len(records) > 15:
             lines.append(f"  ... and {len(records) - 15} more")
 
@@ -583,6 +684,16 @@ class ComtradeTool(Tool):
 
     def _query_comtrade(self, params: dict[str, str]) -> list[dict[str, Any]] | None:
         """Query UN Comtrade, using premium API if key is available."""
+        # Reporters that publish sub-aggregates (Germany reports four
+        # customsCodes x five motCodes x two partner2Codes) return the full
+        # cross-product unless these are pinned, which both double-counts
+        # partners and blows past the preview endpoint's 500-row cap.
+        # Verified 2026-08-26: DEU/2024/X/TOTAL unpinned -> 500 rows, 197
+        # distinct partners, "World" = $375B (one customs slice); pinned ->
+        # 229 rows, 229 distinct partners, "World" = $1.63T (the real total).
+        for key, default in _AGGREGATE_PINS.items():
+            params.setdefault(key, default)
+
         api_key = _get_api_key()
         if api_key:
             url = _PREMIUM_BASE

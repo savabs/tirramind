@@ -547,7 +547,7 @@ class TestCache:
         tool = _tool(cache=cache)
         result = tool.execute(mode="work_stoppages")
         assert result.success
-        cache.set.assert_called_once()
+        cache.put.assert_called_once()
 
     @patch("agent.tools.labor_disruptions._fetch_bls_series")
     def test_no_cache(self, mock_fetch):

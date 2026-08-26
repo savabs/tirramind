@@ -26,7 +26,9 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timedelta, timezone; UTC = timezone.utc
+from datetime import UTC, datetime, timedelta
+
+UTC = UTC
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -582,6 +584,6 @@ class CertTransparencyTool(Tool):
             return [], "crt.sh returned unexpected response format."
 
         if self._cache:
-            self._cache.put("cert_transparency", cache_key, data, ttl=_CACHE_TTL)
+            self._cache.put("cert_transparency", cache_key, data)
 
         return data, None

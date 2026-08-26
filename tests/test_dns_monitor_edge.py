@@ -885,10 +885,9 @@ class TestResolveMode:
         tool = DnsMonitorTool(cache=cache)
         result = tool.execute(mode="resolve", domain="example.com")
         assert result.success
-        cache.set.assert_called_once()
-        # Check TTL
-        call_args = cache.set.call_args
-        assert call_args.kwargs["ttl"] == _CACHE_TTL_RESOLVE
+        cache.put.assert_called_once()
+        call_args = cache.put.call_args
+        assert call_args[0][0] == "dns_monitor"
 
     @patch("agent.tools.dns_monitor._resolve_all_types")
     def test_resolve_invalid_domain(self, mock_resolve):
@@ -928,7 +927,7 @@ class TestDiffMode:
         assert "baseline" in result.output.lower()
         assert result.data["baseline_established"] is True
         # Should store snapshot
-        cache.set.assert_called()
+        cache.put.assert_called()
 
     @patch("agent.tools.dns_monitor._resolve_all_types")
     def test_diff_no_changes(self, mock_resolve):
@@ -1008,15 +1007,16 @@ class TestDiffMode:
         assert result.data["baseline_established"] is True
 
     @patch("agent.tools.dns_monitor._resolve_all_types")
-    def test_diff_snapshot_stored_with_long_ttl(self, mock_resolve):
+    def test_diff_snapshot_stored(self, mock_resolve):
+        """DataCache.put() takes no per-call ttl (fixed at construction);
+        this only verifies a distinct 'snapshot' entry is written."""
         mock_resolve.return_value = {"A": [{"value": "1.2.3.4", "ttl": 300}]}
         cache = MagicMock()
         cache.get.return_value = None
         tool = DnsMonitorTool(cache=cache)
-        result = tool.execute(mode="diff", domain="example.com")
-        # Check snapshot was stored with long TTL
-        set_calls = cache.set.call_args_list
-        assert any(c.kwargs.get("ttl") == _CACHE_TTL_SNAPSHOT for c in set_calls)
+        tool.execute(mode="diff", domain="example.com")
+        put_calls = cache.put.call_args_list
+        assert any(c[0][1].get("mode") == "snapshot" for c in put_calls)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

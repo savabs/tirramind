@@ -18,7 +18,6 @@ from unittest.mock import MagicMock, patch
 import httpx
 
 from agent.tools.internet_outages import (
-    _CACHE_TTL,
     _OONI_BASE,
     _RIPE_BASE,
     VALID_MODES,
@@ -820,8 +819,8 @@ class TestCache:
             mc.return_value.get.return_value = _mock_resp({"results": []})
             r = _tool(cache=cache).execute(mode="censorship", country="IR")
         assert r.success
-        cache.set.assert_called_once()
-        assert cache.set.call_args[1]["ttl"] == _CACHE_TTL
+        cache.put.assert_called_once()
+        assert cache.put.call_args[0][0] == "internet_outages"
 
     def test_no_cache_works(self):
         with patch("httpx.Client") as mc:

@@ -21,7 +21,9 @@ Signal theory:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone; UTC = timezone.utc
+from datetime import UTC, datetime
+
+UTC = UTC
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -253,7 +255,7 @@ class SupplyChainMonitorTool(Tool):
 
         cache_key = f"supply_chain:ppi:{','.join(sorted(series_ids))}:{months}"
         if self._cache:
-            hit = self._cache.get(cache_key)
+            hit = self._cache.get("supply_chain_prices", {"key": cache_key})
             if hit is not None:
                 return ToolResult(success=True, output=hit["output"], data=hit["data"])
 
@@ -272,7 +274,7 @@ class SupplyChainMonitorTool(Tool):
         }
 
         if self._cache:
-            self._cache.set(cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL)
+            self._cache.put("supply_chain_prices", {"key": cache_key}, {"output": summary, "data": result_data})
 
         self._persist_entities(data)
 
@@ -283,7 +285,7 @@ class SupplyChainMonitorTool(Tool):
     def _handle_import_prices(self, months: int) -> ToolResult:
         cache_key = f"supply_chain:imports:{months}"
         if self._cache:
-            hit = self._cache.get(cache_key)
+            hit = self._cache.get("supply_chain_prices", {"key": cache_key})
             if hit is not None:
                 return ToolResult(success=True, output=hit["output"], data=hit["data"])
 
@@ -303,7 +305,7 @@ class SupplyChainMonitorTool(Tool):
         }
 
         if self._cache:
-            self._cache.set(cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL)
+            self._cache.put("supply_chain_prices", {"key": cache_key}, {"output": summary, "data": result_data})
 
         self._persist_entities(data)
 
@@ -318,7 +320,7 @@ class SupplyChainMonitorTool(Tool):
 
         cache_key = f"supply_chain:pressure:{','.join(sorted(all_ids))}:{months}"
         if self._cache:
-            hit = self._cache.get(cache_key)
+            hit = self._cache.get("supply_chain_prices", {"key": cache_key})
             if hit is not None:
                 return ToolResult(success=True, output=hit["output"], data=hit["data"])
 
@@ -344,7 +346,7 @@ class SupplyChainMonitorTool(Tool):
         }
 
         if self._cache:
-            self._cache.set(cache_key, {"output": summary, "data": result_data}, ttl=_CACHE_TTL)
+            self._cache.put("supply_chain_prices", {"key": cache_key}, {"output": summary, "data": result_data})
 
         self._persist_entities(data)
 

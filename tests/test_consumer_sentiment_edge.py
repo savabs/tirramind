@@ -701,7 +701,7 @@ class TestCache:
             r = _tool(cache).execute(mode="eu_confidence", countries="DE")
 
         assert r.success
-        cache.set.assert_called_once()
+        cache.put.assert_called_once()
 
     def test_no_cache(self):
         with patch("agent.tools.consumer_sentiment._fetch_eurostat") as m:

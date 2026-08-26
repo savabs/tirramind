@@ -17,7 +17,9 @@ integration of count assertions (32 tools, 21 arms).
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone; UTC = timezone.utc
+from datetime import UTC, datetime, timedelta
+
+UTC = UTC
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -25,7 +27,6 @@ import httpx
 import pytest
 
 from agent.tools.cert_transparency import (
-    _CACHE_TTL,
     VALID_MODES,
     CertTransparencyTool,
     _format_cert,
@@ -760,7 +761,6 @@ class TestCacheInteraction:
         cache.put.assert_called_once()
         put_args = cache.put.call_args
         assert put_args[0][0] == "cert_transparency"
-        assert put_args[1]["ttl"] == _CACHE_TTL
 
     def test_no_cache_still_works(self):
         tool = CertTransparencyTool(cache=None)
@@ -821,9 +821,9 @@ class TestIntegration:
 
     def test_tool_count(self):
         registry = self._build_registry()
-        assert len(registry._tools) == 60, (
-            f"Expected 60 tools, got {len(registry._tools)}: {sorted(registry._tools.keys())}"
-        )
+        assert (
+            len(registry._tools) == 60
+        ), f"Expected 60 tools, got {len(registry._tools)}: {sorted(registry._tools.keys())}"
 
     def test_bandit_arm_count(self):
         from agent.learning.bandit import DEFAULT_ARMS

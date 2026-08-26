@@ -34,7 +34,9 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timezone; UTC = timezone.utc
+from datetime import UTC, datetime
+
+UTC = UTC
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -301,7 +303,7 @@ class FoodSecurityTool(Tool):
     ) -> ToolResult:
         cache_key = f"food_security:{cache_label}:{country}:{start_year}-{end_year}"
         if self._cache:
-            hit = self._cache.get(cache_key)
+            hit = self._cache.get("food_security", {"key": cache_key})
             if hit is not None:
                 return ToolResult(
                     success=True,
@@ -378,10 +380,10 @@ class FoodSecurityTool(Tool):
         }
 
         if self._cache:
-            self._cache.set(
-                cache_key,
+            self._cache.put(
+                "food_security",
+                {"key": cache_key},
                 {"output": summary, "data": result_data},
-                ttl=_CACHE_TTL,
             )
 
         return ToolResult(success=True, output=summary, data=result_data)

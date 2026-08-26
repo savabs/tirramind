@@ -258,7 +258,7 @@ class BuildingPermitsTool(Tool):
             results[sid] = _fetch_fred(sid, self._api_key, limit=months)
 
         if self._cache:
-            self._cache.set("building_permits", cache_key, results, ttl=_CACHE_TTL)
+            self._cache.put("building_permits", cache_key, results)
 
         return self._format_permits(results, months)
 
@@ -334,7 +334,7 @@ class BuildingPermitsTool(Tool):
             results[sid] = _fetch_fred(sid, self._api_key, limit=months)
 
         if self._cache:
-            self._cache.set("building_permits", cache_key, results, ttl=_CACHE_TTL)
+            self._cache.put("building_permits", cache_key, results)
 
         return self._format_regional(results)
 
@@ -408,7 +408,7 @@ class BuildingPermitsTool(Tool):
             results[sid] = _fetch_fred(sid, self._api_key, limit=months)
 
         if self._cache:
-            self._cache.set("building_permits", cache_key, results, ttl=_CACHE_TTL)
+            self._cache.put("building_permits", cache_key, results)
 
         return self._format_starts(results)
 
