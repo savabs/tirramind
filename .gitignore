@@ -73,6 +73,14 @@ kaggle_downloads/tirramind-data/pipeline.db
 # is genuinely per-machine (e.g. prefersReducedMotion).
 !.claude/settings.json
 
+# Same blanket *.json rule also excluded the static site's Vercel config —
+# the "tirramind" Vercel project's git integration deploys this directory
+# (root directory set to products/brief_subscription as of 2026-08-26), so a
+# git-triggered auto-deploy without this file silently loses cleanUrls, the
+# /buy redirect, and the /brief.json, /api/v1/*, /evidence/* rewrites, with
+# no error -- it just serves the raw HTML with no routing logic.
+!products/brief_subscription/vercel.json
+
 # AWOS runtime state
 .awos/
 tirramind_data_upload.zip

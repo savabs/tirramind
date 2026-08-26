@@ -1,0 +1,17 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "cleanUrls": true,
+  "redirects": [
+    {
+      "source": "/buy",
+      "destination": "/pricing",
+      "permanent": false
+    }
+  ],
+  "rewrites": [
+    { "source": "/brief.json", "destination": "https://api.tirramind.com/brief.json" },
+    { "source": "/brief.md", "destination": "https://api.tirramind.com/brief.md" },
+    { "source": "/api/v1/:path*", "destination": "https://api.tirramind.com/api/v1/:path*" },
+    { "source": "/evidence/:path*", "destination": "https://api.tirramind.com/evidence/:path*" }
+  ]
+}
