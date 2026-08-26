@@ -1,7 +1,7 @@
 """Tests for Phase 35: GNN Retrain on Expanded Entity Graph.
 
 Covers:
-    Schema coverage  — all 11 entity types, 45 obs types, 18 link types
+    Schema coverage  — all 12 entity types, the obs-type registry, 18 link types
     Cross-domain patterns — 6 injected causal chains across new entity types
     Training convergence — loss decreases over epochs on expanded graph
     Attention analysis — diagnostics cover all entity types
@@ -39,7 +39,7 @@ def store():
 
 @pytest.fixture
 def expanded_store(store):
-    """Store with all 11 entity types populated."""
+    """Store with all 12 entity types populated."""
     gen = SyntheticGraphGenerator(
         num_companies=8,
         num_countries=5,
@@ -52,6 +52,7 @@ def expanded_store(store):
         num_protocols=2,
         num_topics=5,
         num_domains=3,
+        num_maritime_areas=2,
         time_span=86400.0 * 10,
         base_event_rate=0.0005,
         seed=42,
@@ -148,7 +149,7 @@ def pattern_expanded_store(store):
 
 
 class TestSchemaCoverage:
-    """All 11 entity types, 45 obs types, and 18 link types appear."""
+    """All 12 entity types, the obs-type registry, and 18 link types appear."""
 
     def test_all_entity_types_present(self, expanded_store):
         store, stats = expanded_store
@@ -173,7 +174,7 @@ class TestSchemaCoverage:
     def test_total_entity_count(self, expanded_store):
         store, _ = expanded_store
         entities = store.query_all_entities()
-        assert len(entities) == 54  # 8+5+4+4+10+6+4+3+2+5+3
+        assert len(entities) == 56  # 8+5+4+4+10+6+4+3+2+5+3+2 (incl. 2 maritime_area)
 
     def test_all_obs_types_generated(self, expanded_store):
         store, _ = expanded_store
@@ -315,7 +316,7 @@ class TestGraphBuilderExpanded:
         gb = GraphBuilder(store)
         data, id_map, events = gb.build()
         # All 11 entity types should appear as node types
-        assert len(data.node_types) == 11
+        assert len(data.node_types) == 12  # maritime_area registered 2026-08-26
         for etype in ENTITY_TYPES:
             assert etype in data.node_types
 
@@ -395,9 +396,9 @@ class TestExpandedTraining:
         # time_delta MSE on raw seconds is naturally large;
         # just verify it's finite and decreasing
         dt_losses = history["time_delta"]
-        assert dt_losses[-1] <= dt_losses[0] * 2, (
-            f"time_delta loss grew excessively: {dt_losses[0]:.0f} → {dt_losses[-1]:.0f}"
-        )
+        assert (
+            dt_losses[-1] <= dt_losses[0] * 2
+        ), f"time_delta loss grew excessively: {dt_losses[0]:.0f} → {dt_losses[-1]:.0f}"
 
     def test_model_embeddings_shape(self, trained):
         trainer, _ = trained
@@ -582,7 +583,7 @@ class TestEdgeCases:
         store, _ = expanded_store
         gb = GraphBuilder(store)
         data, id_map, events = gb.build()
-        assert id_map.num_nodes == 54
+        assert id_map.num_nodes == 56  # +2 maritime_area
         assert len(events) > 0
 
     def test_trainer_build_model_expanded(self, expanded_store):

@@ -2,21 +2,20 @@
 
 from __future__ import annotations
 
-import time
-
 import pytest
-import torch
 
 from agent.models.gnn.graph_builder import (
-    GraphBuilder,
+    BASE_FEAT_DIM,
     M15_QUANT_DIM,
     MICROSTRUCTURE_DIM,
     PRICE_FEAT_DIM,
-    BASE_FEAT_DIM,
+    GraphBuilder,
 )
 from agent.pipeline.store import PipelineStore
 from agent.quant.gnn_quant_features import (
     M15_QUANT_DIM as M15_LEN,
+)
+from agent.quant.gnn_quant_features import (
     OPTIONS_QUANT_DIM,
     compute_gnn_m15_features,
     compute_options_quant_features,
@@ -88,9 +87,7 @@ def test_m15_vector_shape_with_options_and_curve(monkeypatch):
             },
         }
     )
-    vec = compute_gnn_m15_features(
-        eid, obs, t, spot=500.0, us_country_eid=us_eid
-    )
+    vec = compute_gnn_m15_features(eid, obs, t, spot=500.0, us_country_eid=us_eid)
     assert len(vec) == M15_LEN
     assert vec[0] == 1.0  # options mask
     assert vec[7] == 1.0  # rate mask
@@ -141,7 +138,10 @@ def test_graph_builder_instrument_dim_49_with_m15(tmp_path):
 
     data, _, _ = GraphBuilder(store).build()
     expected = BASE_FEAT_DIM + PRICE_FEAT_DIM + MICROSTRUCTURE_DIM + M15_QUANT_DIM
-    assert expected == 49
+    # 50 since 2026-08-26: BASE_FEAT_DIM went 14 -> 15 when `maritime_area` was
+    # registered in ENTITY_TYPES. The composition below is the invariant that
+    # matters; the literal is just a tripwire for unintended drift.
+    assert expected == 50
     assert data["instrument"].x.shape[1] == expected
     m15_off = BASE_FEAT_DIM + PRICE_FEAT_DIM + MICROSTRUCTURE_DIM
     block = data["instrument"].x[0, m15_off : m15_off + M15_QUANT_DIM]

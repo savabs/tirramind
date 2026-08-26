@@ -14,12 +14,18 @@ import time
 import pytest
 
 from agent.models.gnn.graph_builder import (
+    BASE_FEAT_DIM,
+    ENRICHMENT_DIM,
     ENTITY_TYPES,
+    OBSERVATION_TYPES,
     GraphBuilder,
     IDMap,
+    SchemaDriftError,
     _build_edge_data,
     _build_node_features,
     _compute_obs_stats,
+    _links_as_of,
+    validate_schema_against_store,
 )
 from agent.pipeline.entity import entity_id_from_key
 from agent.pipeline.store import PipelineStore
@@ -352,6 +358,187 @@ class TestComputeObsStats:
 # ═══════════════════════════════════════════════════════════════
 # _build_node_features tests
 # ═══════════════════════════════════════════════════════════════
+
+
+class TestUnknownEntityType:
+    """An unregistered entity type must never masquerade as a registered one.
+
+    Regression: `maritime_area` was absent from ENTITY_TYPES while present in
+    pipeline.db, so `_build_node_features` fell back to index 0 and one-hot
+    encoded it as `cftc_contract` behind a log warning. The GNN trained and
+    scored it as the wrong entity kind for months.
+
+    Feature building stays non-fatal (runtime discovery of new types is a
+    supported feature) but must claim NO type rather than the wrong one.
+    Loud detection is validate_schema_against_store()'s job.
+    """
+
+    def test_unknown_type_does_not_masquerade_as_first_type(self):
+        ft = _build_node_features("definitely_not_a_real_type", ["e1"], [], 1000.0)
+        assert ft[0, 0].item() != 1.0, f"unknown type was silently encoded as {ENTITY_TYPES[0]!r}"
+
+    def test_unknown_type_one_hot_block_is_all_zero(self):
+        ft = _build_node_features("definitely_not_a_real_type", ["e1"], [], 1000.0)
+        one_hot = ft[0, : len(ENTITY_TYPES)]
+        assert one_hot.sum().item() == 0.0, "unknown type claimed an identity"
+
+    def test_known_type_still_encodes(self):
+        """Guard the guard: the zero-block change must not break normal types."""
+        ft = _build_node_features("country", ["e1"], [], 1000.0)
+        assert ft[0, ENTITY_TYPES.index("country")].item() == 1.0
+        assert ft[0, : len(ENTITY_TYPES)].sum().item() == 1.0
+
+
+class TestLinkFutureBlindness:
+    """Historical snapshots must not contain links created after the window.
+
+    Regression (2026-08-26): `build()` filtered observations by `until` but
+    fetched links with NO time filter, so every historical snapshot — including
+    2023 windows — received the complete present-day link set (all 16,870).
+    `build_from_cached()`, the path the TRAINING loop uses, was worse: links are
+    pre-fetched once and reused across every window.
+
+    This is LESSONS.md F-04, and it is the flattering kind of leakage: backtests
+    improve and the improvement is entirely spurious.
+    """
+
+    def test_link_created_after_window_is_dropped(self):
+        links = [
+            {"entity_id_a": "a", "entity_id_b": "b", "created_at": 1000.0},
+            {"entity_id_a": "c", "entity_id_b": "d", "created_at": 5000.0},
+        ]
+        kept = _links_as_of(links, until=2000.0)
+        assert len(kept) == 1
+        assert kept[0]["entity_id_a"] == "a", "future link leaked into the window"
+
+    def test_link_exactly_at_boundary_is_kept(self):
+        links = [{"entity_id_a": "a", "entity_id_b": "b", "created_at": 2000.0}]
+        assert len(_links_as_of(links, until=2000.0)) == 1
+
+    def test_until_none_keeps_everything(self):
+        """until=None means 'live/current' — nothing is in the future."""
+        links = [
+            {"entity_id_a": "a", "entity_id_b": "b", "created_at": 1000.0},
+            {"entity_id_a": "c", "entity_id_b": "d", "created_at": 9e9},
+        ]
+        assert len(_links_as_of(links, until=None)) == 2
+
+    def test_link_without_created_at_is_kept(self):
+        """Documented trade-off: pre-column links are kept, not silently dropped."""
+        links = [{"entity_id_a": "a", "entity_id_b": "b"}]
+        assert len(_links_as_of(links, until=1000.0)) == 1
+
+    def test_edge_age_uses_window_clock_not_wallclock(self):
+        """age_days measured against the snapshot, not against today.
+
+        Replaying a 2023 window in 2026 previously stamped every edge as ~1000
+        days old — a value the model could never have observed at that time.
+        """
+        id_map = IDMap()
+        id_map.add("company", "a")
+        id_map.add("company", "b")
+        window_now = 1_000_000.0
+        links = [
+            {
+                "entity_id_a": "a",
+                "entity_id_b": "b",
+                "link_type": "works_for",
+                "confidence": 1.0,
+                "created_at": window_now - 86400.0,  # exactly 1 day before window end
+            }
+        ]
+        edge_data = _build_edge_data(links, id_map, reference_time=window_now)
+        (attrs,) = (t["edge_attr"] for t in edge_data.values())
+        age_days = attrs[0, 1].item()
+        assert abs(age_days - 1.0) < 0.01, (
+            f"age_days={age_days} — should be 1.0 relative to the window, not "
+            "a huge number relative to wall-clock now"
+        )
+
+
+class TestEnrichmentDimDerivation:
+    """ENRICHMENT_DIM must stay derived from OBSERVATION_TYPES.
+
+    Regression: it was hardcoded to 55 — correct only at 46 observation types.
+    When the registry grew to 48, `_build_node_features` wrote obs_type_dist at
+    `offset + 9 + ot_idx`, which for ot_idx=46 addressed index 69 in a
+    14+55=69-wide tensor:
+
+        IndexError: index 69 is out of bounds for dimension 1 with size 69
+
+    That crashed the entity_scoring DAG outright, and for instrument nodes the
+    same overflow silently corrupted the price-feature block that follows.
+    """
+
+    def test_enrichment_dim_matches_formula(self):
+        assert 9 + len(OBSERVATION_TYPES) == ENRICHMENT_DIM
+
+    def test_enrichment_block_has_room_for_every_obs_type(self):
+        """The exact invariant the old hardcoded value violated."""
+        last_written_offset = 9 + len(OBSERVATION_TYPES) - 1
+        assert last_written_offset < ENRICHMENT_DIM
+
+    def test_enriched_features_do_not_overflow(self):
+        """Build with enrichment and assert no out-of-bounds write."""
+        enrichment = {
+            "e1": {
+                "cusum": 0.0,
+                "hawkes": 0.0,
+                "event_study": 0.0,
+                "bocpd": 0.0,
+                "variance": 0.0,
+                "min": 0.0,
+                "max": 0.0,
+                "iqr": 0.0,
+                "num_tools": 0.0,
+            }
+        }
+        ft = _build_node_features("company", ["e1"], [], 1000.0, enrichment=enrichment)
+        assert ft.shape[1] == BASE_FEAT_DIM + ENRICHMENT_DIM
+
+
+class TestSchemaDriftGuard:
+    """validate_schema_against_store is the guard missing when 23 → 49 drifted."""
+
+    def test_clean_store_passes(self, store):
+        report = validate_schema_against_store(store)
+        assert report == {"unknown_entity_types": [], "unknown_observation_types": []}
+
+    def test_unknown_entity_type_detected(self, store):
+        eid = entity_id_from_key("alien_type", "x1")
+        store.register_entity("alien_type", "Alien Entity", eid)
+        with pytest.raises(SchemaDriftError, match="alien_type"):
+            validate_schema_against_store(store)
+
+    def test_non_strict_reports_without_raising(self, store):
+        eid = entity_id_from_key("alien_type", "x1")
+        store.register_entity("alien_type", "Alien Entity", eid)
+        report = validate_schema_against_store(store, strict=False)
+        assert report["unknown_entity_types"] == ["alien_type"]
+
+    def test_error_message_is_actionable(self, store):
+        eid = entity_id_from_key("alien_type", "x1")
+        store.register_entity("alien_type", "Alien Entity", eid)
+        with pytest.raises(SchemaDriftError, match="retrain"):
+            validate_schema_against_store(store)
+
+
+class TestSchemaMatchesDatabase:
+    """ENTITY_TYPES / OBSERVATION_TYPES ordering is load-bearing.
+
+    One-hot positions derive from list index, so inserting a type shifts every
+    later index and invalidates existing checkpoints. Keeping both lists sorted
+    makes insertions reviewable and the drift obvious.
+    """
+
+    def test_entity_types_sorted(self):
+        assert sorted(ENTITY_TYPES) == ENTITY_TYPES
+
+    def test_observation_types_sorted(self):
+        assert sorted(OBSERVATION_TYPES) == OBSERVATION_TYPES
+
+    def test_base_feat_dim_tracks_entity_types(self):
+        assert len(ENTITY_TYPES) + 3 == BASE_FEAT_DIM
 
 
 class TestBuildNodeFeatures:

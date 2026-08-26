@@ -33,6 +33,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+import numpy as np
 import torch
 
 # Ignore corrupt future timestamps when choosing graph reference time
@@ -53,6 +54,7 @@ ENTITY_TYPES: list[str] = [
     "country",
     "domain",
     "instrument",
+    "maritime_area",
     "organization",
     "person",
     "protocol",
@@ -62,6 +64,8 @@ ENTITY_TYPES: list[str] = [
 ]
 
 OBSERVATION_TYPES: list[str] = [
+    "area_daily_activity",
+    "baltic_activity_proxy",
     "bankruptcy_status",
     "border_throughput",
     "btc_transfer",
@@ -81,6 +85,7 @@ OBSERVATION_TYPES: list[str] = [
     "food_security",
     "form144_filing",
     "futures_positioning",
+    "futures_positioning_derived",
     "geopolitical_event",
     "grid_demand",
     "insider_trade",
@@ -97,6 +102,7 @@ OBSERVATION_TYPES: list[str] = [
     "pageview_spike",
     "patent_filing",
     "pathogen_level",
+    "petroleum_inventory",
     "port_call",
     "price_movement",
     "project_status",
@@ -114,6 +120,74 @@ OBSERVATION_TYPES: list[str] = [
 
 _ENTITY_TYPE_TO_IDX: dict[str, int] = {t: i for i, t in enumerate(ENTITY_TYPES)}
 _OBS_TYPE_TO_IDX: dict[str, int] = {t: i for i, t in enumerate(OBSERVATION_TYPES)}
+
+
+def _links_as_of(links: list[dict[str, Any]], until: float | None) -> list[dict[str, Any]]:
+    """Drop links that did not exist yet at `until` (future-blindness, F-04).
+
+    A link created after the window's end is information from the future. Left
+    unfiltered it produced the worst kind of leakage — silent, and flattering:
+    backtests improve, and the improvement is entirely spurious.
+
+    `until=None` means "live/current", so everything is in scope.
+
+    Links with no `created_at` are KEPT: some were written before the column
+    existed, and dropping them would silently shrink historical graphs. That is
+    a deliberate trade — note it if backtest results look suspicious.
+    """
+    if until is None:
+        return links
+    return [lk for lk in links if lk.get("created_at") is None or float(lk["created_at"]) <= until]
+
+
+class SchemaDriftError(ValueError):
+    """Raised when the store holds entity/observation types the model can't encode.
+
+    One-hot positions derive from list index in ENTITY_TYPES / OBSERVATION_TYPES,
+    so a type present in the DB but absent from those lists cannot be represented
+    at all. Feature building degrades gracefully (all-zero type one-hot) so that
+    live collection of a brand-new type never crashes, but anything that trains
+    or scores against weights must refuse to run on a schema it cannot encode.
+    """
+
+
+def validate_schema_against_store(store, *, strict: bool = True) -> dict[str, list[str]]:
+    """Compare live DB entity/observation types against the code's registries.
+
+    This is the guard that was missing when the instrument feature vector grew
+    23 → 49 and `maritime_area` appeared in the DB: both drifted silently for
+    months because nothing ever compared the two.
+
+    Args:
+        store: PipelineStore to inspect.
+        strict: raise SchemaDriftError on drift. False → return the report only.
+
+    Returns:
+        {"unknown_entity_types": [...], "unknown_observation_types": [...]}
+
+    Raises:
+        SchemaDriftError: if strict and either list is non-empty.
+    """
+    conn = store._get_conn()  # noqa: SLF001 — store exposes no type-listing API
+    db_entity_types = {r[0] for r in conn.execute("SELECT DISTINCT entity_type FROM entities")}
+    db_obs_types = {r[0] for r in conn.execute("SELECT DISTINCT observation_type FROM entity_observations")}
+
+    report = {
+        "unknown_entity_types": sorted(db_entity_types - set(ENTITY_TYPES)),
+        "unknown_observation_types": sorted(db_obs_types - set(OBSERVATION_TYPES)),
+    }
+
+    if strict and (report["unknown_entity_types"] or report["unknown_observation_types"]):
+        raise SchemaDriftError(
+            "Store contains types the model cannot encode.\n"
+            f"  unknown entity types      : {report['unknown_entity_types']}\n"
+            f"  unknown observation types : {report['unknown_observation_types']}\n"
+            "Add them to ENTITY_TYPES / OBSERVATION_TYPES in "
+            "agent/models/gnn/graph_builder.py (alphabetical order — one-hot "
+            "positions derive from list index) and retrain: inserting a type "
+            "shifts every later index and invalidates existing checkpoints."
+        )
+    return report
 
 
 # ── ID mapping ─────────────────────────────────────────────────
@@ -217,11 +291,7 @@ def _reference_time(observations: list[dict[str, Any]]) -> float:
     if not observations:
         return 0.0
     ceiling = time.time() + _REFERENCE_TIME_SLACK_SEC
-    sane = [
-        float(o.get("observed_at", 0.0))
-        for o in observations
-        if 0.0 < float(o.get("observed_at", 0.0)) <= ceiling
-    ]
+    sane = [float(o.get("observed_at", 0.0)) for o in observations if 0.0 < float(o.get("observed_at", 0.0)) <= ceiling]
     if sane:
         return max(sane)
     return max(float(o.get("observed_at", 0.0)) for o in observations)
@@ -231,8 +301,17 @@ def _reference_time(observations: list[dict[str, Any]]) -> float:
 # When enrichment is provided, these extra features are appended:
 #   cusum_state (1) + hawkes_intensity (1) + event_study_score (1) +
 #   bocpd_prob (1) + value_variance (1) + value_min (1) + value_max (1) +
-#   value_iqr (1) + num_source_tools (1) + obs_type_dist (35) = 44
-ENRICHMENT_DIM = 55
+#   value_iqr (1) + num_source_tools (1) + obs_type_dist (len(OBSERVATION_TYPES))
+#
+# MUST stay derived. This was hardcoded to 55 — correct only while
+# len(OBSERVATION_TYPES) == 46. When the registry grew to 48, the writer at
+# `offset + 9 + ot_idx` (see _build_node_features) ran past the allocated width:
+# with BASE_FEAT_DIM=14 the tensor was 14+55=69 wide and ot_idx=46 addressed
+# index 69 — "index 69 is out of bounds for dimension 1 with size 69", which
+# crashed the entity_scoring DAG. For instrument nodes the same overflow instead
+# silently corrupted the price-feature block that follows it.
+_ENRICHMENT_SCALAR_DIM = 9  # cusum, hawkes, event_study, bocpd, var, min, max, iqr, num_tools
+ENRICHMENT_DIM = _ENRICHMENT_SCALAR_DIM + len(OBSERVATION_TYPES)
 BASE_FEAT_DIM = len(ENTITY_TYPES) + 3  # one-hot type + count + recency + mean_val
 PRICE_FEAT_DIM = 9  # momentum(3) + volatility(2) + volume(2) + max_dd + sharpe
 # Idea 2 — depth-3 path signature dim (PATH_CHANNELS=3): 3+9+27 = 39
@@ -250,7 +329,7 @@ MICROSTRUCTURE_DIM = 11
 M15_QUANT_DIM = 15
 
 
-def xsnorm_price_feats(feats: "torch.Tensor") -> "torch.Tensor":
+def xsnorm_price_feats(feats: torch.Tensor) -> torch.Tensor:
     """Cross-sectionally z-score the price feature block before return_raw_head.
 
     Normalises only dims [BASE_FEAT_DIM : BASE_FEAT_DIM + PRICE_FEAT_DIM] so
@@ -267,7 +346,6 @@ def xsnorm_price_feats(feats: "torch.Tensor") -> "torch.Tensor":
     Returns:
         [N, D] tensor; price block z-scored, all other dims unchanged.
     """
-    import torch as _torch  # noqa: PLC0415 — lazy to avoid top-level dep in graph_builder
 
     if feats.shape[0] < 2:
         return feats
@@ -508,7 +586,7 @@ def _build_node_features(
     current_time: float,
     enrichment: dict[str, dict[str, float]] | None = None,
     use_signatures: bool = False,
-    ts2vec_embeddings: dict[str, dict[str, "np.ndarray"]] | None = None,
+    ts2vec_embeddings: dict[str, dict[str, np.ndarray]] | None = None,
     ts2vec_dim: int = 0,
     *,
     zero_price_feats: bool = False,
@@ -532,8 +610,22 @@ def _build_node_features(
     """
     type_idx = _ENTITY_TYPE_TO_IDX.get(entity_type)
     if type_idx is None:
-        log.warning("Unknown entity type %r — defaulting to index 0", entity_type)
-        type_idx = 0
+        # Do NOT fall back to index 0. That silently one-hot-encodes the unknown
+        # type as ENTITY_TYPES[0], so the model trains and scores it as a
+        # different entity kind entirely — `maritime_area` was mislabelled as
+        # `cftc_contract` this way for months behind a log line nobody read.
+        #
+        # Runtime discovery of genuinely-new types is a supported feature
+        # (see GraphBuilder.build), so this stays non-fatal: encode an all-zero
+        # type one-hot, which claims no identity rather than the wrong one.
+        # Drift is caught loudly instead by validate_schema_against_store(),
+        # which training and model loading call before touching weights.
+        log.warning(
+            "Unknown entity type %r — encoding all-zero type one-hot (claims no "
+            "type). Register it in ENTITY_TYPES and retrain to give it an "
+            "identity; see validate_schema_against_store().",
+            entity_type,
+        )
     type_dim = len(ENTITY_TYPES)
     _is_instrument = entity_type == "instrument"
     _price_dim = PRICE_FEAT_DIM if _is_instrument else 0
@@ -541,9 +633,7 @@ def _build_node_features(
     _m15_dim = M15_QUANT_DIM if _is_instrument else 0
     _sig_dim = _signature_dim() if use_signatures else 0
     # TS2Vec extra dims: only non-zero if caller passed embeddings AND dim > 0
-    _type_embs: dict[str, "np.ndarray"] | None = (
-        ts2vec_embeddings.get(entity_type) if ts2vec_embeddings else None
-    )
+    _type_embs: dict[str, np.ndarray] | None = ts2vec_embeddings.get(entity_type) if ts2vec_embeddings else None
     _ts_dim = ts2vec_dim if (_type_embs is not None and ts2vec_dim > 0) else 0
     feat_dim = (
         BASE_FEAT_DIM
@@ -572,8 +662,10 @@ def _build_node_features(
 
     features = torch.zeros(len(entity_ids), feat_dim)
     for local_idx, eid in enumerate(entity_ids):
-        # One-hot entity type
-        features[local_idx, type_idx] = 1.0
+        # One-hot entity type. type_idx is None for an unregistered type — leave
+        # the whole one-hot block zero rather than claiming ENTITY_TYPES[0].
+        if type_idx is not None:
+            features[local_idx, type_idx] = 1.0
         # Observation stats
         ent_obs = obs_by_entity.get(eid, [])
         stats = _compute_obs_stats(ent_obs, eid, current_time)
@@ -597,23 +689,19 @@ def _build_node_features(
             features[local_idx, offset + 6] = dist_feats["max"]
             features[local_idx, offset + 7] = dist_feats["iqr"]
             features[local_idx, offset + 8] = dist_feats["num_tools"]
-            # Obs type distribution (18 dims)
+            # Obs type distribution — one slot per OBSERVATION_TYPES entry.
+            # ENRICHMENT_DIM is derived from the same list, so this can never
+            # run past the allocated block (see the ENRICHMENT_DIM comment).
             for ot_idx, ot_name in enumerate(OBSERVATION_TYPES):
-                features[local_idx, offset + 9 + ot_idx] = dist_feats["obs_type_dist"][
-                    ot_name
-                ]
+                features[local_idx, offset + _ENRICHMENT_SCALAR_DIM + ot_idx] = dist_feats["obs_type_dist"][ot_name]
 
         # Price-derived features (instruments only — Phase 50)
         if _is_instrument:
-            price_offset = BASE_FEAT_DIM + (
-                ENRICHMENT_DIM if enrichment is not None else 0
-            )
+            price_offset = BASE_FEAT_DIM + (ENRICHMENT_DIM if enrichment is not None else 0)
             if zero_price_feats:
                 price_feats = [0.0] * PRICE_FEAT_DIM
             else:
-                price_feats = _compute_price_features(
-                    eid, observations, current_time
-                )
+                price_feats = _compute_price_features(eid, observations, current_time)
             for pf_idx, pf_val in enumerate(price_feats):
                 features[local_idx, price_offset + pf_idx] = pf_val
 
@@ -623,12 +711,8 @@ def _build_node_features(
                 compute_gnn_micro_features,
             )
 
-            micro_offset = BASE_FEAT_DIM + (
-                ENRICHMENT_DIM if enrichment is not None else 0
-            ) + _price_dim
-            micro_feats = compute_gnn_micro_features(
-                eid, observations, current_time
-            )
+            micro_offset = BASE_FEAT_DIM + (ENRICHMENT_DIM if enrichment is not None else 0) + _price_dim
+            micro_feats = compute_gnn_micro_features(eid, observations, current_time)
             for mf_idx, mf_val in enumerate(micro_feats):
                 features[local_idx, micro_offset + mf_idx] = mf_val
 
@@ -639,12 +723,7 @@ def _build_node_features(
                 compute_gnn_m15_features,
             )
 
-            m15_offset = (
-                BASE_FEAT_DIM
-                + (ENRICHMENT_DIM if enrichment is not None else 0)
-                + _price_dim
-                + _micro_dim
-            )
+            m15_offset = BASE_FEAT_DIM + (ENRICHMENT_DIM if enrichment is not None else 0) + _price_dim + _micro_dim
             spot = _latest_close(eid, observations, current_time)
             m15_feats = compute_gnn_m15_features(
                 eid,
@@ -660,14 +739,10 @@ def _build_node_features(
         if use_signatures and ent_obs:
             from agent.models.gnn.signature_encoder import (
                 compute_entity_signature,
-            )  # noqa: PLC0415
+            )
 
             sig_offset = (
-                BASE_FEAT_DIM
-                + (ENRICHMENT_DIM if enrichment is not None else 0)
-                + _price_dim
-                + _micro_dim
-                + _m15_dim
+                BASE_FEAT_DIM + (ENRICHMENT_DIM if enrichment is not None else 0) + _price_dim + _micro_dim + _m15_dim
             )
             sig = compute_entity_signature(ent_obs)
             sig_len = min(sig.size(0), _sig_dim)
@@ -675,8 +750,6 @@ def _build_node_features(
 
         # TS2Vec pretraining features (Idea 5 — optional)
         if _ts_dim > 0 and _type_embs is not None:
-            import numpy as _np  # noqa: PLC0415
-
             ts_offset = (
                 BASE_FEAT_DIM
                 + (ENRICHMENT_DIM if enrichment is not None else 0)
@@ -700,15 +773,24 @@ def _build_node_features(
 def _build_edge_data(
     links: list[dict[str, Any]],
     id_map: IDMap,
+    reference_time: float | None = None,
 ) -> dict[tuple[str, str, str], dict[str, torch.Tensor]]:
     """Group entity_links by (src_type, link_type, dst_type) and build tensors.
 
     Returns dict mapping edge-type triplet → {"edge_index": [2,E], "edge_attr": [E,2]}
     edge_attr columns: [confidence, age_days]
+
+    Args:
+        reference_time: the "now" of the window being built. `age_days` is
+            measured against this, NOT wall-clock. Using wall-clock leaks the
+            present into every historical snapshot: replaying a 2023 window in
+            2026 stamped every edge as ~1000 days old, a value the model could
+            never have observed at that point in time. Defaults to wall-clock
+            only for live (non-replay) callers that pass nothing.
     """
     import time as _time
 
-    now = _time.time()
+    now = _time.time() if reference_time is None else reference_time
     grouped: dict[tuple[str, str, str], dict[str, list[Any]]] = {}
 
     for link in links:
@@ -740,9 +822,7 @@ def _build_edge_data(
             continue
 
         triplet = (type_a, ltype, type_b)
-        bucket = grouped.setdefault(
-            triplet, {"src": [], "dst": [], "conf": [], "age": []}
-        )
+        bucket = grouped.setdefault(triplet, {"src": [], "dst": [], "conf": [], "age": []})
         bucket["src"].append(local_a)
         bucket["dst"].append(local_b)
         bucket["conf"].append(link.get("confidence", 1.0))
@@ -818,7 +898,13 @@ class GraphBuilder:
         # 1. Fetch all raw data
         entities = self._store.query_all_entities()
         observations = self._store.query_all_observations(since=since, until=until)
-        links = self._store.query_all_entity_links()
+        # Links MUST be future-blind. Observations are filtered by `until`, but
+        # links were not — so every historical snapshot received the complete
+        # present-day link set (all 16,870 of them, including 2023 windows).
+        # The model saw relationships that had not yet been discovered at the
+        # time it was supposedly predicting, which inflates any backtest and
+        # voids the eval entirely (LESSONS.md F-04).
+        links = _links_as_of(self._store.query_all_entity_links(), until)
 
         # 2. Build ID map
         id_map = IDMap()
@@ -856,8 +942,10 @@ class GraphBuilder:
             data[etype].x = features
             data[etype].node_ids = ordered_ids
 
-        # Edge data per (src_type, link_type, dst_type)
-        edge_data = _build_edge_data(links, id_map)
+        # Edge data per (src_type, link_type, dst_type).
+        # `current_time` is the window's reference clock, so edge age is
+        # measured as of the snapshot rather than as of today (F-04).
+        edge_data = _build_edge_data(links, id_map, reference_time=current_time)
         for triplet, tensors in edge_data.items():
             data[triplet].edge_index = tensors["edge_index"]
             data[triplet].edge_attr = tensors["edge_attr"]
@@ -935,6 +1023,13 @@ class GraphBuilder:
 
         current_time = _reference_time(observations or [])
 
+        # Same future-blindness requirement as build(). This is the path the
+        # TRAINING loop uses (via prepare_static), so leakage here contaminates
+        # the model itself rather than just an eval — the caller pre-fetches
+        # links once and reuses them across every window, which is exactly how
+        # present-day edges ended up inside 2023 snapshots.
+        links = _links_as_of(links, until)
+
         data = HeteroData()
 
         all_types = sorted(set(ENTITY_TYPES) | set(id_map.type_local.keys()))
@@ -959,7 +1054,7 @@ class GraphBuilder:
             data[etype].x = features
             data[etype].node_ids = ordered_ids
 
-        edge_data = _build_edge_data(links, id_map)
+        edge_data = _build_edge_data(links, id_map, reference_time=current_time)
         for triplet, tensors in edge_data.items():
             data[triplet].edge_index = tensors["edge_index"]
             data[triplet].edge_attr = tensors["edge_attr"]

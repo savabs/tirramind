@@ -49,10 +49,16 @@ class TestPhase31Registry:
             assert obs_type in OBSERVATION_TYPES
 
     def test_enrichment_dim(self):
-        assert ENRICHMENT_DIM == 55
+        # Derived, not hardcoded: 9 scalars + one slot per OBSERVATION_TYPES entry.
+        # Was pinned at 55 (correct only at 46 obs types); once the registry
+        # grew, obs_type_dist wrote past the block and crashed entity_scoring.
+        assert 9 + len(OBSERVATION_TYPES) == ENRICHMENT_DIM
 
     def test_obs_type_count(self):
-        assert len(OBSERVATION_TYPES) == 46
+        # 52 since 2026-08-26 (was asserted 46 while the list held 48 — this
+        # assertion had drifted and was failing). Registry growth shifts
+        # one-hot positions and invalidates checkpoints — retrain on change.
+        assert len(OBSERVATION_TYPES) == 52
 
 
 class TestPhase31CountryFlow:

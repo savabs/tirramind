@@ -69,7 +69,11 @@ class TestExpandedTypeRegistries:
         assert sorted(ENTITY_TYPES) == ENTITY_TYPES
 
     def test_entity_types_count(self):
-        assert len(ENTITY_TYPES) == 11
+        # 12 since 2026-08-26: `maritime_area` was present in pipeline.db but
+        # missing here, so it was silently one-hot encoded as ENTITY_TYPES[0]
+        # (`cftc_contract`). Changing this count shifts one-hot positions and
+        # invalidates existing checkpoints — retrain when you change it.
+        assert len(ENTITY_TYPES) == 12
 
     def test_observation_types_contains_new_types(self):
         new_obs = [
@@ -108,7 +112,12 @@ class TestExpandedTypeRegistries:
         assert sorted(OBSERVATION_TYPES) == OBSERVATION_TYPES
 
     def test_observation_types_count(self):
-        assert len(OBSERVATION_TYPES) == 46
+        # 52 since 2026-08-26. This assertion had drifted (asserted 46 against a
+        # list of 48) and was failing silently in the suite; the four added are
+        # area_daily_activity, baltic_activity_proxy, futures_positioning_derived
+        # and petroleum_inventory — all present in pipeline.db but unknown to
+        # the model. Changing this count invalidates checkpoints — retrain.
+        assert len(OBSERVATION_TYPES) == 52
 
     def test_insider_trade_in_observation_types(self):
         """Verify 'insider_trade' exists (not 'purchase')."""
@@ -156,10 +165,16 @@ class TestNewTypeOneHotEncoding:
         features = _build_node_features("company", ["c1"], [], 0.0)
         assert features[0, idx] == 1.0
 
-    def test_feature_dim_is_10_plus_3(self):
-        """10 entity types + 3 observation stats = 13 features."""
+    def test_feature_dim_tracks_entity_type_count(self):
+        """len(ENTITY_TYPES) one-hot + 3 observation stats.
+
+        Was hardcoded to 14 (11 types + 3); ENTITY_TYPES gained `maritime_area`
+        on 2026-08-26 so this is now 15. Derive it rather than hardcoding, so
+        the next registry change fails the *count* tests (which document intent)
+        rather than this shape test.
+        """
         features = _build_node_features("company", ["c1"], [], 0.0)
-        assert features.shape[1] == 14
+        assert features.shape[1] == len(ENTITY_TYPES) + 3
 
 
 # ── Unknown Type Fallback Tests ────────────────────────────────
@@ -168,13 +183,23 @@ class TestNewTypeOneHotEncoding:
 class TestUnknownTypeFallback:
     """Verify unknown entity types are handled gracefully."""
 
-    def test_unknown_entity_type_defaults_to_index_0(self, caplog):
+    def test_unknown_entity_type_claims_no_type(self, caplog):
+        """Unknown types get an all-zero one-hot, NOT ENTITY_TYPES[0].
+
+        Changed 2026-08-26. This test previously asserted
+        ``features[0, 0] == 1.0`` — i.e. it locked in the bug: `maritime_area`
+        was present in pipeline.db but absent from ENTITY_TYPES, so it was
+        silently encoded as `cftc_contract` (index 0) and the GNN trained on it
+        as the wrong entity kind. Claiming no identity is honest; claiming the
+        wrong one is corruption. Loud detection lives in
+        validate_schema_against_store().
+        """
         with caplog.at_level(logging.WARNING):
             features = _build_node_features("alien_type", ["a1"], [], 0.0)
         assert features.shape == (1, len(ENTITY_TYPES) + 3)
-        # Index 0 should be set
-        assert features[0, 0] == 1.0
-        # Warning logged
+        # The whole one-hot block must be zero — no type claimed.
+        assert features[0, : len(ENTITY_TYPES)].sum() == 0.0
+        assert features[0, 0] != 1.0, "unknown type masqueraded as ENTITY_TYPES[0]"
         assert "Unknown entity type" in caplog.text
 
     def test_unknown_type_in_store_still_gets_nodes(self, store):
@@ -218,7 +243,7 @@ class TestGraphBuildWithNewTypes:
         data, id_map, events = builder.build()
 
         assert id_map.num_nodes_of_type("domain") == 2
-        assert data["domain"].x.shape == (2, 14)
+        assert data["domain"].x.shape == (2, len(ENTITY_TYPES) + 3)
         assert len(events) == 2
 
     def test_build_with_protocol_entities(self, store):
@@ -229,7 +254,7 @@ class TestGraphBuildWithNewTypes:
         data, id_map, events = builder.build()
 
         assert id_map.num_nodes_of_type("protocol") == 1
-        assert data["protocol"].x.shape == (1, 14)
+        assert data["protocol"].x.shape == (1, len(ENTITY_TYPES) + 3)
 
     def test_build_with_topic_entities(self, store):
         t1 = _reg(store, "topic", "Tesla,_Inc.", "Tesla")
@@ -246,7 +271,7 @@ class TestGraphBuildWithNewTypes:
         data, id_map, events = builder.build()
 
         assert id_map.num_nodes_of_type("topic") == 1
-        assert data["topic"].x.shape == (1, 14)
+        assert data["topic"].x.shape == (1, len(ENTITY_TYPES) + 3)
 
     def test_mixed_old_and_new_types(self, store):
         """Build graph with both old (company, person) and new (domain, protocol) types."""

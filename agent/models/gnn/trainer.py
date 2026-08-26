@@ -45,9 +45,9 @@ import math
 import random
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
 import torch.nn.functional as F
@@ -70,6 +70,9 @@ from agent.models.gnn.graph_builder import (
 from agent.models.gnn.het_tgn import HetTGN
 from agent.pipeline.entity import entity_id_from_key
 from agent.pipeline.store import PipelineStore
+
+if TYPE_CHECKING:
+    from agent.models.gnn.continuous_world_model import ContinuousWorldModel
 
 log = logging.getLogger(__name__)
 
@@ -103,9 +106,7 @@ class InjectedPattern:
 # ═══════════════════════════════════════════════════════════════
 
 
-def _listnet_loss(
-    scores: torch.Tensor, targets: torch.Tensor, tau: float = 1.0
-) -> torch.Tensor:
+def _listnet_loss(scores: torch.Tensor, targets: torch.Tensor, tau: float = 1.0) -> torch.Tensor:
     """ListNet top-1 approximation (Cao et al. 2007, ICML).
 
     Minimises KL(p_target || p_pred) where p = softmax(x / tau).
@@ -160,7 +161,7 @@ def _log_transform_loss(loss: torch.Tensor) -> torch.Tensor:
     return torch.log(loss + 1.0)
 
 
-def _scaled_task_loss(loss: torch.Tensor, cfg: "TrainerConfig") -> torch.Tensor:
+def _scaled_task_loss(loss: torch.Tensor, cfg: TrainerConfig) -> torch.Tensor:
     """Apply log transform when cfg.use_log_loss is enabled."""
     return _log_transform_loss(loss) if cfg.use_log_loss else loss
 
@@ -237,9 +238,7 @@ def _pcgrad_optimizer_step(
 ) -> bool:
     """Per-task backward + PCGrad projection. Returns False if fallback needed."""
     active = {
-        k: v
-        for k, v in task_losses.items()
-        if v.requires_grad and torch.isfinite(v).all() and v.detach().item() > 0
+        k: v for k, v in task_losses.items() if v.requires_grad and torch.isfinite(v).all() and v.detach().item() > 0
     }
     if len(active) < 2:
         return False
@@ -263,8 +262,9 @@ class SyntheticGraphGenerator:
     The generated data is inserted directly into a PipelineStore,
     which can then be consumed by GraphBuilder and HetTGN.
 
-    Covers all 11 entity types, 45 observation types, and 21 link
-    types in the TirraMind schema (expanded in Phase 36).
+    Covers all 12 entity types, the full observation-type registry, and 21 link
+    types in the TirraMind schema (expanded in Phase 36; `maritime_area` added
+    2026-08-26 when it was registered in ENTITY_TYPES).
     """
 
     def __init__(
@@ -280,6 +280,7 @@ class SyntheticGraphGenerator:
         num_protocols: int = 0,
         num_topics: int = 3,
         num_domains: int = 3,
+        num_maritime_areas: int = 0,
         time_span: float = 86400.0 * 30,  # 30 days
         base_event_rate: float = 0.001,  # events per entity per second
         seed: int = 42,
@@ -299,6 +300,7 @@ class SyntheticGraphGenerator:
                 "protocol": num_protocols,
                 "topic": num_topics,
                 "domain": num_domains,
+                "maritime_area": num_maritime_areas,
             }.items()
             if v > 0
         }
@@ -339,35 +341,25 @@ class SyntheticGraphGenerator:
         # company → country (headquartered_in)
         for cid in entities.get("company", []):
             co_id = self._rng.choice(entities.get("country", ["default"]))
-            store.link_entities(
-                cid, co_id, "headquartered_in", "synthetic", confidence=0.9
-            )
+            store.link_entities(cid, co_id, "headquartered_in", "synthetic", confidence=0.9)
             link_count += 1
 
         # company → country (operates_in) — subset of companies
-        for cid in entities.get("company", [])[
-            : max(1, len(entities.get("company", [])) // 2)
-        ]:
+        for cid in entities.get("company", [])[: max(1, len(entities.get("company", [])) // 2)]:
             co_id = self._rng.choice(entities.get("country", ["default"]))
             store.link_entities(cid, co_id, "operates_in", "synthetic", confidence=0.8)
             link_count += 1
 
         # company → country (market_authorized_in) — pharma companies
-        for cid in entities.get("company", [])[
-            : max(1, len(entities.get("company", [])) // 3)
-        ]:
+        for cid in entities.get("company", [])[: max(1, len(entities.get("company", [])) // 3)]:
             co_id = self._rng.choice(entities.get("country", ["default"]))
-            store.link_entities(
-                cid, co_id, "market_authorized_in", "synthetic", confidence=0.85
-            )
+            store.link_entities(cid, co_id, "market_authorized_in", "synthetic", confidence=0.85)
             link_count += 1
 
         # company → company (lobbies_for) — some business relationships
         comps = entities.get("company", [])
         for i in range(min(3, len(comps) - 1)):
-            store.link_entities(
-                comps[i], comps[i + 1], "lobbies_for", "synthetic", confidence=0.7
-            )
+            store.link_entities(comps[i], comps[i + 1], "lobbies_for", "synthetic", confidence=0.7)
             link_count += 1
 
         # company → company (debtor_of) — creditor relationships
@@ -379,14 +371,10 @@ class SyntheticGraphGenerator:
             link_count += 1
 
         # company → organization (awarded_by) — government contracts
-        for cid in entities.get("company", [])[
-            : max(1, len(entities.get("company", [])) // 2)
-        ]:
+        for cid in entities.get("company", [])[: max(1, len(entities.get("company", [])) // 2)]:
             if entities.get("organization"):
                 org_id = self._rng.choice(entities["organization"])
-                store.link_entities(
-                    cid, org_id, "awarded_by", "synthetic", confidence=0.9
-                )
+                store.link_entities(cid, org_id, "awarded_by", "synthetic", confidence=0.9)
                 link_count += 1
 
         # person → company (works_for)
@@ -405,9 +393,7 @@ class SyntheticGraphGenerator:
         # wallet → country (exchange_based_in)
         for wid in entities.get("wallet", []):
             co_id = self._rng.choice(entities.get("country", ["default"]))
-            store.link_entities(
-                wid, co_id, "exchange_based_in", "synthetic", confidence=0.7
-            )
+            store.link_entities(wid, co_id, "exchange_based_in", "synthetic", confidence=0.7)
             link_count += 1
 
         # wallet → wallet (transacts_with) — inter-wallet transfers
@@ -427,74 +413,50 @@ class SyntheticGraphGenerator:
             if entities.get("instrument"):
                 # Pick a crypto-like instrument
                 inst_id = self._rng.choice(entities["instrument"])
-                store.link_entities(
-                    wid, inst_id, "trades_instrument", "synthetic", confidence=0.75
-                )
+                store.link_entities(wid, inst_id, "trades_instrument", "synthetic", confidence=0.75)
                 link_count += 1
 
         # instrument → company (tracks_issuer) — stocks/ETFs
-        for inst_id in entities.get("instrument", [])[
-            : max(1, len(entities.get("instrument", [])) * 2 // 3)
-        ]:
+        for inst_id in entities.get("instrument", [])[: max(1, len(entities.get("instrument", [])) * 2 // 3)]:
             if entities.get("company"):
                 cid = self._rng.choice(entities["company"])
-                store.link_entities(
-                    inst_id, cid, "tracks_issuer", "synthetic", confidence=0.95
-                )
+                store.link_entities(inst_id, cid, "tracks_issuer", "synthetic", confidence=0.95)
                 link_count += 1
 
         # instrument → country (located_in) — domicile
         for inst_id in entities.get("instrument", []):
             co_id = self._rng.choice(entities.get("country", ["default"]))
-            store.link_entities(
-                inst_id, co_id, "located_in", "synthetic", confidence=0.9
-            )
+            store.link_entities(inst_id, co_id, "located_in", "synthetic", confidence=0.9)
             link_count += 1
 
         # instrument → country (fx_base_country / fx_quote_country) — subset
-        fx_insts = entities.get("instrument", [])[
-            : max(1, len(entities.get("instrument", [])) // 3)
-        ]
+        fx_insts = entities.get("instrument", [])[: max(1, len(entities.get("instrument", [])) // 3)]
         for inst_id in fx_insts:
             countries = entities.get("country", [])
             if len(countries) >= 2:
                 base_co, quote_co = self._rng.sample(countries, 2)
-                store.link_entities(
-                    inst_id, base_co, "fx_base_country", "synthetic", confidence=0.95
-                )
-                store.link_entities(
-                    inst_id, quote_co, "fx_quote_country", "synthetic", confidence=0.95
-                )
+                store.link_entities(inst_id, base_co, "fx_base_country", "synthetic", confidence=0.95)
+                store.link_entities(inst_id, quote_co, "fx_quote_country", "synthetic", confidence=0.95)
                 link_count += 2
 
         # instrument → country (exchange_country) — commodity futures
-        for inst_id in entities.get("instrument", [])[
-            -max(1, len(entities.get("instrument", [])) // 3) :
-        ]:
+        for inst_id in entities.get("instrument", [])[-max(1, len(entities.get("instrument", [])) // 3) :]:
             co_id = self._rng.choice(entities.get("country", ["default"]))
-            store.link_entities(
-                inst_id, co_id, "exchange_country", "synthetic", confidence=0.95
-            )
+            store.link_entities(inst_id, co_id, "exchange_country", "synthetic", confidence=0.95)
             link_count += 1
 
         # instrument → protocol (tracks_protocol) — crypto instruments
-        for inst_id in entities.get("instrument", [])[
-            : max(1, len(entities.get("instrument", [])) // 5)
-        ]:
+        for inst_id in entities.get("instrument", [])[: max(1, len(entities.get("instrument", [])) // 5)]:
             if entities.get("protocol"):
                 proto_id = self._rng.choice(entities["protocol"])
-                store.link_entities(
-                    inst_id, proto_id, "tracks_protocol", "synthetic", confidence=0.9
-                )
+                store.link_entities(inst_id, proto_id, "tracks_protocol", "synthetic", confidence=0.9)
                 link_count += 1
 
         # cftc_contract → instrument (cftc_tracks)
         for cid in entities.get("cftc_contract", []):
             if entities.get("instrument"):
                 inst_id = self._rng.choice(entities["instrument"])
-                store.link_entities(
-                    cid, inst_id, "cftc_tracks", "synthetic", confidence=0.95
-                )
+                store.link_entities(cid, inst_id, "cftc_tracks", "synthetic", confidence=0.95)
                 link_count += 1
 
         # country → country (sanctioned_under) — geopolitical
@@ -503,18 +465,14 @@ class SyntheticGraphGenerator:
             # 1-2 sanction relationships
             for _ in range(min(2, len(countries) - 1)):
                 a, b = self._rng.sample(countries, 2)
-                store.link_entities(
-                    a, b, "sanctioned_under", "synthetic", confidence=0.85
-                )
+                store.link_entities(a, b, "sanctioned_under", "synthetic", confidence=0.85)
                 link_count += 1
 
         # domain → company (domain_owned_by) — Phase 36
         for did in entities.get("domain", []):
             if entities.get("company"):
                 cid = self._rng.choice(entities["company"])
-                store.link_entities(
-                    did, cid, "domain_owned_by", "synthetic", confidence=0.8
-                )
+                store.link_entities(did, cid, "domain_owned_by", "synthetic", confidence=0.8)
                 link_count += 1
 
         # topic → instrument (topic_relates_to_instrument) — Phase 36
@@ -578,17 +536,14 @@ class SyntheticGraphGenerator:
 
         # Build entity type index
         all_entities = store.query_all_entities()
-        entity_type_map: dict[str, str] = {
-            e["entity_id"]: e["entity_type"] for e in all_entities
-        }
+        entity_type_map: dict[str, str] = {e["entity_id"]: e["entity_type"] for e in all_entities}
 
         for pattern in self.patterns:
             # Find source observations matching the pattern
             source_obs = [
                 o
                 for o in all_obs
-                if o["entity_type"] == pattern.source_type
-                and o["observation_type"] == pattern.source_obs_type
+                if o["entity_type"] == pattern.source_type and o["observation_type"] == pattern.source_obs_type
             ]
             for src_ob in source_obs:
                 src_id = src_ob["entity_id"]
@@ -1215,6 +1170,74 @@ def _load_state_dict_skip_shape_mismatch(
     return missing, unexpected, skipped_shape
 
 
+class CheckpointSchemaDriftError(RuntimeError):
+    """Checkpoint weights cannot encode the current feature schema."""
+
+
+def _describe_checkpoint_schema_drift(
+    *,
+    checkpoint: dict,
+    model: torch.nn.Module,
+    skipped: list[str],
+) -> str | None:
+    """Human-readable diagnosis of checkpoint-vs-live feature drift, or None.
+
+    A skipped `type_projections.<t>.weight` means that entity type's input
+    width changed since training, so the loaded model carries a randomly
+    initialised projection for it — the forward pass will then fail with an
+    opaque "mat1 and mat2 shapes cannot be multiplied" deep inside torch.
+    Surface it here instead, naming the type and both widths.
+    """
+    if not skipped:
+        return None
+
+    model_sd = model.state_dict()
+    ckpt_sd = checkpoint.get("model_state_dict") or {}
+    drift: list[str] = []
+    for key in skipped:
+        if not key.startswith("type_projections.") or not key.endswith(".weight"):
+            continue
+        etype = key.split(".")[1]
+        live_w = model_sd.get(key)
+        ckpt_w = ckpt_sd.get(key)
+        if live_w is None or ckpt_w is None:
+            continue
+        drift.append(f"    {etype}: trained_weights={ckpt_w.shape[1]} " f"expected_by_model={live_w.shape[1]}")
+
+    if not drift:
+        return None
+    return (
+        "Checkpoint's trained weights disagree with the architecture rebuilt "
+        "from its own metadata — the feature schema changed since training. "
+        "Input widths per entity type:\n"
+        + "\n".join(sorted(drift))
+        + "\nThe affected projections are randomly initialised, so inference "
+        "will produce garbage or fail with a shape error. Retrain against the "
+        "current schema (see validate_schema_against_store)."
+    )
+
+
+def _warn_on_checkpoint_schema_drift(
+    *,
+    checkpoint: dict,
+    model: torch.nn.Module,
+    skipped: list[str],
+    missing: list[str],
+    path: Path,
+) -> None:
+    """Log an actionable diagnosis when a checkpoint no longer matches the schema.
+
+    This is the guard that was missing while the instrument feature vector grew
+    23 → 49: `load_model` skipped the mismatched projection, logged a generic
+    "skipped N keys" line, and let inference fail later with an opaque torch
+    error that named no entity type. Warn (not raise) so deliberate partial-load
+    workflows still work; the DAG chain validates strictly before running.
+    """
+    diagnosis = _describe_checkpoint_schema_drift(checkpoint=checkpoint, model=model, skipped=skipped)
+    if diagnosis:
+        log.warning("load_model(%s): %s", path.name, diagnosis)
+
+
 def _het_tgn_kwargs_from_checkpoint(
     checkpoint: dict,
     config: TrainerConfig,
@@ -1232,9 +1255,7 @@ def _het_tgn_kwargs_from_checkpoint(
     use_concat_head = getattr(config, "use_concat_head", False) or any(
         k.startswith("return_concat_head.") for k in keys
     )
-    use_contranorm = getattr(config, "use_contranorm", False) or any(
-        k.startswith("contranorm_layers.") for k in keys
-    )
+    use_contranorm = getattr(config, "use_contranorm", False) or any(k.startswith("contranorm_layers.") for k in keys)
     instrument_raw_dim = int(in_channels.get("instrument", 0))
 
     if use_concat_head and instrument_raw_dim <= 0:
@@ -1285,10 +1306,8 @@ class Trainer:
         )
         self._ts2vec_embeddings: dict | None = None
         self._ewc_state: EWCState | None = None
-        self._cwm: "ContinuousWorldModel | None" = None  # M1: set by build_model()
-        self._wandb_run = (
-            None  # W&B run handle; initialised by train() if wandb_project is set
-        )
+        self._cwm: ContinuousWorldModel | None = None  # M1: set by build_model()
+        self._wandb_run = None  # W&B run handle; initialised by train() if wandb_project is set
         """Populated by train() after the final epoch.
         Holds the Fisher diagonal + anchor weights for continual learning.
         Persisted through save_model / load_model."""
@@ -1311,7 +1330,7 @@ class Trainer:
         if cfg.use_wasserstein:
             from agent.convergence.wasserstein_monitor import (
                 WassersteinMonitor,
-            )  # noqa: PLC0415
+            )
 
             _wmon = WassersteinMonitor(
                 short_days=cfg.wasserstein_short_days,
@@ -1331,7 +1350,7 @@ class Trainer:
         if cfg.use_hawkes:
             from agent.convergence.neural_hawkes import (
                 NeuralHawkesEncoder,
-            )  # noqa: PLC0415
+            )
 
             _hawkes_enc = NeuralHawkesEncoder(
                 hidden_dim=cfg.hawkes_hidden_dim,
@@ -1394,11 +1413,7 @@ class Trainer:
         if cfg.use_ts2vec:
             from agent.models.gnn.ts2vec_encoder import TS2VecEncoder  # noqa: PLC0415
 
-            _ts2vec_device = (
-                cfg.device
-                if cfg.device != "auto"
-                else ("cuda" if torch.cuda.is_available() else "cpu")
-            )
+            _ts2vec_device = cfg.device if cfg.device != "auto" else ("cuda" if torch.cuda.is_available() else "cpu")
             _ts2vec_enc = TS2VecEncoder(
                 output_dims=cfg.ts2vec_dim,
                 n_iters=cfg.ts2vec_n_iters,
@@ -1450,33 +1465,20 @@ class Trainer:
         self._log_vars: dict[str, torch.nn.Parameter] | None = None
         if cfg.auto_tune_loss_weights:
             self._log_vars = {
-                "obs_type": torch.nn.Parameter(
-                    torch.tensor(-math.log(max(cfg.obs_type_weight, 1e-6)))
-                ),
-                "time_delta": torch.nn.Parameter(
-                    torch.tensor(-math.log(max(cfg.time_delta_weight, 1e-6)))
-                ),
-                "contrastive": torch.nn.Parameter(
-                    torch.tensor(-math.log(max(cfg.contrastive_weight, 1e-6)))
-                ),
-                "value": torch.nn.Parameter(
-                    torch.tensor(-math.log(max(cfg.value_weight, 1e-6)))
-                ),
-                "return": torch.nn.Parameter(
-                    torch.tensor(-math.log(max(cfg.return_weight, 1e-6)))
-                ),
+                "obs_type": torch.nn.Parameter(torch.tensor(-math.log(max(cfg.obs_type_weight, 1e-6)))),
+                "time_delta": torch.nn.Parameter(torch.tensor(-math.log(max(cfg.time_delta_weight, 1e-6)))),
+                "contrastive": torch.nn.Parameter(torch.tensor(-math.log(max(cfg.contrastive_weight, 1e-6)))),
+                "value": torch.nn.Parameter(torch.tensor(-math.log(max(cfg.value_weight, 1e-6)))),
+                "return": torch.nn.Parameter(torch.tensor(-math.log(max(cfg.return_weight, 1e-6)))),
             }
 
         # Move model and log-var tensors to target device
         self._model = self._model.to(self._device)
         if self._log_vars is not None:
-            self._log_vars = {
-                k: torch.nn.Parameter(v.to(self._device))
-                for k, v in self._log_vars.items()
-            }
+            self._log_vars = {k: torch.nn.Parameter(v.to(self._device)) for k, v in self._log_vars.items()}
 
         # M1: Instantiate ContinuousWorldModel when requested
-        self._cwm: "ContinuousWorldModel | None" = None
+        self._cwm: ContinuousWorldModel | None = None
         if cfg.use_continuous_world_model:
             from agent.models.gnn.continuous_world_model import (  # noqa: PLC0415
                 ContinuousWorldModel,
@@ -1493,11 +1495,7 @@ class Trainer:
             _sig_builder = None
             if _use_sigs:
                 _sig_builder = SignaturePathBuilder(
-                    message_dim=(
-                        cfg.ctrl_msg_dim
-                        if hasattr(cfg, "ctrl_msg_dim")
-                        else cfg.cwm_ctrl_msg_dim
-                    ),
+                    message_dim=(cfg.ctrl_msg_dim if hasattr(cfg, "ctrl_msg_dim") else cfg.cwm_ctrl_msg_dim),
                     proj_dim=cfg.cwm_sig_proj_dim,
                     depth=cfg.cwm_sig_depth,
                 ).to(self._device)
@@ -1558,9 +1556,7 @@ class Trainer:
         all_obs.sort(key=lambda o: o.get("observed_at", 0.0))
         # Apply obs_since filter if configured
         if self.config.obs_since is not None:
-            all_obs = [
-                o for o in all_obs if o.get("observed_at", 0.0) >= self.config.obs_since
-            ]
+            all_obs = [o for o in all_obs if o.get("observed_at", 0.0) >= self.config.obs_since]
         n = len(all_obs)
         n_train = int(n * self.config.train_ratio)
         n_val = int(n * (self.config.train_ratio + self.config.val_ratio))
@@ -1675,16 +1671,8 @@ class Trainer:
 
         return (
             global_ids,
-            (
-                torch.tensor(obs_types, dtype=torch.long)
-                if obs_types
-                else torch.zeros(0, dtype=torch.long)
-            ),
-            (
-                torch.tensor(time_deltas, dtype=torch.float)
-                if time_deltas
-                else torch.zeros(0)
-            ),
+            (torch.tensor(obs_types, dtype=torch.long) if obs_types else torch.zeros(0, dtype=torch.long)),
+            (torch.tensor(time_deltas, dtype=torch.float) if time_deltas else torch.zeros(0)),
             (torch.tensor(values, dtype=torch.float) if values else torch.zeros(0)),
         )
 
@@ -1775,9 +1763,7 @@ class Trainer:
         # Build negative mask: top decile vs bottom decile
         neg_mask = torch.zeros((n_valid, n_valid), device=self._device)
         if n_actual_deciles >= 2:
-            top_decile = (decile_assignments == n_actual_deciles - 1).nonzero(
-                as_tuple=True
-            )[0]
+            top_decile = (decile_assignments == n_actual_deciles - 1).nonzero(as_tuple=True)[0]
             bot_decile = (decile_assignments == 0).nonzero(as_tuple=True)[0]
             for i in top_decile:
                 neg_mask[i, bot_decile] = 1.0
@@ -1799,9 +1785,7 @@ class Trainer:
         if valid_rows.sum() == 0:
             return torch.tensor(0.0, device=self._device)
 
-        loss_per_row = -torch.log(
-            pos_sum[valid_rows] / (pos_sum[valid_rows] + neg_sum[valid_rows])
-        )
+        loss_per_row = -torch.log(pos_sum[valid_rows] / (pos_sum[valid_rows] + neg_sum[valid_rows]))
         return loss_per_row.mean()
 
     def train(self) -> dict[str, list[float]]:
@@ -1858,9 +1842,7 @@ class Trainer:
             "return": [],
         }
         if cfg.resume_from_epoch > 0 and cfg.checkpoint_dir:
-            ckpt_path = os.path.join(
-                cfg.checkpoint_dir, f"epoch_{cfg.resume_from_epoch:03d}.pt"
-            )
+            ckpt_path = os.path.join(cfg.checkpoint_dir, f"epoch_{cfg.resume_from_epoch:03d}.pt")
             print(f"[RESUME] Looking for checkpoint: {ckpt_path}")
             print(f"[RESUME] File exists: {os.path.exists(ckpt_path)}")
             if os.path.exists(ckpt_path):
@@ -1871,21 +1853,15 @@ class Trainer:
                 # approach: pop the variable-size memory buffers out of the
                 # state dict before calling load_state_dict, then copy them
                 # manually with zero-padding for any new rows.
-                ckpt_state = dict(
-                    ckpt["model_state"]
-                )  # shallow copy — don't mutate ckpt
+                ckpt_state = dict(ckpt["model_state"])  # shallow copy — don't mutate ckpt
                 MEMORY_BUFFER_KEYS = ("memory.memory", "memory.last_update")
-                saved_buffers = {
-                    k: ckpt_state.pop(k) for k in MEMORY_BUFFER_KEYS if k in ckpt_state
-                }
+                saved_buffers = {k: ckpt_state.pop(k) for k in MEMORY_BUFFER_KEYS if k in ckpt_state}
                 # Filter out keys whose shape doesn't match the current model.
                 # strict=False already handles missing/extra keys, but PyTorch
                 # still raises RuntimeError on size mismatches even with strict=False.
                 current_state = model.state_dict()
                 shape_mismatches = [
-                    k
-                    for k, v in ckpt_state.items()
-                    if k in current_state and v.shape != current_state[k].shape
+                    k for k, v in ckpt_state.items() if k in current_state and v.shape != current_state[k].shape
                 ]
                 if shape_mismatches:
                     log.warning(
@@ -1942,9 +1918,7 @@ class Trainer:
                     # outputs near-constant, slightly anti-correlated scores.
                     # Zero its output layer so both heads start from the entropy
                     # floor instead of above it — cleaner, faster convergence.
-                    if model.return_raw_head is not None and any(
-                        k.startswith("return_raw_head.") for k in missing
-                    ):
+                    if model.return_raw_head is not None and any(k.startswith("return_raw_head.") for k in missing):
                         torch.nn.init.zeros_(model.return_pred_head[-1].weight)
                         torch.nn.init.zeros_(model.return_pred_head[-1].bias)
                         log.info(
@@ -2007,15 +1981,10 @@ class Trainer:
                         _ewc_ckpt = torch.load(_ewc_sidecar, map_location=self._device)
                         self._ewc_state = EWCState(
                             fisher=_ewc_ckpt["ewc_fisher"],
-                            anchor={
-                                k: v.to(self._device)
-                                for k, v in _ewc_ckpt["ewc_anchor"].items()
-                            },
+                            anchor={k: v.to(self._device) for k, v in _ewc_ckpt["ewc_anchor"].items()},
                             lambda_=_ewc_ckpt.get("ewc_lambda", cfg.ewc_lambda),
                             last_update_ts=_ewc_ckpt.get("ewc_last_update_ts", 0.0),
-                            obs_count_at_update=_ewc_ckpt.get(
-                                "ewc_obs_count_at_update", 0
-                            ),
+                            obs_count_at_update=_ewc_ckpt.get("ewc_obs_count_at_update", 0),
                         )
                         log.info(
                             "EWC sidecar loaded: %d Fisher params, lambda=%.1f "
@@ -2029,9 +1998,7 @@ class Trainer:
                             _ewc_exc,
                         )
                 else:
-                    log.info(
-                        "No EWC sidecar found — first block, EWC will be computed after training."
-                    )
+                    log.info("No EWC sidecar found — first block, EWC will be computed after training.")
             else:
                 raise FileNotFoundError(
                     f"[RESUME] Checkpoint not found: {ckpt_path}\n"
@@ -2049,9 +2016,7 @@ class Trainer:
         # This bounds peak RAM to O(max_windows * avg_graph_size) regardless
         # of total DB size. 0 = use all windows (original behaviour).
         if cfg.max_windows > 0 and len(windows) > cfg.max_windows + 1:
-            windows = windows[
-                -(cfg.max_windows + 1) :
-            ]  # +1 because we need windows[i+1] as next
+            windows = windows[-(cfg.max_windows + 1) :]  # +1 because we need windows[i+1] as next
             _used = len(windows) - 1
             _full = max(n_windows_full - 1, 1)
             pct = 100.0 * _used / _full
@@ -2072,16 +2037,15 @@ class Trainer:
             if not obs:
                 return ("—", "—")
             ts = [o.get("observed_at", 0.0) for o in obs]
-            lo = datetime.fromtimestamp(min(ts), tz=timezone.utc).date().isoformat()
-            hi = datetime.fromtimestamp(max(ts), tz=timezone.utc).date().isoformat()
+            lo = datetime.fromtimestamp(min(ts), tz=UTC).date().isoformat()
+            hi = datetime.fromtimestamp(max(ts), tz=UTC).date().isoformat()
             return (lo, hi)
 
         _tr_lo, _tr_hi = _obs_iso_range(train_obs)
         _va_lo, _va_hi = _obs_iso_range(val_obs)
         _te_lo, _te_hi = _obs_iso_range(test_obs)
         log.info(
-            "TRAINING_AUDIT: chronological 70/15/15 obs split — "
-            "train [%s → %s]  val [%s → %s]  test [%s → %s]",
+            "TRAINING_AUDIT: chronological 70/15/15 obs split — " "train [%s → %s]  val [%s → %s]  test [%s → %s]",
             _tr_lo,
             _tr_hi,
             _va_lo,
@@ -2092,9 +2056,7 @@ class Trainer:
 
         # Cache entity type lookups — entities don't change during training
         all_entities = self.store.query_all_entities()
-        self._eid_to_type_cache = {
-            e["entity_id"]: e["entity_type"] for e in all_entities
-        }
+        self._eid_to_type_cache = {e["entity_id"]: e["entity_type"] for e in all_entities}
 
         if cfg.checkpoint_dir:
             os.makedirs(cfg.checkpoint_dir, exist_ok=True)
@@ -2171,9 +2133,7 @@ class Trainer:
         # per obs in the return loss loop below.
         _forward_returns: dict[tuple[str, int], float] = {}
         if cfg.use_forward_returns and cfg.return_weight > 0.0:
-            _forward_returns = _build_forward_return_lookup(
-                all_prefetched_obs, horizon_days=cfg.forward_return_horizon
-            )
+            _forward_returns = _build_forward_return_lookup(all_prefetched_obs, horizon_days=cfg.forward_return_horizon)
             log.info(
                 "A2: Precomputed %d forward-return labels (horizon=%dd)",
                 len(_forward_returns),
@@ -2186,13 +2146,9 @@ class Trainer:
         # → high weight → more training emphasis).  Loaded once per
         # train() call — constant across all epochs and windows.
         # Returns None if no alignment signals are stored (uniform weights).
-        entity_types_in_graph = list(
-            {e.get("entity_type") for e in all_entities if e.get("entity_type")}
-        )
+        entity_types_in_graph = list({e.get("entity_type") for e in all_entities if e.get("entity_type")})
         try:
-            _alignment_weights: dict[str, float] | None = load_alignment_weights(
-                self.store, entity_types_in_graph
-            )
+            _alignment_weights: dict[str, float] | None = load_alignment_weights(self.store, entity_types_in_graph)
         except Exception as exc:
             log.debug("Phase 49: failed to load alignment weights: %s", exc)
             _alignment_weights = None
@@ -2348,17 +2304,13 @@ class Trainer:
                 if cfg.vicreg_weight > 0.0 and "instrument" in embeddings:
                     _inst_emb = embeddings["instrument"]
                     if _inst_emb.size(0) >= 2:
-                        vicreg_loss = _vicreg_loss(
-                            _inst_emb, gamma=cfg.vicreg_var_gamma
-                        )
+                        vicreg_loss = _vicreg_loss(_inst_emb, gamma=cfg.vicreg_var_gamma)
 
                 # Supervision targets from next window
-                global_ids, obs_targets, dt_targets, val_targets = (
-                    self._compute_targets(
-                        curr_obs,
-                        next_obs,
-                        id_map,
-                    )
+                global_ids, obs_targets, dt_targets, val_targets = self._compute_targets(
+                    curr_obs,
+                    next_obs,
+                    id_map,
                 )
 
                 # Move supervision targets to device
@@ -2401,21 +2353,14 @@ class Trainer:
                         # Phase 49: apply per-entity-type alignment weights
                         if _alignment_weights is not None and _valid_ntypes:
                             per_example_w = torch.tensor(
-                                [
-                                    _alignment_weights.get(nt, 1.0)
-                                    for nt in _valid_ntypes
-                                ],
+                                [_alignment_weights.get(nt, 1.0) for nt in _valid_ntypes],
                                 dtype=torch.float32,
                                 device=logits.device,
                             )
-                            raw_ce = F.cross_entropy(
-                                logits, valid_targets, reduction="none"
-                            ).clamp(max=20.0)
+                            raw_ce = F.cross_entropy(logits, valid_targets, reduction="none").clamp(max=20.0)
                             obs_loss = (raw_ce * per_example_w).mean()
                         else:
-                            raw_ce = F.cross_entropy(
-                                logits, valid_targets, reduction="none"
-                            ).clamp(max=20.0)
+                            raw_ce = F.cross_entropy(logits, valid_targets, reduction="none").clamp(max=20.0)
                             obs_loss = raw_ce.mean()
                         # Per-node-type CE accumulation (for metrics.jsonl)
                         for _nt, _ce_v in zip(_valid_ntypes, raw_ce.detach().tolist()):
@@ -2432,11 +2377,7 @@ class Trainer:
                 # prediction range and cause runaway loss (observed: 168K at ep1).
                 dt_loss = torch.tensor(0.0, device=self._device)
                 if target_embs:
-                    dt_pred = (
-                        model.time_delta_head(target_emb_tensor)
-                        .squeeze(-1)
-                        .clamp(-20.0, 20.0)
-                    )
+                    dt_pred = model.time_delta_head(target_emb_tensor).squeeze(-1).clamp(-20.0, 20.0)
                     valid_dt_raw = dt_targets[valid_indices]
                     # Mask NaN/Inf targets (same-timestamp obs → log1p(0)=0 is fine
                     # but negative dt from bad DB rows → log1p(dt<-1) = NaN).
@@ -2456,11 +2397,7 @@ class Trainer:
                 # at epoch 24 in H-G run).
                 val_loss = torch.tensor(0.0, device=self._device)
                 if target_embs:
-                    val_pred = (
-                        model.value_pred_head(target_emb_tensor)
-                        .squeeze(-1)
-                        .clamp(-1e4, 1e4)
-                    )
+                    val_pred = model.value_pred_head(target_emb_tensor).squeeze(-1).clamp(-1e4, 1e4)
                     valid_val = val_targets[valid_indices]
                     val_loss = F.huber_loss(val_pred, valid_val)
 
@@ -2519,9 +2456,7 @@ class Trainer:
                         _ret_targets.append(_lr)
                     if _ret_embs:
                         _ret_emb_t = torch.stack(_ret_embs)
-                        _ret_tgt_t = torch.tensor(
-                            _ret_targets, dtype=torch.float32, device=self._device
-                        )
+                        _ret_tgt_t = torch.tensor(_ret_targets, dtype=torch.float32, device=self._device)
                         # ── CSRC: cross-sectional ranking contrastive ──
                         # Computed BEFORE residual demeaning so deciles
                         # reflect raw return magnitude, not relative rank.
@@ -2564,60 +2499,32 @@ class Trainer:
                                 )
                         if _n_valid >= _min_required:
                             if cfg.embedding_only_return:
-                                _ret_pred = model.return_pred_head(
-                                    _ret_emb_t
-                                ).squeeze(-1)
-                            elif (
-                                _has_raw
-                                and _ret_raw_feats
-                                and getattr(model, "return_concat_head", None)
-                                is not None
-                            ):
+                                _ret_pred = model.return_pred_head(_ret_emb_t).squeeze(-1)
+                            elif _has_raw and _ret_raw_feats and getattr(model, "return_concat_head", None) is not None:
                                 # CONCAT mode (Option B): concatenate xsnorm raw
                                 # features with GNN instrument embeddings so that
                                 # backbone gradients flow into the return predictor.
-                                _raw_feat_t = xsnorm_price_feats(
-                                    torch.stack(_ret_raw_feats)
-                                )
-                                _concat_in = torch.cat(
-                                    [_raw_feat_t, _ret_emb_t], dim=-1
-                                )
+                                _raw_feat_t = xsnorm_price_feats(torch.stack(_ret_raw_feats))
+                                _concat_in = torch.cat([_raw_feat_t, _ret_emb_t], dim=-1)
                                 if cfg.use_concat_batchnorm:
-                                    _concat_in = F.layer_norm(
-                                        _concat_in, _concat_in.shape[-1:]
-                                    )
-                                _ret_pred = model.return_concat_head(
-                                    _concat_in
-                                ).squeeze(-1)
+                                    _concat_in = F.layer_norm(_concat_in, _concat_in.shape[-1:])
+                                _ret_pred = model.return_concat_head(_concat_in).squeeze(-1)
                             elif _has_raw and _ret_raw_feats:
                                 # REPLACE mode: raw features are the sole return
                                 # predictor.  The backbone path is excluded because
                                 # obs_type training spikes corrupt instrument
                                 # embeddings every few epochs, adding oscillating
                                 # noise that decays the raw head's learned signal.
-                                _raw_feat_t = xsnorm_price_feats(
-                                    torch.stack(_ret_raw_feats)
-                                )
-                                _ret_pred = model.return_raw_head(_raw_feat_t).squeeze(
-                                    -1
-                                )
+                                _raw_feat_t = xsnorm_price_feats(torch.stack(_ret_raw_feats))
+                                _ret_pred = model.return_raw_head(_raw_feat_t).squeeze(-1)
                             else:
-                                _ret_pred = model.return_pred_head(_ret_emb_t).squeeze(
-                                    -1
-                                )
+                                _ret_pred = model.return_pred_head(_ret_emb_t).squeeze(-1)
                             _ret_pred_raw = _ret_pred
                             if cfg.return_pred_clamp > 0:
-                                _ret_pred = _ret_pred.clamp(
-                                    -cfg.return_pred_clamp, cfg.return_pred_clamp
-                                )
+                                _ret_pred = _ret_pred.clamp(-cfg.return_pred_clamp, cfg.return_pred_clamp)
                             if cfg.embedding_only_return:
                                 _active_head = "pred"
-                            elif (
-                                _has_raw
-                                and _ret_raw_feats
-                                and getattr(model, "return_concat_head", None)
-                                is not None
-                            ):
+                            elif _has_raw and _ret_raw_feats and getattr(model, "return_concat_head", None) is not None:
                                 _active_head = "concat"
                             elif _has_raw and _ret_raw_feats:
                                 _active_head = "raw"
@@ -2628,25 +2535,17 @@ class Trainer:
                             _pred_finite = _ret_pred[_finite_mask].detach()
                             _tgt_finite = _ret_tgt_t[_finite_mask].detach()
                             _raw_finite = _ret_pred_raw[_finite_mask].detach()
-                            _epoch_grad_diag["preds"].extend(
-                                _pred_finite.cpu().tolist()
-                            )
+                            _epoch_grad_diag["preds"].extend(_pred_finite.cpu().tolist())
                             _epoch_grad_diag["tgts"].extend(_tgt_finite.cpu().tolist())
-                            _epoch_grad_diag["raw_preds"].extend(
-                                _raw_finite.cpu().tolist()
-                            )
+                            _epoch_grad_diag["raw_preds"].extend(_raw_finite.cpu().tolist())
                             _n_batch = int(_raw_finite.numel())
                             _epoch_grad_diag["n_pred_samples"] += _n_batch
                             if cfg.return_pred_clamp > 0 and _n_batch > 0:
                                 _epoch_grad_diag["n_clamped_upper"] += int(
-                                    (
-                                        _raw_finite > cfg.return_pred_clamp
-                                    ).sum().item()
+                                    (_raw_finite > cfg.return_pred_clamp).sum().item()
                                 )
                                 _epoch_grad_diag["n_clamped_lower"] += int(
-                                    (
-                                        _raw_finite < -cfg.return_pred_clamp
-                                    ).sum().item()
+                                    (_raw_finite < -cfg.return_pred_clamp).sum().item()
                                 )
                             if cfg.use_listnet_return_loss:
                                 ret_loss = _listnet_loss(
@@ -2655,21 +2554,15 @@ class Trainer:
                                     tau=cfg.listnet_temperature,
                                 )
                             else:
-                                ret_loss = F.huber_loss(
-                                    _ret_pred[_finite_mask], _ret_tgt_t[_finite_mask]
-                                )
+                                ret_loss = F.huber_loss(_ret_pred[_finite_mask], _ret_tgt_t[_finite_mask])
                             # Direction BCE loss (Phase H-D/H-F hypothesis).
                             # Treat predicted scalar as logit; penalises sign
                             # errors independently of magnitude.  Provides a
                             # complementary gradient to ListNet's rank ordering.
                             if cfg.use_direction_loss:
                                 _dir_tgt = (_ret_tgt_t[_finite_mask] > 0).float()
-                                _dir_loss = F.binary_cross_entropy_with_logits(
-                                    _ret_pred[_finite_mask], _dir_tgt
-                                )
-                                ret_loss = (
-                                    ret_loss + cfg.direction_loss_weight * _dir_loss
-                                )
+                                _dir_loss = F.binary_cross_entropy_with_logits(_ret_pred[_finite_mask], _dir_tgt)
+                                ret_loss = ret_loss + cfg.direction_loss_weight * _dir_loss
                         # Fix: ListNet loss is KL(p_target || p_pred).
                         # In theory non-negative, but floating-point rounding
                         # in softmax can produce tiny negatives.  A negative
@@ -2718,11 +2611,7 @@ class Trainer:
                     clamped = {
                         k: torch.clamp(
                             p,
-                            min=(
-                                cfg.contrastive_log_var_min
-                                if k == "contrastive"
-                                else lv_min
-                            ),
+                            min=(cfg.contrastive_log_var_min if k == "contrastive" else lv_min),
                             max=(cfg.return_log_var_max if k == "return" else lv_max),
                         )
                         for k, p in lv.items()
@@ -2733,16 +2622,11 @@ class Trainer:
                     _val_l = _scaled_task_loss(val_loss, cfg)
                     _ret_l = _scaled_task_loss(ret_loss, cfg)
                     _task_losses = {
-                        "obs_type": torch.exp(-clamped["obs_type"]) * _obs_l
-                        + clamped["obs_type"],
-                        "time_delta": torch.exp(-clamped["time_delta"]) * _dt_l
-                        + clamped["time_delta"],
-                        "contrastive": torch.exp(-clamped["contrastive"]) * _c_l
-                        + clamped["contrastive"],
-                        "value": torch.exp(-clamped["value"]) * _val_l
-                        + clamped["value"],
-                        "return": torch.exp(-clamped["return"]) * _ret_l
-                        + clamped["return"],
+                        "obs_type": torch.exp(-clamped["obs_type"]) * _obs_l + clamped["obs_type"],
+                        "time_delta": torch.exp(-clamped["time_delta"]) * _dt_l + clamped["time_delta"],
+                        "contrastive": torch.exp(-clamped["contrastive"]) * _c_l + clamped["contrastive"],
+                        "value": torch.exp(-clamped["value"]) * _val_l + clamped["value"],
+                        "return": torch.exp(-clamped["return"]) * _ret_l + clamped["return"],
                     }
                     total = sum(_task_losses.values())
                     if cfg.vicreg_weight > 0.0:
@@ -2750,15 +2634,11 @@ class Trainer:
                         total = total + _task_losses["vicreg"]
                 else:
                     _task_losses = {
-                        "obs_type": cfg.obs_type_weight
-                        * _scaled_task_loss(obs_loss, cfg),
-                        "time_delta": cfg.time_delta_weight
-                        * _scaled_task_loss(dt_loss, cfg),
-                        "contrastive": cfg.contrastive_weight
-                        * _scaled_task_loss(c_loss, cfg),
+                        "obs_type": cfg.obs_type_weight * _scaled_task_loss(obs_loss, cfg),
+                        "time_delta": cfg.time_delta_weight * _scaled_task_loss(dt_loss, cfg),
+                        "contrastive": cfg.contrastive_weight * _scaled_task_loss(c_loss, cfg),
                         "value": cfg.value_weight * _scaled_task_loss(val_loss, cfg),
-                        "return": cfg.return_weight
-                        * _scaled_task_loss(ret_loss, cfg),
+                        "return": cfg.return_weight * _scaled_task_loss(ret_loss, cfg),
                     }
                     total = sum(_task_losses.values())
                     if cfg.vicreg_weight > 0.0:
@@ -2767,25 +2647,17 @@ class Trainer:
 
                 # M1 Phase E: anneal KL weight 0 → cwm_lambda_kl over warmup epochs
                 if self._cwm is not None and cfg.cwm_curriculum_phase.upper() == "E":
-                    _kl_w = cfg.cwm_lambda_kl * min(
-                        1.0, (epoch + 1) / max(cfg.cwm_kl_warmup_epochs, 1)
-                    )
+                    _kl_w = cfg.cwm_lambda_kl * min(1.0, (epoch + 1) / max(cfg.cwm_kl_warmup_epochs, 1))
                     total = total + _kl_w * _cwm_kl
 
                 if total.requires_grad:
-                    _pcgrad_params = [
-                        p for p in model.parameters() if p.requires_grad
-                    ]
+                    _pcgrad_params = [p for p in model.parameters() if p.requires_grad]
                     if self._log_vars is not None:
-                        _pcgrad_params.extend(
-                            p for p in self._log_vars.values() if p.requires_grad
-                        )
+                        _pcgrad_params.extend(p for p in self._log_vars.values() if p.requires_grad)
                     _used_pcgrad = False
                     if cfg.use_pcgrad:
                         try:
-                            _used_pcgrad = _pcgrad_optimizer_step(
-                                optimizer, _pcgrad_params, _task_losses
-                            )
+                            _used_pcgrad = _pcgrad_optimizer_step(optimizer, _pcgrad_params, _task_losses)
                         except RuntimeError as _pcgrad_err:
                             log.warning(
                                 "PCGrad failed (%s) — falling back to standard backward",
@@ -2797,15 +2669,9 @@ class Trainer:
                     # Clip backbone and return_raw_head separately so that
                     # obs_type explosion spikes never starve the raw head.
                     _backbone_p = [
-                        p
-                        for n, p in model.named_parameters()
-                        if "return_raw_head" not in n and p.requires_grad
+                        p for n, p in model.named_parameters() if "return_raw_head" not in n and p.requires_grad
                     ]
-                    _raw_p = [
-                        p
-                        for n, p in model.named_parameters()
-                        if "return_raw_head" in n and p.requires_grad
-                    ]
+                    _raw_p = [p for n, p in model.named_parameters() if "return_raw_head" in n and p.requires_grad]
                     if _backbone_p:
                         torch.nn.utils.clip_grad_norm_(_backbone_p, 1.0)
                     if _raw_p:
@@ -2869,14 +2735,8 @@ class Trainer:
             # std < 0.05 → embeddings are collapsing → CSRC is not working.
             # Runs in no_grad on the last snapshot only (cheap). Every epoch
             # when grad-flow diagnostics are enabled (V64+ loop).
-            if (
-                _window_snapshots
-                and "instrument"
-                in (
-                    _window_snapshots[-1].node_types
-                    if _window_snapshots[-1] is not None
-                    else []
-                )
+            if _window_snapshots and "instrument" in (
+                _window_snapshots[-1].node_types if _window_snapshots[-1] is not None else []
             ):
                 try:
                     with torch.no_grad():
@@ -2889,9 +2749,7 @@ class Trainer:
                             # Effective rank: exp(entropy of normalised singular values)
                             _sv = torch.linalg.svdvals(_ie.float())
                             _sv_norm = _sv / (_sv.sum() + 1e-8)
-                            _eff_rank = torch.exp(
-                                -(_sv_norm * (_sv_norm + 1e-8).log()).sum()
-                            ).item()
+                            _eff_rank = torch.exp(-(_sv_norm * (_sv_norm + 1e-8).log()).sum()).item()
                             _epoch_emb_diag = {
                                 "emb_std": _emb_std,
                                 "eff_rank": _eff_rank,
@@ -2925,31 +2783,17 @@ class Trainer:
 
                 _preds = _epoch_grad_diag["preds"]
                 _tgts = _epoch_grad_diag["tgts"]
-                _pred_std = (
-                    _stats.pstdev(_preds) if len(_preds) > 1 else 0.0
-                )
+                _pred_std = _stats.pstdev(_preds) if len(_preds) > 1 else 0.0
                 _tgt_std = _stats.pstdev(_tgts) if len(_tgts) > 1 else 0.0
                 _ret_hist = history.get("return", [])
                 _plateau_eps = 0.01
-                _listnet_floor = (
-                    len(_ret_hist) >= 1 and _ret_hist[-1] > 200.0
-                )
-                _return_flat = (
-                    len(_ret_hist) >= 3
-                    and max(_ret_hist[-3:]) - min(_ret_hist[-3:])
-                    < _plateau_eps
-                )
+                _listnet_floor = len(_ret_hist) >= 1 and _ret_hist[-1] > 200.0
+                _return_flat = len(_ret_hist) >= 3 and max(_ret_hist[-3:]) - min(_ret_hist[-3:]) < _plateau_eps
                 _n_samples = max(_epoch_grad_diag.get("n_pred_samples", 0), 1)
-                _pct_clamped_upper = (
-                    100.0 * _epoch_grad_diag.get("n_clamped_upper", 0) / _n_samples
-                )
-                _pct_clamped_lower = (
-                    100.0 * _epoch_grad_diag.get("n_clamped_lower", 0) / _n_samples
-                )
+                _pct_clamped_upper = 100.0 * _epoch_grad_diag.get("n_clamped_upper", 0) / _n_samples
+                _pct_clamped_lower = 100.0 * _epoch_grad_diag.get("n_clamped_lower", 0) / _n_samples
                 _raw_preds = _epoch_grad_diag.get("raw_preds") or _preds
-                _raw_std = (
-                    _stats.pstdev(_raw_preds) if len(_raw_preds) > 1 else 0.0
-                )
+                _raw_std = _stats.pstdev(_raw_preds) if len(_raw_preds) > 1 else 0.0
                 _in_sample_ic = None
                 if len(_preds) >= 3 and len(_tgts) >= 3:
                     try:
@@ -2985,21 +2829,9 @@ class Trainer:
                     _grad_flow["return_pred_mean"],
                     _pct_clamped_upper,
                     _pct_clamped_lower,
-                    (
-                        f"{_in_sample_ic:.4f}"
-                        if _in_sample_ic is not None
-                        else "n/a"
-                    ),
-                    (
-                        f"{_grad_flow['emb_std']:.4f}"
-                        if "emb_std" in _grad_flow
-                        else "n/a"
-                    ),
-                    (
-                        f"{_grad_flow['eff_rank']:.1f}"
-                        if "eff_rank" in _grad_flow
-                        else "n/a"
-                    ),
+                    (f"{_in_sample_ic:.4f}" if _in_sample_ic is not None else "n/a"),
+                    (f"{_grad_flow['emb_std']:.4f}" if "emb_std" in _grad_flow else "n/a"),
+                    (f"{_grad_flow['eff_rank']:.1f}" if "eff_rank" in _grad_flow else "n/a"),
                     _listnet_floor,
                 )
                 if _in_sample_ic is not None:
@@ -3047,9 +2879,7 @@ class Trainer:
                         "loss/time_delta": history["time_delta"][-1],
                         "loss/contrastive": history["contrastive"][-1],
                         "loss/value": history["value"][-1],
-                        "loss/return": (
-                            history["return"][-1] if history["return"] else float("nan")
-                        ),
+                        "loss/return": (history["return"][-1] if history["return"] else float("nan")),
                     }
                     if self._log_vars is not None:
                         _weff = self.effective_loss_weights()
@@ -3061,9 +2891,7 @@ class Trainer:
 
             # ── Per-epoch checkpoint ──────────────────────────────────────
             if cfg.checkpoint_dir:
-                ckpt_path = os.path.join(
-                    cfg.checkpoint_dir, f"epoch_{epoch + 1:03d}.pt"
-                )
+                ckpt_path = os.path.join(cfg.checkpoint_dir, f"epoch_{epoch + 1:03d}.pt")
                 ckpt_payload: dict = {
                     "epoch": epoch + 1,
                     "model_state": model.state_dict(),
@@ -3071,29 +2899,17 @@ class Trainer:
                     "history": history,
                 }
                 if self._log_vars is not None:
-                    ckpt_payload["log_vars"] = {
-                        k: v.data.cpu() for k, v in self._log_vars.items()
-                    }
+                    ckpt_payload["log_vars"] = {k: v.data.cpu() for k, v in self._log_vars.items()}
                 torch.save(ckpt_payload, ckpt_path)
                 log.info("  Checkpoint saved → %s", ckpt_path)
                 # ── Per-epoch metrics.jsonl (lightweight, no torch to read) ──
                 import json as _json_m  # noqa: PLC0415
 
-                _ret_loss = (
-                    history["return"][-1] if history.get("return") else float("nan")
-                )
-                _dt_loss = (
-                    history["time_delta"][-1]
-                    if history.get("time_delta")
-                    else float("nan")
-                )
+                _ret_loss = history["return"][-1] if history.get("return") else float("nan")
+                _dt_loss = history["time_delta"][-1] if history.get("time_delta") else float("nan")
                 _dt_ret_ratio = (
                     _dt_loss / max(_ret_loss, 1e-8)
-                    if not (
-                        math.isnan(_ret_loss)
-                        or math.isnan(_dt_loss)
-                        or _ret_loss < 1e-10
-                    )
+                    if not (math.isnan(_ret_loss) or math.isnan(_dt_loss) or _ret_loss < 1e-10)
                     else float("nan")
                 )
                 # Collect any trainer warnings for this epoch so auto_improve
@@ -3121,40 +2937,18 @@ class Trainer:
                     "epoch": epoch + 1,
                     "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
                     "loss": {
-                        "total": (
-                            history["total"][-1]
-                            if history.get("total")
-                            else float("nan")
-                        ),
+                        "total": (history["total"][-1] if history.get("total") else float("nan")),
                         "return": _ret_loss,
                         "dt": _dt_loss,
-                        "obs_type": (
-                            history["obs_type"][-1]
-                            if history.get("obs_type")
-                            else float("nan")
-                        ),
-                        "contrastive": (
-                            history["contrastive"][-1]
-                            if history.get("contrastive")
-                            else float("nan")
-                        ),
-                        "value": (
-                            history["value"][-1]
-                            if history.get("value")
-                            else float("nan")
-                        ),
+                        "obs_type": (history["obs_type"][-1] if history.get("obs_type") else float("nan")),
+                        "contrastive": (history["contrastive"][-1] if history.get("contrastive") else float("nan")),
+                        "value": (history["value"][-1] if history.get("value") else float("nan")),
                     },
                     "dt_ret_ratio": _dt_ret_ratio,
                     "grad_flow": _grad_flow,
                     "warnings": _epoch_warnings,
-                    "entity_type_losses": {
-                        nt: sum(vs) / len(vs)
-                        for nt, vs in _epoch_ntype_obs.items()
-                        if vs
-                    },
-                    "entity_type_counts": {
-                        nt: len(vs) for nt, vs in _epoch_ntype_obs.items()
-                    },
+                    "entity_type_losses": {nt: sum(vs) / len(vs) for nt, vs in _epoch_ntype_obs.items() if vs},
+                    "entity_type_counts": {nt: len(vs) for nt, vs in _epoch_ntype_obs.items()},
                     "config": {
                         "lr": cfg.learning_rate,
                         "return_weight": float(cfg.return_weight),
@@ -3162,9 +2956,7 @@ class Trainer:
                         "gdelt_frac": float(getattr(cfg, "gdelt_subsample_frac", 1.0)),
                         "listnet_temp": float(getattr(cfg, "listnet_temperature", 1.0)),
                         "auto_tune": bool(cfg.auto_tune_loss_weights),
-                        "use_listnet": bool(
-                            getattr(cfg, "use_listnet_return_loss", False)
-                        ),
+                        "use_listnet": bool(getattr(cfg, "use_listnet_return_loss", False)),
                     },
                 }
                 _metrics_path = os.path.join(cfg.checkpoint_dir, "metrics.jsonl")
@@ -3208,9 +3000,7 @@ class Trainer:
                 fisher_diag = compute_fisher(model, _fisher_loss_fn, n_samples=1)
                 self._ewc_state = EWCState(
                     fisher=fisher_diag,
-                    anchor={
-                        n: p.data.clone().cpu() for n, p in model.named_parameters()
-                    },
+                    anchor={n: p.data.clone().cpu() for n, p in model.named_parameters()},
                     lambda_=cfg.ewc_lambda,
                     last_update_ts=time.time(),
                     obs_count_at_update=len(all_prefetched_obs),
@@ -3229,12 +3019,8 @@ class Trainer:
                 if cfg.checkpoint_dir:
                     _ewc_sidecar = os.path.join(cfg.checkpoint_dir, "ewc_state.pt")
                     _ewc_payload = {
-                        "ewc_fisher": {
-                            k: v.cpu() for k, v in self._ewc_state.fisher.items()
-                        },
-                        "ewc_anchor": {
-                            k: v.cpu() for k, v in self._ewc_state.anchor.items()
-                        },
+                        "ewc_fisher": {k: v.cpu() for k, v in self._ewc_state.fisher.items()},
+                        "ewc_anchor": {k: v.cpu() for k, v in self._ewc_state.anchor.items()},
                         "ewc_lambda": self._ewc_state.lambda_,
                         "ewc_last_update_ts": self._ewc_state.last_update_ts,
                         "ewc_obs_count_at_update": self._ewc_state.obs_count_at_update,
@@ -3246,9 +3032,7 @@ class Trainer:
                         len(self._ewc_state.fisher),
                     )
             else:
-                log.warning(
-                    "Fisher computation skipped — last training window produced an empty graph (no nodes)."
-                )
+                log.warning("Fisher computation skipped — last training window produced an empty graph (no nodes).")
         else:
             log.warning(
                 "Fisher computation skipped — need ≥ 2 training windows "
@@ -3327,9 +3111,7 @@ class Trainer:
             if not data.node_types:
                 from agent.preflight import FeaturePreflight  # noqa: PLC0415
 
-                _, pf = FeaturePreflight.for_gnn_inference(
-                    model=model, store=self.store, min_entity_types=1
-                )
+                _, pf = FeaturePreflight.for_gnn_inference(model=model, store=self.store, min_entity_types=1)
                 if not pf.ok:
                     log.warning("infer: empty graph — %s", pf.user_message)
                 return {}, id_map
@@ -3421,7 +3203,7 @@ class Trainer:
         self,
         target_entity_ids: list[str] | None = None,
         as_of: float | None = None,
-    ) -> dict[str, "Any"]:
+    ) -> dict[str, Any]:
         """Decompose GNN predictions into per-source-type contributions.
 
         Runs one no_grad forward pass with HGT attention capture enabled,
@@ -3475,7 +3257,7 @@ class Trainer:
     def check_data_freshness(
         self,
         store_signals: bool = False,
-    ) -> "Any":
+    ) -> Any:
         """Run a freshness SLA check across all registered data sources.
 
         Queries the pipeline store for the most recent observation timestamp
@@ -3578,9 +3360,7 @@ class Trainer:
         cfg = self.config
 
         embeddings = model(data, id_map)
-        global_ids, obs_targets, dt_targets, val_targets = self._compute_targets(
-            curr_obs, next_obs, id_map
-        )
+        global_ids, obs_targets, dt_targets, val_targets = self._compute_targets(curr_obs, next_obs, id_map)
 
         # ── obs_type loss ────────────────────────────────────────────────
         obs_loss = torch.tensor(0.0)
@@ -3611,9 +3391,7 @@ class Trainer:
         # ── time_delta loss ──────────────────────────────────────────────
         dt_loss = torch.tensor(0.0, device=self._device)
         if target_embs and target_emb_tensor is not None:
-            dt_pred = (
-                model.time_delta_head(target_emb_tensor).squeeze(-1).clamp(-20.0, 20.0)
-            )
+            dt_pred = model.time_delta_head(target_emb_tensor).squeeze(-1).clamp(-20.0, 20.0)
             valid_dt_raw = dt_targets[valid_indices].to(dt_pred.device)
             _dt_finite = torch.isfinite(valid_dt_raw)
             if _dt_finite.any():
@@ -3765,9 +3543,7 @@ class Trainer:
 
         # ── Forward: compute L_new ───────────────────────────────────────
         model.train()
-        loss_new: torch.Tensor = self._loss_from_window(
-            data, id_map, curr_obs, next_obs
-        )
+        loss_new: torch.Tensor = self._loss_from_window(data, id_map, curr_obs, next_obs)
 
         # ── EWC penalty: λ · Σ F_i (θ_i − θ_i*)² ───────────────────────
         loss_ewc: torch.Tensor = ewc_penalty(model, self._ewc_state)
@@ -3822,21 +3598,35 @@ class Trainer:
             path: File path for the saved checkpoint.
         """
         if self._model is None:
-            raise RuntimeError(
-                "No model to save — call build_model() or train() first."
-            )
+            raise RuntimeError("No model to save — call build_model() or train() first.")
 
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Build graph once to capture metadata for reconstruction
+        # Build graph once to capture metadata (node/edge types, node count)
+        # for reconstruction. This bare call is fine for *those* fields —
+        # node/edge types don't depend on use_signatures/ts2vec — but must
+        # NOT be used for in_channels (see below).
         data, id_map, _ = self._graph_builder.build()
         metadata = data.metadata()
-        in_channels: dict[str, int] = {}
+
+        # in_channels MUST come from the actual model instance being saved,
+        # not from this bare build() call. A bare call omits
+        # use_signatures=True / ts2vec_embeddings, which the real
+        # build_model() applies when configured (agent/models/gnn/graph_
+        # builder.py adds SIGNATURE_DIM/ts2vec_dim extra dims per node type).
+        # Deriving in_channels from `data` here would then record a NARROWER
+        # width than the model's real type_projections — precisely the
+        # self-contradicting checkpoint this module was built to catch
+        # (see checkpoint_store.py: in_channels['instrument']=49 recorded
+        # against trained weights of width 23). Reading straight off
+        # self._model.type_projections instead ties the recorded width to
+        # the weights actually being serialised, by construction.
+        in_channels: dict[str, int] = {
+            ntype: self._model.type_projections[ntype].in_features for ntype in self._model.node_types
+        }
         for ntype in metadata[0]:
-            if ntype in data.node_types and hasattr(data[ntype], "x"):
-                in_channels[ntype] = data[ntype].x.size(1)
-            else:
+            if ntype not in in_channels:
                 in_channels[ntype] = self.config.hidden_dim
 
         checkpoint = {
@@ -3952,7 +3742,7 @@ class Trainer:
                 _head_kw["instrument_raw_dim"],
             )
 
-        missing, unexpected, _ = _load_state_dict_skip_shape_mismatch(
+        missing, unexpected, skipped = _load_state_dict_skip_shape_mismatch(
             trainer._model,
             checkpoint["model_state_dict"],
             log_prefix="load_model: ",
@@ -3963,10 +3753,15 @@ class Trainer:
                 len(missing),
                 len(unexpected),
             )
-        trainer._model = trainer._model.to(trainer._device)
-        trainer._optimizer = torch.optim.Adam(
-            trainer._model.parameters(), lr=config.learning_rate
+        _warn_on_checkpoint_schema_drift(
+            checkpoint=checkpoint,
+            model=trainer._model,
+            skipped=skipped,
+            missing=missing,
+            path=path,
         )
+        trainer._model = trainer._model.to(trainer._device)
+        trainer._optimizer = torch.optim.Adam(trainer._model.parameters(), lr=config.learning_rate)
 
         # Phase 46: restore EWC state if present (absent = pre-Phase-46 checkpoint).
         if "ewc_fisher" in checkpoint:
@@ -3983,9 +3778,7 @@ class Trainer:
                 trainer._ewc_state.lambda_,
             )
         else:
-            log.info(
-                "No EWC state in checkpoint (pre-Phase-46 model). Run train() to compute Fisher diagonal."
-            )
+            log.info("No EWC state in checkpoint (pre-Phase-46 model). Run train() to compute Fisher diagonal.")
 
         log.info("Model loaded from %s.", path)
         return trainer
@@ -4017,9 +3810,7 @@ class Trainer:
         full_checkpoint_path = Path(full_checkpoint_path)
         per_epoch_path = Path(per_epoch_path)
         if not full_checkpoint_path.exists():
-            raise FileNotFoundError(
-                f"Full checkpoint not found: {full_checkpoint_path}"
-            )
+            raise FileNotFoundError(f"Full checkpoint not found: {full_checkpoint_path}")
         if not per_epoch_path.exists():
             raise FileNotFoundError(f"Per-epoch checkpoint not found: {per_epoch_path}")
 
@@ -4090,19 +3881,15 @@ class Trainer:
         )
         if missing or unexpected:
             log.warning(
-                "load_model_with_epoch_weights: %d missing keys, %d unexpected keys "
-                "(strict=False).",
+                "load_model_with_epoch_weights: %d missing keys, %d unexpected keys " "(strict=False).",
                 len(missing),
                 len(unexpected),
             )
         trainer._model = trainer._model.to(trainer._device)
-        trainer._optimizer = torch.optim.Adam(
-            trainer._model.parameters(), lr=config.learning_rate
-        )
+        trainer._optimizer = torch.optim.Adam(trainer._model.parameters(), lr=config.learning_rate)
         ep_num = ep.get("epoch", "?")
         log.info(
-            "Overlayed per-epoch weights from %s (checkpoint epoch=%s) onto "
-            "architecture from %s.",
+            "Overlayed per-epoch weights from %s (checkpoint epoch=%s) onto " "architecture from %s.",
             per_epoch_path,
             ep_num,
             full_checkpoint_path,
@@ -4167,12 +3954,8 @@ def evaluate(
             "num_predictions": 0,
         }
 
-    _lo = datetime.fromtimestamp(
-        eval_obs[0].get("observed_at", 0.0), tz=timezone.utc
-    ).date().isoformat()
-    _hi = datetime.fromtimestamp(
-        eval_obs[-1].get("observed_at", 0.0), tz=timezone.utc
-    ).date().isoformat()
+    _lo = datetime.fromtimestamp(eval_obs[0].get("observed_at", 0.0), tz=UTC).date().isoformat()
+    _hi = datetime.fromtimestamp(eval_obs[-1].get("observed_at", 0.0), tz=UTC).date().isoformat()
     log.info(
         "evaluate(split=%s): %d obs, date range [%s → %s] (no future obs in this split)",
         split,
@@ -4371,11 +4154,7 @@ def generate_outcome_labels(
                 continue
 
             src_obs = sorted(
-                [
-                    o
-                    for o in obs_by_entity.get(eid_a, [])
-                    if o.get("observation_type") == cp.obs_type_a
-                ],
+                [o for o in obs_by_entity.get(eid_a, []) if o.get("observation_type") == cp.obs_type_a],
                 key=lambda o: o.get("observed_at", 0.0),
             )
             if not src_obs:
@@ -4385,20 +4164,13 @@ def generate_outcome_labels(
                 if eid_to_type.get(eid_b) != cp.target_type:
                     continue
                 dst_obs = sorted(
-                    [
-                        o
-                        for o in obs_by_entity.get(eid_b, [])
-                        if o.get("observation_type") == cp.obs_type_b
-                    ],
+                    [o for o in obs_by_entity.get(eid_b, []) if o.get("observation_type") == cp.obs_type_b],
                     key=lambda o: o.get("observed_at", 0.0),
                 )
 
                 for so in src_obs:
                     st = so.get("observed_at", 0.0)
-                    hit = any(
-                        0 < (do.get("observed_at", 0.0) - st) <= cp.window_seconds
-                        for do in dst_obs
-                    )
+                    hit = any(0 < (do.get("observed_at", 0.0) - st) <= cp.window_seconds for do in dst_obs)
                     lbl = OutcomeLabel(
                         src_entity_id=eid_a,
                         dst_entity_id=eid_b,

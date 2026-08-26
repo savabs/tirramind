@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from agent.learning.meta_scheduler import MetaScheduler, compute_refit_reward
+from agent.models.gnn.checkpoint_store import archive_checkpoint, save_versioned
 from agent.pipeline.dag import DAG
 from agent.pipeline.regime_gate import get_current_regime, is_high_changepoint
 from agent.pipeline.store import PipelineStore
@@ -132,10 +133,13 @@ def run_gnn_inference(params: dict, upstream: dict) -> dict:
                 "forcing GNN retrain instead of loading checkpoint.",
                 regime_ctx.changepoint_posterior,
             )
+            # Archive, never unlink. A checkpoint invalidated by a regime shift
+            # is still the only record of the pre-shift model — deleting it makes
+            # the change unauditable and is a CLAUDE.md §5 violation.
             try:
-                model_path.unlink()
+                archive_checkpoint(model_path)
             except OSError as exc:
-                log.warning("Could not remove old checkpoint: %s", exc)
+                log.warning("Could not archive old checkpoint: %s", exc)
 
         if model_path.exists():
             try:
@@ -209,10 +213,14 @@ def run_gnn_inference(params: dict, upstream: dict) -> dict:
                 "Run a full retrain to compute Fisher diagonal."
             )
 
-        # Save model (includes updated EWC bookkeeping when online_updated)
+        # Save model (includes updated EWC bookkeeping when online_updated).
+        # Writes a NEW immutable checkpoint under checkpoints/ and repoints the
+        # stable path at it, per CLAUDE.md §5. Saving straight over model_path
+        # is what produced a checkpoint whose in_channels metadata (49)
+        # contradicted its own trained weights (23).
         try:
-            trainer.save_model(model_path)
-            log.info("Saved GNN model to %s.", model_path)
+            versioned = save_versioned(trainer, model_path)
+            log.info("Saved GNN model as %s (stable pointer: %s).", versioned.name, model_path)
         except Exception:
             log.warning("Failed to save GNN model to %s.", model_path)
 
@@ -275,6 +283,13 @@ def build_gnn_inference_dag(
         "train_gnn",
         operator=run_gnn_inference,
         params={"db_path": db_path, "model_path": model_path},
+        # Node.timeout defaults to 60s — sized for a single HTTP fetch in
+        # daily_collection, not for building a 5.6k-node heterogeneous graph and
+        # running a GNN forward/EWC pass over it. This node was being killed at
+        # ~70s with "Execution timed out (>60s)", which then cascaded: the
+        # inference DAG's own gnn_inference node died the same way and skipped
+        # sac_inference + emit_portfolio, so portfolio_weights never populated.
+        timeout=1800,
     )
 
     return dag

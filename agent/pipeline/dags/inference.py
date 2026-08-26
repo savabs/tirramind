@@ -20,7 +20,9 @@ from __future__ import annotations
 
 import logging
 import math
-from datetime import date, timedelta, timezone; UTC = timezone.utc
+from datetime import UTC, date, timedelta
+
+UTC = UTC
 from pathlib import Path
 from typing import Any
 
@@ -191,8 +193,15 @@ def _gnn_inference(params: dict[str, Any], upstream: dict[str, Any]) -> dict[str
         }
 
     except Exception as exc:
-        log.warning("GNN inference failed: %s", exc)
-        return {"status": "error", "reason": str(exc), "instrument_surprises": {}}
+        # Do NOT return a status="error" dict here. The executor fails a node
+        # only when its operator RAISES — a returned dict is always recorded as
+        # `completed`, so swallowing this made the whole inference DAG report
+        # success while writing zero rows (all 4 nodes "completed", 0 portfolio
+        # weights, 0 paper P&L). Graceful degradation for a *missing* model is
+        # the `status="skipped"` path above; a model that is present and threw
+        # is a genuine failure and must surface as one.
+        log.error("GNN inference failed: %s", exc)
+        raise
     finally:
         store.close()
 
@@ -346,8 +355,11 @@ def _sac_inference(params: dict[str, Any], upstream: dict[str, Any]) -> dict[str
         }
 
     except Exception as exc:
-        log.warning("SAC inference failed: %s", exc)
-        return {"status": "error", "reason": str(exc), "weights": {}}
+        # See the note in run_gnn_inference: a returned dict reads as success to
+        # the executor. Missing SAC checkpoint is handled by the `skipped`
+        # returns above; reaching here means it was present and threw.
+        log.error("SAC inference failed: %s", exc)
+        raise
     finally:
         store.close()
 
@@ -515,8 +527,12 @@ def _emit_portfolio(params: dict[str, Any], upstream: dict[str, Any]) -> dict[st
         }
 
     except Exception as exc:
-        log.warning("emit_portfolio failed: %s", exc)
-        return {"status": "error", "reason": str(exc)}
+        # This node is the one that actually WRITES portfolio_weights /
+        # paper_trade_pnl / rl_transitions. Swallowing here meant the DAG
+        # reported success with all three tables empty — the single most
+        # misleading outcome in the pipeline.
+        log.error("emit_portfolio failed: %s", exc)
+        raise
     finally:
         store.close()
 
@@ -794,6 +810,12 @@ def build_inference_dag(
         operator=_gnn_inference,
         params={"db_path": db_path},
         depends_on=["load_models"],
+        # Node.timeout defaults to 60s, sized for an HTTP fetch. Building the
+        # entity graph and running a forward pass over it takes longer than that
+        # on a real store — this node was killed at ~70s, which cascaded into
+        # sac_inference and emit_portfolio being skipped, leaving
+        # portfolio_weights and paper_trade_pnl permanently empty.
+        timeout=1200,
     )
 
     dag.add(
@@ -801,6 +823,7 @@ def build_inference_dag(
         operator=_sac_inference,
         params={"db_path": db_path},
         depends_on=["gnn_inference"],
+        timeout=600,
     )
 
     dag.add(
@@ -808,6 +831,7 @@ def build_inference_dag(
         operator=_emit_portfolio,
         params={"db_path": db_path},
         depends_on=["sac_inference"],
+        timeout=600,
     )
 
     return dag

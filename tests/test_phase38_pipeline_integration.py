@@ -73,9 +73,9 @@ class TestSourceNameAlignment:
         }
         for node_id, expected_source in checks.items():
             node = dag.nodes[node_id]
-            assert node.table_name == expected_source, (
-                f"Node {node_id!r}: expected table_name={expected_source!r}, got {node.table_name!r}"
-            )
+            assert (
+                node.table_name == expected_source
+            ), f"Node {node_id!r}: expected table_name={expected_source!r}, got {node.table_name!r}"
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -460,9 +460,11 @@ class TestDagStructureUpdated:
         return build_daily_collection_dag()
 
     def test_node_count(self, dag):
-        # 50 string-operator nodes + 2 callable nodes
-        # (fetch_instruments + fetch_cert_domains) = 52
-        assert len(dag.nodes) == 52
+        # 50 string-operator nodes + 6 callable nodes = 56.
+        # 2026-08-26: 52 -> 56 — fetch_us_yield_curve, fetch_options_chains,
+        # fetch_dividends (market-data-engineer) + ingest_evidence_from_gdelt
+        # (feeds the Entity Graph from real GDELT events) added, all callable.
+        assert len(dag.nodes) == 56
 
     def test_expected_node_ids(self, dag):
         expected = {
@@ -520,24 +522,41 @@ class TestDagStructureUpdated:
             "fetch_transport_throughput",
             "fetch_treasury_receipts",
             "fetch_weather_alerts",
+            # 2026-08-26 additions (see test_node_count)
+            "fetch_us_yield_curve",
+            "fetch_options_chains",
+            "fetch_dividends",
+            "ingest_evidence_from_gdelt",
         }
         assert set(dag.nodes.keys()) == expected
 
     def test_all_nodes_independent(self, dag):
+        # Exception: ingest_evidence_from_gdelt depends on fetch_gdelt by
+        # design — it turns that cycle's fetched events into Entity Graph
+        # documents, so it must run after fetch_gdelt, not alongside it.
         for node in dag.nodes.values():
+            if node.id == "ingest_evidence_from_gdelt":
+                continue
             assert node.depends_on == [], f"Node {node.id} has deps"
 
     def test_single_parallel_layer(self, dag):
+        # 2026-08-26: no longer single-layer — ingest_evidence_from_gdelt
+        # depends on fetch_gdelt by design (see test_all_nodes_independent).
         layers = dag.topo_sort()
-        assert len(layers) == 1
-        assert len(layers[0]) == 52
+        assert len(layers) == 2
+        assert len(layers[0]) == 55
+        assert len(layers[1]) == 1
 
     def test_all_roots(self, dag):
-        assert len(dag.roots()) == 52
+        # 55, not 56: ingest_evidence_from_gdelt is not a root (see above).
+        assert len(dag.roots()) == 55
 
     def test_tool_nodes_have_string_operators(self, dag):
         """Tool-backed nodes have string operators; callable nodes are allowed."""
         tool_nodes = [n for n in dag.nodes.values() if isinstance(n.operator, str)]
-        assert len(tool_nodes) == 50  # all except fetch_instruments + fetch_cert_domains
+        assert len(tool_nodes) == 50  # unchanged
         callable_nodes = [n for n in dag.nodes.values() if callable(n.operator)]
-        assert len(callable_nodes) == 2  # fetch_instruments + fetch_cert_domains
+        # 2026-08-26: fetch_instruments, fetch_cert_domains (original 2) +
+        # fetch_us_yield_curve, fetch_options_chains, fetch_dividends,
+        # ingest_evidence_from_gdelt (new) = 6.
+        assert len(callable_nodes) == 6

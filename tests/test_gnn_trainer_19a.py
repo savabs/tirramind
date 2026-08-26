@@ -6,6 +6,7 @@ self-supervised training on synthetic (but structurally real) data.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -331,3 +332,57 @@ class TestModelPersistence:
         assert kw["use_concat_head"] is True
         assert kw["instrument_raw_dim"] == 14
         assert config.use_concat_head is True
+
+    def test_save_model_in_channels_matches_actual_model_not_bare_rebuild(
+        self,
+        store_with_data: PipelineStore,
+        small_config: TrainerConfig,
+        tmp_path: Path,
+    ):
+        """Regression: save_model's in_channels must come from the model
+        instance actually being saved, not from a fresh bare
+        GraphBuilder.build() call.
+
+        A bare build() omits use_signatures=True, so with signatures active
+        it reports each node type's raw feat_dim MINUS the 39 signature
+        dims added at build_model() time. That produces a checkpoint whose
+        recorded in_channels is narrower than the real trained
+        type_projections weight — the exact self-contradicting checkpoint
+        checkpoint_store.py's docstring warns about (metadata says one
+        width, tensors say another). On load, the mismatch causes
+        `type_projections.*` to be skipped (shape mismatch) and randomly
+        re-initialised instead of restored.
+        """
+        import torch
+
+        config = replace(small_config, use_signatures=True)
+        trainer = Trainer(store_with_data, config)
+        trainer.build_model()
+
+        # Ground truth: the width each type_projections layer was ACTUALLY
+        # built with (this is what the saved weights require on reload).
+        expected_in_channels = {
+            ntype: trainer._model.type_projections[ntype].in_features for ntype in trainer._model.node_types
+        }
+        # Sanity: signatures really did widen the features vs. no-signature
+        # config, otherwise this test wouldn't exercise the bug at all.
+        assert any(v > 0 for v in expected_in_channels.values())
+
+        model_path = tmp_path / "model.pt"
+        trainer.save_model(model_path)
+
+        saved_checkpoint = torch.load(model_path, weights_only=False)
+        assert saved_checkpoint["in_channels"] == expected_in_channels, (
+            "save_model recorded in_channels from a bare rebuild instead of the "
+            "actual saved model — checkpoint metadata disagrees with its own weights."
+        )
+
+        # End-to-end: load_model must reconstruct with zero shape-mismatch
+        # skips for type_projections — a regression here manifests as the
+        # projection being dropped and randomly re-initialised on load.
+        loaded = Trainer.load_model(model_path, store_with_data)
+        for ntype in trainer._model.node_types:
+            assert torch.allclose(
+                loaded._model.type_projections[ntype].weight,
+                trainer._model.type_projections[ntype].weight,
+            ), f"type_projections.{ntype} was not restored (shape mismatch dropped it)"

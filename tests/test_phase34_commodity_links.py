@@ -75,9 +75,9 @@ class TestInstrumentDefExchangeCountry:
         """Non-commodity instruments should NOT have primary_exchange_country set."""
         non_commodities = [i for i in INSTRUMENTS if i.asset_class != "commodity_future"]
         for inst in non_commodities:
-            assert inst.primary_exchange_country is None, (
-                f"{inst.ticker} has unexpected primary_exchange_country={inst.primary_exchange_country}"
-            )
+            assert (
+                inst.primary_exchange_country is None
+            ), f"{inst.ticker} has unexpected primary_exchange_country={inst.primary_exchange_country}"
 
     def test_frozen_dataclass(self):
         inst = InstrumentDef(
@@ -205,10 +205,16 @@ class TestGraphBuilderStability:
     """Verify graph_builder constants are stable after Phase 34."""
 
     def test_observation_types_count(self):
-        assert len(OBSERVATION_TYPES) == 46
+        # 52 since 2026-08-26 (was asserted 46 while the list held 48 — this
+        # assertion had drifted and was failing). Registry growth shifts
+        # one-hot positions and invalidates checkpoints — retrain on change.
+        assert len(OBSERVATION_TYPES) == 52
 
     def test_enrichment_dim(self):
-        assert ENRICHMENT_DIM == 55
+        # Derived, not hardcoded: 9 scalars + one slot per OBSERVATION_TYPES entry.
+        # Was pinned at 55 (correct only at 46 obs types); once the registry
+        # grew, obs_type_dist wrote past the block and crashed entity_scoring.
+        assert 9 + len(OBSERVATION_TYPES) == ENRICHMENT_DIM
 
     def test_observation_types_sorted(self):
         assert sorted(OBSERVATION_TYPES) == OBSERVATION_TYPES

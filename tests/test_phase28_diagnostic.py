@@ -62,7 +62,10 @@ class TestObsTypeRegistration:
         assert "sovereign_yield" in OBSERVATION_TYPES
 
     def test_enrichment_dim_is_48(self):
-        assert ENRICHMENT_DIM == 55
+        # Derived, not hardcoded: 9 scalars + one slot per OBSERVATION_TYPES entry.
+        # Was pinned at 55 (correct only at 46 obs types); once the registry
+        # grew, obs_type_dist wrote past the block and crashed entity_scoring.
+        assert 9 + len(OBSERVATION_TYPES) == ENRICHMENT_DIM
 
 
 # ── 2. Single-tool persistence flows through to graph ────────────
