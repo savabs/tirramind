@@ -66,6 +66,13 @@ Thumbs.db
 # ignored .tirra_pipeline/pipeline.db). Removed from history in this commit.
 kaggle_downloads/tirramind-data/pipeline.db
 
+# The blanket *.json rule above (meant for stray data/log artifacts) also
+# caught .claude/settings.json — the shared hook wiring (guard-protected-files,
+# warn-schema-drift, lint-python, session-start-team-roster) has never been
+# committed as a result. .claude/settings.local.json stays ignored — that one
+# is genuinely per-machine (e.g. prefersReducedMotion).
+!.claude/settings.json
+
 # AWOS runtime state
 .awos/
 tirramind_data_upload.zip
