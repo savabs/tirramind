@@ -85,7 +85,9 @@ tirra-engine --record-bid "Department of Veterans Affairs" 60000 1
 
 - Brief URL (while serving): `http://127.0.0.1:8787/brief.json`
 - Outputs land in `.tirra_delivery/` (JSON + Markdown + log) at the repo root
-- Scheduled runs: `scripts/run_scheduled.sh serve`
+- Scheduled runs: `scripts/run_scheduled.sh serve` (brief refresh + deliver + serve),
+  `scripts/run_scheduled.sh collect` (full 40+-source `daily_collection` DAG —
+  slow, run once/day; see `deploy/systemd/` for production timer units)
 
 ---
 

@@ -88,3 +88,16 @@ tirramind_v1/
 # Runtime state (brief delivery + learned probabilities)
 .tirra_delivery/
 .tirra_opportunities/
+
+# Claude Code runtime lock (not project config — .claude/CLAUDE.md IS tracked)
+.claude/scheduled_tasks.lock
+
+# Production secrets. The bare `.env` rule above does NOT cover these — they
+# live inside the git clone at /opt/tirramind by design (systemd EnvironmentFile
+# needs a stable path), so without these lines a routine `git add -A` on the
+# server commits live Paddle credentials and R2 write keys.
+# `.example` templates are deliberately still tracked.
+.env.production
+.env.backup
+.env.*.local
+!.env*.example
