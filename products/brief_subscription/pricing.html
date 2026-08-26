@@ -70,14 +70,44 @@
           <h2>Data Platform</h2>
           <div class="price">$500<span> / month, up to $5,000 (enterprise)</span></div>
         </div>
-        <p class="tagline">Query pre-computed, deterministic signals — changepoints, HMM regime states, z-scores — from 60+ integrated public data sources. No API integration, no feature-engineering pipeline to maintain.</p>
+        <p class="tagline">Query the raw, structured data our pipeline ingests daily — SEC filings, CFTC positioning, GDELT events, AIS vessel tracking, and more — from 47 integrated public sources, deduplicated and timestamped in one place. No API integration, no scraper to maintain.</p>
         <ul>
-          <li>Daily-refreshed data across 47 sources — SEC EDGAR, CFTC, GDELT, AIS, and more</li>
-          <li>Deterministic feature extraction (BOCPD, HMM, spectral) — no LLM, fully auditable</li>
+          <li>Daily-refreshed raw data across 47 sources — SEC EDGAR, CFTC, GDELT, AIS, and more</li>
           <li>Query by source, time range, and row limit; a source catalog endpoint lists everything queryable</li>
+          <li>Deterministic feature computation (BOCPD, HMM regime detection, spectral analysis) runs inside our pipeline today — it is not yet exposed as a queryable endpoint on this tier; contact us if computed signals rather than raw data are what you need</li>
           <li>Higher tiers: custom universe, batch delivery, dedicated support</li>
         </ul>
         <div class="endpoint-block">GET /api/v1/sources&#10;GET /api/v1/data?source=cftc&amp;since=&lt;epoch&gt;&amp;limit=100&#10;GET /api/v1/usage&#10;Header: X-Brief-Key: &lt;your key&gt;</div>
+        <!--
+          product-strategist, 2026-08-27: tagline previously claimed this tier
+          served "pre-computed, deterministic signals — changepoints, HMM
+          regime states, z-scores." Verified against the live /api/v1/data
+          route (agent/brief_server.py::_serve_data_api): it calls
+          PipelineStore.query_data(), which reads raw `pipeline_data` rows —
+          there is no endpoint serving the computed `signals`/`features`
+          tables. The BOCPD/HMM/spectral math is real and runs inside the
+          pipeline (agent/quant/*, zero GNN dependency — confirmed by
+          quant-evaluator this session), it's just not what this API ships.
+          Rewrote to describe what /api/v1/data actually returns. See
+          quant-evaluator's assessment this session (§4) and
+          docs/research/deep_intelligence_roadmap.md for the gap.
+
+          Separately flagged, NOT a copy fix, left for api-backend-engineer /
+          security-auditor / owner: PipelineStore.list_sources() returns 60
+          distinct `source` values live, but ~12 of them (train_gnn,
+          load_models, generate_features, run_detection, scan_adversarial,
+          emit_portfolio, sac_inference, update_beliefs,
+          component_perf_gnn_epochs, score_entities, gnn_inference,
+          train_rl_policy) are internal DAG-stage execution telemetry, not
+          external data. A live query of GET /api/v1/data?source=train_gnn
+          returns raw internal training state today, e.g.
+          {"trained": false, "loss_ewc": 579753920.0, ...} — a paying
+          Data Platform customer can read this through the tier's own paid
+          endpoint. This wasn't fixed here because it's a source-catalog
+          scoping bug (compare api-backend-engineer's metadata_json
+          stripping on the Entity Graph routes), not a wording problem —
+          flagging as urgent given this is a live, billed endpoint.
+        -->
         <div class="plan-cta" style="margin-top:16px;">
           <button class="cta" onclick="openCheckout('data')">Subscribe</button>
           <span class="note">Sandboxed access available for evaluation — contact us.</span>
@@ -94,9 +124,10 @@
           <li>Entity search — every mention and relationship cites its source document and sentence; confidence scores are deterministic (co-occurrence-based), not model output</li>
           <li>Cross-document co-occurrence analytics — surfaces entities and relationships that recur across the ingested corpus</li>
           <li>Graph export (adjacency list) and degree-centrality / hub analysis</li>
+          <li>Real production entity graph — paginated entities and links from the same store the system's own graph model trains on (ids, canonical names, types, confidence, link type); raw signal/observation values are not exposed</li>
           <li>Enterprise: custom entity types, private document ingestion, on-prem option</li>
         </ul>
-        <div class="endpoint-block">GET /evidence/graph?q=nvidia&#10;GET /evidence/analytics?q=nvidia&#10;GET /evidence/graph/centrality?top=10&#10;Header: X-Brief-Key: &lt;your key&gt;</div>
+        <div class="endpoint-block">GET /evidence/graph?q=nvidia&#10;GET /evidence/analytics?q=nvidia&#10;GET /evidence/graph/centrality?top=10&#10;GET /api/v1/entity-graph/entities?type=&amp;limit=100&#10;GET /api/v1/entity-graph/entity?id=&lt;id&gt;&#10;GET /api/v1/entity-graph/links?link_type=&amp;min_confidence=&#10;Header: X-Brief-Key: &lt;your key&gt;</div>
         <!--
           Checkout was paused 2026-08-26 by payments-auditor pending a copy
           fix — see docs/research/entity_graph_tier_mismatch.md. product-
@@ -108,6 +139,19 @@
           (this tier still gates the small agent/evidence/ store, not the
           production graph) is unchanged and still disclosed honestly via
           brief_server.py's dataset_scope on every /evidence/* response.
+
+          product-strategist, 2026-08-27: api-backend-engineer shipped real
+          /api/v1/entity-graph/* routes this session, reading directly from
+          the production graph store (agent/pipeline/store.py — the tables
+          agent/models/gnn/graph_builder.py actually trains on), scoped to
+          entities + entity_links only (entity_observations and metadata_json
+          excluded — see entity_graph_tier_mismatch.md §6). This narrows the
+          original mismatch: the tier now genuinely gates a slice of the real
+          production graph, not only the smaller agent/evidence/ document
+          store. Added a bullet + the three endpoints above. Still not the
+          full production graph (365k+ raw observations stay excluded by
+          design), so kept the wording scoped ("paginated entities and
+          links"), not a blanket "the production graph" claim.
         -->
         <div class="plan-cta" style="margin-top:16px;">
           <button class="cta" onclick="openCheckout('entity')">Subscribe</button>
@@ -124,7 +168,22 @@
           <li>List recent runs by DAG name, with status and timing</li>
           <li>Inspect a specific run's node-level results</li>
         </ul>
-        <p class="tagline" style="margin-top:-8px;"><span class="beta-flag">BETA</span> Submitting your own custom DAGs for execution is in closed beta — <a href="mailto:support@tirramind.com" style="color:var(--acc);">contact us</a> if you want in.</p>
+        <!--
+          product-strategist, 2026-08-27: removed the "BETA — submitting
+          custom DAGs is in closed beta, contact us" line. Per
+          api-backend-engineer's docs/research/scheduler_tier_custom_dag_claim.md:
+          zero backing code at any level (no route, no parser, no manual
+          fallback process) — a "contact us" click on this line reached a
+          mailbox with nothing behind it to fulfill the request. This is
+          option (a) from that doc's recommendation: delete rather than
+          reword into softer language that still implies more exists than
+          does. The tier's real claim (read-only DAG run history, verified
+          live 403/200 by api-backend-engineer) fully justifies $50/mo on its
+          own — no price change. If custom-DAG triggering becomes a real
+          near-term roadmap item, re-add a true statement then (see that
+          doc's §3 option (b) and its concurrency/rate-limit/security
+          prerequisites before any such line goes back up).
+        -->
         <div class="endpoint-block">GET /api/v1/dag/runs?dag_name=daily_collection&amp;limit=20&#10;Header: X-Brief-Key: &lt;your key&gt;</div>
         <div class="plan-cta" style="margin-top:16px;">
           <button class="cta" onclick="openCheckout('scheduler')">Subscribe</button>
@@ -138,9 +197,27 @@
         </div>
         <p class="tagline">The lightweight weekly digest: ranked federal contracts by expected value, plus real market anomalies. Deterministic math, no black box. A good starting point if you don't need the API tiers yet.</p>
         <ul>
-          <li>Weekly contract opportunities, EV-ranked with learned win-probability</li>
-          <li>Live market anomalies (positioning extremes, regime changes)</li>
+          <li>Weekly contract opportunities, EV-ranked by a Bayesian win-probability model — starts from a category prior and updates automatically as real bid outcomes are recorded</li>
+          <li>Live market anomalies (positioning extremes, regime changes) — deterministic changepoint/z-score detection, no model in the loop</li>
         </ul>
+        <!--
+          product-strategist, 2026-08-27: was "EV-ranked with learned
+          win-probability." Per quant-evaluator this session: the mechanism
+          (agent/quant/contract_opportunity.py::WinProbabilityLearner, pure
+          Beta-Binomial updating from recorded outcomes, zero torch/GNN
+          dependency) is real and sound, but zero outcomes have been
+          recorded yet (.tirra_opportunities/win_learner.jsonl doesn't
+          exist) — the live delivered brief
+          (.tirra_delivery/intelligence_brief.json) shows p_win = 0.3333...
+          with p_win_basis = "prior" on every current opportunity, i.e. a
+          constant, not yet learned from anything. Reworded to describe the
+          mechanism honestly (prior now, learns as outcomes accumulate)
+          rather than claim a present-tense "learned" result that isn't
+          true yet. Kept the $19/mo price — the mechanism is genuine, the
+          anomaly half is real and independent of this question, and the
+          honest EV-by-prior ranking still has real utility even before the
+          learner has data to work with.
+        -->
         <div class="plan-cta">
           <button class="cta" onclick="openCheckout('brief')">Subscribe</button>
         </div>
@@ -158,8 +235,25 @@
         </div>
         <div class="faq-item">
           <strong>Is any of this LLM-generated?</strong>
-          <span>No. Every tier is built on deterministic math (BOCPD, HMM, spectral, graph analytics) or a trained model with auditable weights. Nothing here hallucinates a fact.</span>
+          <span>No. Every tier you're billed for runs on deterministic math (BOCPD, HMM, spectral, graph analytics) or auditable rule-based scoring — nothing here hallucinates a fact, and none of today's tiers depend on our graph model's output. That model is still in training; we'll only sell a prediction tier once it clears an independent, walk-forward backtest against a naive baseline.</span>
         </div>
+        <!--
+          product-strategist, 2026-08-27: previous answer claimed "a trained
+          model with auditable weights." Per quant-evaluator this session
+          (direct measurement, not assumption): the live GNN checkpoint's
+          weight matrices are statistically indistinguishable from a
+          fresh random init (median std ratio 1.0012 across 148 tensors;
+          the large representational matrices sit at 0.9987-1.0011 — four
+          decimal places from untrained), and in the one real, time-ordered
+          backtest on record, the GNN embedding has never beaten a trivial
+          momentum baseline. Auditable, yes; meaningfully "trained" in the
+          sense a customer would reasonably read that word, no. Rewrote to
+          state plainly that nothing currently billed depends on the graph
+          model, and that a prediction tier is future work gated on a real
+          backtest result — not sold today. See quant-evaluator's full
+          write-up this session and tasks/active/intelligence_layer_reactivation.md
+          Phase D (retrain not yet run at production scale).
+        -->
       </section>
     </main>
 
