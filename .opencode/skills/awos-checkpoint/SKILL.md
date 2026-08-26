@@ -1,5 +1,8 @@
 ---
 name: awos-checkpoint
+title: "AWOS Checkpoint Skill"
+tags:
+  - tool/opencode
 description: Standard AWOS checkpoint creation with versioning and single-owner facts
 license: MIT
 ---

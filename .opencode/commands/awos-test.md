@@ -1,4 +1,7 @@
 ---
+title: "AWOS Test Command"
+tags:
+  - tool/opencode
 description: Run AWOS test suite with coverage
 agent: awos
 ---

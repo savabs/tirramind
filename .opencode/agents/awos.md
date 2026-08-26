@@ -1,4 +1,7 @@
 ---
+title: "AWOS Kernel Agent"
+tags:
+  - tool/opencode
 description: Primary AWOS kernel developer following AWOS.md protocols
 mode: primary
 temperature: 0.15

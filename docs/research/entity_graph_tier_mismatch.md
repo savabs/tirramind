@@ -136,6 +136,65 @@ without inventing new paid infrastructure (`CLAUDE.md` §7):
      as "Entity Graph."
    - Re-price/re-describe the tier once its real dataset is known.
 
+## 6. Addendum (api-backend-engineer, this pass): real graph, scoped, shipped
+
+Per instruction to make a concrete call rather than flag again: implemented
+option (a) from §5 — the smallest safe real-graph endpoint — rather than
+leaving this in "flagged, not fixed" limbo.
+
+**Shipped**, gated by the existing `_ENTITY_GRAPH_TIERS` (same tier as
+`/evidence/*`), reading straight from `agent/pipeline/store.py` (the actual
+tables `agent/models/gnn/graph_builder.py` trains on):
+
+- `GET /api/v1/entity-graph/entities` — paginated list of real entities
+  (`entity_id`, `entity_type`, `canonical_name`, `created_at`), optional
+  `type` filter, `limit`/`offset` (SQL-level, capped at `_MAX_DATA_LIMIT`),
+  `total` for pagination.
+- `GET /api/v1/entity-graph/entity?id=<id>` — single entity + its real links
+  (both directions).
+- `GET /api/v1/entity-graph/links` — paginated global link list, optional
+  `link_type`/`min_confidence` filters.
+
+**Scope decision, made explicitly rather than left open:**
+
+- `entities` + `entity_links` core columns: shipped. Per §3's own
+  assessment these are canonical identifiers/names/types/confidence/link
+  types — not raw signal data.
+- `entity_observations`: **not shipped, and not a near-term TODO.** 365K+
+  rows of raw pipeline signal/feature values is the system's proprietary
+  alpha input, not a "graph." Nothing in this pass changes that
+  conclusion — it stays a product/security decision if it's ever revisited.
+- **New restriction beyond §3's own proposal**: each row's `metadata_json`
+  is stripped unconditionally, on every new route. §3 flagged
+  `entity_observations` as the risk but treated `entities`/`entity_links`
+  as uniformly safe; auditing that claim turned up that `entity_links.metadata_json`
+  in particular is populated ad hoc by 20+ independent `agent/tools/*` call
+  sites (tx hashes, CIKs, exchange names, and whatever else each tool
+  author decided to attach) that were never reviewed as a set for
+  tier-safety. Rather than expose an unaudited union of 20+ sources'
+  free-form fields, this pass strips `metadata_json` entirely on the new
+  routes. Add specific fields back only after someone actually reads what
+  each call site puts there.
+
+Verified live (both directions — 403 unauthorized / 200 authorized — per
+api-backend-engineer's own standard of evidence) and covered by new tests:
+`tests/test_brief_server.py::test_entity_graph_endpoints_gated_and_scoped`,
+`::test_entity_graph_entities_pagination`, plus store-level pagination/count
+tests in `tests/test_graph_builder.py` (`TestCountAllEntities`,
+`TestCountAllEntityLinks`, and the new `limit`/`offset` cases on
+`TestQueryAllEntities`/`TestQueryAllEntityLinks`). Existing `/evidence/*`
+routes, gating, and the 10 pre-existing `tests/test_evidence.py` tests are
+untouched and still pass.
+
+**Left open, deliberately, for product-strategist (not mine to decide):**
+the tier's marketing copy (`products/brief_subscription/pricing.html`)
+currently describes only the document-evidence-extraction feature (honest,
+per the 2026-08-26 rewrite) and doesn't mention this new real-graph capacity
+at all. Whether to advertise `/api/v1/entity-graph/*` as part of the $300/mo
+tier, fold it into a re-priced tier, or leave it as an undocumented bonus for
+existing subscribers is a pricing/positioning call, not a routing one — flagging
+for product-strategist to decide, same as the original "4,800+" claim was.
+
 ## Related
 - [[deep_intelligence_roadmap]]
 - [[checkpoint_2026-08-25_evidence_graph]]

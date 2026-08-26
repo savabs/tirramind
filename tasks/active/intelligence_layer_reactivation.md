@@ -90,11 +90,93 @@ visible crash *and* silent data corruption depending on node type.
 ### Phase D — retrain (needs A + C4 done)
 - [x] **D1** LESSONS.md **F-12 · Schema Drift Silently Invalidated Every
       Checkpoint** written FIRST (spec Step 9, CLAUDE.md §4)
-- [ ] **D2** Retrain on 12 entity types / 52 obs types
-- [ ] **D3** F-02 check: print active return-head branch at start
-- [ ] **D4** F-01 check: `torch.std(emb, dim=0).mean() > 0.1`
-- [ ] **D5** F-04 check: eval splits time-ordered
-- [ ] **D6** New checkpoint loads with 0 skipped / 0 missing keys
+- [ ] **D2** Retrain on 12 entity types / 52 obs types — **NOT DONE.** This box
+      has no CUDA and no `nvidia-smi` (confirmed 2026-08-27); it does have
+      Apple-silicon MPS via a local torch 2.13.0 install, but a real
+      convergence run (the historical `phase50` runs used hidden_dim=128,
+      2–3 layers, up to 200 windows, tens of epochs) is GPU-scale work that
+      belongs on Kaggle per this agent's own convention and the P100 sm_60
+      pin — not something to fake locally. **What's actually done:** a real
+      (non-production) local smoke run, see below, proving the schema-fixed
+      pipeline produces genuine gradient signal. **What's still required:**
+      the owner runs `python scripts/kaggle_launch.py --epochs 30` (see
+      "Kaggle invocation" below) — one command uploads the current repo
+      (12/52 schema baked in, since packaging copies live `agent/`+`scripts/`),
+      pushes kernel V73 (`--verify-version` confirms notebook/launcher/VERSIONS.md
+      in sync, fingerprint `5a1971b5b8e6`), tails logs, downloads the checkpoint,
+      and runs the local IC backtest. `KAGGLE_API_TOKEN` is present in `.env`;
+      the `kaggle` CLI itself is not installed in this sandbox, so this session
+      could not have kicked the job off even if it should have — it is a job
+      only the owner can run from a machine with Kaggle access.
+- [ ] **D3** F-02 check: print active return-head branch at start — **code
+      confirmed already wired** (`trainer.py` logs `[HEAD] return_concat_head
+      ACTIVE` when the concat path is live, `[HEAD] return_raw_head ACTIVE —
+      ... BYPASSED` as a loud warning otherwise) and **exercised for real** in
+      this session's smoke run (log line reproduced below) — but this checks
+      the mechanism, not the still-pending production run in D2. Leaving
+      unchecked until D2's actual accepted run logs the concat-head line.
+- [ ] **D4** F-01 check: `torch.std(emb, dim=0).mean() > 0.1` — **code
+      confirmed already wired** (`trainer.py` computes instrument-embedding
+      std + SVD effective rank every 5th epoch, warns `[COLLAPSE]` below 0.05)
+      and exercised in the smoke run with no collapse triggered — same caveat
+      as D3, this is the toy run's numbers, not D2's.
+- [ ] **D5** F-04 check: eval splits time-ordered — **code confirmed already
+      wired**: the smoke run's own log shows the chronological split boundary
+      it computed (`train [1920-01-01 → 2025-05-21]  val [2025-05-21 →
+      2026-01-20]  test [2026-01-20 → 2030-01-30]`), never shuffled. Same
+      caveat — the split logic is verified, D2's actual eval numbers are not.
+- [ ] **D6** New checkpoint loads with 0 skipped / 0 missing keys — **verified
+      on the smoke checkpoint**: `Trainer.load_model()` round-tripped it with
+      no drift warning and no missing/skipped-key log line (only the expected
+      "Restored return_concat_head" + EWC-restore lines). Mechanism is proven;
+      D2's real checkpoint still needs the same round-trip once it exists.
+
+**Local smoke validation (2026-08-27, this session) — real numbers, not a
+production retrain:**
+
+Ran `scripts/retrain_gnn.py` locally against the live, schema-fixed
+`.tirra_pipeline/pipeline.db` (364,296 real observations, 5,628 entities) —
+CPU, hidden_dim=16, 1 layer, 1 head, `--gdelt-frac 0.005 --defi-frac 0.02
+--max-windows 5`, 3 epochs, output routed to the session scratchpad only
+(never touched the live `gnn_model.pt` / `checkpoints/` — confirmed by mtime,
+all live checkpoint files predate this session). Wall clock: 49.3s total.
+
+| epoch | total loss | return loss | in-sample IC (spearman, n=256) | instrument emb_std | eff. rank |
+|---|---:|---:|---:|---:|---:|
+| 1 | 1575.68 | 279.31 | 0.043 | 27,882.8 | 1.9 |
+| 2 | 1403.15 | 254.13 | 0.104 | 31,388.8 | 2.0 |
+| 3 | 1172.63 | 195.71 | 0.117 | 22,907.9 | 1.8 |
+
+- Loss decreased monotonically across all 5 components (obs_type, time_delta,
+  contrastive, value, return) — real gradient flow, not a no-op.
+- `[HEAD] return_concat_head ACTIVE — GNN embeddings + raw features → return.`
+  logged at training start — F-02 gate passes, GNN is in the return path.
+- `emb_std` >> the 0.05 F-01 collapse floor — no collapse (expected for a toy
+  run this small; **not** evidence the eventual production embeddings will be
+  diverse, just that the collapse detector itself fires correctly and this
+  particular tiny run isn't degenerate).
+- Reload via `Trainer.load_model()` succeeded with 0 skipped/missing keys.
+
+**This is not D2.** hidden_dim=16/1-layer/5-windows/3-epochs is a pipeline
+health check, not a production checkpoint — it proves the 12/52 schema fix
+lets the trainer build a model and learn *something* real on real data. It
+says nothing about whether a properly-sized run would clear the
+quant-evaluator's "beats a trivial baseline" bar; per their finding, the prior
+`phase50` checkpoint (much more trained than this smoke run) already did not
+clear that bar on frozen embeddings. D2 remains the only path to an answer
+either way.
+
+**Kaggle invocation for the owner (zero further setup needed):**
+
+```
+python scripts/kaggle_launch.py --epochs 30
+```
+
+This packages the current repo (schema fix included), pushes kernel V73,
+tails logs to completion, downloads the resulting checkpoint, and runs
+`scripts/phase40_gnn_backtest.py` locally against it. Add `--no-gpu` only if
+GPU quota is exhausted (falls back to CPU-only kernel, 1 retry instead of 6).
+Use `--status` any time to check an in-flight run, `--logs-only` to re-tail.
 
 ### Phase E — orchestration
 - [x] **E1** `scripts/run_chain.py` — dependency order, per-DAG row deltas,

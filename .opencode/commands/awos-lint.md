@@ -1,4 +1,7 @@
 ---
+title: "AWOS Lint Command"
+tags:
+  - tool/opencode
 description: Run ruff linting on the scaffold codebase
 agent: awos
 ---

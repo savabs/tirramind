@@ -1,5 +1,8 @@
 ---
 name: awos-live-proof
+title: "AWOS Live Proof Skill"
+tags:
+  - tool/opencode
 description: Protocol for creating runnable end-to-end demos as proof of kernel/CLI/safety features
 license: MIT
 ---

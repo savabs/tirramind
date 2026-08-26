@@ -1,5 +1,8 @@
 ---
 name: awos-preflight
+title: "AWOS Preflight Skill"
+tags:
+  - tool/opencode
 description: Pre-execution safety checks before implementing kernel changes
 license: MIT
 ---

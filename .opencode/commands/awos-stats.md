@@ -1,4 +1,7 @@
 ---
+title: "AWOS Stats Command"
+tags:
+  - tool/opencode
 description: Show AWOS token usage and cost statistics
 agent: awos
 ---

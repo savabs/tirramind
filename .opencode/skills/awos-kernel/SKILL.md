@@ -1,5 +1,8 @@
 ---
 name: awos-kernel
+title: "AWOS Kernel Skill"
+tags:
+  - tool/opencode
 description: Guidelines for making changes to the AWOS kernel (scaffold/agent/)
 license: MIT
 ---

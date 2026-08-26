@@ -1,4 +1,7 @@
 ---
+title: "AWOS Quality Command"
+tags:
+  - tool/opencode
 description: Run quality gate checks before task completion
 agent: awos
 ---

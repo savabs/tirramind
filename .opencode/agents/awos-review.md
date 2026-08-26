@@ -1,4 +1,7 @@
 ---
+title: "AWOS Review Agent"
+tags:
+  - tool/opencode
 description: Reviews AWOS kernel code for protocol compliance, safety, and best practices
 mode: subagent
 temperature: 0.1

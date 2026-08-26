@@ -1,4 +1,7 @@
 ---
+title: "AWOS Checkpoint Command"
+tags:
+  - tool/opencode
 description: Generate an AWOS session checkpoint
 agent: awos
 ---
