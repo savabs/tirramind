@@ -1,7 +1,23 @@
 """
 Tool: Patent & Trademark Filings — Global Innovation Pipeline Monitor
 
-USPTO ODP:  https://data.uspto.gov/  (free, registration required for key)
+USPTO Open Data Portal (ODP) Patent File Wrapper Search API:
+    https://api.uspto.gov/api/v1/patent/applications/search
+Docs: https://data.uspto.gov/apis/patent-file-wrapper/search
+
+The old PatentsView REST API (api.patentsview.org) that this tool used to
+call is dead — 100% of requests failed (DNS no longer resolves; PatentsView
+migrated fully to the USPTO Open Data Portal, effective 2026-03-20). The
+fetch layer below (`_fetch_patents`) now calls the real ODP endpoint and
+translates its response back into the same internal record shape the rest
+of this file (and its test suite) already expects, so only the HTTP layer
+changed.
+
+Requires a free ODP API key (`TIRRA_USPTO_API_KEY`) sent as `X-API-KEY`.
+Unlike the old PatentsView API, ODP has no keyless tier — registering
+requires a MyUSPTO account with ID.me identity verification. This is a new
+external-dependency requirement, not just a URL change; flag before
+assuming a key exists in any deployment.
 
 Patent filings across all major patent offices reveal the global innovation
 pipeline 12-18 months before products ship.  A surge in AI chip patents by
@@ -29,7 +45,10 @@ Signal theory:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone; UTC = timezone.utc
+import os
+from datetime import UTC, datetime, timedelta
+
+UTC = UTC
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -52,13 +71,20 @@ log = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-# USPTO Open Data Portal (PatentsView replacement)
-_USPTO_SEARCH = "https://api.patentsview.org/patents/query"
-_USPTO_ASSIGNEE = "https://api.patentsview.org/assignees/query"
+# USPTO Open Data Portal — real, live endpoint (PatentsView migrated here
+# 2026-03-20; api.patentsview.org no longer resolves at all).
+_USPTO_SEARCH = "https://api.uspto.gov/api/v1/patent/applications/search"
 _UA = "TirraMind/0.1 (patent-filings-tool)"
 _TIMEOUT = 25
 _CACHE_TTL = 7200  # 2 hours — patent data is slow-moving
 _MAX_RESULTS = 50
+
+
+def _get_api_key() -> str | None:
+    """Get USPTO ODP API key from env. No keyless tier exists post-migration."""
+    key = os.environ.get("TIRRA_USPTO_API_KEY", "").strip()
+    return key if key else None
+
 
 VALID_MODES = frozenset({"search", "trends", "assignee"})
 
@@ -99,31 +125,116 @@ SIGNAL_CPC: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 
+def _condition_to_odp_terms(cond: dict[str, Any]) -> list[str]:
+    """Translate one legacy PatentsView query condition into ODP `q` term(s).
+
+    The rest of this file still builds queries in the old PatentsView
+    mini-DSL (`_text_any` / `_begins` / `_gte` / `_lte` / `_and`) because
+    that shape is what `_search`/`_trends`/`_assignee` construct from user
+    params. This translates that DSL into ODP's Lucene-like `q` syntax
+    (`field:value`, `field:value*`, `field:[a TO b]`) so the callers above
+    did not need to change.
+    """
+    terms: list[str] = []
+    for op, body in cond.items():
+        if not isinstance(body, dict):
+            continue
+        for field, value in body.items():
+            if op == "_text_any":
+                if field == "patent_abstract":
+                    # ODP's Patent File Wrapper search has no abstract-text
+                    # field — a bare term searches across all searchable
+                    # fields instead, which is the closest equivalent.
+                    terms.append(str(value))
+                elif field == "assignee_organization":
+                    terms.append(f"applicationMetaData.firstApplicantName:{value}*")
+            elif op == "_begins" and field == "cpc_subgroup_id":
+                terms.append(f"applicationMetaData.cpcClassificationBag:{value}*")
+            elif op == "_gte" and field == "patent_date":
+                terms.append(f"applicationMetaData.filingDate:[{value} TO *]")
+            elif op == "_lte" and field == "patent_date":
+                terms.append(f"applicationMetaData.filingDate:[* TO {value}]")
+    return terms
+
+
+def _query_to_odp_q(query: dict[str, Any]) -> str:
+    """Flatten a (possibly `_and`-wrapped) legacy query dict into one `q` string."""
+    conditions = query.get("_and") if "_and" in query else [query]
+    terms: list[str] = []
+    for cond in conditions:
+        terms.extend(_condition_to_odp_terms(cond))
+    return " AND ".join(terms)
+
+
+def _odp_patent_to_legacy(item: dict[str, Any]) -> dict[str, Any]:
+    """Map one ODP patentFileWrapperDataBag entry to the old PatentsView record shape."""
+    meta = item.get("applicationMetaData") or {}
+    assignee = meta.get("firstApplicantName") or ""
+    if not assignee:
+        applicants = meta.get("applicantBag") or []
+        if applicants:
+            assignee = applicants[0].get("applicantNameText") or ""
+    return {
+        "patent_number": meta.get("patentNumber") or item.get("applicationNumberText") or "",
+        "patent_title": meta.get("inventionTitle") or "",
+        "patent_date": meta.get("grantDate") or meta.get("filingDate") or "",
+        "assignee_organization": assignee,
+        "cpc_subgroup_id": meta.get("cpcClassificationBag") or [],
+        "patent_abstract": "",  # not exposed by the ODP file-wrapper search
+    }
+
+
 def _fetch_patents(
     query: dict[str, Any],
     fields: list[str],
     sort: list[dict[str, str]] | None = None,
     per_page: int = 25,
 ) -> dict[str, Any] | None:
-    """Query PatentsView API.  Returns JSON response or None."""
-    payload: dict[str, Any] = {
-        "q": query,
-        "f": fields,
-        "o": {"per_page": min(per_page, _MAX_RESULTS)},
-    }
-    if sort:
-        payload["s"] = sort
+    """Query the USPTO ODP Patent File Wrapper Search API.
 
-    try:
-        with httpx.Client(timeout=_TIMEOUT, headers={"User-Agent": _UA}) as client:
-            resp = client.post(_USPTO_SEARCH, json=payload)
-            if resp.status_code != 200:
-                log.warning("USPTO API returned %d", resp.status_code)
-                return None
-            return resp.json()
-    except (httpx.HTTPError, ValueError) as exc:
-        log.warning("USPTO API error: %s", exc)
+    Returns a response shaped like the old PatentsView API
+    (`{"patents": [...], "total_patent_count": N}`) so callers in this
+    file don't need to change, even though the wire format underneath is
+    now ODP's `{"count": N, "patentFileWrapperDataBag": [...]}`.
+    """
+    api_key = _get_api_key()
+    if not api_key:
+        log.warning(
+            "USPTO ODP API key missing — set TIRRA_USPTO_API_KEY "
+            "(register at https://data.uspto.gov/apis/getting-started)"
+        )
         return None
+
+    params: dict[str, str] = {"limit": str(min(per_page, _MAX_RESULTS))}
+    q = _query_to_odp_q(query)
+    if q:
+        params["q"] = q
+    if sort:
+        first = sort[0]
+        ((sort_field, direction),) = first.items()
+        odp_field = {
+            "patent_date": "applicationMetaData.grantDate",
+        }.get(sort_field, sort_field)
+        params["sort"] = f"{odp_field} {direction}"
+
+    headers = {"User-Agent": _UA, "X-API-KEY": api_key, "Accept": "application/json"}
+    try:
+        with httpx.Client(timeout=_TIMEOUT, headers=headers) as client:
+            resp = client.get(_USPTO_SEARCH, params=params)
+            if resp.status_code != 200:
+                log.warning("USPTO ODP API returned %d", resp.status_code)
+                return None
+            data = resp.json()
+    except (httpx.HTTPError, ValueError) as exc:
+        log.warning("USPTO ODP API error: %s", exc)
+        return None
+
+    patents = [_odp_patent_to_legacy(item) for item in data.get("patentFileWrapperDataBag") or []]
+    return {
+        "patents": patents,
+        "total_patent_count": data.get("count", len(patents)),
+        "count": len(patents),
+    }
 
 
 def _fetch_assignees(
@@ -131,22 +242,14 @@ def _fetch_assignees(
     fields: list[str],
     per_page: int = 25,
 ) -> dict[str, Any] | None:
-    """Query PatentsView assignee endpoint."""
-    payload: dict[str, Any] = {
-        "q": query,
-        "f": fields,
-        "o": {"per_page": min(per_page, _MAX_RESULTS)},
-    }
-    try:
-        with httpx.Client(timeout=_TIMEOUT, headers={"User-Agent": _UA}) as client:
-            resp = client.post(_USPTO_ASSIGNEE, json=payload)
-            if resp.status_code != 200:
-                log.warning("USPTO assignee API returned %d", resp.status_code)
-                return None
-            return resp.json()
-    except (httpx.HTTPError, ValueError) as exc:
-        log.warning("USPTO assignee API error: %s", exc)
-        return None
+    """Assignee-portfolio lookup.
+
+    ODP has no separate assignee-search endpoint (PatentsView's
+    `/assignees/query` is gone along with the rest of that API) — this now
+    delegates to the same application-search endpoint `_fetch_patents` uses,
+    which is what every caller in this class already does directly.
+    """
+    return _fetch_patents(query, fields, per_page=per_page)
 
 
 def _parse_date(date_str: str) -> str:

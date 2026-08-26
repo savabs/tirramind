@@ -378,51 +378,76 @@ class TestHelpers:
         assert start < end
 
 
+def _odp_response(items: list[dict] | None = None, count: int | None = None) -> dict[str, Any]:
+    """ODP's real response envelope: {"count": N, "patentFileWrapperDataBag": [...]}."""
+    bag = items or []
+    return {"count": count if count is not None else len(bag), "patentFileWrapperDataBag": bag}
+
+
 class TestFetchPatents:
+    @patch.dict("os.environ", {"TIRRA_USPTO_API_KEY": "test-key"})
     @patch("agent.tools.patent_filings.httpx.Client")
     def test_fetch_basic(self, mock_client_cls):
         mock_client = MagicMock()
         mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
-        mock_client.post.return_value = _mock_http_response(_api_response([_patent()]))
+        mock_client.get.return_value = _mock_http_response(
+            _odp_response([{"applicationMetaData": {"inventionTitle": "X"}}])
+        )
         result = _fetch_patents({"_text_any": {"patent_abstract": "test"}}, ["patent_number"])
         assert result is not None
+        assert result["patents"][0]["patent_title"] == "X"
+        # hits the real ODP endpoint with the API key header, not a POST body
+        called_kwargs = mock_client_cls.call_args.kwargs
+        assert called_kwargs["headers"]["X-API-KEY"] == "test-key"
+        mock_client.get.assert_called_once()
+        assert mock_client.get.call_args.args[0] == "https://api.uspto.gov/api/v1/patent/applications/search"
 
+    @patch.dict("os.environ", {"TIRRA_USPTO_API_KEY": "test-key"})
     @patch("agent.tools.patent_filings.httpx.Client")
     def test_fetch_http_error(self, mock_client_cls):
         mock_client = MagicMock()
         mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
-        mock_client.post.return_value = _mock_http_response({}, status=500)
+        mock_client.get.return_value = _mock_http_response({}, status=500)
         result = _fetch_patents({}, [])
         assert result is None
 
+    @patch.dict("os.environ", {"TIRRA_USPTO_API_KEY": "test-key"})
     @patch("agent.tools.patent_filings.httpx.Client")
     def test_fetch_timeout(self, mock_client_cls):
         mock_client = MagicMock()
         mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
-        mock_client.post.side_effect = httpx.ReadTimeout("timeout")
+        mock_client.get.side_effect = httpx.ReadTimeout("timeout")
+        result = _fetch_patents({}, [])
+        assert result is None
+
+    @patch.dict("os.environ", {"TIRRA_USPTO_API_KEY": ""})
+    def test_fetch_no_api_key(self):
+        # No keyless tier exists post-migration — must fail closed, not fetch anonymously.
         result = _fetch_patents({}, [])
         assert result is None
 
 
 class TestFetchAssignees:
+    @patch.dict("os.environ", {"TIRRA_USPTO_API_KEY": "test-key"})
     @patch("agent.tools.patent_filings.httpx.Client")
     def test_fetch_assignees_basic(self, mock_client_cls):
         mock_client = MagicMock()
         mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
-        mock_client.post.return_value = _mock_http_response({"assignees": []})
+        mock_client.get.return_value = _mock_http_response(_odp_response([]))
         result = _fetch_assignees({"_text_any": {"assignee_organization": "test"}}, [])
         assert result is not None
 
+    @patch.dict("os.environ", {"TIRRA_USPTO_API_KEY": "test-key"})
     @patch("agent.tools.patent_filings.httpx.Client")
     def test_fetch_assignees_error(self, mock_client_cls):
         mock_client = MagicMock()
         mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
         mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
-        mock_client.post.return_value = _mock_http_response({}, status=403)
+        mock_client.get.return_value = _mock_http_response({}, status=403)
         result = _fetch_assignees({}, [])
         assert result is None
 
@@ -505,7 +530,10 @@ class TestIntegration:
         from agent.cli import build_tool_registry
 
         reg = build_tool_registry()
-        assert len(reg.list_names()) == 60
+        # 60 -> 61 on 2026-08-26: nightlight_activity was 100% dead code
+        # (constructor kwarg mismatch meant registration TypeErrored and was
+        # skipped) — now correctly registered.
+        assert len(reg.list_names()) == 61
 
     def test_arm_count(self):
         from agent.learning.bandit import DEFAULT_ARMS
