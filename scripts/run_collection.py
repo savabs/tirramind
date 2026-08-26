@@ -67,8 +67,7 @@ def main() -> None:
 
     console.print(
         Panel(
-            f"[bold cyan]Running DAG:[/] {args.dag}\n"
-            f"[dim]DB: {args.db_path} | Workers: {args.workers}[/]",
+            f"[bold cyan]Running DAG:[/] {args.dag}\n" f"[dim]DB: {args.db_path} | Workers: {args.workers}[/]",
             title="TirraMind Pipeline",
             border_style="blue",
         )
@@ -113,6 +112,14 @@ def main() -> None:
         if hasattr(nr, "duration_s") and nr.duration_s is not None:
             duration = f" ({nr.duration_s:.1f}s)"
         console.print(f"  {icon} {nid}: {nr.status}{duration}")
+        if not ok and nr.error:
+            # NodeResult.error is the actual failure reason. The executor only
+            # logs a warning on non-final retry attempts (see
+            # DAGExecutor._execute_node) — the final attempt's exception is
+            # captured on the result but was never surfaced here, so a failed
+            # node with retries=1 (the default) used to print with no
+            # diagnostic at all.
+            console.print(f"      [dim red]{nr.error}[/]")
 
     console.print(f"\n[dim]Total elapsed: {elapsed:.1f}s[/]")
 
@@ -123,15 +130,10 @@ def main() -> None:
         conn = sqlite3.connect(args.db_path)
         cur = conn.cursor()
         entity_count = cur.execute("SELECT COUNT(*) FROM entities").fetchone()[0]
-        obs_count = cur.execute("SELECT COUNT(*) FROM entity_observations").fetchone()[
-            0
-        ]
+        obs_count = cur.execute("SELECT COUNT(*) FROM entity_observations").fetchone()[0]
         link_count = cur.execute("SELECT COUNT(*) FROM entity_links").fetchone()[0]
         conn.close()
-        console.print(
-            f"[dim]DB stats: {entity_count} entities, "
-            f"{obs_count} observations, {link_count} links[/]"
-        )
+        console.print(f"[dim]DB stats: {entity_count} entities, " f"{obs_count} observations, {link_count} links[/]")
     except Exception:
         pass
 

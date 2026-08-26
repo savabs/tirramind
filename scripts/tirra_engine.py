@@ -46,10 +46,12 @@ def refresh_fast_data(db_path: str = ".tirra_pipeline/pipeline.db") -> dict:
 
     def _fetch_cftc():
         from agent.tools.cftc import CFTCTool
+
         return CFTCTool().execute(mode="latest", limit=5)
 
     def _fetch_gov():
         from agent.tools.gov_contracts import GovContractsTool
+
         return GovContractsTool().execute(mode="recent", limit=10)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
@@ -65,50 +67,71 @@ def refresh_fast_data(db_path: str = ".tirra_pipeline/pipeline.db") -> dict:
     return {"status": "fast_refresh", "tools": results, "db": db_path}
 
 
-def run_collection(config=None, timeout_s: float = 60.0) -> dict:
-    """Trigger the daily data-collection DAG so observations are fresh.
-
-    Runs in a background thread with a timeout so it NEVER blocks the brief.
-    Data collection is a freshness enhancement, not a hard gate: the brief
-    always builds on whatever observations are already stored. A slow/hanging
-    tool in the DAG must not stall delivery.
-
-    Returns immediately with a started/error summary; collection continues in
-    the background.
-    """
-    import threading
-
-    from agent.config.settings import AgentConfig
+def _run_daily_collection_dag(config) -> dict:
+    """Execute the daily_collection DAG and wait for it to finish. Blocking."""
+    from agent.cli import build_tool_registry
     from agent.pipeline.executor import DAGExecutor
     from agent.pipeline.registry import DAGRegistry
     from agent.pipeline.scheduler import PipelineScheduler
     from agent.pipeline.store import PipelineStore
 
+    try:
+        store = PipelineStore(db_path=config.pipeline.db_path)
+        tools = build_tool_registry(config)
+        executor = DAGExecutor(tool_registry=tools, store=store, max_workers=config.pipeline.max_workers)
+        dag_registry = DAGRegistry()
+        dag_registry.load_defaults(tools)
+        scheduler = PipelineScheduler(executor=executor, registry=dag_registry)
+        run = scheduler.trigger("daily_collection")
+        n_ok = sum(1 for r in run.node_results.values() if r.status in ("success", "completed"))
+        return {"dag": "daily_collection", "status": run.status, "nodes_ok": n_ok, "nodes_total": len(run.node_results)}
+    except Exception as exc:
+        return {"dag": "daily_collection", "status": "failed", "error": str(exc)[:200]}
+
+
+def run_collection_sync(config=None) -> dict:
+    """Run the full daily_collection DAG and block until it finishes.
+
+    Use this whenever the caller is about to exit right after collecting
+    (e.g. a scheduled/cron `--full-collect --once` invocation). A daemon
+    thread (see run_collection() below) is killed the instant its process
+    exits, so a `--once` caller must never use the fire-and-forget path —
+    it would report "started_background" and silently persist nothing.
+    """
+    from agent.config.settings import AgentConfig
+
     cfg = config or AgentConfig.from_env()
+    return _run_daily_collection_dag(cfg)
 
-    def _run() -> dict:
-        try:
-            store = PipelineStore(db_path=cfg.pipeline.db_path)
-            from agent.cli import build_tool_registry
-            tools = build_tool_registry(cfg)
-            executor = DAGExecutor(tool_registry=tools, store=store, max_workers=cfg.pipeline.max_workers)
-            dag_registry = DAGRegistry()
-            dag_registry.load_defaults(tools)
-            scheduler = PipelineScheduler(executor=executor, registry=dag_registry)
-            run = scheduler.trigger("daily_collection")
-            return {"dag": "daily_collection", "status": run.status}
-        except Exception as exc:
-            return {"dag": "daily_collection", "status": "failed", "error": str(exc)[:200]}
 
-    result: dict = {}
+def run_collection(config=None) -> dict:
+    """Trigger the daily data-collection DAG so observations are fresh, without
+    blocking the caller.
 
-    def _wrapped() -> None:
-        result.update(_run())
+    Runs in a background daemon thread. Only safe when the process is going
+    to stay alive afterward (e.g. `--serve` mode, which blocks in an HTTP
+    serve loop) — the collection keeps running in the background while the
+    brief is served from whatever observations already exist. Data
+    collection here is a freshness enhancement, not a hard gate.
 
-    t = threading.Thread(target=_wrapped, daemon=True)
+    For a one-shot invocation that's about to exit (`--once`), use
+    run_collection_sync() instead — a daemon thread does not survive its
+    process exiting, so this function would otherwise silently discard the
+    entire collection run.
+    """
+    import threading
+
+    from agent.config.settings import AgentConfig
+
+    cfg = config or AgentConfig.from_env()
+    t = threading.Thread(target=_run_daily_collection_dag, args=(cfg,), daemon=True)
     t.start()
     # Return immediately; log that collection is running in the background.
-    return {"dag": "daily_collection", "status": "started_background", "note": "data collection running; brief uses existing observations"}
+    return {
+        "dag": "daily_collection",
+        "status": "started_background",
+        "note": "data collection running; brief uses existing observations",
+    }
 
 
 def email_brief(md_text: str, recipients: list[str]) -> dict:
@@ -192,7 +215,7 @@ def record_bid(agency: str, amount: float, won: bool, learner_path: str) -> dict
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="TirraEngine — refresh data, build the Intelligence Brief, deliver it. "
-                    "Default (no args) = refresh + brief + deliver + serve."
+        "Default (no args) = refresh + brief + deliver + serve."
     )
     parser.add_argument("--collect", action="store_true", help="run fast live-data refresh (CFTC + gov contracts)")
     parser.add_argument("--full-collect", action="store_true", help="run the full daily DAG in background (slow)")
@@ -207,10 +230,16 @@ def main() -> int:
     parser.add_argument("--learner", type=str, default=".tirra_opportunities/win_learner.jsonl")
     parser.add_argument("--db", type=str, default=".tirra_pipeline/pipeline.db")
     parser.add_argument("--out", type=str, default=".tirra_delivery")
-    parser.add_argument("--record-bid", nargs=3, metavar=("AGENCY", "AMOUNT", "WON"),
-                        help="record a realized bid outcome (won=0/1) to personalize P(win)")
+    parser.add_argument(
+        "--record-bid",
+        nargs=3,
+        metavar=("AGENCY", "AMOUNT", "WON"),
+        help="record a realized bid outcome (won=0/1) to personalize P(win)",
+    )
     parser.add_argument("--email", action="store_true", help="email the brief after delivery (env-configured)")
-    parser.add_argument("--to", type=str, default=None, help="email recipients (comma-separated), overrides TIRRA_BRIEF_TO")
+    parser.add_argument(
+        "--to", type=str, default=None, help="email recipients (comma-separated), overrides TIRRA_BRIEF_TO"
+    )
     args = parser.parse_args()
 
     if args.record_bid:
@@ -225,9 +254,12 @@ def main() -> int:
         md_path = Path(args.out) / "intelligence_brief.md"
         collect_summary = refresh_fast_data(args.db)
         result = _deliver(
-            contracts=args.contracts, anomalies=args.anomalies,
-            max_rows=args.max_contract_rows, learner=args.learner,
-            db=args.db, out_dir=args.out,
+            contracts=args.contracts,
+            anomalies=args.anomalies,
+            max_rows=args.max_contract_rows,
+            learner=args.learner,
+            db=args.db,
+            out_dir=args.out,
         )
         if md_path.exists():
             md = md_path.read_text(encoding="utf-8")
@@ -241,21 +273,30 @@ def main() -> int:
     # ── Default / normal path: refresh + build + deliver (+ serve unless --once) ──
     collect_summary = None
     if args.full_collect:
-        collect_summary = run_collection()
+        # --once means the process exits right after delivery: the DAG must
+        # run synchronously, or a background daemon thread gets killed
+        # before it persists anything (see run_collection_sync docstring).
+        collect_summary = run_collection_sync() if args.once else run_collection()
     else:
         collect_summary = refresh_fast_data(args.db)
     result = _deliver(
-        contracts=args.contracts, anomalies=args.anomalies,
-        max_rows=args.max_contract_rows, learner=args.learner,
-        db=args.db, out_dir=args.out,
+        contracts=args.contracts,
+        anomalies=args.anomalies,
+        max_rows=args.max_contract_rows,
+        learner=args.learner,
+        db=args.db,
+        out_dir=args.out,
     )
-    print(f"[engine] delivered: {result['record']['n_contracts']} contracts, "
-          f"{result['record']['n_anomalies']} anomalies → {args.out}")
+    print(
+        f"[engine] delivered: {result['record']['n_contracts']} contracts, "
+        f"{result['record']['n_anomalies']} anomalies → {args.out}"
+    )
     print(f"[engine] collection: {collect_summary}")
 
     should_serve = (not args.no_serve) and (not args.once)
     if should_serve:
         from agent.brief_server import serve
+
         print(f"[engine] serving brief at http://{args.host}:{args.port}/brief.json (Ctrl+C to stop)")
         serve(out_dir=args.out, port=args.port, host=args.host)
     return 0
