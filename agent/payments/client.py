@@ -101,6 +101,23 @@ class PaddleClient:
         r.raise_for_status()
         return r.json().get("data", {})
 
+    # ── Transactions ────────────────────────────────────────────────────────
+    def get_transaction(self, transaction_id: str) -> dict[str, Any]:
+        """Fetch a transaction by ID (status, subscription_id, customer).
+
+        Used by the key-claim flow (agent/payments/claim.py) to independently
+        confirm — server-side, against Paddle's own API — that a `txn_id` the
+        browser hands back after checkout is real and completed, before ever
+        looking up or returning a subscriber's API key. Raises
+        `httpx.HTTPStatusError` (404) for an unknown transaction id; callers
+        distinguish "unknown" from "not yet completed" by checking the raised
+        status code vs. the `status` field of a successfully fetched one.
+        """
+        url = f"{self.config.api_base}/transactions/{transaction_id}"
+        r = httpx.get(url, headers=self._headers, timeout=30)
+        r.raise_for_status()
+        return r.json().get("data", {})
+
     # ── Customers ──────────────────────────────────────────────────────────
     def get_customer(self, customer_id: str) -> dict[str, Any]:
         """Fetch a customer by ID (for Retain pwCustomer)."""
