@@ -37,7 +37,15 @@ from agent.tools.cert_transparency import (
 
 # ── Timestamps ───────────────────────────────────────────────
 
-NOW = datetime(2026, 3, 28, 12, 0, 0, tzinfo=UTC)
+# Was a hardcoded calendar date (2026-03-28). Tests that inject NOW
+# explicitly (_normalize_record(rec, NOW), mock_dt.now.return_value = NOW)
+# are unaffected by the absolute value. But test_search_returns_certs calls
+# tool.execute(...) uninjected, which uses real datetime.now(UTC)
+# (agent/tools/cert_transparency.py) -- so a frozen NOW meant FUTURE_90D/
+# FUTURE_10D silently drifted into the past as real time passed, and by
+# 2026-08-27 every mock cert (even the 'future' ones) was already expired,
+# giving active=0. Fixed 2026-08-27: derive NOW from real wall-clock time.
+NOW = datetime.now(UTC)
 YESTERDAY = (NOW - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S")
 LAST_WEEK = (NOW - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%S")
 LAST_MONTH = (NOW - timedelta(days=31)).strftime("%Y-%m-%dT%H:%M:%S")

@@ -28,10 +28,41 @@ class _Cfg:
         self.client_token = client_token
 
 
+# Synthetic fixture, not the real products/brief_subscription/pricing.html.
+#
+# These tests originally read the live file directly. That coupled them to
+# whatever the payments/product owner currently ships there -- which legitimately
+# changes independently of this patcher's own logic (PAUSED_TIERS was emptied
+# out 2026-08-26 when the Entity Graph tier was re-enabled; the sandbox price
+# IDs were replaced with real live ones during the sandbox->live cutover).
+# Both changes broke this file's hardcoded "before" assertions even though
+# _patch_pricing_html itself was untouched -- a test coupled to a file it
+# does not own, not a regression in the code under test. Fixed 2026-08-27:
+# a small embedded HTML snippet reproduces the exact same shapes
+# (TIER_PRICE_IDS with a real, non-placeholder ID already set; PAUSED_TIERS
+# keying a tier name to a pause message) without depending on the live file.
+_SYNTHETIC_PRICING_HTML = """<!doctype html>
+<html><head></head><body>
+<script>
+    const PADDLE_ENV = "sandbox";
+    const PADDLE_CLIENT_TOKEN = "test_faketoken_existing";
+    const TIER_PRICE_IDS = {
+      data: "pri_SANDBOX_OLD_DATA_ID",
+      entity: "pri_SANDBOX_OLD_ENTITY_ID",
+      scheduler: "pri_SANDBOX_OLD_SCHEDULER_ID",
+      brief: "pri_SANDBOX_OLD_BRIEF_ID",
+    };
+    const PAUSED_TIERS = {
+      entity: "This tier's description doesn't yet match what you get -- paused pending copy review.",
+    };
+</script>
+</body></html>
+"""
+
+
 def _pricing_html_copy(tmp_path: Path) -> Path:
-    src = Path(__file__).resolve().parents[1] / "products/brief_subscription/pricing.html"
     dst = tmp_path / "pricing.html"
-    dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+    dst.write_text(_SYNTHETIC_PRICING_HTML, encoding="utf-8")
     return dst
 
 
@@ -100,13 +131,13 @@ def test_patch_rewrites_prior_real_price_id_not_just_placeholder(tmp_path, monke
 
     before = html_path.read_text(encoding="utf-8")
     assert "REPLACE_WITH_PRICE_ID_" not in before  # sanity: placeholders already gone
-    assert "pri_01m0xg0kmxgwka7tafgs28qkwp" in before  # the sandbox data price ID
+    assert "pri_SANDBOX_OLD_DATA_ID" in before  # the (synthetic) sandbox data price ID
 
     cfg = _Cfg(mode="live", client_token="live_faketoken")
     sp._patch_pricing_html(cfg, {"data": "pri_LIVE_DATA_NEW"})
 
     after = html_path.read_text(encoding="utf-8")
-    assert "pri_01m0xg0kmxgwka7tafgs28qkwp" not in after
+    assert "pri_SANDBOX_OLD_DATA_ID" not in after
     assert "pri_LIVE_DATA_NEW" in after
 
 

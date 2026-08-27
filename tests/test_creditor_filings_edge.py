@@ -930,7 +930,10 @@ class TestIntegration:
 
         registry = build_tool_registry()
         names = registry.list_names()
-        assert len(names) == 60, f"Expected 60 tools, got {len(names)}: {sorted(names)}"
+        # Was 60; commit 43de067 (2026-08-26) fixed nightlight_activity's
+        # constructor kwarg mismatch (store= vs pipeline_store=) that silently
+        # skipped its registration -- registry now correctly has 61 tools.
+        assert len(names) == 61, f"Expected 61 tools, got {len(names)}: {sorted(names)}"
 
     def test_arm_count(self):
         """Verify total bandit arms = 26."""

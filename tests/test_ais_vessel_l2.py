@@ -449,7 +449,13 @@ class TestPersistPortCallEntities:
         tool._persist_port_call_entities_inner([c])
 
         call_kw = store.store_entity_observation.call_args.kwargs
-        assert call_kw["observed_at"] == "2025-06-15T12:00:00Z"
+        # Was asserted as the raw ISO string. Production always converts
+        # observed_at to a float Unix timestamp via _observed_at_ts (the same
+        # float-only invariant enforced elsewhere in the pipeline -- storing a
+        # date string was a latent bug per agent/tools/gdelt.py's own
+        # comment). 1749988800.0 is the correct epoch value for
+        # 2025-06-15T12:00:00Z. Fixed 2026-08-27.
+        assert call_kw["observed_at"] == 1749988800.0
 
 
 # ===========================================================================

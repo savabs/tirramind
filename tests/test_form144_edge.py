@@ -897,9 +897,10 @@ class TestIntegration:
         config = AgentConfig()
         registry = build_tool_registry(config)
         names = registry.list_names()
-        assert (
-            len(names) == 60
-        )  # Was 27, +3 for defi/gov_contracts/academic_preprints, +1 sanctions_monitor, +1 cert_transparency, +1 sovereign_debt, +1 central_bank_balance, +1 foia_requests
+        assert len(names) == 61  # Was 27, +3 for defi/gov_contracts/academic_preprints, +1 sanctions_monitor,
+        # +1 cert_transparency, +1 sovereign_debt, +1 central_bank_balance, +1 foia_requests,
+        # +1 nightlight_activity (commit 43de067, 2026-08-26 -- registration was silently
+        # skipped by a constructor kwarg mismatch until then)
 
     def test_openai_schema(self):
         tool = Form144Tool()

@@ -83,7 +83,15 @@ class TestRewardWeightWiring:
     def test_compute_reward_accepts_learned_weights(self):
         """compute_reward should use provided weights, not defaults."""
         evaluation = _make_evaluation(score=0.8)
+        # success_weight=0.0 added 2026-08-27: commit 53d7543/reward.py's
+        # 2026-08-24 "success-anchored" fix made success_weight default to
+        # 0.6 and participate in every reward, not just eval/sharpe/etc. This
+        # test isolates eval_weight's contribution (per its own comment
+        # below), so success must be zeroed out too or the objective-success
+        # term (weight 0.6 * success=True = 0.6) silently adds in and the
+        # reward clamps to 1.0 instead of 0.72.
         custom = RewardWeights(
+            success_weight=0.0,
             eval_weight=0.9,
             sharpe_weight=0.0,
             facts_weight=0.0,
@@ -96,8 +104,15 @@ class TestRewardWeightWiring:
 
     def test_default_weights_unchanged(self):
         """DEFAULT_WEIGHTS should be the fallback when no suggestion exists."""
-        assert DEFAULT_WEIGHTS.eval_weight == 0.4
-        assert DEFAULT_WEIGHTS.sharpe_weight == 0.3
+        # Was 0.4 / 0.3. agent/learning/reward.py's RewardWeights docstring
+        # documents a dated (2026-08-24) "success-anchored" redesign:
+        # success_weight became the dominant term (0.6) and eval_weight/
+        # sharpe_weight became secondary fine-tunes (0.15 each), fixing a
+        # cold-start/cost-preference collapse where the bandit optimized
+        # model opinion instead of objective success. Fixed 2026-08-27 to
+        # match the documented, intentional defaults.
+        assert DEFAULT_WEIGHTS.eval_weight == 0.15
+        assert DEFAULT_WEIGHTS.sharpe_weight == 0.15
 
     def test_optimizer_suggests_different_weights_after_trials(self, tmp_path):
         """After recording trials, the optimizer should suggest non-default weights."""

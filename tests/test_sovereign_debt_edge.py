@@ -1348,7 +1348,13 @@ class TestL2PersistenceUSYields(unittest.TestCase):
 
         val = store.store_entity_observation.call_args_list[0].kwargs["value"]
         self.assertEqual(val["source"], "us_treasury")
-        self.assertEqual(val["maturity"], "10y")
+        # Was asserted as "10y". Commit 53d7543 (2026-08-25) changed us_yields
+        # persistence from "latest record only" to "one observation per record,
+        # storing the whole day's curve" -- the observation now spans every
+        # maturity in `yields`, not a single one, so "curve" is the correct
+        # label; "yield_pct" below remains the 10y headline number for
+        # backward-compatible display. Fixed 2026-08-27.
+        self.assertEqual(val["maturity"], "curve")
         self.assertAlmostEqual(val["yield_pct"], 4.44)
         self.assertAlmostEqual(val["curve_2s10s"], 0.56)
 

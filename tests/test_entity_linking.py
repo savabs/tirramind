@@ -446,7 +446,15 @@ def _make_gdelt_event(
     actor2_name: str = "China",
     event_root: str = "04",
     event_description: str = "Consult",
-    goldstein: float = 1.0,
+    # Was 1.0. Commit d140cda added a Goldstein tension gate to
+    # GDELTTool._persist_entities: events with goldstein >= -5.0 ("routine
+    # diplomatic noise") are skipped entirely -- including the event_involves
+    # link creation these tests exist to check. 1.0 is well above that
+    # threshold, so every TestGDELTEventInvolves test silently exercised
+    # nothing and passed-by-coincidence on the assertions that expect zero
+    # links. Fixed 2026-08-27: default to a genuine-conflict-level score so
+    # the linking code path actually runs.
+    goldstein: float = -7.0,
     quad_class: int = 1,
     num_mentions: int = 5,
 ) -> dict[str, Any]:

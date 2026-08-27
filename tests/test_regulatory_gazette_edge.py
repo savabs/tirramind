@@ -7,7 +7,9 @@ date helpers, format_doc normalization, cache interaction, HTTP errors (400/429/
 parameter clamping, URL encoding, output formatting, registry integration, bandit arm.
 """
 
-from datetime import datetime, timedelta, timezone; UTC = timezone.utc
+from datetime import UTC, datetime, timedelta
+
+UTC = UTC
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -1119,7 +1121,10 @@ class TestRegistration:
 
         config = AgentConfig()
         registry = build_tool_registry(config)
-        assert len(registry.list_names()) == 60
+        # Was 60; commit 43de067 (2026-08-26) fixed nightlight_activity's
+        # constructor kwarg mismatch (store= vs pipeline_store=) that silently
+        # skipped its registration -- registry now correctly has 61 tools.
+        assert len(registry.list_names()) == 61
 
 
 # ── 14. Bandit Arm ─────────────────────────────────────────────────

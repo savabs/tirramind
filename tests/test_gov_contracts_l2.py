@@ -125,7 +125,14 @@ class TestObservationStorage:
         tool = GovContractsTool(cache=None, pipeline_store=store)
         award = _make_award(amount_usd=5_000_000.0, agency="DOE")
         tool._persist_entities([award], "US")
-        obs_call = store.store_entity_observation.call_args
+        # Commit 4b7c396 (2026-05-11) added a *second* store_entity_observation
+        # call per award (one for the agency/org entity, spanning the contract
+        # timeline). `call_args` grabs the LAST call, which is the agency-side
+        # observation -- its value dict carries "recipient", not "agency", so
+        # this used to KeyError. call_args_list[0] is the company-side
+        # observation, which is what this test actually documents. Fixed
+        # 2026-08-27.
+        obs_call = store.store_entity_observation.call_args_list[0]
         val = obs_call.kwargs["value"]
         assert val["amount_usd"] == 5_000_000.0
         assert val["agency"] == "DOE"
@@ -208,8 +215,11 @@ class TestDeduplication:
         tool._persist_entities([a1, a2], "US")
         company_calls = [c for c in store.register_entity.call_args_list if c.kwargs.get("entity_type") == "company"]
         assert len(company_calls) == 1
-        # But 2 observations
-        assert store.store_entity_observation.call_count == 2
+        # 2 awards x 2 observations each (company + agency, since commit
+        # 4b7c396 added a per-award agency observation alongside the
+        # per-award company observation) = 4. Was asserted as 2 before that
+        # feature landed; fixed 2026-08-27 to match the documented behaviour.
+        assert store.store_entity_observation.call_count == 4
 
     def test_same_agency_multiple_awards_registered_once(self):
         store = _make_mock_store()

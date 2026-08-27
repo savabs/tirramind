@@ -21,7 +21,9 @@ count assertions (37 tools, 25 arms).
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone; UTC = timezone.utc
+from datetime import UTC, datetime, timedelta
+
+UTC = UTC
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -43,7 +45,14 @@ from agent.tools.foia_requests import (
 
 # ── Timestamps ───────────────────────────────────────────────
 
-NOW = datetime(2026, 3, 31, 12, 0, 0, tzinfo=UTC)
+# Was a hardcoded calendar date (2026-03-31). The production tool filters
+# against datetime.now(UTC) (agent/tools/foia_requests.py), so a frozen NOW
+# made YESTERDAY_S/OLD_DATE_S drift further from "now" every day the suite
+# ran after that date -- by 2026-08-27 "yesterday" was ~149 days stale and
+# fell outside the 30/90-day windows these tests assert on, failing the
+# fixture, not the tool. Fixed 2026-08-27: derive NOW from real wall-clock
+# time so the relative offsets stay correct regardless of when this runs.
+NOW = datetime.now(UTC)
 YESTERDAY_S = (NOW - timedelta(days=1)).strftime("%Y-%m-%d")
 LAST_WEEK_S = (NOW - timedelta(days=7)).strftime("%Y-%m-%d")
 LAST_MONTH_S = (NOW - timedelta(days=31)).strftime("%Y-%m-%d")
@@ -953,7 +962,10 @@ class TestIntegration:
         registry = build_tool_registry()
         names = registry.list_names()
         assert "foia_requests" in names
-        assert len(names) == 60, f"Expected 60 tools, got {len(names)}: {sorted(names)}"
+        # Was 60; commit 43de067 (2026-08-26) fixed nightlight_activity's
+        # constructor kwarg mismatch (store= vs pipeline_store=) that silently
+        # skipped its registration -- registry now correctly has 61 tools.
+        assert len(names) == 61, f"Expected 61 tools, got {len(names)}: {sorted(names)}"
 
     def test_bandit_arm_count(self):
         """Ensure investigation_signals is arm #25."""

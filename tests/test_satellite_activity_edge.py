@@ -37,7 +37,14 @@ from agent.tools.satellite_activity import (
 
 
 @pytest.fixture
-def tool():
+def tool(monkeypatch):
+    # FeaturePreflight.for_api_key falls back to os.getenv(env_var) whenever
+    # key_value is falsy, so setting t._firms_key alone does not fully
+    # isolate these tests from a real/leaked TIRRA_NASA_FIRMS_KEY in the
+    # ambient environment -- observed failing in-suite (passed alone) when
+    # something upstream left the var set. delenv pins this hermetic.
+    # Fixed 2026-08-27.
+    monkeypatch.delenv("TIRRA_NASA_FIRMS_KEY", raising=False)
     cache = MagicMock()
     cache.get.return_value = None
     t = SatelliteActivityTool(cache=cache)
@@ -46,7 +53,9 @@ def tool():
 
 
 @pytest.fixture
-def tool_no_key():
+def tool_no_key(monkeypatch):
+    # See `tool` fixture above: pin hermetic against ambient env leakage.
+    monkeypatch.delenv("TIRRA_NASA_FIRMS_KEY", raising=False)
     cache = MagicMock()
     cache.get.return_value = None
     t = SatelliteActivityTool(cache=cache)

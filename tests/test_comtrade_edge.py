@@ -597,7 +597,10 @@ class TestIntegration:
         from agent.cli import build_tool_registry
 
         reg = build_tool_registry()
-        assert len(reg.list_names()) == 60
+        # Was 60; commit 43de067 (2026-08-26) fixed nightlight_activity's
+        # constructor kwarg mismatch (store= vs pipeline_store=) that silently
+        # skipped its registration -- registry now correctly has 61 tools.
+        assert len(reg.list_names()) == 61
 
     def test_arm_count(self):
         from agent.learning.bandit import DEFAULT_ARMS
