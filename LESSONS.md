@@ -576,6 +576,49 @@ Before implementing anything, read these 3 questions:
 | V46     | Full 90-epoch "unleashed" (100% GDELT, unlimited windows, pure return loss) | +0.0250 (GNN-EmbNorm ICIR=+0.134, GNN-ValueHead Ret=+40.64%) |
 | V47     | Recursive chronological step-updates for GRU memory fallback (F-11 fixed) | pending new run |
 
+### F-13 · Operator Timeout Does Not Stop the Thread → OOM and "Stuck" Runs
+*Discovered: 2026-08-27, first real production chain run since April*
+
+**Symptom:** `tirra-chain` ran all 9 DAGs, then refused to exit for 40+ minutes.
+The box (1 vCPU / 1.9 GB) went to **20 MB available with swap at 2038/2047 MB**.
+`gnn_inference/train_gnn` and `feature_generation/generate_features` were both
+marked `failed`, yet memory kept climbing after they "finished".
+
+**Root Cause:** Two compounding faults.
+1. The executor's timeout marks a node failed and moves on, but says so itself:
+   *"the operator keeps running in the background since a thread cannot be
+   forcibly stopped."* A timed-out operator is still running, still allocating.
+   The timeout is bookkeeping, not cancellation.
+2. `--workers 4` on a single core. Four workers buy no parallelism there, only
+   context-switching and ~4x peak RSS. `TIRRA_PIPELINE_WORKERS` defaults to 4
+   and nothing warned that it exceeded `nproc`.
+
+Net effect: a 30-minute `train_gnn` timeout leaves an orphaned thread eating RAM
+for as long as the parent lives, and the parent cannot exit while it runs.
+
+**Why this hid for months:** it produces exactly the signature we had blamed
+entirely on the executor's status handling — a run stuck in `running` with no
+error recorded. The status bug (fixed in 0b52ab7) was real, but a process
+OOM-killed or wedged behind an orphaned thread produces the same evidence. We
+fixed the *reporting* first and assumed that was the whole story.
+
+**Fix:** (30bb00f)
+- `TIRRA_PIPELINE_WORKERS=1` on single-core hosts; documented in
+  `deploy/env.production.example` with the measurement.
+- Nightly chain narrowed to the light, product-feeding DAGs. `gnn_inference`,
+  `entity_scoring`, `inference` and `rl_training` are excluded — no paid tier
+  depends on them (the $19 digest reads `entity_observations`; Entity Graph
+  reads `entities`/`entity_links`, all written by `daily_collection`).
+- `MemoryMax=1200M` / `MemorySwapMax=1500M` on the chain unit so systemd kills
+  the job rather than letting the OOM killer choose `tirra-api.service`.
+
+**Prevention Rule:** A timeout that cannot cancel its work is not a timeout —
+treat it as a leak. Never schedule an operator whose worst case exceeds the
+box, and never let a background job share an OOM domain with a customer-facing
+service. Before scheduling anything, check `nproc` and `MemTotal` against the
+job's real peak, measured — not assumed.
+
+
 ## PART 2 — Architecture Research
 
 ### M2: Differentiable Options Pricing & Greeks
