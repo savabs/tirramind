@@ -642,3 +642,156 @@ class TestBriefGating:
             assert exc.value.code == 403
         finally:
             httpd.shutdown()
+
+
+# ── /evidence/ingest hardening ──────────────────────────────────────────────
+# Regression tests for security-auditor findings 1 (CRITICAL, arbitrary file
+# read via `path`) and 2 (HIGH, ingest gate fails open on empty token).
+# Spec: docs/specs/evidence_ingest_hardening_spec.md
+
+
+def _ingest_server(tmp_path):
+    """Start a server whose evidence store lives under tmp_path."""
+    from agent.brief_server import _Handler as H
+    from agent.delivery.brief_deliverer import BriefDeliverer
+
+    d = BriefDeliverer(out_dir=str(tmp_path / "del"), render_md=lambda b: "# x")
+
+    class Handler(H):
+        deliverer = d
+        evidence_db = str(tmp_path / "evidence.db")
+
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    return httpd, f"http://127.0.0.1:{httpd.server_address[1]}"
+
+
+def _post_ingest(base, payload, token=None):
+    import urllib.error
+
+    req = urllib.request.Request(
+        base + "/evidence/ingest",
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    if token is not None:
+        req.add_header("X-Ingest-Token", token)
+    try:
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return r.status, r.read().decode()
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode()
+
+
+def test_ingest_denies_all_when_token_empty_and_auth_required(tmp_path, monkeypatch):
+    """Finding 2: empty TIRRA_INGEST_TOKEN must DENY under TIRRA_REQUIRE_AUTH.
+
+    The original gate was `if admin_token and token != admin_token`, which
+    short-circuited to open when the token was empty — and the prod template
+    ships it empty.
+    """
+    monkeypatch.setenv("TIRRA_REQUIRE_AUTH", "1")
+    monkeypatch.delenv("TIRRA_INGEST_TOKEN", raising=False)
+    httpd, base = _ingest_server(tmp_path)
+    try:
+        status, _ = _post_ingest(base, {"doc_id": "d1", "text": "Acme Corp met Beta Inc."})
+        assert status == 403, "empty ingest token must fail CLOSED, not open"
+    finally:
+        httpd.shutdown()
+
+
+def test_ingest_token_mismatch_rejected(tmp_path, monkeypatch):
+    monkeypatch.setenv("TIRRA_INGEST_TOKEN", "correct-token")
+    httpd, base = _ingest_server(tmp_path)
+    try:
+        assert _post_ingest(base, {"doc_id": "d", "text": "x"}, token="wrong")[0] == 403
+        assert _post_ingest(base, {"doc_id": "d", "text": "Acme Corp met Beta Inc."}, token="correct-token")[0] == 200
+    finally:
+        httpd.shutdown()
+
+
+def test_path_ingest_refused_when_ingest_dir_unset(tmp_path, monkeypatch):
+    """Finding 1, secure default: path mode is off unless opted into."""
+    monkeypatch.setenv("TIRRA_INGEST_TOKEN", "t")
+    monkeypatch.delenv("TIRRA_INGEST_DIR", raising=False)
+    target = tmp_path / "readable.txt"
+    target.write_text("Acme Corp met Beta Inc.")
+    httpd, base = _ingest_server(tmp_path)
+    try:
+        status, body = _post_ingest(base, {"doc_id": "d", "path": str(target)}, token="t")
+        assert status == 400
+        assert str(target) not in body, "400 must not echo the path (existence oracle)"
+    finally:
+        httpd.shutdown()
+
+
+def test_path_ingest_rejects_traversal_and_symlink_escape(tmp_path, monkeypatch):
+    """`..` and symlinks must not escape TIRRA_INGEST_DIR."""
+    monkeypatch.setenv("TIRRA_INGEST_TOKEN", "t")
+    ingest_dir = tmp_path / "ingest"
+    ingest_dir.mkdir()
+    outside = tmp_path / "outside.txt"
+    outside.write_text("Acme Corp met Beta Inc.")
+    monkeypatch.setenv("TIRRA_INGEST_DIR", str(ingest_dir))
+
+    escape = ingest_dir / "escape.txt"
+    escape.symlink_to(outside)
+
+    httpd, base = _ingest_server(tmp_path)
+    try:
+        traversal = str(ingest_dir / ".." / "outside.txt")
+        assert _post_ingest(base, {"doc_id": "a", "path": traversal}, token="t")[0] == 400
+        assert _post_ingest(base, {"doc_id": "b", "path": str(escape)}, token="t")[0] == 400
+        assert _post_ingest(base, {"doc_id": "c", "path": "/etc/passwd"}, token="t")[0] == 400
+    finally:
+        httpd.shutdown()
+
+
+def test_path_ingest_allows_file_inside_ingest_dir(tmp_path, monkeypatch):
+    """The allowed case still works — confinement, not removal."""
+    monkeypatch.setenv("TIRRA_INGEST_TOKEN", "t")
+    ingest_dir = tmp_path / "ingest"
+    ingest_dir.mkdir()
+    doc = ingest_dir / "ok.txt"
+    doc.write_text("Acme Corp met Beta Inc. Gamma Ltd signed with Delta Co.")
+    monkeypatch.setenv("TIRRA_INGEST_DIR", str(ingest_dir))
+    httpd, base = _ingest_server(tmp_path)
+    try:
+        assert _post_ingest(base, {"doc_id": "ok", "path": str(doc)}, token="t")[0] == 200
+    finally:
+        httpd.shutdown()
+
+
+def test_env_file_cannot_be_ingested_and_read_back(tmp_path, monkeypatch):
+    """THE EXPLOIT, encoded. Finding 1's full chain, end to end.
+
+    Original attack: POST an env-file path with doc_type=csv (no '.' to split
+    on, so the whole file lands in one "sentence"), then read the secret back
+    out through the tier-gated evidence read routes.
+
+    Asserts both halves: the ingest is refused, AND the secret never reaches
+    the store. Without this test a refactor can silently restore the chain.
+    """
+    monkeypatch.setenv("TIRRA_INGEST_TOKEN", "t")
+    ingest_dir = tmp_path / "ingest"
+    ingest_dir.mkdir()
+    monkeypatch.setenv("TIRRA_INGEST_DIR", str(ingest_dir))
+
+    canary = "CANARY-" + "VALUE-12345"  # noqa: S105 - fabricated, not a credential
+    envfile = tmp_path / ".env.production"
+    envfile.write_text(f"TIRRA_PADDLE_API_KEY={canary}\nTIRRA_PADDLE_WEBHOOK_SECRET={canary}\n")
+
+    httpd, base = _ingest_server(tmp_path)
+    try:
+        status, body = _post_ingest(base, {"doc_id": "pwn", "path": str(envfile), "doc_type": "csv"}, token="t")
+        assert status == 400, "env file outside TIRRA_INGEST_DIR must be refused"
+        assert canary not in body
+
+        from agent.evidence.store import EvidenceGraphStore
+
+        store = EvidenceGraphStore(str(tmp_path / "evidence.db"))
+        dumped = json.dumps(store.graph_export())
+        assert canary not in dumped, "canary reached the evidence graph — chain is OPEN"
+    finally:
+        httpd.shutdown()

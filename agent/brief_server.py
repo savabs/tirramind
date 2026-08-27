@@ -25,6 +25,7 @@ Usage:
 
 from __future__ import annotations
 
+import hmac
 import json
 import logging
 import os
@@ -319,9 +320,7 @@ class _Handler(BaseHTTPRequestHandler):
         body = self.rfile.read(length) if length > 0 else b""
 
         if path == "/evidence/ingest":
-            token = self.headers.get("X-Ingest-Token", "")
-            admin_token = os.getenv("TIRRA_INGEST_TOKEN", "").strip()
-            if admin_token and token.strip() != admin_token:
+            if not self._ingest_authorized():
                 self._send(403, "application/json", json.dumps({"ok": False, "error": "invalid ingest token"}))
                 return
             self._serve_evidence_ingest(body)
@@ -409,6 +408,54 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(400, "application/json", json.dumps({"ok": False, "error": f"bad json: {exc}"}))
             return {}
 
+    def _ingest_authorized(self) -> bool:
+        """Gate POST /evidence/ingest. Fails CLOSED, unlike the original.
+
+        The prior form was ``if admin_token and token != admin_token`` — an
+        empty TIRRA_INGEST_TOKEN short-circuited the check and left ingest
+        world-open. That gate was independent of TIRRA_REQUIRE_AUTH, so a
+        deploy that correctly set TIRRA_REQUIRE_AUTH=1 and left the ingest
+        token blank (as deploy/env.production.example ships it) still exposed
+        the write half of the arbitrary-file-read chain to the internet.
+
+        See docs/research/evidence_ingest_path_traversal.md.
+        """
+        admin_token = os.getenv("TIRRA_INGEST_TOKEN", "").strip()
+        presented = self.headers.get("X-Ingest-Token", "").strip()
+        if admin_token:
+            return hmac.compare_digest(presented, admin_token)
+        if _truthy(os.getenv("TIRRA_REQUIRE_AUTH")):
+            logging.getLogger(__name__).error(
+                "TIRRA_REQUIRE_AUTH is set but TIRRA_INGEST_TOKEN is empty — "
+                "denying all ingest. Configure TIRRA_INGEST_TOKEN."
+            )
+            return False
+        # Dev mode: nothing configured and auth not required → serve open,
+        # matching _authorized_for's contract.
+        return True
+
+    @staticmethod
+    def _resolve_ingest_path(raw: str) -> str | None:
+        """Resolve a caller-supplied ingest path, or None if not allowed.
+
+        Path ingest is opt-in: with TIRRA_INGEST_DIR unset the mode is
+        refused outright, which is the secure default. When set, the resolved
+        realpath must sit inside the resolved base directory — realpath on
+        both sides is what defeats ``..`` traversal AND symlinks pointing out
+        of the base dir, which a string-prefix check would not.
+        """
+        base = os.getenv("TIRRA_INGEST_DIR", "").strip()
+        if not base:
+            return None
+        try:
+            base_real = os.path.realpath(base)
+            target = os.path.realpath(raw)
+        except (OSError, ValueError):
+            return None
+        if target != base_real and not target.startswith(base_real + os.sep):
+            return None
+        return target
+
     def _serve_evidence_ingest(self, body: bytes) -> None:
         req = self._single_body(body)
         if not req:
@@ -432,11 +479,21 @@ class _Handler(BaseHTTPRequestHandler):
                 doc_type=doc_type,
             )
         elif path:
+            safe_path = self._resolve_ingest_path(str(path))
+            if safe_path is None:
+                # Deliberately does not echo the requested path back: that
+                # would turn this 400 into a filesystem-existence oracle.
+                self._send(
+                    400,
+                    "application/json",
+                    json.dumps({"ok": False, "error": "path ingest not permitted"}),
+                )
+                return
             ok = ingest_to_store(
                 store,
                 ing,
                 doc_id=doc_id,
-                path=path,
+                path=safe_path,
                 source=req.get("source", ""),
                 title=req.get("title", ""),
                 doc_type=doc_type,
