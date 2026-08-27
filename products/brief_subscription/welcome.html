@@ -1,0 +1,465 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Welcome to TirraMind</title>
+  <meta name="description" content="Your TirraMind subscription is confirmed. Retrieve your API key here.">
+  <style>
+    :root {
+      --ink: #111;
+      --mut: #666;
+      --acc: #3730a3;
+      --acc-soft: #eef2ff;
+      --bg: #fafafa;
+      --surface: #fff;
+      --line: #e5e5e5;
+      --code-bg: #f3f3f6;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.06);
+      --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --ink: #f5f5f5;
+        --mut: #a0a0a0;
+        --acc: #8b5cf6;
+        --acc-soft: #3730a3;
+        --bg: #0f0f0f;
+        --surface: #1a1a1a;
+        --line: #2a2a2a;
+        --code-bg: #222;
+      }
+    }
+    * { box-sizing: border-box; margin: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+    .wrap { max-width: 900px; margin: 0 auto; padding: 0 32px; }
+    header {
+      padding: 40px 0 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--line);
+      position: sticky;
+      top: 0;
+      background: var(--bg);
+      z-index: 100;
+    }
+    .brand { font-weight: 700; font-size: 16px; letter-spacing: -0.015em; }
+    .brand em { font-style: normal; color: var(--acc); }
+    nav a {
+      color: var(--mut);
+      text-decoration: none;
+      font-size: 13.5px;
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+    nav a:hover, nav a:focus { color: var(--ink); outline: none; }
+    nav a:focus-visible { outline: 2px solid var(--acc); outline-offset: 4px; }
+    main { padding: 60px 0 60px; }
+    h1 { font-size: 44px; letter-spacing: -0.02em; margin-bottom: 12px; font-weight: 750; }
+    .lede { color: var(--mut); font-size: 17px; max-width: 600px; margin-bottom: 48px; line-height: 1.65; }
+
+    .content-box {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 32px;
+      box-shadow: var(--shadow-sm);
+      max-width: 500px;
+    }
+
+    .key-block {
+      background: var(--code-bg);
+      border-radius: 8px;
+      padding: 16px;
+      margin: 20px 0;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 13px;
+      color: var(--ink);
+      word-break: break-all;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .key-text { flex: 1; }
+
+    .copy-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--acc);
+      color: #fff;
+      padding: 8px 16px;
+      border-radius: 6px;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 13px;
+      border: none;
+      font-family: inherit;
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .copy-btn:hover { filter: brightness(0.9); }
+    .copy-btn:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+
+    .loading {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: var(--mut);
+      font-size: 14px;
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid var(--line);
+      border-top-color: var(--acc);
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .message {
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      margin: 16px 0;
+      line-height: 1.6;
+    }
+
+    .message.info {
+      background: var(--acc-soft);
+      color: var(--acc);
+      border: 1px solid var(--acc);
+    }
+
+    .message.error {
+      background: #fef2f2;
+      color: #991b1b;
+      border: 1px solid #fecaca;
+    }
+
+    .message.success {
+      background: #f0fdf4;
+      color: #166534;
+      border: 1px solid #bbf7d0;
+    }
+
+    .warning {
+      background: #fef3c7;
+      color: #92400e;
+      border: 1px solid #fcd34d;
+      padding: 16px;
+      border-radius: 8px;
+      margin: 20px 0;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .warning strong { display: block; margin-bottom: 8px; }
+
+    .next-steps {
+      margin-top: 24px;
+      font-size: 14px;
+      color: var(--mut);
+      line-height: 1.65;
+    }
+
+    .next-steps strong { display: block; color: var(--ink); margin-bottom: 8px; margin-top: 16px; }
+
+    .cta {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--acc);
+      color: #fff;
+      padding: 12px 28px;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 14px;
+      border: none;
+      font-family: inherit;
+      cursor: pointer;
+      transition: all 0.2s;
+      box-shadow: var(--shadow-sm);
+      margin-top: 24px;
+    }
+    .cta:hover { filter: brightness(0.9); transform: translateY(-1px); box-shadow: var(--shadow-md); }
+    .cta:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+
+    .txn-ref {
+      font-size: 12px;
+      color: var(--mut);
+      margin-top: 16px;
+      padding: 12px;
+      background: var(--code-bg);
+      border-radius: 6px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      word-break: break-all;
+    }
+
+    footer {
+      border-top: 1px solid var(--line);
+      padding: 40px 0 48px;
+      color: var(--mut);
+      font-size: 13px;
+      margin-top: 60px;
+    }
+    footer a { color: var(--mut); text-decoration: none; margin-right: 24px; transition: color 0.2s; }
+    footer a:hover, footer a:focus { color: var(--ink); }
+    footer a:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+    .contact-footer { margin-top: 12px; font-size: 12.5px; }
+
+    @media (max-width: 768px) {
+      .wrap { padding: 0 24px; }
+      h1 { font-size: 32px; }
+      main { padding: 40px 0 40px; }
+      header { padding: 24px 0; }
+      .content-box { padding: 24px; }
+      .key-block { flex-direction: column; align-items: flex-start; }
+      .copy-btn { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="brand">Tirra<em>Mind</em></div>
+      <nav><a href="/">&larr; Back home</a></nav>
+    </header>
+    <main>
+      <h1>Welcome</h1>
+      <p class="lede" id="subtitle">Your subscription is being set up. One moment...</p>
+
+      <div class="content-box" id="contentBox">
+        <div class="loading" id="loadingState">
+          <div class="spinner"></div>
+          <span>Provisioning your key...</span>
+        </div>
+
+        <div id="successState" style="display: none;">
+          <div class="message success">Your subscription is confirmed and active.</div>
+
+          <p style="margin-bottom: 8px; color: var(--mut);">Your API key:</p>
+          <div class="key-block">
+            <div class="key-text" id="keyDisplay"></div>
+            <button class="copy-btn" id="copyBtn">Copy</button>
+          </div>
+
+          <div class="warning">
+            <strong>Save this key now — we only show it once.</strong>
+            For your security, you won't be able to retrieve this key again. Keep it somewhere safe, like your password manager or encrypted notes.
+          </div>
+
+          <div class="next-steps">
+            <strong>Next steps:</strong>
+            <ul style="margin-left: 20px;">
+              <li>Add your key to your application using the header <code>X-Brief-Key: &lt;your key&gt;</code></li>
+              <li>Read the <a href="/pricing" style="color: var(--acc);">pricing page</a> to see available endpoints</li>
+              <li><a href="/contact" style="color: var(--acc);">Contact us</a> if you have questions</li>
+            </ul>
+          </div>
+        </div>
+
+        <div id="alreadyClaimedState" style="display: none;">
+          <div class="message info">This key has already been delivered.</div>
+          <p style="margin-top: 16px; color: var(--mut);">
+            If you've lost your API key, please <a href="/contact" style="color: var(--acc);">contact us</a> to request a rotation.
+          </p>
+        </div>
+
+        <div id="errorState" style="display: none;">
+          <div class="message error" id="errorMessage"></div>
+          <p style="margin-top: 16px; color: var(--mut);" id="errorDetails"></p>
+        </div>
+
+        <div id="noTxnState" style="display: none;">
+          <div class="message info">We couldn't confirm your transaction automatically.</div>
+          <p style="margin-top: 16px; color: var(--mut);">
+            Refresh this page in a moment — your key should appear here once provisioning completes. If the issue persists, <a href="/contact" style="color: var(--acc);">let us know</a> and include your confirmation email.
+          </p>
+        </div>
+      </div>
+    </main>
+
+    <footer>
+      <div>
+        <a href="/terms">Terms</a>
+        <a href="/privacy">Privacy</a>
+        <a href="/refunds">Refunds</a>
+        <a href="/contact">Contact</a>
+      </div>
+      <div class="contact-footer">TirraMind — deterministic signal infrastructure licensed as an API</div>
+    </footer>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(location.search);
+    // Supplied by pricing.html's Paddle.Initialize eventCallback, which reads
+    // event.data.transaction_id on `checkout.completed` and redirects here as
+    // /welcome?txn=<id>. Paddle does NOT decorate a merchant successUrl with
+    // the transaction id (`_ptxn` is for the opposite flow — passing an
+    // existing transaction INTO a hosted checkout link), so the bare
+    // successUrl fallback lands here with no param at all. That case is
+    // handled below as "provisioning may still be catching up", not an error.
+    const txn = params.get('txn');
+
+    const loadingState = document.getElementById('loadingState');
+    const successState = document.getElementById('successState');
+    const alreadyClaimedState = document.getElementById('alreadyClaimedState');
+    const errorState = document.getElementById('errorState');
+    const noTxnState = document.getElementById('noTxnState');
+    const errorMessage = document.getElementById('errorMessage');
+    const errorDetails = document.getElementById('errorDetails');
+    const keyDisplay = document.getElementById('keyDisplay');
+    const copyBtn = document.getElementById('copyBtn');
+    const subtitle = document.getElementById('subtitle');
+
+    // Helper: show a state and hide others
+    function showState(state) {
+      loadingState.style.display = state === 'loading' ? 'flex' : 'none';
+      successState.style.display = state === 'success' ? 'block' : 'none';
+      alreadyClaimedState.style.display = state === 'alreadyClaimed' ? 'block' : 'none';
+      errorState.style.display = state === 'error' ? 'block' : 'none';
+      noTxnState.style.display = state === 'noTxn' ? 'block' : 'none';
+    }
+
+    // Backoff schedule: 2s, 3s, 5s, 8s, then 10s every time
+    function getBackoffMs(attempt) {
+      const times = [2000, 3000, 5000, 8000];
+      return attempt < 4 ? times[attempt] : 10000;
+    }
+
+    // Claim the transaction with polling
+    async function claimTransaction() {
+      if (!txn) {
+        showState('noTxn');
+        subtitle.textContent = 'Transaction not found';
+        return;
+      }
+
+      showState('loading');
+      let attempt = 0;
+      const maxAttempts = 14; // ~2 minutes total
+
+      const poll = async () => {
+        try {
+          const url = 'https://api.tirramind.com/api/v1/claim?txn=' + encodeURIComponent(txn);
+          const response = await fetch(url, { credentials: 'omit' });
+          const data = await response.json();
+
+          if (data.status === 'claimed') {
+            keyDisplay.textContent = data.api_key;
+            copyBtn.onclick = () => {
+              navigator.clipboard.writeText(data.api_key).then(() => {
+                copyBtn.textContent = 'Copied!';
+                setTimeout(() => { copyBtn.textContent = 'Copy'; }, 2000);
+              });
+            };
+            showState('success');
+            subtitle.textContent = 'Your API key is ready';
+            return;
+          }
+
+          if (data.status === 'already_claimed') {
+            showState('alreadyClaimed');
+            subtitle.textContent = 'Key already claimed';
+            return;
+          }
+
+          if (data.status === 'pending' && attempt < maxAttempts) {
+            attempt++;
+            const delay = getBackoffMs(attempt - 1);
+            setTimeout(poll, delay);
+            return;
+          }
+
+          // 429 from the claim rate limiter is NOT terminal. Without this
+          // branch a throttled poll fell through to the generic error screen
+          // and told an already-charged customer their setup had failed,
+          // while their subscription was perfectly fine. Honour Retry-After
+          // and keep polling.
+          if (data.status === 'rate_limited' && attempt < maxAttempts) {
+            attempt++;
+            const wait = Math.max(1, Number(data.retry_after_s) || 5) * 1000;
+            setTimeout(poll, wait);
+            return;
+          }
+
+          // Terminal error states
+          if (data.status === 'pending' && attempt >= maxAttempts) {
+            errorMessage.textContent = 'Provisioning taking longer than expected';
+            errorDetails.innerHTML = 'Your subscription was created successfully, but we couldn\'t retrieve your key in time. <a href="/contact" style="color: var(--acc);">Contact us</a> with your transaction ID to complete the setup.';
+            if (txn) {
+              const ref = document.createElement('div');
+              ref.className = 'txn-ref';
+              ref.textContent = 'Transaction ID: ' + txn;
+              errorState.appendChild(ref);
+            }
+            showState('error');
+            subtitle.textContent = 'Setup delayed';
+            return;
+          }
+
+          // Other terminal errors
+          errorMessage.textContent = data.message || 'Could not complete subscription setup';
+          if (data.transaction_status) {
+            errorDetails.textContent = 'Transaction status: ' + data.transaction_status + '. Please check your payment method and try again, or contact support.';
+          } else {
+            errorDetails.textContent = data.message || 'An unexpected issue occurred. Please try refreshing, or contact us if the problem persists.';
+          }
+          if (txn) {
+            const ref = document.createElement('div');
+            ref.className = 'txn-ref';
+            ref.textContent = 'Transaction ID: ' + txn;
+            errorState.appendChild(ref);
+          }
+          showState('error');
+          subtitle.textContent = 'Setup failed';
+        } catch (err) {
+          console.error('[Welcome] Claim error:', err);
+          if (attempt < maxAttempts) {
+            attempt++;
+            const delay = getBackoffMs(attempt - 1);
+            setTimeout(poll, delay);
+          } else {
+            errorMessage.textContent = 'Network error — provisioning taking too long';
+            errorDetails.innerHTML = 'We\'re having trouble reaching our servers. <a href="/" style="color: var(--acc);">Refresh this page</a> to try again, or <a href="/contact" style="color: var(--acc);">contact us</a> if the issue persists.';
+            if (txn) {
+              const ref = document.createElement('div');
+              ref.className = 'txn-ref';
+              ref.textContent = 'Transaction ID: ' + txn;
+              errorState.appendChild(ref);
+            }
+            showState('error');
+            subtitle.textContent = 'Connection issue';
+          }
+        }
+      };
+
+      poll();
+    }
+
+    // Start on page load
+    document.addEventListener('DOMContentLoaded', claimTransaction);
+  </script>
+</body>
+</html>
