@@ -68,7 +68,7 @@
       <div class="plan" id="data">
         <div class="plan-head">
           <h2>Data Platform</h2>
-          <div class="price">$500<span> / month, up to $5,000 (enterprise)</span></div>
+          <div class="price"><span class="price-amount">$500</span><span> / month, up to $5,000 (enterprise)</span></div>
         </div>
         <p class="tagline">Query the raw, structured data our pipeline ingests daily — SEC filings, CFTC positioning, GDELT events, AIS vessel tracking, and more — from 47 integrated public sources, deduplicated and timestamped in one place. No API integration, no scraper to maintain.</p>
         <ul>
@@ -117,7 +117,7 @@
       <div class="plan" id="entity">
         <div class="plan-head">
           <h2>Entity Graph</h2>
-          <div class="price">$300<span> / month, up to $2,000 (enterprise)</span></div>
+          <div class="price"><span class="price-amount">$300</span><span> / month, up to $2,000 (enterprise)</span></div>
         </div>
         <p class="tagline">A deterministic, no-LLM pipeline that extracts entities and relationships from ingested documents — PDF, news, CSV, plain text — with every mention and link tracing back to the exact source sentence it came from. Cross-document co-occurrence — the same pair recurring across sources, not just one — is the signal.</p>
         <ul>
@@ -161,7 +161,7 @@
       <div class="plan" id="scheduler">
         <div class="plan-head">
           <h2>Scheduler</h2>
-          <div class="price">$50<span> / month, up to $2,000 (enterprise)</span></div>
+          <div class="price"><span class="price-amount">$50</span><span> / month, up to $2,000 (enterprise)</span></div>
         </div>
         <p class="tagline">Read-only visibility into the DAG-based execution engine that runs our own pipeline in production — run history, status, and timing per DAG.</p>
         <ul>
@@ -193,7 +193,7 @@
       <div class="plan brief-plan" id="brief">
         <div class="plan-head">
           <h2>Opportunity Brief</h2>
-          <div class="price">$19<span> / month</span></div>
+          <div class="price"><span class="price-amount">$19</span><span> / month</span></div>
         </div>
         <p class="tagline">The lightweight weekly digest: ranked federal contracts by expected value, plus real market anomalies. Deterministic math, no black box. A good starting point if you don't need the API tiers yet.</p>
         <ul>
@@ -294,6 +294,34 @@
     if (PADDLE_ENV === "sandbox") Paddle.Environment.set("sandbox");
     if (!PADDLE_CLIENT_TOKEN.startsWith("REPLACE_")) {
       Paddle.Initialize({ token: PADDLE_CLIENT_TOKEN });
+    }
+
+    // ── Localized pricing ────────────────────────────────────────────────
+    // Paddle.PricePreview() auto-detects the visitor's country from their
+    // IP (no address passed) and returns each price already formatted for
+    // that country's currency — this is the same conversion Paddle will
+    // actually charge at checkout, not an approximate FX rate we'd have to
+    // maintain ourselves. Only the base recurring price is replaced; the
+    // "up to $X (enterprise)" text is a custom-quote figure, not a real
+    // Paddle price ID, so it's left in USD. Fails silently and leaves the
+    // hardcoded USD prices in place if PricePreview errors or a browser
+    // blocks the request — USD is a correct fallback, not broken UI.
+    if (!PADDLE_CLIENT_TOKEN.startsWith("REPLACE_")) {
+      const items = Object.values(TIER_PRICE_IDS).map((priceId) => ({ priceId, quantity: 1 }));
+      Paddle.PricePreview({ items })
+        .then((result) => {
+          const byPriceId = {};
+          for (const [tier, priceId] of Object.entries(TIER_PRICE_IDS)) byPriceId[priceId] = tier;
+          for (const item of result.data.details.lineItems) {
+            const tier = byPriceId[item.price.id];
+            const el = tier && document.querySelector(`#${tier} .price-amount`);
+            if (el) el.textContent = item.formattedTotals.total;
+          }
+        })
+        .catch(() => {
+          // Localized pricing is a nice-to-have — the page still works
+          // correctly in USD if this fails for any reason.
+        });
     }
 
     function openCheckout(tier) {
