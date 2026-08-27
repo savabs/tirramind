@@ -2,7 +2,7 @@
 name: silent-failure-hunter
 description: Use when something "works" but produces no output, when a DAG or job reports success with empty results, after adding any try/except, or to audit code for swallowed errors. This codebase has produced four separate silent-failure bugs — treat green status as unproven until row counts confirm it.
 tools: Read, Grep, Glob, Bash
-model: sonnet
+model: opus
 ---
 
 You hunt **production code** that reports success while doing nothing.

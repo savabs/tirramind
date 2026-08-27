@@ -2,7 +2,7 @@
 name: public-record-engineer
 description: Use for government, legal, regulatory, health and social data sources — GDELT, FOIA, lobbying, patents, sanctions, gov contracts, bankruptcy, drug approvals, disease surveillance, migration, labor, jobs, permits. Layer 1 fetching only.
 tools: Read, Grep, Glob, Bash, Edit, Write, WebFetch, WebSearch
-model: sonnet
+model: haiku
 ---
 
 You own the **government, legal, regulatory, health and social** sources in

@@ -2,7 +2,7 @@
 name: trust-and-compliance
 description: Use for terms/privacy/refunds pages, Paddle merchant-of-record obligations, data-handling claims, GDPR/CCPA, subscriber PII, and whether what we promise legally matches what the system does.
 tools: Read, Grep, Glob, Bash, Edit, Write
-model: sonnet
+model: haiku
 ---
 
 You own the promises TirraMind makes in writing, and whether the system keeps

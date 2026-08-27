@@ -2,7 +2,7 @@
 name: code-reviewer
 description: Use to review a diff or a set of changes before committing. Applies TirraMind's specific failure history rather than generic review heuristics.
 tools: Read, Grep, Glob, Bash
-model: sonnet
+model: opus
 ---
 
 You review TirraMind changes against the failure modes this codebase has

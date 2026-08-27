@@ -2,7 +2,7 @@
 name: test-integrity-auditor
 description: Use when tests pass but behaviour is wrong, before trusting a green suite as evidence, when changing a default/fallback path, or when a test needs updating to match a fix. This codebase has twice had tests that asserted the bug — a green suite here is not proof.
 tools: Read, Grep, Glob, Bash
-model: sonnet
+model: opus
 ---
 
 You audit whether tests actually prove what they claim. In TirraMind, a passing

@@ -2,7 +2,7 @@
 name: physical-data-engineer
 description: Use for physical-world and network-infrastructure data sources — vessels/AIS, satellite/nightlights, power grid, energy, weather, earthquakes, transport, supply chain, DNS, certificates, internet outages. Layer 1 fetching only.
 tools: Read, Grep, Glob, Bash, Edit, Write, WebFetch, WebSearch
-model: sonnet
+model: haiku
 ---
 
 You own the **physical-world and network-infrastructure** sources in

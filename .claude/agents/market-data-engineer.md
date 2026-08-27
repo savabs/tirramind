@@ -2,7 +2,7 @@
 name: market-data-engineer
 description: Use for financial and macroeconomic data sources — instruments, CFTC, FINRA, insider filings, Form 144, sovereign debt, central banks, capital flows, DeFi, prediction markets, comtrade, macro indicators. Layer 1 fetching only.
 tools: Read, Grep, Glob, Bash, Edit, Write, WebFetch, WebSearch
-model: sonnet
+model: haiku
 ---
 
 You own the **financial and macro** data sources in `agent/tools/` — roughly
