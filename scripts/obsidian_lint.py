@@ -26,7 +26,7 @@ import re
 import subprocess
 import sys
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -65,6 +65,10 @@ SKIP_DIRS = {
     "tirramind_vault",
     ".mypy_cache",
     ".pytest_cache",
+    # Generated customer artifacts, not vault notes. intelligence_brief.md is
+    # rewritten by every brief run, so it can never carry stable frontmatter —
+    # linting it blocks commits whenever a brief has been generated locally.
+    ".tirra_delivery",
 }
 
 # Files that are allowed to lack frontmatter (templates, config, etc.)
@@ -254,9 +258,7 @@ def git_last_modified(path: Path) -> datetime | None:
 # ── Lint passes ──────────────────────────────────────────────────────────────
 
 
-def lint_frontmatter(
-    rel: str, meta: dict[str, object] | None, report: LintReport
-) -> None:
+def lint_frontmatter(rel: str, meta: dict[str, object] | None, report: LintReport) -> None:
     stem = Path(rel).stem
     if stem in FRONTMATTER_EXEMPT:
         return
@@ -272,9 +274,7 @@ def lint_frontmatter(
     for field_name in VAULT_REQUIRED_FIELDS:
         val = meta.get(field_name)
         if val is None or (isinstance(val, str) and not val.strip()):
-            report.findings.append(
-                Finding("FM02", f"Missing required field: {field_name}", rel)
-            )
+            report.findings.append(Finding("FM02", f"Missing required field: {field_name}", rel))
     # Tag taxonomy check
     tags = meta.get("tags", [])
     if isinstance(tags, list):
@@ -291,9 +291,7 @@ def lint_frontmatter(
                 )
 
 
-def lint_links(
-    all_links: dict[str, list[str]], stem_index: dict[str, str], report: LintReport
-) -> None:
+def lint_links(all_links: dict[str, list[str]], stem_index: dict[str, str], report: LintReport) -> None:
     """Check for broken links and orphan pages."""
     incoming: dict[str, int] = {}
     for rel, links in all_links.items():
@@ -306,21 +304,14 @@ def lint_links(
         for target in links:
             target_clean = target.strip()
             # Skip placeholder / example targets
-            if (
-                PLACEHOLDER_LINK_RE.search(target_clean)
-                or target_clean.lower() in EXAMPLE_LINK_TARGETS
-            ):
+            if PLACEHOLDER_LINK_RE.search(target_clean) or target_clean.lower() in EXAMPLE_LINK_TARGETS:
                 continue
             # Normalize: strip pages/ prefix if present
             if target_clean.startswith("pages/"):
                 target_clean = Path(target_clean).stem
             if target_clean not in stem_index:
                 if not exempt:
-                    report.findings.append(
-                        Finding(
-                            "LK01", f"Broken link [[{target}]] — target not found", rel
-                        )
-                    )
+                    report.findings.append(Finding("LK01", f"Broken link [[{target}]] — target not found", rel))
             else:
                 incoming[target_clean] = incoming.get(target_clean, 0) + 1
 
@@ -343,9 +334,7 @@ def lint_links(
         if rel in ("wiki/index.md", "wiki/log.md"):
             continue
         if stem not in incoming:
-            report.findings.append(
-                Finding("LK02", "Orphan page — no incoming wiki links", rel)
-            )
+            report.findings.append(Finding("LK02", "Orphan page — no incoming wiki links", rel))
             report.orphan_count += 1
 
 
@@ -361,9 +350,7 @@ SIZE_EXEMPT = {
 }
 
 
-def lint_structure(
-    rel: str, content: str, line_threshold: int, report: LintReport
-) -> None:
+def lint_structure(rel: str, content: str, line_threshold: int, report: LintReport) -> None:
     """Check file size and Related section presence."""
     line_count = content.count("\n") + 1
     if line_count > line_threshold and rel not in SIZE_EXEMPT:
@@ -380,32 +367,24 @@ def lint_structure(
         stem = Path(rel).stem
         if stem not in FRONTMATTER_EXEMPT:
             if "## Related" not in content:
-                report.findings.append(
-                    Finding("ST02", "Missing ## Related section", rel)
-                )
+                report.findings.append(Finding("ST02", "Missing ## Related section", rel))
 
 
-def lint_staleness(
-    rel: str, md_path: Path, stale_days: int, report: LintReport
-) -> None:
+def lint_staleness(rel: str, md_path: Path, stale_days: int, report: LintReport) -> None:
     """Flag files not modified in git for >stale_days."""
     last_mod = git_last_modified(md_path)
     if last_mod is None:
         return  # untracked or git unavailable
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     age = (now - last_mod).days
     if age > stale_days:
-        report.findings.append(
-            Finding("ST03", f"Stale — last git change {age} days ago", rel)
-        )
+        report.findings.append(Finding("ST03", f"Stale — last git change {age} days ago", rel))
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 
-def run_lint(
-    *, line_threshold: int = 500, check_stale: bool = True, stale_days: int = 90
-) -> LintReport:
+def run_lint(*, line_threshold: int = 500, check_stale: bool = True, stale_days: int = 90) -> LintReport:
     """Execute all lint passes and return the report."""
     report = LintReport()
     files = iter_md_files()
@@ -449,9 +428,7 @@ def format_text(report: LintReport) -> str:
     lines = []
     lines.append(f"Obsidian Vault Lint — {report.total_files} files scanned")
     lines.append(f"  Files with frontmatter: {report.files_with_frontmatter}")
-    lines.append(
-        f"  Wiki links: {report.total_wiki_links} ({report.unique_link_targets} unique targets)"
-    )
+    lines.append(f"  Wiki links: {report.total_wiki_links} ({report.unique_link_targets} unique targets)")
     lines.append(f"  Orphan pages: {report.orphan_count}")
     lines.append("")
 
@@ -491,9 +468,7 @@ def format_json(report: LintReport) -> str:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Obsidian vault-wide lint for TirraMind"
-    )
+    parser = argparse.ArgumentParser(description="Obsidian vault-wide lint for TirraMind")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
     parser.add_argument("--no-stale", action="store_true", help="Skip staleness checks")
     parser.add_argument(

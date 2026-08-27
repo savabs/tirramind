@@ -6,6 +6,7 @@ Emits DRIFT events on FM01/FM02/LK01 findings.
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 from agent.awos.events.schema import Event, TriggerCategory
@@ -26,7 +27,7 @@ class ObsidianWatcher(Watcher):
         if not script.exists():
             return []
         code, out, _err = run_subprocess(
-            ["python", str(script), "--json"],
+            [sys.executable, str(script), "--json"],
             self.repo_root,
             timeout=self.timeout,
         )

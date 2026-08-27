@@ -4228,6 +4228,7 @@ class FineTuner:
         lr: float = 1e-3,
         epochs: int = 10,
         freeze_backbone: bool = True,
+        config: TrainerConfig | None = None,
     ) -> None:
         self.model = model
         self.store = store
@@ -4235,6 +4236,14 @@ class FineTuner:
         self.lr = lr
         self.epochs = epochs
         self.freeze_backbone = freeze_backbone
+        # Mirrors Trainer.__init__ (see self.config assignment above). The
+        # GraphBuilder block below was copy-pasted from Trainer in 53d7543d
+        # WITHOUT this line, so self.config was never set and every
+        # FineTuner(...) raised AttributeError two lines later — i.e. the
+        # finetune=True path crashed on every invocation, not just an edge
+        # case. Default TrainerConfig keeps zero_price_feats=False, which is
+        # the N1 doctrine default the builder expects.
+        self.config = config or TrainerConfig()
         self._graph_builder = GraphBuilder(
             store,
             zero_price_feats=self.config.zero_price_feats,

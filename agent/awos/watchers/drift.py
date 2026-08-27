@@ -6,6 +6,7 @@ Emits a ``DRIFT`` event when the fact-lint reports FL01/FL03 findings.
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 from agent.awos.events.schema import Event, TriggerCategory
@@ -25,7 +26,7 @@ class DriftWatcher(Watcher):
             return []
         # prefer JSON output if supported; fall back to exit code
         code, out, err = run_subprocess(
-            ["python", str(script), "--json"],
+            [sys.executable, str(script), "--json"],
             self.repo_root,
             timeout=self.timeout,
         )
