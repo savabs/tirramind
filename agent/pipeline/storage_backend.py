@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 import re
 import sqlite3
+import threading
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
@@ -66,6 +67,63 @@ class StorageBackend(ABC):
         return False
 
 
+class _LockingConnection:
+    """Serializes access to a single ``sqlite3.Connection`` across threads.
+
+    ``PipelineStore`` is built once (in ``build_tool_registry``) and handed to
+    *every* tool as ``pipeline_store=`` *and* to ``DAGExecutor``. ``DAGExecutor``
+    runs a DAG layer's independent nodes concurrently via a ``ThreadPoolExecutor``
+    (daily_collection's first layer alone has ~55 nodes), so multiple worker
+    threads call methods like ``register_entity`` / ``store_entity_observation``
+    / ``store_data`` on this *same* connection object at the same time.
+    ``check_same_thread=False`` only disables Python's own thread-affinity
+    check — the underlying SQLite C API is not safe for concurrent use of one
+    connection object without external synchronization, and concurrent writes
+    from several worker threads reproducibly raise
+    ``sqlite3.InterfaceError: bad parameter or other API misuse`` (observed
+    live during `daily_collection` verification, e.g. from
+    ``bankruptcy_court``'s and ``defi_flows``'s entity-persistence calls
+    racing each other). A single process-wide-per-connection ``RLock`` around
+    every statement fixes it without touching the ~80 call sites in
+    ``store.py`` or any tool code.
+    """
+
+    __slots__ = ("_conn", "_lock")
+
+    def __init__(self, conn: sqlite3.Connection, lock: threading.RLock) -> None:
+        self._conn = conn
+        self._lock = lock
+
+    def execute(self, *args: Any, **kwargs: Any) -> sqlite3.Cursor:
+        with self._lock:
+            return self._conn.execute(*args, **kwargs)
+
+    def executemany(self, *args: Any, **kwargs: Any) -> sqlite3.Cursor:
+        with self._lock:
+            return self._conn.executemany(*args, **kwargs)
+
+    def executescript(self, *args: Any, **kwargs: Any) -> sqlite3.Cursor:
+        with self._lock:
+            return self._conn.executescript(*args, **kwargs)
+
+    def commit(self) -> None:
+        with self._lock:
+            self._conn.commit()
+
+    def rollback(self) -> None:
+        with self._lock:
+            self._conn.rollback()
+
+    def close(self) -> None:
+        with self._lock:
+            self._conn.close()
+
+    def __getattr__(self, name: str) -> Any:
+        # row_factory, isolation_level, etc. — plain passthrough, no locking
+        # needed for attribute reads/writes on the connection object itself.
+        return getattr(self._conn, name)
+
+
 class SQLiteBackend(StorageBackend):
     """SQLite-backed storage with WAL mode and busy-timeout."""
 
@@ -74,19 +132,21 @@ class SQLiteBackend(StorageBackend):
         self._is_memory = self._db_path == ":memory:"
         if not self._is_memory:
             Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
-        self._conn: sqlite3.Connection | None = None
+        self._conn: _LockingConnection | None = None
+        self._lock = threading.RLock()
 
     def get_connection(self) -> sqlite3.Connection:
         if self._conn is None:
-            self._conn = sqlite3.connect(
+            raw = sqlite3.connect(
                 self._db_path,
                 check_same_thread=False,
                 timeout=10.0,
             )
-            self._conn.row_factory = sqlite3.Row
-            self._conn.execute("PRAGMA journal_mode=WAL")
-            self._conn.execute("PRAGMA busy_timeout=5000")
-        return self._conn
+            raw.row_factory = sqlite3.Row
+            raw.execute("PRAGMA journal_mode=WAL")
+            raw.execute("PRAGMA busy_timeout=5000")
+            self._conn = _LockingConnection(raw, self._lock)
+        return self._conn  # type: ignore[return-value]
 
     def init_schema(self, schema_sql: str) -> None:
         conn = self.get_connection()

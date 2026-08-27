@@ -443,7 +443,25 @@ class PipelineStore:
         """Re-run schema initialization (idempotent)."""
         self._backend.init_schema(_SCHEMA_MIGRATIONS_SQL)
         self._backend.init_schema(_SCHEMA_SQL)
+        self._migrate_dag_runs_heartbeat()
         self._record_schema_version()
+
+    def _migrate_dag_runs_heartbeat(self) -> None:
+        """Add ``dag_runs.heartbeat_at`` to databases created before it existed.
+
+        ``CREATE TABLE IF NOT EXISTS`` in ``_SCHEMA_SQL`` never adds columns to
+        an already-existing table, so any pre-existing ``.tirra_pipeline/*.db``
+        needs this column added explicitly. Without it, a run that crashes
+        mid-execution (process killed, box rebooted) leaves ``status='running'``
+        forever — nothing ever flips it to 'failed'. ``reap_stale_runs()``
+        below is what actually reaps those; this just gives it a column to
+        distinguish "still alive" from "died silently."
+        """
+        conn = self._get_conn()
+        cols = {row["name"] for row in conn.execute("PRAGMA table_info(dag_runs)").fetchall()}
+        if "heartbeat_at" not in cols:
+            conn.execute("ALTER TABLE dag_runs ADD COLUMN heartbeat_at REAL")
+            conn.commit()
 
     def _record_schema_version(self) -> None:
         conn = self._get_conn()
@@ -510,13 +528,82 @@ class PipelineStore:
         if run_id is None:
             run_id = uuid.uuid4().hex[:12]
         conn = self._get_conn()
+        now = time.time()
         conn.execute(
-            "INSERT INTO dag_runs (run_id, dag_name, started_at, status, trigger) VALUES (?, ?, ?, 'running', ?)",
-            (run_id, dag_name, time.time(), trigger),
+            "INSERT INTO dag_runs (run_id, dag_name, started_at, status, trigger, heartbeat_at) "
+            "VALUES (?, ?, ?, 'running', ?, ?)",
+            (run_id, dag_name, now, trigger, now),
         )
         conn.commit()
         log.info("Pipeline run started: %s [%s] trigger=%s", dag_name, run_id, trigger)
         return run_id
+
+    def heartbeat(self, run_id: str) -> None:
+        """Mark *run_id* as still alive. Called periodically by the executor
+        while a run is in progress (see ``DAGExecutor.execute``'s per-layer
+        heartbeat) so ``reap_stale_runs`` can tell "long-running but alive"
+        apart from "process died and nobody will ever call record_run_end."
+        """
+        conn = self._get_conn()
+        conn.execute(
+            "UPDATE dag_runs SET heartbeat_at=? WHERE run_id=? AND status='running'",
+            (time.time(), run_id),
+        )
+        conn.commit()
+
+    def reap_stale_runs(self, stale_after_seconds: float = 3600.0) -> list[str]:
+        """Mark any run stuck in ``status='running'`` past *stale_after_seconds*
+        since its last heartbeat as ``'failed'``.
+
+        This is the fix for the documented failure mode: a process that dies
+        mid-run (killed, OOM, box reboot) never reaches ``record_run_end``, so
+        without this the row sits at ``status='running'`` forever — indistin-
+        guishable, to any later query, from a run that is still legitimately
+        in progress. Called opportunistically at the start of
+        ``DAGExecutor.execute`` so every entry point (manual trigger,
+        scheduler, ``run_chain.py``) self-heals the table before adding a new
+        run to it.
+
+        Returns the list of run_ids that were reaped.
+        """
+        conn = self._get_conn()
+        cutoff = time.time() - stale_after_seconds
+        rows = conn.execute(
+            "SELECT run_id, dag_name, started_at, heartbeat_at FROM dag_runs "
+            "WHERE status='running' AND COALESCE(heartbeat_at, started_at) < ?",
+            (cutoff,),
+        ).fetchall()
+        reaped: list[str] = []
+        for row in rows:
+            run_id = row["run_id"]
+            last_alive = row["heartbeat_at"] if row["heartbeat_at"] is not None else row["started_at"]
+            age = time.time() - last_alive
+            conn.execute(
+                "UPDATE dag_runs SET status='failed', finished_at=?, "
+                "node_results_json=? WHERE run_id=? AND status='running'",
+                (
+                    time.time(),
+                    json.dumps(
+                        {
+                            "_reaped": (
+                                f"No heartbeat for {age:.0f}s (threshold {stale_after_seconds:.0f}s); "
+                                "the process that ran this DAG almost certainly died "
+                                "mid-execution without recording a final status."
+                            )
+                        }
+                    ),
+                    run_id,
+                ),
+            )
+            reaped.append(run_id)
+            log.warning(
+                "Reaped stale run %s (dag=%s): no heartbeat for %.0fs — marking failed",
+                run_id,
+                row["dag_name"],
+                age,
+            )
+        conn.commit()
+        return reaped
 
     def record_run_end(
         self,

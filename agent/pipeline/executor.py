@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import functools
 import logging
+import re
 import time
 from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
 from dataclasses import dataclass, field
@@ -26,6 +27,35 @@ from agent.pipeline.store import PipelineStore
 from agent.tools.base import ToolRegistry
 
 log = logging.getLogger(__name__)
+
+# Default: a run stuck in status='running' with no heartbeat for longer than
+# this is almost certainly a dead process, not slow work — see
+# ``PipelineStore.reap_stale_runs``. Sized generously above the largest single
+# node timeout in any registered DAG (train_gnn=1800s) plus room for a full
+# layered run of several such nodes in sequence.
+_DEFAULT_STALE_RUN_SECONDS = 3600.0 * 3
+
+# Matches the credential-missing error strings tools raise when a free-tier
+# key (FRED, NASA FIRMS, EIA, ...) is unset — see agent/tools/*.py's own
+# "API key required" / "API key not configured" / "requires a FRED API key" /
+# "MISSING_CONFIG" messages (surveyed across every tool in agent/tools/ that
+# gates on a TIRRA_*_KEY env var). Tool-internal wording is owned by the L1
+# data engineers; this pattern only classifies the *executor outcome* (skip
+# vs. fail), which is this file's call per this DAG's rule 5. Deliberately
+# does NOT match "check API key validity" style messages (a configured-but-
+# invalid key is a real, loud failure, not a permanently-missing credential).
+_MISSING_CREDENTIAL_RE = re.compile(
+    r"api key (?:required|not configured|missing)"
+    r"|missing_config"
+    r"|requires (?:an?\s+)?[a-z0-9_]*\s*api key"
+    r"|requires tirra_\w+"
+    r"|set tirra_\w+",
+    re.IGNORECASE,
+)
+
+
+def _is_missing_credential_error(message: str) -> bool:
+    return bool(_MISSING_CREDENTIAL_RE.search(message or ""))
 
 
 @dataclass
@@ -39,6 +69,7 @@ class NodeResult:
     output: Any = None
     error: str | None = None
     retries_used: int = 0
+    stored: bool = False  # True once its result actually landed in the store
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -62,6 +93,8 @@ class DagRun:
     status: str = "running"  # running | completed | failed
     trigger: str = "manual"
     node_results: dict[str, NodeResult] = field(default_factory=dict)
+    rows_written: int = 0
+    error: str | None = None
 
     @property
     def success(self) -> bool:
@@ -76,15 +109,28 @@ class DAGExecutor:
         tool_registry: ToolRegistry | None = None,
         store: PipelineStore | None = None,
         max_workers: int = 4,
+        stale_run_after_seconds: float = _DEFAULT_STALE_RUN_SECONDS,
     ) -> None:
         self._registry = tool_registry
         self._store = store
         self._max_workers = max_workers
+        self._stale_run_after_seconds = stale_run_after_seconds
 
     def execute(self, dag: DAG, trigger: str = "manual") -> DagRun:
         """Execute a DAG. Returns a DagRun with all node results."""
         # 1. Validate and topo sort
         layers = dag.topo_sort()  # Raises ValueError if invalid
+
+        # 1b. Self-heal: reap any prior run of *any* DAG left stuck in
+        # 'running' by a process that died mid-execution (killed, OOM,
+        # reboot) before it ever called record_run_end. Done here so every
+        # entry point (manual trigger, scheduler cron job, run_chain.py)
+        # gets this for free.
+        if self._store:
+            try:
+                self._store.reap_stale_runs(self._stale_run_after_seconds)
+            except Exception:
+                log.warning("reap_stale_runs failed; continuing anyway", exc_info=True)
 
         # 2. Create run record
         run_id = PipelineStore.new_run_id()
@@ -104,23 +150,48 @@ class DAGExecutor:
 
         upstream_outputs: dict[str, Any] = {}
         any_failure = False
+        # Count nodes that were actually eligible to persist something (not
+        # disabled, not dependency-skipped) so the zero-rows guard below can
+        # tell "nothing ran" apart from "things ran and legitimately wrote
+        # nothing" apart from "things ran, claimed success, and stored zero
+        # rows" (the F-01..F-04 silent-success pattern applied to collection).
+        eligible_store_nodes = 0
 
         # 3. Execute layer by layer
         for layer in layers:
             layer_results = self._execute_layer(dag, layer, upstream_outputs, run)
             for nid, nr in layer_results.items():
                 run.node_results[nid] = nr
+                node = dag.nodes[nid]
+                if node.store_result and nr.status != "skipped":
+                    eligible_store_nodes += 1
                 if nr.status == "completed":
                     upstream_outputs[nid] = nr.output
                 elif nr.status == "failed":
                     any_failure = True
 
+            # Heartbeat once per layer boundary so a run spanning several
+            # layers (e.g. model DAGs) doesn't look dead to reap_stale_runs
+            # just because a single layer takes a while.
+            if self._store:
+                try:
+                    self._store.heartbeat(run_id)
+                except Exception:
+                    log.warning("heartbeat failed for run %s", run_id, exc_info=True)
+
+        run.rows_written = sum(1 for nr in run.node_results.values() if nr.stored)
+
         # 4. Finalize
         run.finished_at = time.time()
         run.status = "failed" if any_failure else "completed"
 
+        if self._store is not None:
+            self._apply_zero_rows_guard(run, eligible_store_nodes, any_failure)
+
         if self._store:
             result_dicts = {nid: nr.to_dict() for nid, nr in run.node_results.items()}
+            if run.error:
+                result_dicts["_run_error"] = run.error
             self._store.record_run_end(run_id, run.status, result_dicts)
 
         log.info(
@@ -131,6 +202,27 @@ class DAGExecutor:
             (run.finished_at - run.started_at),
         )
         return run
+
+    @staticmethod
+    def _apply_zero_rows_guard(run: DagRun, eligible_store_nodes: int, any_failure: bool) -> None:
+        """Downgrade *run* to 'failed' if nothing was actually persisted.
+
+        A run that had at least one node eligible to store data, hit no
+        node-level failures, yet ``run.rows_written == 0`` is the exact
+        silent-success shape documented in LESSONS.md (F-01..F-04) applied to
+        collection: every node "completed" without raising, but nothing
+        landed in the store. Mutates ``run.status``/``run.error`` in place;
+        does not touch ``dag_runs`` itself (the caller persists afterward).
+        """
+        if any_failure or eligible_store_nodes == 0 or run.rows_written > 0:
+            return
+        run.status = "failed"
+        run.error = (
+            f"{eligible_store_nodes} node(s) completed and were eligible to store "
+            "results, but zero rows were written to the store. Treating as a failed "
+            "run rather than reporting false success."
+        )
+        log.error("DAG %s run %s: %s", run.dag_name, run.run_id, run.error)
 
     def _execute_layer(
         self,
@@ -229,8 +321,20 @@ class DAGExecutor:
                             params=node.params,
                             data=nr.output,
                         )
+                        nr.stored = True
                     except Exception as exc:
-                        log.warning("Failed to store result for %s: %s", nid, exc)
+                        # Previously only logged a warning and left nr.status as
+                        # "completed" — the operator's real output (fetched data)
+                        # then simply vanished with no record of a failure
+                        # anywhere except this log line. That's the exact
+                        # "returned dict is success" shape from a different
+                        # angle: the node ran fine, but the thing the node
+                        # exists to do (persist its result) silently didn't
+                        # happen. Downgrading to "failed" makes it count
+                        # toward any_failure and toward the zero-rows guard.
+                        nr.status = "failed"
+                        nr.error = f"Executed successfully but failed to store result: {exc}"
+                        log.error("Failed to store result for %s: %s", nid, exc)
         finally:
             # wait=False: don't block the run on a node that already blew
             # through its timeout. Its thread finishes on its own; see
@@ -300,8 +404,13 @@ class DAGExecutor:
                             params=node.params,
                             data=result.output,
                         )
+                        nr.stored = True
                     except Exception as exc:
-                        log.warning("Failed to store late result for %s: %s", node.id, exc)
+                        # Same reasoning as the main-path fix in _execute_layer:
+                        # a completed-but-unstored result is not a success.
+                        nr.status = "failed"
+                        nr.error = f"Completed after timeout but failed to store result: {exc}"
+                        log.error("Failed to store late result for %s: %s", node.id, exc)
             else:
                 log.warning(
                     "Node %s exceeded its %ss timeout and ultimately failed anyway: %s",
@@ -313,6 +422,7 @@ class DAGExecutor:
         if self._store is not None:
             try:
                 any_failure = any(r.status == "failed" for r in run.node_results.values())
+                run.rows_written = sum(1 for r in run.node_results.values() if r.stored)
                 run.status = "failed" if any_failure else "completed"
                 result_dicts = {n: r.to_dict() for n, r in run.node_results.items()}
                 self._store.record_run_end(run.run_id, run.status, result_dicts)
@@ -354,6 +464,27 @@ class DAGExecutor:
             except Exception as exc:
                 last_error = str(exc)
                 nr.retries_used = attempt + 1
+
+                # Rule 5: a source with no credential configured (FRED, NASA
+                # FIRMS, EIA, ...) is not a broken node — it's an honest,
+                # permanent, known state that will fail identically on every
+                # retry and every future run until someone sets the env var.
+                # Retrying it burns the node's timeout budget for nothing and
+                # marking it "failed" makes a run with an unset optional key
+                # look identical to a genuine breakage in the dag_runs table.
+                # Skip immediately with the reason preserved verbatim (loud,
+                # not swallowed — just classified correctly).
+                if _is_missing_credential_error(last_error):
+                    nr.status = "skipped"
+                    nr.error = f"Missing credential: {last_error}"
+                    nr.finished_at = time.time()
+                    log.warning(
+                        "Node %s skipped: missing credential (%s)",
+                        node.id,
+                        last_error,
+                    )
+                    return nr
+
                 if attempt < node.retries - 1:
                     backoff = 0.1 * (2**attempt)  # 0.1, 0.2, 0.4, ...
                     log.warning(
