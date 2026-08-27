@@ -7,7 +7,7 @@ fields — edit those if your deployment differs.
 | Unit | What it does | Cadence |
 |---|---|---|
 | `tirra-api.service` | Long-running API server: `/webhook`, `/brief*`, `/api/v1/*`, `/evidence/*` | Always on (`Restart=on-failure`) |
-| `tirra-brief.service` + `.timer` | Fast refresh (CFTC + gov contracts) → build → deliver the brief | Every 30 min |
+| `tirra-brief.service` + `.timer` | Fast refresh (CFTC) → build → deliver + archive the brief | Weekly, Mon 20:00 UTC |
 | `tirra-chain.service` + `.timer` | **Collect + every downstream DAG in dependency order** | Weekdays 18:00 UTC |
 | `tirra-collect.service` + `.timer` | `daily_collection` only — 40+ public data sources | Weekdays 18:00 UTC |
 | `tirra-backup.service` + `.timer` | Snapshot the pipeline DB + subscriber/usage state to Cloudflare R2 (`deploy/backup_to_r2.sh`) | Daily 22:00 UTC |
@@ -38,10 +38,21 @@ It exits non-zero if any DAG failed, so `systemctl status` shows the failure.
 `tirra-collect`/`tirra-chain` are intentionally separate from `tirra-brief`: the full DAG is
 slow (network calls to 40+ APIs, can take several minutes) and only needs to
 run once a day, on the cadence documented in
-`agent/pipeline/dags/daily_collection.py`. The brief only needs the two fast
-tools (CFTC + gov contracts) refreshed frequently — bundling them would mean
-either running the slow DAG every 30 minutes (wasteful, rate-limit risk) or
-serving a stale brief for a full day (defeats the point).
+`agent/pipeline/dags/daily_collection.py`. The brief only needs the one fast
+tool (CFTC positioning) refreshed before it builds — bundling them would mean
+either running the slow DAG on the brief's own cadence (wasteful, rate-limit
+risk) or serving a stale brief (defeats the point).
+
+`tirra-brief` runs **weekly** (Mon 20:00 UTC, matching the "weekly" cadence
+promised in the customer-facing copy — index.html, pricing.html, terms.html,
+`products/brief_subscription/README.md`), not every 30 minutes: see
+`deploy/systemd/tirra-brief.timer` for why that specific day/time. Each
+delivery is also archived to `.tirra_delivery/archive/intelligence_brief_<UTC-date>.{json,md}`
+(plus an append-only `archive/index.jsonl`) by `scripts/tirra_engine.py`'s
+`_archive_delivery()`, run right after `BriefDeliverer.deliver()` writes the
+mutable "latest" `intelligence_brief.{json,md}` that `agent/brief_server.py`
+serves — so a subscriber can retrieve a past edition instead of only ever
+seeing whatever the mutable file currently holds.
 
 ## Install
 

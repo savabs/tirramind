@@ -1,85 +1,142 @@
-"""Tests for the fused intelligence brief (system contracts + anomalies)."""
+"""Tests for the intelligence brief (positioning & flow anomalies only).
+
+Contract Opportunities was cut (niche decision, 2026-08-27): P(win) was a
+hardcoded, never-learned Beta prior for every row and USASpending
+`spending_by_award` only returns already-awarded contracts — nothing
+biddable. See docs/specs/nineteen_dollar_tier_spec.md Step 2.
+"""
 
 from __future__ import annotations
 
 from unittest.mock import patch
 
-from agent.quant.contract_opportunity import WinProbabilityLearner
-from scripts.intelligence_brief import build_brief, fetch_opportunities, render_markdown
-
-_SAMPLE_AWARDS = [
-    {"award_id": "T1", "recipient": "Small Co", "agency": "VA", "description": "janitorial",
-     "amount_usd": 40000.0, "start_date": "2026-08-01", "award_type": None},
-    {"award_id": "T2", "recipient": "Big Co", "agency": "DoD", "description": "arms",
-     "amount_usd": 900000.0, "start_date": "2026-08-01", "award_type": None},
-    {"award_id": "T3", "recipient": "Mid Co", "agency": "USDA", "description": "permits",
-     "amount_usd": 60000.0, "start_date": "2026-08-01", "award_type": None},
-]
+from scripts.intelligence_brief import build_brief, render_markdown
 
 
-def _ok_result():
-    from agent.tools.base import ToolResult
-    return ToolResult(success=True, output="n awards", data={"awards": _SAMPLE_AWARDS})
-
-
-def test_fetch_opportunities_long_tail_first(tmp_path):
-    k = tmp_path  # capture to avoid unused
-    learner_path = str(tmp_path / "win.jsonl")
-    with patch("scripts.intelligence_brief.GovContractsTool") as MockTool:
-        MockTool.return_value.execute.return_value = _ok_result()
-        rows = fetch_opportunities(limit=3, learner_path=learner_path, max_rows=3)
-    assert len(rows) == 3
-    # long-tail (small) contracts sort before the large one
-    assert rows[0]["is_long_tail"] is True
-    assert rows[-1]["is_long_tail"] is False
-    # T3 (60k) has higher EV than T1 (40k); both long-tail so sort by EV desc
-    assert rows[0]["award_id"] == "T3"
-    assert rows[1]["award_id"] == "T1"
-    assert "expected_value_usd" in rows[0]
-    assert "p_win" in rows[0]
-
-
-def test_fetch_opportunities_learned_pwin(tmp_path):
-    learner_path = str(tmp_path / "win.jsonl")
-    learner = WinProbabilityLearner(learner_path)
-    # VA wins often in real histories -> higher learned P(win)
-    for i in range(10):
-        learner.record(f"a{i}", "VA", 40000.0, realized_success=(i < 8))
-
-    with patch("scripts.intelligence_brief.GovContractsTool") as MockTool:
-        MockTool.return_value.execute.return_value = _ok_result()
-        rows = fetch_opportunities(limit=3, learner_path=learner_path, max_rows=3)
-    # VA contract should have P(win) above the Beta prior baseline (0.5)
-    va = [r for r in rows if r["award_id"] == "T1"][0]
-    assert va["p_win"] > 0.6  # 8W/2L posterior mean = 0.75
-
-
-def test_build_brief_structure(tmp_path):
-    with patch("scripts.intelligence_brief.fetch_opportunities") as m_fetch, \
-         patch("scripts.intelligence_brief.fetch_anomalies") as m_anom:
-        m_fetch.return_value = [{"award_id": "X", "expected_value_usd": 100.0}]
+def test_build_brief_has_no_contract_opportunities():
+    with patch("scripts.intelligence_brief.fetch_anomalies") as m_anom:
         m_anom.return_value = [{"source": "cftc", "zscore": 3.0, "changepoint": True}]
         brief = build_brief()
-    assert "contract_opportunities" in brief
-    assert "live_anomalies" in brief
-    assert brief["contract_opportunities"][0]["award_id"] == "X"
+    assert "contract_opportunities" not in brief
     assert brief["live_anomalies"][0]["source"] == "cftc"
 
 
-def test_render_markdown_contains_sections():
+def test_build_brief_ignores_deprecated_contract_kwargs():
+    """Old callers (deliver_brief.py, tirra_engine.py) still pass these — must not raise."""
+    with patch("scripts.intelligence_brief.fetch_anomalies") as m_anom:
+        m_anom.return_value = []
+        brief = build_brief(
+            contracts_limit=10,
+            anomalies_limit=8,
+            learner_path=".tirra_opportunities/win_learner.jsonl",
+            db_path=".tirra_pipeline/pipeline.db",
+            max_contract_rows=5,
+        )
+    assert brief["brief_type"] == "intelligence"
+
+
+def test_build_brief_has_edition_identity():
+    with patch("scripts.intelligence_brief.fetch_anomalies") as m_anom:
+        m_anom.return_value = []
+        brief = build_brief()
+    assert brief["edition_date"]  # UTC date, non-empty
+    assert brief["edition_id"].startswith(f"tirra-brief-{brief['edition_date']}-")
+
+
+def test_build_brief_edition_id_stable_for_same_content_same_day():
+    with patch("scripts.intelligence_brief.fetch_anomalies") as m_anom:
+        m_anom.return_value = [{"source": "cftc", "entity_id": "e1", "field": "mm_net", "zscore": 3.0}]
+        b1 = build_brief()
+        b2 = build_brief()
+    assert b1["edition_id"] == b2["edition_id"]
+
+
+def test_build_brief_edition_id_changes_with_content():
+    with patch("scripts.intelligence_brief.fetch_anomalies") as m_anom:
+        m_anom.return_value = [{"source": "cftc", "entity_id": "e1", "field": "mm_net", "zscore": 3.0}]
+        b1 = build_brief()
+        m_anom.return_value = [{"source": "cftc", "entity_id": "e2", "field": "mm_net", "zscore": -2.5}]
+        b2 = build_brief()
+    assert b1["edition_id"] != b2["edition_id"]
+
+
+def test_render_markdown_has_no_contract_section_and_shows_edition():
     brief = {
-        "contract_opportunities": [
-            {"award_id": "T1", "recipient": "Small Co", "agency": "VA",
-             "amount_usd": 40000.0, "expected_value_usd": 20000.0,
-             "p_win": 0.75, "description": "janitorial", "is_long_tail": True}
-        ],
+        "edition_date": "2026-08-27",
+        "edition_id": "tirra-brief-2026-08-27-deadbeefcafe",
+        "methodology": "test methodology",
         "live_anomalies": [
-            {"source": "cftc", "observation_type": "futures_positioning",
-             "field": "mm_net", "zscore": -3.0, "changepoint": True}
+            {
+                "source": "cftc",
+                "observation_type": "futures_positioning",
+                "entity_id": "abc123",
+                "entity_name": "COTTON NO. 2 - ICE FUTURES U.S.",
+                "field": "open_interest",
+                "zscore": 3.14,
+                "direction": "up",
+                "changepoint": True,
+                "changepoint_weeks_ago": 6.0,
+                "n_points": 169,
+                "latest_value": 361871.0,
+            }
         ],
     }
     md = render_markdown(brief)
-    assert "Contract Opportunities" in md
-    assert "Live Anomalies" in md
-    assert "T1" in md
-    assert "z=-3.00" in md
+    assert "Contract Opportunities" not in md
+    assert "2026-08-27" in md
+    assert "tirra-brief-2026-08-27-deadbeefcafe" in md
+    assert "COTTON NO. 2 - ICE FUTURES U.S." in md
+    assert "open interest" in md
+    assert "z=+3.14" in md
+    assert "169-point baseline" in md
+    assert "6 weeks ago" in md
+
+
+def test_render_markdown_groups_by_source_with_headings():
+    brief = {
+        "edition_date": "2026-08-27",
+        "edition_id": "x",
+        "methodology": "m",
+        "live_anomalies": [
+            {
+                "source": "cftc",
+                "observation_type": "futures_positioning",
+                "entity_id": "e1",
+                "entity_name": "Cotton",
+                "field": "mm_net",
+                "zscore": 3.0,
+                "direction": "up",
+                "changepoint": False,
+                "changepoint_weeks_ago": None,
+                "n_points": 169,
+                "latest_value": 1.0,
+            },
+            {
+                "source": "defi_flows",
+                "observation_type": "tvl_change",
+                "entity_id": "e2",
+                "entity_name": "Some Pool",
+                "field": "tvl_usd",
+                "zscore": -2.5,
+                "direction": "down",
+                "changepoint": False,
+                "changepoint_weeks_ago": None,
+                "n_points": 3000,
+                "latest_value": 1.0,
+            },
+        ],
+    }
+    md = render_markdown(brief)
+    # More than one source rendered — a single-source edition is the exact
+    # failure mode this brief previously shipped (100% cftc).
+    assert "CFTC" in md
+    assert "DeFi Flows" in md
+    assert md.index("CFTC") < md.index("Cotton")
+    assert md.index("DeFi Flows") < md.index("Some Pool")
+
+
+def test_render_markdown_empty_anomalies_is_honest_not_missing():
+    brief = {"edition_date": "2026-08-27", "edition_id": "x", "methodology": "m", "live_anomalies": []}
+    md = render_markdown(brief)
+    assert "none currently flagged" in md
+    assert "2026-08-27" in md

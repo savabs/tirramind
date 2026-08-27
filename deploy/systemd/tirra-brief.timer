@@ -1,8 +1,31 @@
 [Unit]
-Description=Run tirra-brief.service every 30 minutes
+Description=Run tirra-brief.service weekly (Mon 20:00 UTC)
 
 [Timer]
-OnCalendar=*:0/30
+# Weekly — matches the customer-facing copy ("weekly positioning and flow
+# anomaly digest") in index.html, pricing.html, terms.html, and
+# products/brief_subscription/README.md. The prior *:0/30 cadence ran every
+# 30 minutes against a single mutable output file — 48x/day of pointless
+# rebuilds with no subscriber-visible difference and no issue history.
+#
+# Why Monday 20:00 UTC specifically:
+#   - CFTC's Commitment of Traders report — the flagship "flow anomaly"
+#     input (see docs on the 169-week COT baseline) — is released Friday
+#     afternoon, ~19:30-20:30 UTC depending on EST/EDT. tirra-chain.timer
+#     only runs weekdays (Mon-Fri 18:00 UTC), so Friday's own chain run
+#     (~18:00-19:30 UTC) completes BEFORE that Friday's COT report drops —
+#     it still only has the *previous* Friday's data. There is no weekend
+#     chain run. The first collection cycle that actually has Friday's fresh
+#     COT numbers is Monday's 18:00 UTC chain run.
+#   - 20:00 UTC gives that Monday chain run (18:00 UTC + up to ~90 min, per
+#     tirra-backup.timer's own comment) a 30+ minute buffer to finish before
+#     the brief builds, so the week's digest reflects the freshest positioning
+#     data available under the existing weekday-only collection cadence.
+#   - 20:00 UTC is also 2 hours clear of tirra-backup.timer (22:00 UTC daily),
+#     so the brief build and the DB backup never contend for disk/CPU.
+#   - Monday delivery lands the week's positioning read-out at the start of
+#     the trading week rather than mid-week or over the weekend.
+OnCalendar=Mon 20:00 UTC
 Persistent=true
 
 [Install]

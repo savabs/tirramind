@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <title>Pricing — TirraMind</title>
-  <meta name="description" content="Data Platform, Entity Graph, and Scheduler API pricing — plus the weekly Opportunity Brief. Infrastructure quant teams license instead of build.">
+  <meta name="description" content="Data Platform, Entity Graph, Scheduler, and Brief pricing. Infrastructure quant teams license deterministic signal intelligence as an API instead of building in-house.">
   <style>
     :root {
       --ink: #111;
@@ -180,7 +180,7 @@
     </header>
     <main>
       <h1>Pricing</h1>
-      <p class="lede">Three infrastructure tiers you license instead of build, plus a lightweight weekly brief. Every tier is billed monthly via Paddle; cancel anytime.</p>
+      <p class="lede">Three infrastructure tiers plus a lightweight weekly digest. Every tier is billed monthly via Paddle; cancel anytime.</p>
 
       <div class="plan" id="data">
         <div class="plan-head">
@@ -277,17 +277,18 @@
 
       <div class="plan brief-plan" id="brief">
         <div class="plan-head">
-          <h2>Opportunity Brief</h2>
+          <h2>Brief</h2>
           <div class="price"><span class="price-amount">$19</span><span> / month</span></div>
         </div>
-        <p class="tagline">Lightweight digest: contract opportunities ranked by Bayesian win probability, plus deterministic market anomalies. Built on the same engines that power our infrastructure tiers. Coming soon.</p>
+        <p class="tagline">Weekly positioning and flow anomaly digest built on deterministic z-scores over multi-year baselines and Bayesian online changepoint detection (BOCPD). No LLM, no predictions — just the math. The entry rung of metered API access.</p>
         <ul>
-          <li>Federal contract opportunities ranked by expected value — a Beta-Binomial model that learns win probability as outcomes accumulate</li>
-          <li>Market anomalies: positioning extremes and regime changes detected via BOCPD and spectral analysis — deterministic, no black box</li>
-          <li>Access via email digest or API — same authentication as other tiers</li>
+          <li>Positioning extremes and flow anomalies detected via BOCPD over 169-week CFTC commitment-of-traders baselines, 3,000+ point DeFi TVL series, and instrument volatility</li>
+          <li>Weekly digest delivered as markdown and JSON — includes entity IDs, flagged timestamps, z-scores, and raw signal values for reproducibility</li>
+          <li>Metered API access: same subscriber key as other tiers; usage tracked in your account</li>
         </ul>
-        <div class="plan-cta">
-          <span class="coming-soon-text">Coming soon — initial model training in final phase</span>
+        <div class="endpoint-block">GET /brief&#10;GET /brief.json&#10;GET /brief.md&#10;POST /api/v1/rotate-key&#10;GET /api/v1/usage&#10;Header: X-Brief-Key: &lt;your key&gt;</div>
+        <div class="plan-cta" style="margin-top:16px;">
+          <button class="cta" onclick="openCheckout('brief')">Subscribe</button>
         </div>
       </div>
 

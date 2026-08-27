@@ -9,4 +9,28 @@ User=tirra
 WorkingDirectory=/opt/tirramind
 EnvironmentFile=/opt/tirramind/.env.production
 ExecStart=/opt/tirramind/scripts/run_scheduled.sh
-TimeoutStartSec=120
+# 180s, up from 120s. As of this change, scripts/intelligence_brief.py has
+# already dropped the Contract Opportunities section AND its USASpending
+# (GovContractsTool) network call (niche decision, 2026-08-27 — see that
+# file's module docstring); scripts/tirra_engine.py's refresh_fast_data() (the
+# other half of that redundant fetch, called from THIS unit's own
+# run_scheduled.sh path) is dropped in this same change. So the live network
+# I/O still in this path is down to one call:
+#   - agent/tools/cftc.py CFTCTool(mode="latest"): one httpx.Client(timeout=15)
+#     GET. httpx's single-float timeout applies to connect AND read
+#     independently, so a stalled (not failed) request can take up to
+#     ~2x15s = 30s worst case, not 15s.
+# Measured against the real ~150MB pipeline.db:
+# live_intelligence_digest.build_digest() takes ~2.5s CPU on a dev laptop;
+# budget up to ~10s on the modest/cheap VM this actually runs on (see
+# provision_vm.sh's swap-for-a-small-VM comments) plus ~5s interpreter/import
+# overhead and ~1s deliver+archive. Worst case today: 30s (CFTC) + 10s
+# (digest, slow VM) + 5s (overhead) + 1s ≈ 46s — comfortably under even the
+# old 120s cap on its own.
+# Raising to 180s anyway: this unit now runs weekly (see tirra-brief.timer),
+# so a few extra minutes of timeout budget costs nothing, while a spurious
+# SIGTERM here means a paying subscriber silently gets no updated brief until
+# next Monday. 180s keeps ~4x margin over the measured ~46s worst case,
+# absorbing a genuinely slow/contended VM or a degraded (not just timed-out)
+# upstream without needing to revisit this number again.
+TimeoutStartSec=180

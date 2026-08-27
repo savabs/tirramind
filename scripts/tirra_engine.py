@@ -20,11 +20,14 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from datetime import UTC
 
 from agent.delivery.brief_deliverer import BriefDeliverer  # noqa: E402
 from scripts.intelligence_brief import build_brief, render_markdown  # noqa: E402
@@ -33,38 +36,34 @@ from scripts.intelligence_brief import build_brief, render_markdown  # noqa: E40
 def refresh_fast_data(db_path: str = ".tirra_pipeline/pipeline.db") -> dict:
     """Refresh the fast, digest-relevant tools so the brief reads fresh data.
 
-    Runs only the quick+reliable tools that power the brief's anomalies and
-    contracts (CFTC positioning + gov contracts), in parallel, ~2s. This avoids
-    the slow/hanging full daily DAG while still keeping the brief current.
+    Runs only the quick+reliable tool that powers the brief's flow-anomaly
+    digest (CFTC positioning), ~1-15s (single HTTP GET, agent/tools/cftc.py's
+    own client timeout=15s). This avoids the slow/hanging full daily DAG while
+    still keeping the brief current.
+
+    NOTE: this used to also fetch gov_contracts (USASpending) here, in
+    parallel with CFTC. That was dead weight even before the "Contract
+    Opportunities" section was cut from the brief product: gov_contracts
+    observations were never in live_intelligence_digest.py's _SCORABLE table
+    (the digest only scores sovereign_debt, cftc, instrument_universe,
+    defi_flows, polymarket), and the old contract_opportunities builder in
+    scripts/intelligence_brief.py fetched its own independent copy of the same
+    USASpending data directly rather than reading what this function stored.
+    So it was a genuine redundant network fetch, doubling this step's worst
+    case (gov_contracts client timeout=20s) for zero downstream benefit.
+    Removed here; the full daily_collection DAG (tirra-collect/tirra-chain,
+    separate timers/budgets) still collects gov_contracts data for GNN/
+    convergence/bandit layers that do use it — this function only serves the
+    weekly brief's fast refresh path.
     """
-    import concurrent.futures
+    from agent.tools.cftc import CFTCTool
 
-    from agent.pipeline.store import PipelineStore
-
-    store = PipelineStore(db_path)
-    results: dict[str, str] = {}
-
-    def _fetch_cftc():
-        from agent.tools.cftc import CFTCTool
-
-        return CFTCTool().execute(mode="latest", limit=5)
-
-    def _fetch_gov():
-        from agent.tools.gov_contracts import GovContractsTool
-
-        return GovContractsTool().execute(mode="recent", limit=10)
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
-        futs = {"cftc": ex.submit(_fetch_cftc), "gov_contracts": ex.submit(_fetch_gov)}
-        for name, fut in futs.items():
-            try:
-                r = fut.result(timeout=30)
-                results[name] = "ok" if r.success else "failed"
-                # gov_contracts already persists observations via its tool;
-                # store cftc data if the tool exposes it (best-effort).
-            except Exception as exc:
-                results[name] = f"error:{type(exc).__name__}"
-    return {"status": "fast_refresh", "tools": results, "db": db_path}
+    result = CFTCTool().execute(mode="latest", limit=5)
+    return {
+        "status": "fast_refresh",
+        "tools": {"cftc": "ok" if result.success else "failed"},
+        "db": db_path,
+    }
 
 
 def _run_daily_collection_dag(config) -> dict:
@@ -190,6 +189,68 @@ def _deliver(
     return {"brief": brief, "record": record.as_dict()}
 
 
+def _archive_delivery(out_dir: str, record: dict) -> dict:
+    """Copy the just-delivered brief into a dated, immutable archive.
+
+    agent/delivery/brief_deliverer.py (not ours to edit) only ever writes the
+    single mutable `{stem}.json` / `{stem}.md` pair that agent/brief_server.py
+    reads as "latest" — there is deliberately no issue history there. This
+    runs strictly AFTER BriefDeliverer.deliver() has already written those
+    files, so the "latest" path is completely untouched; it just fans the same
+    bytes out to `{out_dir}/archive/intelligence_brief_<UTC-date>.{json,md}` so
+    a subscriber (or us) can retrieve a past edition instead of whatever the
+    mutable file currently holds.
+
+    Plain JSON/Markdown files, not the pipeline SQLite DB, so there is no
+    torn-copy risk here — a straight byte copy is safe (contrast with
+    deploy/backup_to_r2.sh, which must use `sqlite3 .backup` for the live DB).
+
+    Best-effort: archiving must never fail the delivery itself, since the
+    "latest" file (what agent/brief_server.py and every paying subscriber
+    actually hits) is already safely written by the time this runs.
+    """
+    import shutil
+    from datetime import datetime
+
+    try:
+        delivered_at = record.get("delivered_at")
+        dt = datetime.fromtimestamp(delivered_at, tz=UTC) if delivered_at else datetime.now(UTC)
+        date_str = dt.strftime("%Y-%m-%d")
+
+        archive_dir = Path(out_dir) / "archive"
+        archive_dir.mkdir(parents=True, exist_ok=True)
+
+        copied: dict[str, str] = {}
+        for key, ext in (("json_path", "json"), ("md_path", "md")):
+            src = Path(record[key])
+            if not src.exists():
+                continue
+            dst = archive_dir / f"intelligence_brief_{date_str}.{ext}"
+            shutil.copyfile(src, dst)
+            copied[ext] = str(dst)
+
+        # Append-only index (mirrors BriefDeliverer's own delivery_log.jsonl)
+        # so an edition can be listed/found without walking the directory.
+        index_path = archive_dir / "index.jsonl"
+        with index_path.open("a", encoding="utf-8") as fh:
+            fh.write(
+                json.dumps(
+                    {
+                        "date": date_str,
+                        "delivered_at": delivered_at,
+                        "checksum": record.get("checksum"),
+                        "json_path": copied.get("json"),
+                        "md_path": copied.get("md"),
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+        return {"archived": True, "date": date_str, **copied}
+    except Exception as exc:
+        return {"archived": False, "error": f"{type(exc).__name__}: {exc}"}
+
+
 def record_bid(agency: str, amount: float, won: bool, learner_path: str) -> dict:
     """Record one realized bid outcome so P(win) personalizes per agency+bucket.
 
@@ -261,6 +322,7 @@ def main() -> int:
             db=args.db,
             out_dir=args.out,
         )
+        archive_summary = _archive_delivery(args.out, result["record"])
         if md_path.exists():
             md = md_path.read_text(encoding="utf-8")
             email_res = email_brief(md, recipients)
@@ -268,6 +330,7 @@ def main() -> int:
         else:
             print("[engine] email: no brief markdown to send")
         print(f"[engine] collection: {collect_summary}")
+        print(f"[engine] archive: {archive_summary}")
         return 0
 
     # ── Default / normal path: refresh + build + deliver (+ serve unless --once) ──
@@ -292,6 +355,8 @@ def main() -> int:
         f"{result['record']['n_anomalies']} anomalies → {args.out}"
     )
     print(f"[engine] collection: {collect_summary}")
+    archive_summary = _archive_delivery(args.out, result["record"])
+    print(f"[engine] archive: {archive_summary}")
 
     should_serve = (not args.no_serve) and (not args.once)
     if should_serve:

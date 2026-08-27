@@ -240,8 +240,17 @@ cat <<CHECKLIST
        systemctl enable --now tirra-api.service
        systemctl enable --now tirra-chain.timer
        systemctl enable --now tirra-backup.timer
+       systemctl enable --now tirra-brief.timer
    Skip tirra-collect.timer — tirra-chain already runs collection as step 1.
    (tirra-disk-check.timer is already enabled — no secrets needed for it.)
+
+   tirra-brief.timer fires the \$19/mo Brief product (weekly, Mon 20:00 UTC —
+   see deploy/systemd/tirra-brief.timer for why). It needs
+   .env.production in place (step 2) same as tirra-api/tirra-chain. This is
+   the ONE step that has silently regressed before: unit files get installed
+   by the wildcard globs above regardless, but nothing enables this timer
+   unless you run this line. If it's not in \`systemctl list-timers\` below,
+   the paying Brief subscribers get nothing and nothing will tell you.
 
 6. Verify from OUTSIDE the box:
        curl -sI https://api.tirramind.com/status
@@ -249,6 +258,8 @@ cat <<CHECKLIST
        systemctl list-timers 'tirra-*'
        ufw status verbose
        swapon --show
+   Confirm tirra-brief.timer appears in that list-timers output with a real
+   NEXT time (Mon 20:00 UTC) — not just tirra-api/tirra-chain/tirra-backup.
 
 ======================================================================
 CHECKLIST
