@@ -30,12 +30,26 @@ from agent.quant.changepoint import BOCPD  # noqa: E402
 from agent.quant.signal_outcome_store import SignalOutcomeStore  # noqa: E402
 
 # Observation types we know carry numeric signals we can score.
+# FIELD NAMES MUST MATCH THE STORED PAYLOAD KEYS EXACTLY. Three of these five
+# did not, and _series_for silently skips any field it cannot find — so the
+# digest scanned 175,275 observations per run and built ZERO series from them,
+# which is why every edition was 100% CFTC:
+#
+#   instrument_volatility  declared ("volatility", "value")   -> 0 of   4,294
+#   tvl_change             declared ("tvl_change", "value")   -> 0 of 162,251
+#   market_probability     declared ("probability", "value")  -> 0 of   8,730
+#
+# Verified against entity_observations.value_json on 2026-08-27. If you add a
+# source here, query one real payload first — a typo costs an entire source
+# with no error anywhere.
 _SCORABLE: dict[str, tuple[str, tuple[str, ...]]] = {
     "sovereign_debt": ("sovereign_yield", ("yield_pct",)),
     "cftc": ("futures_positioning", ("mm_net", "open_interest")),
-    "instrument_universe": ("instrument_volatility", ("volatility", "value")),
-    "defi_flows": ("tvl_change", ("tvl_change", "value")),
-    "polymarket": ("market_probability", ("probability", "value")),
+    "instrument_universe": ("instrument_volatility", ("realized_vol_20d", "intraday_range")),
+    "defi_flows": ("tvl_change", ("tvl_usd",)),
+    # yes_price IS the market-implied probability; volume_24h catches
+    # liquidity shocks that move ahead of the price.
+    "polymarket": ("market_probability", ("yes_price", "volume_24h")),
 }
 
 # Per (source, obs_type) we keep series in memory keyed by (entity, field).
@@ -64,7 +78,7 @@ def _extract_series(
                 continue
             for field in fields:
                 fv = value.get(field)
-                if isinstance(fv, (int, float)) and not isinstance(fv, bool):
+                if isinstance(fv, int | float) and not isinstance(fv, bool):
                     entry = series.setdefault((entity_id, field), ([], _ts or 0.0))
                     entry[0].append(float(fv))
                     series[(entity_id, field)] = (entry[0], _ts or entry[1])
@@ -111,17 +125,19 @@ def build_digest(store, top_n=10):
             if z is None or abs(z) < 2.0:
                 continue
             cp = _changepoint_flag(values)
-            findings.append({
-                "source": source,
-                "observation_type": obs_type,
-                "entity_id": entity_id,
-                "field": field,
-                "zscore": z,
-                "changepoint": cp,
-                "flagged_ts": latest_ts,
-                "n_points": len(values),
-                "latest_value": round(values[-1], 4),
-            })
+            findings.append(
+                {
+                    "source": source,
+                    "observation_type": obs_type,
+                    "entity_id": entity_id,
+                    "field": field,
+                    "zscore": z,
+                    "changepoint": cp,
+                    "flagged_ts": latest_ts,
+                    "n_points": len(values),
+                    "latest_value": round(values[-1], 4),
+                }
+            )
 
     # Rank by |z| (anomaly magnitude), changepoints first.
     findings.sort(key=lambda f: (f["changepoint"], abs(f["zscore"])), reverse=True)
@@ -137,7 +153,6 @@ def build_digest(store, top_n=10):
         "top_confidence": findings[0]["zscore"] if findings else 0.0,
         "digest": findings[:top_n],
     }
-
 
 
 def surface_findings(
@@ -199,7 +214,7 @@ def realize_pending(
             try:
                 v = json.loads(value_json)
                 fv = v.get(sig.field)
-                if isinstance(fv, (int, float)) and not isinstance(fv, bool):
+                if isinstance(fv, int | float) and not isinstance(fv, bool):
                     forward.append(float(fv))
             except (json.JSONDecodeError, TypeError):
                 continue
@@ -241,7 +256,9 @@ def main() -> int:
     parser.add_argument("--db", type=str, default=".tirra_pipeline/pipeline.db", help="pipeline DB path")
     parser.add_argument("--surface", action="store_true", help="Phase 1: record findings as pending (no reward)")
     parser.add_argument("--realize", action="store_true", help="Phase 2: check forward data, record honest outcomes")
-    parser.add_argument("--signal-store", type=str, default=".tirra_opportunities/signal_outcomes.jsonl", help="signal ledger path")
+    parser.add_argument(
+        "--signal-store", type=str, default=".tirra_opportunities/signal_outcomes.jsonl", help="signal ledger path"
+    )
     args = parser.parse_args()
 
     store = PipelineStore(args.db)
