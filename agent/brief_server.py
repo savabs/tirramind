@@ -47,11 +47,27 @@ from agent.delivery.brief_deliverer import BriefDeliverer
 _DEFAULT_OUT = ".tirra_delivery"
 
 # Product tiers that unlock each infrastructure surface. A static TIRRA_SUB_KEYS
-# key or an active subscriber whose tier is in the set gets access; "scheduler"
-# and "data" subscribers are treated as a superset (they paid for more surface).
-_ENTITY_GRAPH_TIERS = {"entity", "data", "scheduler"}
-_DATA_PLATFORM_TIERS = {"data", "scheduler"}
-_SCHEDULER_TIERS = {"scheduler"}
+# key or an active subscriber whose tier is in the set gets access.
+#
+# THE LADDER IS MONOTONIC IN PRICE: each tier reaches everything below it.
+# brief $19  <  scheduler $50  <  entity $300  <  data $500
+#
+# It used to be inverted. _ENTITY_GRAPH_TIERS included "scheduler" and
+# _DATA_PLATFORM_TIERS included "scheduler", so a $50 subscriber reached all
+# three surfaces while a $500 subscriber reached two and could not read
+# /api/v1/dag/runs at all — the cheapest infrastructure tier bought strictly
+# more than the most expensive one. `"brief"` meanwhile appeared in no set,
+# and /brief.* was gated on _valid_key (any tier), so the $19 product was a
+# free add-on to every other tier. See docs/research/tier_ladder_inversion.md.
+#
+# Order matters here: when the product being sold IS the integrated surface,
+# this ladder is the product definition. Keep it monotonic — the table test in
+# tests/test_tier_ladder.py fails if any tier stops being a superset of the
+# one below it.
+_BRIEF_TIERS = {"brief", "scheduler", "entity", "data"}
+_SCHEDULER_TIERS = {"scheduler", "entity", "data"}
+_ENTITY_GRAPH_TIERS = {"entity", "data"}
+_DATA_PLATFORM_TIERS = {"data"}
 
 # Hard cap on /api/v1/data's `limit` param — a metered endpoint must never
 # let a single request pull an unbounded number of rows.
@@ -570,7 +586,11 @@ class _Handler(BaseHTTPRequestHandler):
             return
 
         if path in ("/brief", "/brief.json", "/brief.md"):
-            if not _valid_key(key):
+            # Gated on _BRIEF_TIERS, not _valid_key. _valid_key passes
+            # allowed_tiers=None, which _authorized_for treats as "any active
+            # subscriber" — so the $19 product used to be handed to every
+            # other tier for free.
+            if not _authorized_for(key, allowed_tiers=_BRIEF_TIERS):
                 self._send(403, "text/plain", "subscribe required — see /buy\n")
                 return
             _log_usage(key, path)
