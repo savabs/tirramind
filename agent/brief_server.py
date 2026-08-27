@@ -14,6 +14,12 @@ Endpoints:
     GET /api/v1/data        → Data Platform tier: query pipeline data by source
     GET /api/v1/dag/runs    → Scheduler tier: DAG run history
     GET /api/v1/usage       → any tier: caller's own usage summary
+    POST /api/v1/rotate-key → any active subscriber: self-service key rotation
+                              (auth: current X-Brief-Key header; see
+                              _serve_rotate_key's docstring for the contract)
+    POST /api/v1/contact    → open: persists a contact-form submission
+    GET /api/v1/admin/contact-messages → operator-only (X-Ingest-Token):
+                              read back POST /api/v1/contact submissions
     GET /evidence/*         → Entity Graph tier: document-evidence graph + analytics
     GET /api/v1/entity-graph/*  → Entity Graph tier: REAL production graph,
                                   scoped to entities + entity_links (see
@@ -29,7 +35,10 @@ import hmac
 import json
 import logging
 import os
+import re
 import sys
+import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -55,28 +64,168 @@ _MAX_DATA_LIMIT = 1000
 # 2026-08-27: GET /api/v1/data?source=train_gnn returned
 # {"trained": false, "loss_ewc": 579753920.0, ...} — a paying Data Platform
 # customer reading the model's own untrained-state defect through the API
-# they're paying for). Every name below is a DAG operator/stage id, not an
-# external data source, confirmed by cross-referencing agent/pipeline/dags/.
-# Excluded from BOTH the source catalog and direct /api/v1/data queries —
-# querying one of these by name now 400s exactly like an unknown source,
-# rather than silently working. New DAG stages must be added here; this is
-# a denylist specifically because the failure mode (a new internal stage
-# silently becoming customer-queryable) is worse than a stage briefly not
-# being addable to a future admin/debug surface.
-_INTERNAL_TELEMETRY_SOURCES = {
-    "train_gnn",
-    "gnn_inference",
-    "score_entities",
-    "generate_features",
-    "run_detection",
-    "scan_adversarial",
-    "sac_inference",
-    "train_rl_policy",
-    "emit_portfolio",
-    "update_beliefs",
-    "load_models",
-    "component_perf_gnn_epochs",
-}
+# they're paying for).
+#
+# C3 (2026-08-27 audit): a hand-maintained DENYLIST here is exactly how that
+# leak happened — a brand-new internal stage is customer-queryable the
+# instant someone adds it, with zero code change, unless every future author
+# remembers to add its name to a list in an unrelated file. Inverted to an
+# ALLOWLIST instead: `_external_source_allowlist()` below is *derived*, not
+# guessed, from agent/pipeline/dags' own DAG registry — the same source of
+# truth the executor itself uses (agent/pipeline/executor.py:
+# `source=node.table_name or node.id`). A node only gets a `table_name` when
+# its author intends its output to be a named, queryable dataset; nodes
+# without one (train_gnn, score_entities, generate_features, run_detection,
+# scan_adversarial, sac_inference, train_rl_policy, emit_portfolio,
+# update_beliefs, load_models — every current internal-telemetry name) fall
+# back to storing under their own node id, and are excluded here *by
+# construction*, not by enumeration. A new internal stage added tomorrow
+# without a `table_name` is unreachable through this API from the moment it
+# ships, with no list to remember to update.
+#
+# The one place this can't be fully mechanical: a handful of sources
+# (whale_tracking.py's `pm_trades` / `pm_resolutions` / `pm_wallet_scores`)
+# are written by a manual `PipelineStore.store_data(source=...)` call inside
+# a `store_result=False` FunctionOperator body rather than the executor's
+# automatic per-node store, so there is no `Node.table_name` to introspect —
+# every node in that DAG has `table_name=None` by construction. These are
+# real, documented product data (docs/specs/polymarket_whale_spec.md names
+# all three explicitly as what this surface serves), not a re-guess — unioned
+# in below by name rather than silently missing from the catalog.
+#
+# Deliberately built from ONLY `agent.pipeline.dags.daily_collection` rather
+# than `agent.pipeline.dags.get_default_dags()` (every builder module).
+# Checked every other builder module individually (2026-08-27): every one of
+# them — adversarial_scan, convergence_detection, entity_scoring,
+# feature_generation, gnn_inference, inference, rl_training, whale_tracking,
+# world_model_update — contributes ZERO `table_name` entries (their nodes are
+# internal analysis/telemetry stages, `table_name=None` by construction, or
+# — whale_tracking — manually stored under the names unioned in above). So
+# importing any of them buys the allowlist nothing, while costing something
+# real: `adversarial_scan` (via agent.adversarial → agent.fusion) transitively
+# imports PyTorch, multiple seconds of cold-import latency the very
+# module docstring at the top of this file promises callers this is a
+# "minimal, dependency-light consumer surface" — and `whale_tracking` runs a
+# pre-existing module-level live network probe on import
+# (`agent.data.dns_bypass.ensure_polymarket_dns()`, a DNS-poisoning check for
+# Polymarket domains). Both were caught live running this fix's own test
+# suite (one as an occasional ~5s stall, the other as a stray DoH warning).
+# `daily_collection.py` alone is the real, complete source of every
+# `table_name`-declared dataset (48 of them) and has no such side effects.
+_MANUAL_STORE_EXTERNAL_SOURCES = frozenset({"pm_trades", "pm_resolutions", "pm_wallet_scores"})
+
+# ── 2026-08-27 triage of the 66-vs-51 gap (P0 #3) ─────────────────────────
+#
+# An independent security triage did a full SET DIFFERENCE (not the raw
+# 66-51 arithmetic) between `SELECT DISTINCT source FROM pipeline_data` and
+# this allowlist and found 23 sources present in local data but absent here.
+# Verdict: ZERO of the 23 should be added. They split into three classes,
+# reproduced here (not for gating — the allowlist above stays purely
+# STRUCTURAL/derived, per the C3 comment — but so the next reader who greps
+# for one of these 23 names finds the answer instead of re-deriving it, and
+# so the regression test below has a name for "known, already classified"):
+#
+#   Class A — real external DAG nodes, but `table_name=None` by design
+#   because their pipeline_data row is a RUN SUMMARY (counts/ticker lists),
+#   not the data itself. Their actual data already lives elsewhere: in
+#   `entity_observations` (deliberately excluded, see the comment above
+#   `_serve_entity_graph_entities`) or, for the yield curve, under the
+#   already-allowlisted `sovereign_debt` source. If a future reader sees one
+#   of these 400 on /api/v1/data and is tempted to "fix" it by adding a
+#   table_name, that would ship our collector's own success/failure counts
+#   to a paying customer — don't.
+_CLASS_A_RUN_SUMMARY_ONLY_SOURCES = frozenset(
+    {
+        "fetch_instruments",
+        "fetch_dividends",
+        "fetch_options_chains",
+        "fetch_us_yield_curve",
+        "fetch_cert_domains",
+    }
+)
+#   Class B — dead legacy aliases: a single 2026-04-19 row each, superseded
+#   months ago by the canonical allowlisted table_name their DAG node was
+#   given afterward (fetch_cftc -> cftc, fetch_gdelt -> gdelt,
+#   fetch_polymarket -> polymarket, fetch_power_demand/fetch_power_fuel ->
+#   power_grid, fetch_finra_scan -> finra_short_volume). Zero writes since.
+_CLASS_B_DEAD_LEGACY_ALIASES = frozenset(
+    {
+        "fetch_cftc",
+        "fetch_gdelt",
+        "fetch_polymarket",
+        "fetch_power_demand",
+        "fetch_power_fuel",
+        "fetch_finra_scan",
+    }
+)
+#   Class C — internal telemetry stages storing under their own node id
+#   (no table_name by construction) — exactly the "internal-telemetry name"
+#   class the C3 comment above already describes; listed here only so the
+#   test below has a positive assertion instead of an open-ended one.
+_CLASS_C_INTERNAL_TELEMETRY_SOURCES = frozenset(
+    {
+        "train_gnn",
+        "score_entities",
+        "generate_features",
+        "emit_portfolio",
+        "gnn_inference",
+        "load_models",
+        "run_detection",
+        "sac_inference",
+        "scan_adversarial",
+        "train_rl_policy",
+        "update_beliefs",
+        "component_perf_gnn_epochs",
+    }
+)
+# Union of all three — "known, already reasoned about, deliberately not
+# customer-queryable." Anything found in a local DB that is in NEITHER this
+# set NOR the allowlist is new and unclassified: fail closed (see the
+# regression test in tests/test_brief_server_hardening.py) rather than
+# guessing which bucket it belongs in — that guess is exactly how the
+# original leak (P0 #3) happened.
+_KNOWN_NON_EXTERNAL_SOURCES = (
+    _CLASS_A_RUN_SUMMARY_ONLY_SOURCES | _CLASS_B_DEAD_LEGACY_ALIASES | _CLASS_C_INTERNAL_TELEMETRY_SOURCES
+)
+
+
+_EXTERNAL_SOURCE_ALLOWLIST_LOCK = threading.Lock()
+
+
+def _external_source_allowlist() -> frozenset[str]:
+    """The real, queryable-source catalog: every `daily_collection` DAG
+    node's declared `table_name`, plus the documented manual-store sources
+    above.
+
+    Computed once per process and cached — building it is pure Python data
+    traversal (see the module-selection note above: no tool registry,
+    network, or heavy ML dependency is touched building it). Guarded by a
+    lock purely so concurrent first-callers (ThreadingHTTPServer — one
+    thread per request) wait for the one (fast) build instead of each
+    running the import+build themselves.
+    """
+    global _EXTERNAL_SOURCE_ALLOWLIST_CACHE
+    if _EXTERNAL_SOURCE_ALLOWLIST_CACHE is not None:
+        return _EXTERNAL_SOURCE_ALLOWLIST_CACHE
+
+    with _EXTERNAL_SOURCE_ALLOWLIST_LOCK:
+        if _EXTERNAL_SOURCE_ALLOWLIST_CACHE is not None:
+            return _EXTERNAL_SOURCE_ALLOWLIST_CACHE
+        _EXTERNAL_SOURCE_ALLOWLIST_CACHE = _build_external_source_allowlist()
+    return _EXTERNAL_SOURCE_ALLOWLIST_CACHE
+
+
+def _build_external_source_allowlist() -> frozenset[str]:
+    from agent.pipeline.dags.daily_collection import build_daily_collection_dag
+
+    names: set[str] = set(_MANUAL_STORE_EXTERNAL_SOURCES)
+    for node in build_daily_collection_dag().nodes.values():
+        if node.table_name:
+            names.add(node.table_name)
+    return frozenset(names)
+
+
+_EXTERNAL_SOURCE_ALLOWLIST_CACHE: frozenset[str] | None = None
 
 
 def _truthy(value: str | None) -> bool:
@@ -94,6 +243,19 @@ def _safe_int(value: str | None, default: int) -> int:
         return default
     try:
         return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_float(value: str | None, default: float | None) -> float | None:
+    """Parse a query-param float, falling back to *default* on bad input.
+
+    Same C4 class as `_safe_int`: `?since=notanumber` must not 500.
+    """
+    if value is None:
+        return default
+    try:
+        return float(value)
     except (TypeError, ValueError):
         return default
 
@@ -176,19 +338,157 @@ def _log_usage(key: str | None, endpoint: str) -> None:
         logging.getLogger(__name__).warning("[usage] failed to log endpoint=%s: %s", endpoint, exc)
 
 
+# ── C4: bounded concurrency ───────────────────────────────────────────────
+#
+# ThreadingHTTPServer spawns one thread per connection with no cap — a
+# single customer opening many connections can pile up unbounded threads all
+# hitting the same SQLite-backed stores at once (agent/pipeline/store.py,
+# agent/payments/*). This does not make the server single-threaded; it just
+# bounds how many requests are *actively being handled* at any instant. A
+# request beyond the cap blocks (queues) waiting for a slot rather than
+# spawning a 51st concurrent SQLite writer. Configurable so a real deployment
+# can size it to its box; not a rewrite of the server.
+_REQUEST_SEMAPHORE = threading.BoundedSemaphore(_safe_int(os.getenv("TIRRA_MAX_CONCURRENT_REQUESTS"), 20))
+
+
+class _RateLimiter:
+    """In-process, in-memory sliding-window rate limiter keyed by an
+    arbitrary string (an IP, a txn_id, ...).
+
+    Correct ONLY because the deployment is a single process (ThreadingHTTPServer,
+    no horizontal fleet) — see the /api/v1/claim threat-model note below. If
+    that ever changes this needs to move to a shared store (e.g. the same
+    SQLite DB), or a fleet-wide bypass becomes possible.
+    """
+
+    def __init__(self, max_calls: int, window_s: float) -> None:
+        self.max_calls = max_calls
+        self.window_s = window_s
+        self._lock = threading.Lock()
+        self._hits: dict[str, list[float]] = {}
+
+    def allow(self, key: str, now: float | None = None) -> tuple[bool, float]:
+        """Returns (allowed, retry_after_s). Consumes one call on success."""
+        now = time.time() if now is None else now
+        cutoff = now - self.window_s
+        with self._lock:
+            hits = self._hits.get(key, [])
+            hits = [h for h in hits if h > cutoff]
+            if len(hits) >= self.max_calls:
+                self._hits[key] = hits
+                retry_after = max(0.0, hits[0] + self.window_s - now)
+                return False, retry_after
+            hits.append(now)
+            self._hits[key] = hits
+            return True, 0.0
+
+
+# ── GET /api/v1/claim — threat model: transaction id enumeration ─────────
+#
+# A leaked/logged/screenshotted `txn_...` id is the realistic risk (not
+# brute force — see docs pulled into the design doc: txn ids are ULID-based,
+# 2^80 random bits). Two independent, generous-for-the-legit-poll-loop caps:
+# Sized against welcome.html's ACTUAL poll cadence, not a guess: it fires at
+# t=0,2,5,10,18,28,38,48,58,...,118s — 15 calls for ONE legitimate purchase.
+# The previous caps (8/txn, 20/IP) were below that, so a normal customer whose
+# webhook landed ~60s late got a 429 mid-poll and a false "setup failed"
+# screen. Headroom here covers the full poll loop plus a page refresh; the
+# real defence against a leaked txn id is single-use claiming, not this.
+_CLAIM_TXN_LIMITER = _RateLimiter(max_calls=24, window_s=600)  # per txn_id / 10 min
+_CLAIM_IP_LIMITER = _RateLimiter(max_calls=60, window_s=3600)  # per source IP / hour
+_TXN_ID_RE = re.compile(r"^txn_[A-Za-z0-9_-]{6,64}$")
+
+# ── POST /api/v1/contact ──────────────────────────────────────────────────
+_CONTACT_IP_LIMITER = _RateLimiter(max_calls=5, window_s=3600)  # per source IP / hour
+_MAX_CONTACT_BODY_BYTES = 8 * 1024  # the form is 4 short fields — 8KB is generous
+_MAX_CONTACT_FIELD_LEN = 300
+_MAX_CONTACT_MESSAGE_LEN = 8000
+_DEFAULT_CONTACT_LOG = ".tirra_opportunities/contact_messages.jsonl"
+
+# ── GET /api/v1/admin/contact-messages ────────────────────────────────────
+# Operator-only read of the POST /api/v1/contact log — see _serve_contact's
+# docstring for why messages land in a JSONL file (no mail service exists).
+_MAX_CONTACT_READ_LIMIT = 500
+
+# ── POST /api/v1/rotate-key ───────────────────────────────────────────────
+#
+# welcome.html shows the API key exactly ONCE and there is no mailbox (MX
+# records absent — see ground truth); a customer who loses their key has no
+# recovery path without this route. agent/payments/handler.py already ships
+# the store-layer support (`SubscriberStore.rotate_key_for_api_key`) and its
+# own docstring specifies the exact contract this route implements — this
+# handler is deliberately a thin translation layer over it, same pattern as
+# every other route in this file that defers to agent/payments/*.
+#
+# Rotating a key is destructive (the old key dies immediately, with no
+# undo — there is no revocation list, `_by_api_key` only ever matches the
+# CURRENT `api_key` field) and authenticated (must present the current valid
+# key — there is no "rotate by subscription_id" path exposed here, only
+# self-service). Rate-limited on TWO axes for two different reasons:
+#   - per presented key: bounds how many times one credential can be spun
+#     even by its legitimate holder in a short window (a buggy client stuck
+#     in a retry loop must not be able to invalidate its own key every
+#     request forever);
+#   - per source IP: bounds how many *distinct* keys one caller can probe
+#     rotation against, independent of whether any of them are valid.
+# Format-validated BEFORE either limiter or the store lookup runs (like
+# `_TXN_ID_RE` for /api/v1/claim) so a flood of garbage strings can't grow
+# the in-memory rate-limiter dict unbounded — see _RateLimiter's per-key
+# `dict` note.
+_ROTATE_KEY_LIMITER = _RateLimiter(max_calls=5, window_s=3600)  # per presented key / hour
+_ROTATE_IP_LIMITER = _RateLimiter(max_calls=20, window_s=3600)  # per source IP / hour
+_API_KEY_RE = re.compile(r"^tirra_[A-Za-z0-9_-]{10,100}$")
+
+
 class _Handler(BaseHTTPRequestHandler):
     server_version = "AWOSBrief/0.1"  # type: ignore[assignment]
 
     deliverer: BriefDeliverer  # class attr set by serve()
 
+    # C6: the base handler's `version_string()` returns
+    # f"{server_version} {sys_version}", and `sys_version` defaults to
+    # "Python/<full interpreter version>" — every response (including the
+    # Server header and log lines) was leaking the exact Python patch version
+    # of the box. Overridden below to just the app version.
+    def version_string(self) -> str:  # noqa: N802
+        return self.server_version
+
     # ── HTTP verb handlers ───────────────────────────────────────────────────
     def do_GET(self) -> None:  # noqa: N802
+        with _REQUEST_SEMAPHORE:
+            self._do_GET()
+
+    def _do_GET(self) -> None:  # noqa: N802
         from urllib.parse import parse_qs, urlsplit
 
         parts = urlsplit(self.path)
         path = parts.path
         query = parse_qs(parts.query)
-        key = (query.get("key") or [None])[0] or self.headers.get("X-Brief-Key")
+
+        # Unauthenticated by design (see agent/payments/claim.py's ownership-
+        # split docstring) — dispatched before key extraction so it is never
+        # affected by TIRRA_REJECT_QUERY_KEYS or key-parsing at all.
+        if path == "/api/v1/claim":
+            self._serve_claim(query)
+            return
+
+        # Admin-only, gated by the same `X-Ingest-Token` check as
+        # POST /evidence/ingest rather than the subscriber-key system below —
+        # this is an operator surface, not a paid tier, so it is dispatched
+        # before subscriber-key extraction (same reasoning as /api/v1/claim
+        # above: it must never be affected by TIRRA_REJECT_QUERY_KEYS or
+        # subscriber key parsing).
+        if path == "/api/v1/admin/contact-messages":
+            if not self._ingest_authorized():
+                self._send(403, "application/json", json.dumps({"ok": False, "error": "invalid ingest token"}))
+                return
+            self._serve_admin_contact_messages(query)
+            return
+
+        key, key_error = self._extract_key(query)
+        if key_error is not None:
+            self._send(400, "application/json", json.dumps(key_error))
+            return
 
         if path == "/buy":
             self._serve_buy(query)
@@ -283,6 +583,39 @@ class _Handler(BaseHTTPRequestHandler):
         else:
             self._send(404, "text/plain", "not found\n")
 
+    # C2 (2026-08-27 audit): ?key=... in the query string lands in Caddy's
+    # access log (full URI logged) in cleartext, and can leak via the
+    # Referer header on any outbound link/asset request the response body
+    # triggers. The fix keeps ?key= working (tests/test_brief_server.py,
+    # owned by another agent, uses it extensively) but:
+    #   - always logs a deprecation warning when a key arrives via the query
+    #     string, so it shows up in server logs pushing callers to migrate;
+    #   - adds TIRRA_REJECT_QUERY_KEYS (default OFF) — when truthy, a
+    #     query-string key is hard-rejected with 400 rather than silently
+    #     accepted, so production can flip it on immediately without waiting
+    #     for every customer to migrate to the X-Brief-Key header first.
+    # Precedence when a query key is rejected: the header is NOT silently
+    # substituted in its place if a query key was ALSO present — that would
+    # make the reject-flag's behavior depend on which key happened to be
+    # valid, instead of being an unconditional protocol rule.
+    def _extract_key(self, query: dict) -> tuple[str | None, dict | None]:
+        """Returns (key, error_body). error_body is not None iff the request
+        must be rejected outright (400) before any route/auth logic runs."""
+        query_key = (query.get("key") or [None])[0]
+        header_key = self.headers.get("X-Brief-Key")
+        if query_key:
+            logging.getLogger(__name__).warning(
+                "[deprecated] API key passed via ?key= query string (leaks into "
+                "access logs / Referer headers) — use the X-Brief-Key header instead"
+            )
+            if _truthy(os.getenv("TIRRA_REJECT_QUERY_KEYS")):
+                return None, {
+                    "ok": False,
+                    "error": "query-string API keys are disabled — pass the key via the X-Brief-Key header instead",
+                }
+            return query_key, None
+        return header_key, None
+
     # ── Helpers ──────────────────────────────────────────────────────────────
     def _serve_landing(self) -> None:
         landing = Path(os.getenv("TIRRA_LANDING_HTML", "products/brief_subscription/index.html"))
@@ -311,12 +644,405 @@ class _Handler(BaseHTTPRequestHandler):
         body = f'<meta http-equiv="refresh" content="0;url={url}">Subscribing…'
         self._send(200, "text/html; charset=utf-8", body)
 
+    # ── GET /api/v1/claim — the one unauthenticated route (no key exists yet
+    # at this point in the flow) ─────────────────────────────────────────────
+    #
+    # Routing/HTTP/status-codes/CORS/rate-limiting only — this method must not
+    # reimplement any Paddle-verification or claim/idempotency-state logic;
+    # that lives in agent.payments.claim (ClaimResult / claim_transaction /
+    # ClaimStore), same layering _authorized_for already uses for
+    # SubscriberStore/UsageStore. See agent/payments/claim.py's own docstring
+    # for the ownership split.
+    def _serve_claim(self, query) -> None:
+        origin = os.getenv("TIRRA_WEB_ORIGIN", "https://tirramind.com")
+        cors = {"Access-Control-Allow-Origin": origin}
+
+        txn = (query.get("txn") or [None])[0]
+        if not txn or not _TXN_ID_RE.match(txn):
+            self._send(
+                400,
+                "application/json",
+                json.dumps({"ok": False, "status": "bad_request", "message": "missing or malformed txn parameter"}),
+                extra_headers=cors,
+            )
+            return
+
+        allowed, retry_after = _CLAIM_TXN_LIMITER.allow(f"txn:{txn}")
+        if allowed:
+            ip = self.client_address[0] if self.client_address else "unknown"
+            allowed, retry_after = _CLAIM_IP_LIMITER.allow(f"ip:{ip}")
+        if not allowed:
+            retry = max(1, int(retry_after) + 1)
+            self._send(
+                429,
+                "application/json",
+                json.dumps({"ok": False, "status": "rate_limited", "retry_after_s": retry}),
+                extra_headers={**cors, "Retry-After": str(retry)},
+            )
+            return
+
+        try:
+            from agent.payments.claim import ClaimStore, claim_transaction
+            from agent.payments.client import PaddleClient
+            from agent.payments.config import PaddleConfig
+            from agent.payments.handler import SubscriberStore
+
+            cfg = PaddleConfig.from_env()
+            result = claim_transaction(
+                txn,
+                paddle_client=PaddleClient(cfg),
+                subscriber_store=SubscriberStore(),
+                claim_store=ClaimStore(),
+            )
+        except Exception as exc:  # config error, unexpected exception from the payments layer
+            logging.getLogger(__name__).warning("[claim] unexpected error txn=%s: %s", txn, exc)
+            self._send(
+                502,
+                "application/json",
+                json.dumps(
+                    {
+                        "ok": False,
+                        "status": "upstream_error",
+                        "message": "could not verify your transaction — try again shortly",
+                    }
+                ),
+                extra_headers=cors,
+            )
+            return
+
+        self._respond_claim_result(result, extra_headers=cors)
+
+    def _respond_claim_result(self, result, extra_headers: dict[str, str]) -> None:
+        status = result.status
+        if status == "unknown_transaction":
+            self._send(
+                404,
+                "application/json",
+                json.dumps({"ok": False, "status": status, "message": "no transaction found for this id"}),
+                extra_headers=extra_headers,
+            )
+        elif status == "not_completed":
+            self._send(
+                422,
+                "application/json",
+                json.dumps(
+                    {
+                        "ok": False,
+                        "status": status,
+                        "transaction_status": result.transaction_status,
+                        "message": "this transaction has not completed successfully",
+                    }
+                ),
+                extra_headers=extra_headers,
+            )
+        elif status == "pending":
+            self._send(
+                202,
+                "application/json",
+                json.dumps(
+                    {
+                        "ok": True,
+                        "status": status,
+                        "retry_after_s": 3,
+                        "message": "payment received — provisioning your key",
+                    }
+                ),
+                extra_headers={**extra_headers, "Retry-After": "3"},
+            )
+        elif status == "subscriber_inactive":
+            self._send(
+                409,
+                "application/json",
+                json.dumps({"ok": False, "status": status, "message": "your subscription is not currently active"}),
+                extra_headers=extra_headers,
+            )
+        elif status == "claimed":
+            self._send(
+                200,
+                "application/json",
+                json.dumps(
+                    {
+                        "ok": True,
+                        "status": status,
+                        "api_key": result.api_key,
+                        "tier": result.tier,
+                        "subscription_id": result.subscription_id,
+                    }
+                ),
+                extra_headers=extra_headers,
+            )
+        elif status == "already_claimed":
+            self._send(
+                200,
+                "application/json",
+                json.dumps(
+                    {
+                        "ok": True,
+                        "status": status,
+                        "subscription_id": result.subscription_id,
+                        "message": "this key has already been delivered — contact support to rotate it if lost",
+                    }
+                ),
+                extra_headers=extra_headers,
+            )
+        else:  # "upstream_error" or any status this route doesn't recognize — never a bare 500
+            self._send(
+                502,
+                "application/json",
+                json.dumps(
+                    {
+                        "ok": False,
+                        "status": "upstream_error",
+                        "message": "could not verify your transaction — try again shortly",
+                    }
+                ),
+                extra_headers=extra_headers,
+            )
+
+    # ── POST /api/v1/contact — the contact form's only destination; it was
+    # dead (posting to a route that didn't exist) before this. No email
+    # service exists (see ground truth: MX records absent, support@ bounces),
+    # so this deliberately just persists — see _serve_contact's docstring for
+    # exactly where. ────────────────────────────────────────────────────────
+    def _serve_contact(self, length: int) -> None:
+        ip = self.client_address[0] if self.client_address else "unknown"
+        allowed, retry_after = _CONTACT_IP_LIMITER.allow(f"ip:{ip}")
+        if not allowed:
+            retry = max(1, int(retry_after) + 1)
+            # Don't consume the socket's unread body — this connection is done.
+            self.close_connection = True
+            self._send(
+                429,
+                "application/json",
+                json.dumps({"ok": False, "error": "rate limited", "retry_after_s": retry}),
+                extra_headers={"Retry-After": str(retry)},
+            )
+            return
+
+        if length > _MAX_CONTACT_BODY_BYTES:
+            # Refuse before allocating memory for / persisting an oversized
+            # body — the disk-fill guard the task calls for. Body left
+            # unread on purpose; close so the next request on this
+            # connection isn't desynced by the unread bytes.
+            self.close_connection = True
+            self._send(413, "application/json", json.dumps({"ok": False, "error": "request body too large"}))
+            return
+
+        body = self.rfile.read(length) if length > 0 else b""
+
+        try:
+            payload = json.loads(body.decode("utf-8")) if body else {}
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            self._send(400, "application/json", json.dumps({"ok": False, "error": "bad json"}))
+            return
+
+        if not isinstance(payload, dict):
+            self._send(400, "application/json", json.dumps({"ok": False, "error": "expected a JSON object"}))
+            return
+
+        name = str(payload.get("name") or "").strip()
+        email = str(payload.get("email") or "").strip()
+        subject = str(payload.get("subject") or "").strip()
+        message = str(payload.get("message") or "").strip()
+
+        if not (name and email and subject and message):
+            self._send(
+                400,
+                "application/json",
+                json.dumps({"ok": False, "error": "name, email, subject and message are all required"}),
+            )
+            return
+
+        if (
+            len(name) > _MAX_CONTACT_FIELD_LEN
+            or len(email) > _MAX_CONTACT_FIELD_LEN
+            or len(subject) > _MAX_CONTACT_FIELD_LEN
+            or len(message) > _MAX_CONTACT_MESSAGE_LEN
+        ):
+            self._send(
+                400,
+                "application/json",
+                json.dumps({"ok": False, "error": "one or more fields exceed the maximum allowed length"}),
+            )
+            return
+
+        # Lands here: a plain JSONL file, one line per submission. No DB
+        # table, no dependency, no email (there is no mail service to send
+        # through — see ground truth). Overridable via TIRRA_CONTACT_LOG for
+        # tests / ops; default path lives alongside the other small
+        # JSON-file-pattern stores (SubscriberStore, ClaimStore).
+        log_path = Path(os.getenv("TIRRA_CONTACT_LOG", _DEFAULT_CONTACT_LOG))
+        record = {
+            "received_at": time.time(),
+            "name": name,
+            "email": email,
+            "subject": subject,
+            "message": message,
+            "source_ip": ip,
+        }
+        try:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            with log_path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except OSError as exc:
+            logging.getLogger(__name__).error("[contact] failed to persist message: %s", exc)
+            self._send(
+                500,
+                "application/json",
+                json.dumps({"ok": False, "error": "could not store your message — please try again shortly"}),
+            )
+            return
+
+        self._send(200, "application/json", json.dumps({"ok": True, "message": "received"}))
+
+    # ── GET /api/v1/admin/contact-messages — operator-only read path ────────
+    #
+    # HOW THE OWNER READS CONTACT MESSAGES (documented once, here — no other
+    # doc references this): the operator has two options, both reading the
+    # exact same file (default `.tirra_opportunities/contact_messages.jsonl`,
+    # overridable via TIRRA_CONTACT_LOG):
+    #   1. This route: `curl -H "X-Ingest-Token: $TIRRA_INGEST_TOKEN"
+    #      https://<host>/api/v1/admin/contact-messages` — returns JSON,
+    #      newest-first, paginated via `?limit=&offset=`.
+    #   2. Directly: `tail -f .tirra_opportunities/contact_messages.jsonl`
+    #      on the box, or any JSONL-aware tool — one JSON object per line,
+    #      append-only.
+    # Deliberately reuses `_ingest_authorized()` (the same X-Ingest-Token gate
+    # POST /evidence/ingest already uses) instead of inventing a second
+    # admin-auth mechanism: one gate to reason about, not two. NOT wired into
+    # any customer-facing tier or UI — an unset TIRRA_INGEST_TOKEN in
+    # production denies this route the same way it denies ingest (see
+    # `_ingest_authorized`'s fail-closed contract).
+    def _serve_admin_contact_messages(self, query) -> None:
+        log_path = Path(os.getenv("TIRRA_CONTACT_LOG", _DEFAULT_CONTACT_LOG))
+        requested_limit = _safe_int((query.get("limit") or [None])[0], 50)
+        limit = max(1, min(requested_limit, _MAX_CONTACT_READ_LIMIT))
+        offset = max(0, _safe_int((query.get("offset") or [None])[0], 0))
+
+        if not log_path.exists():
+            self._send(200, "application/json", json.dumps({"ok": True, "messages": [], "count": 0, "total": 0}))
+            return
+
+        try:
+            raw_lines = log_path.read_text(encoding="utf-8").splitlines()
+        except OSError as exc:
+            logging.getLogger(__name__).error("[admin/contact] failed to read %s: %s", log_path, exc)
+            self._send(
+                500,
+                "application/json",
+                json.dumps({"ok": False, "error": "could not read contact log"}),
+            )
+            return
+
+        records = []
+        for line in raw_lines:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                records.append(json.loads(line))
+            except json.JSONDecodeError:
+                # A single corrupt/partial line (e.g. a torn write) must not
+                # take down the whole read.
+                continue
+
+        records.reverse()  # newest first
+        total = len(records)
+        page = records[offset : offset + limit]
+        self._send(
+            200,
+            "application/json",
+            json.dumps({"ok": True, "messages": page, "count": len(page), "total": total}),
+        )
+
+    # ── POST /api/v1/rotate-key — self-service key rotation ──────────────────
+    #
+    # See the constants block above (`_ROTATE_KEY_LIMITER` etc.) for the
+    # threat-model rationale. This method is intentionally a thin translation
+    # layer over `SubscriberStore.rotate_key_for_api_key` — see that method's
+    # docstring in agent/payments/handler.py for the exact contract this
+    # implements:
+    #
+    #   POST /api/v1/rotate-key
+    #   Header: X-Brief-Key: <current tirra_... key>     (query-string keys
+    #                                                      are NEVER accepted
+    #                                                      here, unlike other
+    #                                                      routes' ?key=
+    #                                                      fallback — this is
+    #                                                      a destructive
+    #                                                      action)
+    #   200 {"ok": true, "api_key": "tirra_<new>"}         — old key is
+    #                                                        already dead by
+    #                                                        the time this
+    #                                                        returns
+    #   401 {"ok": false, "error": "missing X-Brief-Key header"}
+    #   400 {"ok": false, "error": "malformed key"}
+    #   403 {"ok": false, "error": "invalid or inactive key"}
+    #   429 {"ok": false, "error": "rate limited", "retry_after_s": N}
+    #
+    # The new key is returned exactly once — same "no other recovery channel"
+    # situation as GET /api/v1/claim's "claimed" response (no mailbox exists;
+    # see ground truth). The caller MUST persist it immediately.
+    def _serve_rotate_key(self) -> None:
+        key = self.headers.get("X-Brief-Key", "").strip()
+        if not key:
+            self._send(401, "application/json", json.dumps({"ok": False, "error": "missing X-Brief-Key header"}))
+            return
+
+        if not _API_KEY_RE.match(key):
+            # Rejected before either rate limiter or the store is touched —
+            # see the constants-block note on unbounded rate-limiter growth.
+            self._send(400, "application/json", json.dumps({"ok": False, "error": "malformed key"}))
+            return
+
+        ip = self.client_address[0] if self.client_address else "unknown"
+        allowed, retry_after = _ROTATE_KEY_LIMITER.allow(f"key:{key}")
+        if allowed:
+            allowed, retry_after = _ROTATE_IP_LIMITER.allow(f"ip:{ip}")
+        if not allowed:
+            retry = max(1, int(retry_after) + 1)
+            self._send(
+                429,
+                "application/json",
+                json.dumps({"ok": False, "error": "rate limited", "retry_after_s": retry}),
+                extra_headers={"Retry-After": str(retry)},
+            )
+            return
+
+        from agent.payments.handler import SubscriberStore
+
+        new_key = SubscriberStore().rotate_key_for_api_key(key)
+        if new_key is None:
+            self._send(403, "application/json", json.dumps({"ok": False, "error": "invalid or inactive key"}))
+            return
+        self._send(200, "application/json", json.dumps({"ok": True, "api_key": new_key}))
+
     # ── Webhook (Paddle subscription lifecycle) ───────────────────────────────
     def do_POST(self) -> None:  # noqa: N802
+        with _REQUEST_SEMAPHORE:
+            self._do_POST()
+
+    def _do_POST(self) -> None:  # noqa: N802
         path = self.path.split("?")[0]
 
+        # C4: Content-Length is caller-controlled input too — guard it the
+        # same way query-param ints are guarded (a malformed header must not
+        # crash the worker thread with an uncaught ValueError).
+        length = max(0, _safe_int(self.headers.get("Content-Length"), 0))
+
+        if path == "/api/v1/contact":
+            self._serve_contact(length)
+            return
+
+        if path == "/api/v1/rotate-key":
+            if length > 0:
+                # No request body is expected (auth is header-only); drain
+                # it so an unread body doesn't desync a keep-alive connection.
+                self.rfile.read(length)
+            self._serve_rotate_key()
+            return
+
         # Read the RAW body (signature verification needs the exact bytes).
-        length = int(self.headers.get("Content-Length", 0) or 0)
         body = self.rfile.read(length) if length > 0 else b""
 
         if path == "/evidence/ingest":
@@ -541,7 +1267,7 @@ class _Handler(BaseHTTPRequestHandler):
 
         q = (query.get("q") or [None])[0]
         co = store.co_occurrences(urllib.parse.unquote(q).strip().lower()) if q else []
-        pairs = store.cross_doc_pairs(min_docs=int((query.get("min_docs") or ["2"])[0]))
+        pairs = store.cross_doc_pairs(min_docs=_safe_int((query.get("min_docs") or [None])[0], 2))
         self._send(
             200,
             "application/json",
@@ -572,7 +1298,7 @@ class _Handler(BaseHTTPRequestHandler):
         import urllib.parse
 
         q = (query.get("q") or [None])[0]
-        top = int((query.get("top") or ["10"])[0])
+        top = _safe_int((query.get("top") or [None])[0], 10)
         if q:
             n = neighbors(store, urllib.parse.unquote(q).strip().lower())
         else:
@@ -750,7 +1476,8 @@ class _Handler(BaseHTTPRequestHandler):
     def _serve_sources(self) -> None:
         from agent.pipeline.store import PipelineStore
 
-        sources = [s for s in PipelineStore().list_sources() if s["source"] not in _INTERNAL_TELEMETRY_SOURCES]
+        allowlist = _external_source_allowlist()
+        sources = [s for s in PipelineStore().list_sources() if s["source"] in allowlist]
         self._send(200, "application/json", json.dumps({"ok": True, "sources": sources}))
 
     def _serve_data_api(self, query) -> None:
@@ -758,7 +1485,7 @@ class _Handler(BaseHTTPRequestHandler):
         if not source:
             self._send(400, "application/json", json.dumps({"ok": False, "error": "source required"}))
             return
-        if source in _INTERNAL_TELEMETRY_SOURCES:
+        if source not in _external_source_allowlist():
             self._send(
                 400,
                 "application/json",
@@ -774,28 +1501,14 @@ class _Handler(BaseHTTPRequestHandler):
 
         store = PipelineStore()
 
-        known = {s["source"] for s in store.list_sources()} - _INTERNAL_TELEMETRY_SOURCES
-        if source not in known:
-            self._send(
-                400,
-                "application/json",
-                json.dumps(
-                    {
-                        "ok": False,
-                        "error": f"unknown source {source!r} — see /api/v1/sources for valid values",
-                    }
-                ),
-            )
-            return
-
         since = (query.get("since") or [None])[0]
         until = (query.get("until") or [None])[0]
-        requested_limit = int((query.get("limit") or ["100"])[0])
+        requested_limit = _safe_int((query.get("limit") or [None])[0], 100)
         limit = max(1, min(requested_limit, _MAX_DATA_LIMIT))
         rows = store.query_data(
             source,
-            since=float(since) if since else None,
-            until=float(until) if until else None,
+            since=_safe_float(since, None),
+            until=_safe_float(until, None),
             limit=limit,
         )
         self._send(200, "application/json", json.dumps({"ok": True, "source": source, "rows": rows}))
@@ -805,7 +1518,7 @@ class _Handler(BaseHTTPRequestHandler):
         from agent.pipeline.store import PipelineStore
 
         dag_name = (query.get("dag_name") or [None])[0]
-        requested_limit = int((query.get("limit") or ["20"])[0])
+        requested_limit = _safe_int((query.get("limit") or [None])[0], 20)
         limit = max(1, min(requested_limit, _MAX_DATA_LIMIT))
         runs = PipelineStore().get_runs(dag_name=dag_name, limit=limit)
         self._send(200, "application/json", json.dumps({"ok": True, "runs": runs}))
@@ -817,7 +1530,7 @@ class _Handler(BaseHTTPRequestHandler):
         since = (query.get("since") or [None])[0]
         summary = UsageStore().summary(
             (key or "").strip(),
-            since=float(since) if since else None,
+            since=_safe_float(since, None),
         )
         self._send(200, "application/json", json.dumps({"ok": True, **summary}))
 
@@ -849,12 +1562,20 @@ class _Handler(BaseHTTPRequestHandler):
     def _serve_status(self) -> None:
         self._send(200, "application/json", json.dumps(self.deliverer.status(), indent=2))
 
-    def _send(self, code: int, ctype: str, body: str) -> None:
+    def _send(self, code: int, ctype: str, body: str, extra_headers: dict[str, str] | None = None) -> None:
         data = body.encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
-        self.send_header("Access-Control-Allow-Origin", "*")
+        # C6: configurable via TIRRA_CORS_ORIGIN, defaulting to today's "*" so
+        # nothing breaks for callers relying on the current wide-open value.
+        # extra_headers (e.g. /api/v1/claim's TIRRA_WEB_ORIGIN-scoped value)
+        # take precedence over this default rather than being sent twice.
+        headers = {"Access-Control-Allow-Origin": os.getenv("TIRRA_CORS_ORIGIN", "*")}
+        if extra_headers:
+            headers.update(extra_headers)
+        for name, value in headers.items():
+            self.send_header(name, value)
         self.end_headers()
         self.wfile.write(data)
 
@@ -866,6 +1587,18 @@ class _Handler(BaseHTTPRequestHandler):
 def serve(out_dir: str = _DEFAULT_OUT, port: int = 8777, host: str = "127.0.0.1") -> None:
     """Run the brief server (blocking)."""
     deliverer = BriefDeliverer(out_dir=out_dir)
+
+    # Pre-warm the Data Platform source allowlist (C3) at boot rather than on
+    # a customer's first /api/v1/sources or /api/v1/data request — cheap
+    # (pure DAG-node traversal, deliberately avoids the one DAG module with an
+    # import-time network side effect — see the comment above
+    # `_external_source_allowlist`), but best-effort regardless: a failure
+    # here must never block server startup; the allowlist is built lazily on
+    # first use if this doesn't run.
+    try:
+        _external_source_allowlist()
+    except Exception as exc:  # never block startup on this
+        sys.stderr.write(f"[brief-server] source allowlist pre-warm failed (will build lazily): {exc}\n")
 
     # Bind the configured deliverer onto the handler class (class attr lookup
     # works for locals only via assignment after definition).
