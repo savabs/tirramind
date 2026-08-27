@@ -11,10 +11,34 @@ WorkingDirectory=/opt/tirramind
 # TIRRA_FRED_API_KEY / TIRRA_NASA_FIRMS_KEY / TIRRA_EIA_API_KEY — without this
 # the collection step silently runs with those sources dark.
 EnvironmentFile=/opt/tirramind/.env.production
-ExecStart=/opt/tirramind/scripts/run_scheduled.sh chain
-# The chain runs 40+ network sources plus GNN inference, entity scoring, world
-# model updates and RL training. Give it real headroom — it exits on its own.
+
+# NIGHTLY = the light, product-feeding DAGs only.
+#
+# The production box is 1 vCPU / 1.9 GB RAM. Measured 2026-08-27 during a real
+# run: the full 9-DAG chain hit 84% RSS with 29 MB available and 1.24 GB pushed
+# into swap, on one core. gnn_inference alone ran >15 min in that state. A
+# process OOM-killed mid-DAG leaves a run stuck in "running" with no error
+# recorded — which is exactly the signature daily_collection has carried since
+# April, so the undersized box is likely a root cause alongside the executor
+# bug fixed in 0b52ab7.
+#
+# Excluded here: gnn_inference, entity_scoring, inference (all in
+# run_chain.py's _MODEL_DEPENDENT — they load trained weights) and rl_training.
+# Nothing the paid tiers actually serve depends on them: the $19 digest reads
+# entity_observations directly, and the Entity Graph tier reads entities /
+# entity_links, both written by daily_collection. The model layer they feed is
+# documented as UNVALIDATED. Run them deliberately with:
+#     scripts/run_scheduled.sh chain --only gnn_inference,entity_scoring,inference
+ExecStart=/opt/tirramind/scripts/run_scheduled.sh chain --only daily_collection,convergence_detection,feature_generation,adversarial_scan,world_model_update
+
+# 40+ network sources, one core. It exits on its own.
 TimeoutStartSec=5400
+
+# Hard ceiling so a runaway DAG cannot take the API down with it. On a 1.9 GB
+# box the OOM killer would otherwise be free to pick tirra-api.service, and a
+# customer-facing 500 is worse than a failed nightly job.
+MemoryMax=1200M
+MemorySwapMax=1500M
 
 # run_chain.py exits non-zero when any DAG fails, so a failure is visible in
 # `systemctl status` instead of silently reporting success — which is exactly
