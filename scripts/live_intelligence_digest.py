@@ -58,19 +58,38 @@ SeriesKey = tuple[str, str]  # type: ignore[name-defined]
 
 def _extract_series(
     store: PipelineStore, source: str, obs_type: str, fields: tuple[str, ...]
-) -> dict[SeriesKey, tuple[list[float], float]]:
+) -> dict[SeriesKey, tuple[list[float], float, list[float]]]:
     """Pull numeric series from real observations, keyed by (entity, field).
 
-    Returns {key: (values, latest_observed_at)} so surfaced findings can carry
-    the flagged timestamp (needed for honest forward-data realization).
+    Returns {key: (values, latest_observed_at, timestamps)}. `timestamps` is
+    aligned 1:1 with `values` (both ascending by observed_at) so callers can
+    convert a BOCPD changepoint index into real elapsed time (e.g. "6 weeks
+    ago") instead of a raw array position.
     """
     cur = store._conn.cursor()
+    # DEDUPE ON (entity_id, observed_at). Collection re-ingests the same report
+    # on every run without an upsert, so entity_observations holds 442
+    # duplicate futures_positioning rows — 2026-08-18 alone has 272 against a
+    # typical ~35. Left raw, the last 8 "weekly" cotton points all carry the
+    # SAME date, BOCPD flags the discontinuity where the duplicates begin, and
+    # elapsed time from that index is 0.0 weeks — which rendered to customers
+    # as "structural break this week". That claim was an artifact of duplicate
+    # ingestion, not market structure.
+    #
+    # max(rowid) keeps the most recently written value for a timestamp. This is
+    # a read-side guard; the ingestion path still needs an upsert (see
+    # tasks/active/nineteen_dollar_tier.md).
     rows = cur.execute(
         "select entity_id, observed_at, value_json from entity_observations "
-        "where source_tool=? and observation_type=? order by observed_at asc",
-        (source, obs_type),
+        "where source_tool=? and observation_type=? "
+        "and rowid in ("
+        "  select max(rowid) from entity_observations"
+        "  where source_tool=? and observation_type=?"
+        "  group by entity_id, observed_at"
+        ") order by observed_at asc",
+        (source, obs_type, source, obs_type),
     ).fetchall()
-    series: dict[SeriesKey, tuple[list[float], float]] = {}
+    series: dict[SeriesKey, tuple[list[float], float, list[float]]] = {}
     for entity_id, _ts, value_json in rows:
         try:
             value = json.loads(value_json)
@@ -79,9 +98,10 @@ def _extract_series(
             for field in fields:
                 fv = value.get(field)
                 if isinstance(fv, int | float) and not isinstance(fv, bool):
-                    entry = series.setdefault((entity_id, field), ([], _ts or 0.0))
+                    entry = series.setdefault((entity_id, field), ([], _ts or 0.0, []))
                     entry[0].append(float(fv))
-                    series[(entity_id, field)] = (entry[0], _ts or entry[1])
+                    entry[2].append(float(_ts or 0.0))
+                    series[(entity_id, field)] = (entry[0], _ts or entry[1], entry[2])
         except (json.JSONDecodeError, TypeError):
             continue
     return series
@@ -101,38 +121,74 @@ def _zscore_anomaly(values: list[float]) -> float | None:
     return round(float(z), 2)
 
 
-def _changepoint_flag(values: list[float]) -> bool:
-    """True if BOCPD detects a changepoint in the most recent window."""
+def _changepoint_indices(values: list[float]) -> list[int]:
+    """Raw BOCPD changepoint indices (positions in `values`), or [] if too short."""
     if len(values) < 30:
-        return False
+        return []
     x = np.array(values, dtype=float)
     # Work on the latest contiguous window (BOCPD is online).
     b = BOCPD(hazard_lambda=200.0)
     res = b.fit(x)
-    cps = res.changepoints()
+    return res.changepoints()
+
+
+def _changepoint_flag(values: list[float]) -> bool:
+    """True if BOCPD detects a changepoint in the most recent window."""
+    cps = _changepoint_indices(values)
     if not cps:
         return False
-    return cps[-1] >= len(x) // 3  # changepoint in the recent third of the series
+    return cps[-1] >= len(values) // 3  # changepoint in the recent third of the series
+
+
+_SECONDS_PER_WEEK = 604800.0
+
+# entity_id -> canonical_name, memoized per build_digest() call (entities are
+# static reference data; avoids one store.get_entity() round trip per finding).
+_EntityNameCache = dict[str, str]
+
+
+def _entity_name(store, entity_id: str, cache: _EntityNameCache) -> str:
+    """Resolve entity_id -> human-readable canonical_name (falls back to id)."""
+    if entity_id in cache:
+        return cache[entity_id]
+    name = entity_id
+    try:
+        row = store.get_entity(entity_id)
+        if row and row.get("canonical_name"):
+            name = row["canonical_name"]
+    except Exception:
+        pass
+    cache[entity_id] = name
+    return name
 
 
 def build_digest(store, top_n=10):
     """Compute a real anomaly digest over the scorable signal surface."""
     findings = []
+    name_cache: _EntityNameCache = {}
     for source, (obs_type, fields) in _SCORABLE.items():
         series = _extract_series(store, source, obs_type, fields)
-        for (entity_id, field), (values, latest_ts) in series.items():
+        for (entity_id, field), (values, latest_ts, timestamps) in series.items():
             z = _zscore_anomaly(values)
             if z is None or abs(z) < 2.0:
                 continue
-            cp = _changepoint_flag(values)
+            cps = _changepoint_indices(values)
+            cp = bool(cps) and cps[-1] >= len(values) // 3
+            weeks_ago = None
+            if cp and timestamps and len(timestamps) == len(values):
+                delta = timestamps[-1] - timestamps[cps[-1]]
+                weeks_ago = round(delta / _SECONDS_PER_WEEK, 1)
             findings.append(
                 {
                     "source": source,
                     "observation_type": obs_type,
                     "entity_id": entity_id,
+                    "entity_name": _entity_name(store, entity_id, name_cache),
                     "field": field,
                     "zscore": z,
+                    "direction": "up" if z >= 0 else "down",
                     "changepoint": cp,
+                    "changepoint_weeks_ago": weeks_ago,
                     "flagged_ts": latest_ts,
                     "n_points": len(values),
                     "latest_value": round(values[-1], 4),
