@@ -282,7 +282,12 @@
         </div>
         <p class="tagline">Weekly positioning and flow anomaly digest built on deterministic z-scores over multi-year baselines and Bayesian online changepoint detection (BOCPD). No LLM, no predictions — just the math. The entry rung of metered API access.</p>
         <ul>
-          <li>Positioning extremes and flow anomalies detected via BOCPD over 169-week CFTC commitment-of-traders baselines, 3,000+ point DeFi TVL series, and instrument volatility</li>
+          <!-- Numbers here MUST match what the digest actually computes. They
+               were "169-week" and "3,000+ point", measured before duplicate
+               observations were deduped on (entity_id, observed_at); dedupe
+               cut CFTC baselines to ~160 and DeFi to ~1,190. Re-measure with
+               build_digest() before editing these figures again. -->
+          <li>Positioning extremes and flow anomalies detected via BOCPD over multi-year CFTC commitment-of-traders baselines (up to ~160 weekly observations), DeFi TVL series of 1,000+ points, and instrument volatility</li>
           <li>Weekly digest delivered as markdown and JSON — includes entity IDs, flagged timestamps, z-scores, and raw signal values for reproducibility</li>
           <li>Metered API access: same subscriber key as other tiers; usage tracked in your account</li>
         </ul>
@@ -361,7 +366,7 @@
       data: false,
       entity: true,
       scheduler: true,
-      brief: false,
+      brief: true,
     };
 
     // ── Paused tiers (checkout-level blocks) ────────────────────────────────
@@ -407,6 +412,10 @@
               const el = document.querySelector(`#${tier} .price-amount`);
               if (el) {
                 el.textContent = item.formattedTotals.total;
+              } else if (TIER_AVAILABILITY[tier] === false) {
+                // Expected: a coming-soon tier shows no price, so there is no
+                // .price-amount to update. Not a fault — stay quiet rather than
+                // printing a warning in every visitor's console.
               } else {
                 console.warn(`[Pricing] No .price-amount element found for tier: ${tier} (price ID: ${item.price.id})`);
               }
