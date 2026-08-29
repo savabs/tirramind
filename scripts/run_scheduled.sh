@@ -30,6 +30,21 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+# Belt-and-suspenders against a stale/broken editable install: every script
+# this file calls except agent/brief_server.py's `serve` branch does its own
+# `sys.path.insert(0, repo_root)` (see scripts/tirra_engine.py), so those
+# survive a broken `agent` import. `agent/brief_server.py` (invoked directly
+# below in `serve` mode) does not, and is normally only reachable via the
+# editable-install package finder. Found live, 2026-08-28: a venv whose
+# editable-install .pth mapping still pointed at an old, since-renamed repo
+# path made `python agent/brief_server.py` fail immediately with
+# `ModuleNotFoundError: No module named 'agent'` — a plausible failure mode
+# after any deploy that rebuilds/moves the venv without re-running
+# `pip install -e .`. Exporting PYTHONPATH here removes the dependency on
+# that finder for every python invocation in this script, at zero cost when
+# the install is healthy.
+export PYTHONPATH="${PYTHONPATH:-}:$(pwd)"
+
 OUT="${TIRRA_DELIVERY_DIR:-.tirra_delivery}"
 DB="${TIRRA_PIPELINE_DB:-.tirra_pipeline/pipeline.db}"
 PORT="${TIRRA_PORT:-8787}"

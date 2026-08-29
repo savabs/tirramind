@@ -16,11 +16,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -42,14 +45,73 @@ from agent.quant.signal_outcome_store import SignalOutcomeStore  # noqa: E402
 # Verified against entity_observations.value_json on 2026-08-27. If you add a
 # source here, query one real payload first — a typo costs an entire source
 # with no error anywhere.
-_SCORABLE: dict[str, tuple[str, tuple[str, ...]]] = {
-    "sovereign_debt": ("sovereign_yield", ("yield_pct",)),
-    "cftc": ("futures_positioning", ("mm_net", "open_interest")),
-    "instrument_universe": ("instrument_volatility", ("realized_vol_20d", "intraday_range")),
-    "defi_flows": ("tvl_change", ("tvl_usd",)),
-    # yes_price IS the market-implied probability; volume_24h catches
-    # liquidity shocks that move ahead of the price.
-    "polymarket": ("market_probability", ("yes_price", "volume_24h")),
+#
+# VALUE SHAPE (2026-08-29, $29 tier pass): each source maps to a TUPLE of
+# (observation_type, fields) pairs, not a single pair. A source can carry the
+# same field under more than one observation_type — instrument_universe
+# stores "close"/"realized_vol_20d"/"volume" under the superseded
+# instrument_daily type (752-1,096 points/entity back to 2023-04-18) AND under
+# the newer instrument_return/instrument_volatility/instrument_volume types
+# (37-50 points/entity, Apr-Jun 2026 only). Scoring only the newer type's ~50
+# points made ordinary seasonal variation look anomalous — see
+# _extract_series_multi. List OLDEST/base type first: when both types have a
+# row for the same (entity, field, observed_at) in the overlap window, the
+# LATER entry in the tuple wins (it's the superseding collector).
+#
+# polymarket REMOVED (2026-08-29): market_probability tops out at 15
+# points/entity across all 1,493 entities — a hard structural ceiling, not a
+# quiet period. _zscore_anomaly requires >=20 points. This source has scanned
+# 1,493 entities every run and produced exactly 0 findings, ever, and
+# mathematically never can until far more history accrues. Scanning it nightly
+# and counting it in surface_scored/sources_ok reports a working source that
+# cannot work. Re-add once any entity actually clears the 20-point floor.
+#
+# sovereign_debt KEPT despite 0 findings so far: only 5 of 13 entities clear
+# the 20-point floor, and their current |z| tops out at 1.78 — genuinely
+# quiet, not structurally incapable (unlike polymarket, there is no hard
+# ceiling here; it computes real variance and can fire on a real yield move).
+# This is the same "quiet source" status any of the other sources can have on
+# a given night, not dead config.
+_SCORABLE: dict[str, tuple[tuple[str, tuple[str, ...]], ...]] = {
+    "sovereign_debt": (("sovereign_yield", ("yield_pct",)),),
+    "cftc": (
+        (
+            "futures_positioning",
+            (
+                "mm_net",
+                "open_interest",
+                # CFTC COT payload carries nine numeric fields; only two were
+                # ever scored. These seven are commercial hedger/producer
+                # positioning and concentration — not derivable from the
+                # public CFTC website's headline number the way mm_net is.
+                "swap_net",  # swap-dealer net position (commercial hedger)
+                "pm_net",  # producer/merchant net position
+                "conc_top4_long",  # top-4 traders' share of long open interest
+                "conc_top4_short",  # top-4 traders' share of short open interest
+                "mm_net_pct_oi",  # managed-money net as % of open interest
+                "mm_weekly_flow",  # week-over-week change in managed-money net
+                "oi_change",  # week-over-week change in open interest
+            ),
+        ),
+    ),
+    "instrument_universe": (
+        # Base/superseded type: long history, listed first so the newer
+        # types below win on overlapping (entity, field, observed_at).
+        #
+        # "close" is deliberately NOT scored here. Measured on the real DB
+        # (2026-08-29): once "close" gets the correct ~1,096-point baseline
+        # instead of the ~50-point one, 28 of its 33 findings have a z-sign
+        # that matches the direction of the last 20 log-returns — i.e. they
+        # are "this asset has been trending for weeks," not a distinct
+        # anomaly, on a source we sell as anomaly detection, not trend
+        # detection. realized_vol_20d and volume do not have this problem
+        # (they're each derived from short-window stats, not raw level) and
+        # are kept.
+        ("instrument_daily", ("realized_vol_20d", "volume")),
+        ("instrument_volatility", ("realized_vol_20d", "intraday_range")),
+        ("instrument_volume", ("volume", "avg_volume_20d")),
+    ),
+    "defi_flows": (("tvl_change", ("tvl_usd",)),),
 }
 
 # Per (source, obs_type) we keep series in memory keyed by (entity, field).
@@ -105,6 +167,46 @@ def _extract_series(
         except (json.JSONDecodeError, TypeError):
             continue
     return series
+
+
+def _extract_series_multi(
+    store: PipelineStore, source: str, type_specs: tuple[tuple[str, tuple[str, ...]], ...]
+) -> dict[SeriesKey, tuple[list[float], float, list[float], str]]:
+    """Union multiple observation types onto one series per (entity, field).
+
+    Each (obs_type, fields) pair is pulled through `_extract_series` (already
+    deduped on (entity_id, observed_at) within that type). Series are then
+    merged per (entity, field) keyed by observed_at — this is a SECOND dedupe
+    pass, across types, needed because instrument_daily and
+    instrument_return/instrument_volatility/instrument_volume overlap Apr-Jun
+    2026 (576 rows) for the same 89 entities. `type_specs` order matters: for
+    a timestamp present in more than one type, whichever type appears LATER
+    in the tuple wins (the newer/superseding collector).
+
+    Returns {(entity, field): (values, latest_ts, timestamps, obs_type)}
+    where obs_type is whichever type actually produced the latest point —
+    this keeps `realize_pending`'s forward-looking query pointed at the type
+    that is still being actively collected, not a superseded one.
+    """
+    merged_values: dict[SeriesKey, dict[float, float]] = {}
+    merged_type: dict[SeriesKey, dict[float, str]] = {}
+    for obs_type, fields in type_specs:
+        s = _extract_series(store, source, obs_type, fields)
+        for key, (values, _latest, timestamps) in s.items():
+            vd = merged_values.setdefault(key, {})
+            td = merged_type.setdefault(key, {})
+            for v, t in zip(values, timestamps, strict=True):
+                vd[t] = v
+                td[t] = obs_type
+
+    result: dict[SeriesKey, tuple[list[float], float, list[float], str]] = {}
+    for key, vd in merged_values.items():
+        ts_sorted = sorted(vd)
+        values = [vd[t] for t in ts_sorted]
+        latest_ts = ts_sorted[-1]
+        latest_type = merged_type[key][latest_ts]
+        result[key] = (values, latest_ts, ts_sorted, latest_type)
+    return result
 
 
 def _zscore_anomaly(values: list[float]) -> float | None:
@@ -163,12 +265,48 @@ def _entity_name(store, entity_id: str, cache: _EntityNameCache) -> str:
 
 
 def build_digest(store, top_n=10):
-    """Compute a real anomaly digest over the scorable signal surface."""
+    """Compute a real anomaly digest over the scorable signal surface.
+
+    Robustness (2026-08-28, $19 tier launch pass): a single source's query
+    failing (locked DB, missing/renamed table, malformed row) used to abort
+    `_extract_series` for that source with an uncaught exception, which
+    propagated all the way up through `fetch_anomalies` -> `build_brief` ->
+    `BriefDeliverer.deliver()` and killed the ENTIRE weekly job — one bad
+    source took four healthy ones down with it, and the subscriber got no
+    edition at all that week (a `oneshot` systemd unit does not retry until
+    the next weekly trigger).
+
+    Each source is now queried in isolation: a failure is logged and that
+    source is skipped, the rest still contribute. But an empty `digest` must
+    always mean "genuinely checked every source, nothing crossed the
+    threshold" — never "failed to check anything and quietly shipped an
+    empty list that looks identical to a quiet week." So if EVERY source
+    fails, this raises instead of returning a fake-quiet report; the caller
+    (tirra_engine.py) then exits non-zero and no brief is delivered, which is
+    visibly a failure (systemd/journalctl) rather than a silent lie.
+    """
     findings = []
     name_cache: _EntityNameCache = {}
-    for source, (obs_type, fields) in _SCORABLE.items():
-        series = _extract_series(store, source, obs_type, fields)
-        for (entity_id, field), (values, latest_ts, timestamps) in series.items():
+    series_by_source: dict[str, dict] = {}
+    sources_failed: list[str] = []
+
+    for source, type_specs in _SCORABLE.items():
+        try:
+            series_by_source[source] = _extract_series_multi(store, source, type_specs)
+        except Exception as exc:  # sqlite3.OperationalError (locked/missing table), malformed rows, etc.
+            logger.warning("[digest] source=%s query failed, skipping (other sources still scored): %s", source, exc)
+            sources_failed.append(source)
+
+    if sources_failed and len(sources_failed) == len(_SCORABLE):
+        raise RuntimeError(
+            f"all {len(_SCORABLE)} scorable sources failed to query "
+            f"({', '.join(sorted(sources_failed))}) — refusing to return an "
+            "empty digest that would be indistinguishable from a genuine "
+            "no-anomalies edition"
+        )
+
+    for source, series in series_by_source.items():
+        for (entity_id, field), (values, latest_ts, timestamps, obs_type) in series.items():
             z = _zscore_anomaly(values)
             if z is None or abs(z) < 2.0:
                 continue
@@ -198,12 +336,12 @@ def build_digest(store, top_n=10):
     # Rank by |z| (anomaly magnitude), changepoints first.
     findings.sort(key=lambda f: (f["changepoint"], abs(f["zscore"])), reverse=True)
 
-    total_series = 0
-    for source, (obs_type, fields) in _SCORABLE.items():
-        total_series += len(_extract_series(store, source, obs_type, fields))
+    total_series = sum(len(s) for s in series_by_source.values())
 
     return {
         "surface_scored": len(_SCORABLE),
+        "sources_ok": sorted(series_by_source),
+        "sources_failed": sources_failed,
         "series_found": total_series,
         "anomalies_flagged": len(findings),
         "top_confidence": findings[0]["zscore"] if findings else 0.0,
