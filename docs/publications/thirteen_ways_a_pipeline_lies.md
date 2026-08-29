@@ -9,15 +9,15 @@ tags:
 
 # Thirteen Ways a Pipeline Lies
 
-I spent about two years building a data pipeline that collects free public
+I spent about five months building a data pipeline that collects free public
 data — CFTC futures positioning, DeFi TVL, SEC insider filings, GDELT events,
 bankruptcy dockets, AIS vessel tracks, government contracts — scores it for
 anomalies, and sold a weekly digest off the result.
 
 I am shutting the product down. Four independent measurements say the edge
 isn't there, the data isn't proprietary, the price point is occupied, and the
-cross-source graph I built the whole thesis on has exactly two joinable source
-pairs out of 561. That's a separate write-up.
+cross-source graph I built the whole thesis on has three genuinely cross-domain
+joinable source pairs out of 561, covering four entities. That's a separate write-up.
 
 This one is about something more portable, and in my opinion more useful:
 **the codebase evolved from "healthy-looking and empty" to "healthy-looking
@@ -31,7 +31,8 @@ by a column that's secretly a Unix timestamp looks exactly like sorting by
 anomaly score, right up until you print the column.
 
 Here are thirteen concrete ways this system lied to me. All of them shipped.
-Most of them shipped to paying customers. For each I've given the symptom, how
+None of them shipped to a paying customer, because there never was one —
+which is its own finding, and the reason I could afford to be this candid. For each I've given the symptom, how
 long it hid, the root cause, the fix, and the general rule — the rule is the
 part worth your time, the war story is just evidence that I paid for it.
 
