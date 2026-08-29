@@ -116,3 +116,7 @@ tirramind_v1/
 .env.backup
 .env.*.local
 !.env*.example
+
+# SQLite WAL sidecars — the .db files are ignored, these were not.
+*.db-shm
+*.db-wal
