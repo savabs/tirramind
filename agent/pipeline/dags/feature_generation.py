@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+import threading
 import time
 from typing import Any
 
@@ -44,7 +45,11 @@ DEFAULT_BUILDERS: list[FeatureBuilder] = [
 # ═══════════════════════════════════════════════════════════════
 
 
-def run_feature_generation(params: dict, upstream: dict) -> dict:
+def run_feature_generation(
+    params: dict,
+    upstream: dict,
+    cancel_event: threading.Event | None = None,
+) -> dict:
     """FunctionOperator callback for the feature_generation DAG.
 
     1. Open PipelineStore.
@@ -59,6 +64,14 @@ def run_feature_generation(params: dict, upstream: dict) -> dict:
             Reference time (unix epoch). Defaults to now.
         builders : list[FeatureBuilder] | None
             Override the default builder list (for testing).
+
+    ``cancel_event`` (LESSONS F-13): set by the executor once this node has
+    already exceeded its timeout. Checked between builders — each builder
+    call itself cannot be interrupted mid-flight (no builder today accepts
+    a cancellation signal), but once set we stop starting *further*
+    builders and persist whatever was already produced rather than
+    continuing to burn CPU/memory a timed-out node no longer gets credit
+    for.
     """
     db_path: str = params.get("db_path", ".tirra_pipeline/pipeline.db")
     as_of: float = params.get("as_of") or time.time()
@@ -87,8 +100,21 @@ def run_feature_generation(params: dict, upstream: dict) -> dict:
 
         all_features: list[EngineeredFeature] = []
         builder_summaries: list[dict[str, Any]] = []
+        cancelled = False
 
         for builder in builders:
+            if cancel_event is not None and cancel_event.is_set():
+                # Already past our timeout budget — stop launching new
+                # builders (GNNFeatureBuilder in particular loads a model
+                # and is the slowest of the three) and fall through to
+                # persist whatever was already produced.
+                cancelled = True
+                log.warning(
+                    "Feature generation cancelled after timeout — skipping remaining "
+                    "builder(s), persisting %d feature(s) already produced.",
+                    len(all_features),
+                )
+                break
             try:
                 features = builder.build(store, as_of)
                 all_features.extend(features)
@@ -159,6 +185,7 @@ def run_feature_generation(params: dict, upstream: dict) -> dict:
             "produced": len(all_features),
             "stored": stored_count,
             "builders": builder_summaries,
+            "cancelled": cancelled,
         }
 
     finally:
@@ -191,7 +218,18 @@ def build_feature_generation_dag(
         "generate_features",
         operator=run_feature_generation,
         params={"db_path": db_path},
-        timeout=120,
+        # LESSONS F-13: measured on the production 1 vCPU/1.9GB box on
+        # 2026-08-27, this node genuinely needs ~3 min (GNNFeatureBuilder
+        # loads a checkpoint and runs a forward pass over the current
+        # entity graph on a single core) — the old 120s timeout fired
+        # every night, leaving an orphaned thread running behind a node
+        # already marked "failed". generate_features is one of the light,
+        # product-feeding DAGs in the nightly chain (unlike gnn_inference/
+        # entity_scoring/inference/rl_training, which are excluded
+        # entirely per 30bb00f) so the fix is to size the timeout to the
+        # real work, not exclude it: 300s gives ~2x headroom over the
+        # measured ~180s on the same hardware.
+        timeout=300,
         retries=1,
         store_result=True,
     )

@@ -142,9 +142,14 @@ class TestFeatureGenerationDAG:
         assert roots == ["generate_features"]
 
     def test_dag_node_timeout(self):
+        # LESSONS F-13: measured on the production 1 vCPU/1.9GB box
+        # (2026-08-27) at ~180s genuinely needed (GNNFeatureBuilder loads a
+        # checkpoint + forward pass on a single core) — the old 120s value
+        # fired every night and left an orphaned thread running behind a
+        # node already marked "failed". Raised to 300s (~2x measured).
         dag = build_feature_generation_dag()
         node = dag.nodes["generate_features"]
-        assert node.timeout == 120
+        assert node.timeout == 300
 
     def test_dag_node_operator_is_callable(self):
         dag = build_feature_generation_dag()

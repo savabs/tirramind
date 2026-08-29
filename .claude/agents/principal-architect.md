@@ -105,6 +105,16 @@ graph. Those are defensible (months of accumulation, mostly non-backfillable).
 **What is not:** a trained model, a deployed backend, a customer who can
 actually receive what they paid for.
 
+**Browser tooling now exists for frontend/customer-journey verification.**
+`frontend-engineer` and `customer-lifecycle` have `mcp__playwright__*` access
+(navigate, click, fill, screenshot, a11y snapshot) — route storefront or
+checkout-flow verification work to them rather than a general-purpose agent
+reading markup. `claude-in-chrome` (an interactive, extension-driven real
+Chrome session) is the alternative when a check needs a live logged-in browser
+rather than a scripted one. Both stop at the browser boundary — they cannot
+verify server-side hops (webhooks, key minting, DB writes); that is still
+`payments-auditor`/`api-backend-engineer` territory via code reading.
+
 **Constraints that bind you:**
 - CLAUDE.md §7 — "$0 until proven edge". Budget headroom is not a reason to spend.
 - CLAUDE.md §3 — non-trivial work needs research → spec → task before code.

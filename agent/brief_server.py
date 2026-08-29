@@ -39,6 +39,7 @@ import re
 import sys
 import threading
 import time
+from datetime import UTC
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -455,6 +456,256 @@ _ROTATE_KEY_LIMITER = _RateLimiter(max_calls=5, window_s=3600)  # per presented 
 _ROTATE_IP_LIMITER = _RateLimiter(max_calls=20, window_s=3600)  # per source IP / hour
 _API_KEY_RE = re.compile(r"^tirra_[A-Za-z0-9_-]{10,100}$")
 
+# ── Per-key rate limiting + monthly quota (BUG C fix, 2026-08-28) ──────────
+#
+# Every _RateLimiter above (claim, contact, rotate-key) protects only its own
+# narrow, unauthenticated-or-destructive route. NOTHING protected the actual
+# paid surface: /brief.*, /evidence/*, /api/v1/entity-graph/*,
+# /api/v1/sources, /api/v1/data, /api/v1/dag/runs. A single $19 key could
+# pull unlimited 1000-row /api/v1/data pages, forever, at whatever rate it
+# liked. Two independent caps close that:
+#
+#   1. BURST — a per-minute _RateLimiter keyed by the caller's OWN api_key
+#      (never by IP: many legitimate customers share a NAT/office IP, and the
+#      billing + abuse unit here is the key, not the network address). Sized
+#      to what one real integration does in a minute, not to shared infra
+#      capacity:
+#        brief    ($19):  20/min — brief.json/md is delivered weekly; no
+#                                  legitimate poll loop needs sub-3s cadence.
+#        scheduler($50):  60/min — a DAG-run monitoring dashboard refreshing
+#                                  once a second, generously.
+#        entity  ($300):  90/min — graph/analytics traversal issues several
+#                                  sequential queries per page view.
+#        data    ($500): 120/min — the heaviest tier: paginated bulk syncs
+#                                  (up to _MAX_DATA_LIMIT=1000 rows/call)
+#                                  need headroom for a fast paging loop.
+#        admin (TIRRA_SUB_KEYS dev/ops bypass): 600/min — generous, but still
+#                                  bounded so a runaway internal script can't
+#                                  take the box down either.
+#      An unrecognized tier string (should never happen — the ladder sets are
+#      the only tiers `_resolve_tier` ever mints) falls back to
+#      `_DEFAULT_TIER_RATE_LIMIT`, deliberately conservative.
+#
+#   2. MONTHLY QUOTA (`UsageStore.count_since`, SQLite-backed, same key) — the
+#      actual business-cost ceiling. The burst limiter alone still lets a key
+#      run 24/7 at its cap (brief at 20/min for a month is 864,000 calls);
+#      the quota is what makes the "$19 key" number mean something:
+#        brief:        1,000 / month (~33/day  — hourly polling + margin)
+#        scheduler:   10,000 / month (~333/day — a dashboard polling every
+#                                      ~4-5 min, 24/7)
+#        entity:      50,000 / month (~1,666/day — exploratory analytics)
+#        data:       100,000 / month (~3,333/day — scheduled bulk syncs)
+#      No quota for "admin" — the static TIRRA_SUB_KEYS bypass is an
+#      operator/dev credential, not a metered product; it is still burst-
+#      rate-limited above so a runaway script is bounded, but never quota-
+#      capped. Resets on calendar-month boundaries (UTC): simple,
+#      deterministic, and independently checkable by the customer via
+#      GET /api/v1/usage without needing to know their actual Paddle
+#      billing-period anchor.
+#
+# FAIL-CLOSED, DELIBERATELY — the opposite of `_log_usage` above.
+# `_log_usage` is fire-and-forget because a metering *write* failing must
+# never break the request it's trying to measure; there's no cost-control
+# decision riding on it. The quota *read* here IS the cost-control decision.
+# A quota check that fails open (silently lets the request through when
+# SQLite errors) provides zero protection at exactly the moment it's needed
+# — e.g. lock contention from the very high-volume abuse this exists to
+# stop. So `_check_monthly_quota` below denies (503, not a silent pass-
+# through) on any unexpected read failure, and logs it loudly at ERROR
+# rather than swallowing it. The trade-off — a real customer occasionally
+# seeing a 503 during a transient SQLite hiccup — is accepted deliberately:
+# bounded cost beats an unbounded blind spot.
+_TIER_RATE_LIMITS: dict[str, _RateLimiter] = {
+    "brief": _RateLimiter(max_calls=20, window_s=60),
+    "scheduler": _RateLimiter(max_calls=60, window_s=60),
+    "entity": _RateLimiter(max_calls=90, window_s=60),
+    "data": _RateLimiter(max_calls=120, window_s=60),
+    "admin": _RateLimiter(max_calls=600, window_s=60),
+}
+_DEFAULT_TIER_RATE_LIMIT = _RateLimiter(max_calls=15, window_s=60)
+
+_TIER_MONTHLY_QUOTAS: dict[str, int] = {
+    "brief": 1_000,
+    "scheduler": 10_000,
+    "entity": 50_000,
+    "data": 100_000,
+}
+
+
+def _rate_limit_tier_for_key(key: str) -> str:
+    """Resolve the budget bucket for a caller's OWN subscription tier — not
+    the tier of whichever route they happen to be hitting. A $500 Data
+    Platform subscriber gets the $500 budget even on a cheaper route the
+    ladder also grants them (see `_BRIEF_TIERS` etc. — the ladder is
+    monotonic, and so is the budget that comes with it).
+
+    A static TIRRA_SUB_KEYS key never resolves through SubscriberStore (see
+    `_authorized_for`) — it's the admin/dev bypass, so it gets the "admin"
+    bucket unconditionally.
+    """
+    configured = os.getenv("TIRRA_SUB_KEYS", "").strip()
+    if configured and key in {k.strip() for k in configured.split(",")}:
+        return "admin"
+    from agent.payments.handler import SubscriberStore
+
+    return SubscriberStore().tier_of_key(key) or "unknown"
+
+
+def _check_tier_rate_limit(key: str, tier: str) -> tuple[bool, float]:
+    """Burst check. Returns (allowed, retry_after_s)."""
+    limiter = _TIER_RATE_LIMITS.get(tier, _DEFAULT_TIER_RATE_LIMIT)
+    return limiter.allow(f"key:{key}")
+
+
+def _month_bounds(now: float) -> tuple[float, float]:
+    """(start, end) epoch seconds of the UTC calendar month containing `now`."""
+    from datetime import datetime
+
+    dt = datetime.fromtimestamp(now, tz=UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    nxt = dt.replace(year=dt.year + 1, month=1) if dt.month == 12 else dt.replace(month=dt.month + 1)
+    return dt.timestamp(), nxt.timestamp()
+
+
+def _check_monthly_quota(key: str, tier: str) -> tuple[str, dict]:
+    """Returns one of:
+        ("ok", {})
+        ("exceeded", <429 JSON body naming the limit + reset time>)
+        ("error", {})       — the read itself failed; caller must fail CLOSED
+                              (503), never treat this as "ok". See the
+                              FAIL-CLOSED block comment above.
+    Never raises.
+    """
+    if tier == "admin":
+        return "ok", {}  # uncapped operator/dev credential, by design
+    quota = _TIER_MONTHLY_QUOTAS.get(tier, _TIER_MONTHLY_QUOTAS["brief"])  # unknown tier: conservative default
+    since, reset_at = _month_bounds(time.time())
+    try:
+        from agent.payments.usage import UsageStore
+
+        used = UsageStore().count_since(key, since)
+    except Exception as exc:  # FAIL CLOSED — see block comment above
+        logging.getLogger(__name__).error("[quota] check failed for tier=%s: %s", tier, exc)
+        return "error", {}
+    if used >= quota:
+        return "exceeded", {
+            "ok": False,
+            "error": "monthly quota exceeded",
+            "tier": tier,
+            "quota": quota,
+            "used": used,
+            "reset_at": reset_at,
+        }
+    return "ok", {}
+
+
+# ── GET /account shell — see `_serve_account_page`'s docstring for why the
+# key is entered client-side and sent only as a header, never a query param.
+# Deliberately dependency-free (no build step, no framework) — this is a
+# static string served verbatim, same spirit as the rest of this
+# "minimal, dependency-light consumer surface" (module docstring).
+_ACCOUNT_PAGE_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TirraMind — Account</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; max-width: 640px; margin: 40px auto; padding: 0 16px; color: #1a1a1a; }
+  input[type=password] { width: 100%; padding: 8px; font-size: 14px; box-sizing: border-box; }
+  button { padding: 8px 16px; font-size: 14px; cursor: pointer; margin-top: 8px; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; }
+  dt { font-weight: 600; }
+  #error { color: #b00020; }
+  #panel { display: none; margin-top: 24px; }
+</style>
+</head>
+<body>
+<h1>TirraMind Account</h1>
+<p>Paste your API key (shown once at checkout) to view your subscription.</p>
+<input type="password" id="key" placeholder="tirra_..." autocomplete="off">
+<button id="load">View account</button>
+<p id="error"></p>
+<div id="panel">
+  <dl id="fields"></dl>
+  <button id="rotate">Rotate key</button>
+  <p id="rotate-msg"></p>
+  <p id="portal"></p>
+</div>
+<script>
+function currentKey() { return document.getElementById('key').value.trim(); }
+
+async function loadAccount() {
+  const key = currentKey();
+  const err = document.getElementById('error');
+  const panel = document.getElementById('panel');
+  err.textContent = '';
+  panel.style.display = 'none';
+  if (!key) { err.textContent = 'Enter your API key first.'; return; }
+  let resp;
+  try {
+    resp = await fetch('/api/v1/account', { headers: { 'X-Brief-Key': key } });
+  } catch (e) {
+    err.textContent = 'Could not reach the server — try again shortly.';
+    return;
+  }
+  const body = await resp.json().catch(() => ({}));
+  if (!resp.ok || !body.ok) {
+    err.textContent = body.error || ('Request failed (' + resp.status + ')');
+    return;
+  }
+  const fields = document.getElementById('fields');
+  fields.innerHTML = '';
+  const rows = [
+    ['Tier', body.tier],
+    ['Status', body.active ? 'active' : 'inactive'],
+    ['Access until', body.active_until ? new Date(body.active_until * 1000).toISOString() : (body.active ? 'ongoing' : 'n/a')],
+    ['Usage this period', body.usage.used === null ? 'unavailable' : (body.usage.used + (body.usage.quota ? (' / ' + body.usage.quota) : ''))],
+    ['Quota resets', new Date(body.usage.period_reset_at * 1000).toISOString()],
+  ];
+  for (const [k, v] of rows) {
+    const dt = document.createElement('dt'); dt.textContent = k;
+    const dd = document.createElement('dd'); dd.textContent = v;
+    fields.appendChild(dt); fields.appendChild(dd);
+  }
+  const portal = document.getElementById('portal');
+  portal.innerHTML = '';
+  if (body.management_urls && body.management_urls.cancel) {
+    const a = document.createElement('a');
+    a.href = body.management_urls.cancel; a.textContent = 'Manage subscription / cancel (Paddle)';
+    a.target = '_blank'; a.rel = 'noopener';
+    portal.appendChild(a);
+  }
+  panel.style.display = 'block';
+}
+
+async function rotateKey() {
+  const key = currentKey();
+  const msg = document.getElementById('rotate-msg');
+  msg.textContent = 'Rotating...';
+  let resp;
+  try {
+    resp = await fetch('/api/v1/rotate-key', { method: 'POST', headers: { 'X-Brief-Key': key } });
+  } catch (e) {
+    msg.textContent = 'Could not reach the server — try again shortly.';
+    return;
+  }
+  const body = await resp.json().catch(() => ({}));
+  if (!resp.ok || !body.ok) {
+    msg.textContent = body.error || ('Request failed (' + resp.status + ')');
+    return;
+  }
+  document.getElementById('key').value = body.api_key;
+  msg.textContent = 'New key issued — copy it now, it will not be shown again: ' + body.api_key;
+  loadAccount();
+}
+
+document.getElementById('load').addEventListener('click', loadAccount);
+document.getElementById('rotate').addEventListener('click', rotateKey);
+</script>
+</body>
+</html>
+"""
+
 
 class _Handler(BaseHTTPRequestHandler):
     server_version = "AWOSBrief/0.1"  # type: ignore[assignment]
@@ -501,6 +752,24 @@ class _Handler(BaseHTTPRequestHandler):
             self._serve_admin_contact_messages(query)
             return
 
+        # GET /account is the unauthenticated HTML shell (no key of any kind
+        # — see the docstring on `_serve_account_page`), and GET
+        # /api/v1/account reads its key ONLY from the X-Brief-Key header,
+        # same reasoning as POST /api/v1/rotate-key: a ?key= query string
+        # fallback here would put the sensitive info this route returns
+        # (tier, subscription status, usage) one accidental copy-paste away
+        # from an access log / Referer header. Dispatched before the shared
+        # `_extract_key` call for the same reason /api/v1/claim is: it must
+        # never be affected by TIRRA_REJECT_QUERY_KEYS's error branch, which
+        # would otherwise 400 a plain `/account` page load that carries no
+        # key at all.
+        if path == "/account":
+            self._serve_account_page()
+            return
+        if path == "/api/v1/account":
+            self._serve_account_json()
+            return
+
         key, key_error = self._extract_key(query)
         if key_error is not None:
             self._send(400, "application/json", json.dumps(key_error))
@@ -521,10 +790,10 @@ class _Handler(BaseHTTPRequestHandler):
             "/evidence/graph/export",
             "/evidence/graph/centrality",
         ):
-            if not _authorized_for(key, _ENTITY_GRAPH_TIERS):
-                self._send(403, "text/plain", "subscribe (Entity Graph tier) required — see /buy\n")
+            if not self._gate_paid_route(
+                key, _ENTITY_GRAPH_TIERS, path, "subscribe (Entity Graph tier) required — see /buy\n"
+            ):
                 return
-            _log_usage(key, path)
             if path == "/evidence/graph":
                 self._serve_evidence_graph(query)
             elif path == "/evidence/stats":
@@ -542,10 +811,10 @@ class _Handler(BaseHTTPRequestHandler):
             "/api/v1/entity-graph/entity",
             "/api/v1/entity-graph/links",
         ):
-            if not _authorized_for(key, _ENTITY_GRAPH_TIERS):
-                self._send(403, "text/plain", "subscribe (Entity Graph tier) required — see /buy\n")
+            if not self._gate_paid_route(
+                key, _ENTITY_GRAPH_TIERS, path, "subscribe (Entity Graph tier) required — see /buy\n"
+            ):
                 return
-            _log_usage(key, path)
             if path == "/api/v1/entity-graph/entities":
                 self._serve_entity_graph_entities(query)
             elif path == "/api/v1/entity-graph/entity":
@@ -555,32 +824,39 @@ class _Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/v1/sources":
-            if not _authorized_for(key, _DATA_PLATFORM_TIERS):
-                self._send(403, "text/plain", "subscribe (Data Platform tier) required — see /buy\n")
+            if not self._gate_paid_route(
+                key, _DATA_PLATFORM_TIERS, path, "subscribe (Data Platform tier) required — see /buy\n"
+            ):
                 return
-            _log_usage(key, path)
             self._serve_sources()
             return
 
         if path == "/api/v1/data":
-            if not _authorized_for(key, _DATA_PLATFORM_TIERS):
-                self._send(403, "text/plain", "subscribe (Data Platform tier) required — see /buy\n")
+            if not self._gate_paid_route(
+                key, _DATA_PLATFORM_TIERS, path, "subscribe (Data Platform tier) required — see /buy\n"
+            ):
                 return
-            _log_usage(key, path)
             self._serve_data_api(query)
             return
 
         if path == "/api/v1/dag/runs":
-            if not _authorized_for(key, _SCHEDULER_TIERS):
-                self._send(403, "text/plain", "subscribe (Scheduler tier) required — see /buy\n")
+            if not self._gate_paid_route(
+                key, _SCHEDULER_TIERS, path, "subscribe (Scheduler tier) required — see /buy\n"
+            ):
                 return
-            _log_usage(key, path)
             self._serve_dag_runs(query)
             return
 
         if path == "/api/v1/usage":
-            if not _valid_key(key):
-                self._send(403, "text/plain", "subscribe required — see /buy\n")
+            # Any active subscriber may read their OWN usage. Rate-limited
+            # (a caller must not be able to hammer this to work around the
+            # burst cap elsewhere), but never quota-metered or logged as
+            # usage itself — checking your own usage must not count against
+            # it (same reasoning as the pre-existing omission of
+            # `_log_usage` here).
+            if not self._gate_paid_route(
+                key, None, path, "subscribe required — see /buy\n", apply_quota=False, log=False
+            ):
                 return
             self._serve_usage(key, query)
             return
@@ -590,10 +866,8 @@ class _Handler(BaseHTTPRequestHandler):
             # allowed_tiers=None, which _authorized_for treats as "any active
             # subscriber" — so the $19 product used to be handed to every
             # other tier for free.
-            if not _authorized_for(key, allowed_tiers=_BRIEF_TIERS):
-                self._send(403, "text/plain", "subscribe required — see /buy\n")
+            if not self._gate_paid_route(key, _BRIEF_TIERS, path, "subscribe required — see /buy\n"):
                 return
-            _log_usage(key, path)
             if path == "/brief.md":
                 self._serve_md()
             else:
@@ -602,6 +876,76 @@ class _Handler(BaseHTTPRequestHandler):
             self._serve_status()
         else:
             self._send(404, "text/plain", "not found\n")
+
+    # ── Per-key rate limit + monthly quota gate (BUG C fix) ──────────────────
+    #
+    # Thin, shared chokepoint for every metered paid route: authorization,
+    # then burst rate limit, then monthly quota, then usage logging. Returns
+    # True iff the caller may proceed (the route handler should run); on
+    # False this method has already sent the full HTTP response (403 / 429 /
+    # 503), matching every other gate in this file.
+    def _gate_paid_route(
+        self,
+        key: str | None,
+        allowed_tiers: set[str] | None,
+        path: str,
+        deny_message: str,
+        *,
+        apply_quota: bool = True,
+        log: bool = True,
+    ) -> bool:
+        if not _authorized_for(key, allowed_tiers):
+            self._send(403, "text/plain", deny_message)
+            return False
+
+        # `key is None` only happens in dev mode — `_authorized_for` grants
+        # access with no credentials configured at all (see its docstring).
+        # There is no subscriber identity to meter in that mode, and it is
+        # never reachable once any real auth is configured (never
+        # production — see the ground-truth gating rule). Nothing to rate
+        # limit or quota against; still record usage for parity with the
+        # authenticated path (a no-op when `key` is falsy — see `_log_usage`).
+        if key is None:
+            if log:
+                _log_usage(key, path)
+            return True
+
+        tier = _rate_limit_tier_for_key(key)
+
+        allowed, retry_after = _check_tier_rate_limit(key, tier)
+        if not allowed:
+            retry = max(1, int(retry_after) + 1)
+            self._send(
+                429,
+                "application/json",
+                json.dumps({"ok": False, "error": "rate limited", "retry_after_s": retry}),
+                extra_headers={"Retry-After": str(retry)},
+            )
+            return False
+
+        if apply_quota:
+            status, body = _check_monthly_quota(key, tier)
+            if status == "exceeded":
+                retry = max(1, int(body["reset_at"] - time.time()) + 1)
+                self._send(
+                    429,
+                    "application/json",
+                    json.dumps(body),
+                    extra_headers={"Retry-After": str(retry)},
+                )
+                return False
+            if status == "error":
+                # FAIL CLOSED — see the block comment above _TIER_RATE_LIMITS.
+                self._send(
+                    503,
+                    "application/json",
+                    json.dumps({"ok": False, "error": "quota check temporarily unavailable — please retry shortly"}),
+                )
+                return False
+
+        if log:
+            _log_usage(key, path)
+        return True
 
     # C2 (2026-08-27 audit): ?key=... in the query string lands in Caddy's
     # access log (full URI logged) in cleartext, and can leak via the
@@ -1036,6 +1380,162 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(403, "application/json", json.dumps({"ok": False, "error": "invalid or inactive key"}))
             return
         self._send(200, "application/json", json.dumps({"ok": True, "api_key": new_key}))
+
+    # ── GET /account, GET /api/v1/account — self-service account page ───────
+    #
+    # There is NO human login anywhere in this system (see ground truth) — the
+    # opaque API key IS the credential. That makes a plain server-rendered
+    # `GET /account?key=...` exactly the leak `TIRRA_REJECT_QUERY_KEYS` exists
+    # to stop: the key would sit in the URL, and therefore in browser
+    # history, any proxy/CDN access log, and the Referer header of every
+    # outbound request the page makes.
+    #
+    # The fix: split this into two routes, the same pattern
+    # POST /api/v1/rotate-key already uses for its own destructive action —
+    # header-only, no query-string fallback, regardless of
+    # TIRRA_REJECT_QUERY_KEYS:
+    #   - GET /account        — a static, UNAUTHENTICATED HTML shell. It
+    #     carries no key of any kind. The customer pastes their key into a
+    #     password-type <input> in the page itself.
+    #   - GET /api/v1/account — JSON, authenticated ONLY via the X-Brief-Key
+    #     header. The shell's own inline JS calls this with `fetch(...,
+    #     {headers: {"X-Brief-Key": key}})` — the key is sent as a header on
+    #     an XHR/fetch request, never appended to a URL, so it never touches
+    #     the address bar, browser history, or a referrer.
+    # The rotate button in the shell POSTs to the existing
+    # /api/v1/rotate-key route the exact same way (header, not query string).
+    def _serve_account_page(self) -> None:
+        self._send(200, "text/html; charset=utf-8", _ACCOUNT_PAGE_HTML)
+
+    @staticmethod
+    def _entry_for_key(store, key: str) -> dict | None:
+        """Full subscriber record for `key`, active or not.
+
+        Deliberately NOT `is_active_key` — the whole point of this page is
+        to show a canceled/past-due/expired subscriber THEIR OWN status
+        (e.g. "canceled, access until <date>"), so existence of the key is
+        the only gate; `active`/`active_until`/`expires_at` are read out of
+        the record and shown to the customer, not used to hide the page.
+        Only consumes `SubscriberStore.all()`, a public method — no reach
+        into agent/payments/handler.py internals.
+        """
+        for entry in store.all().values():
+            if entry.get("api_key") == key:
+                return entry
+        return None
+
+    def _serve_account_json(self) -> None:
+        key = self.headers.get("X-Brief-Key", "").strip()
+        if not key:
+            self._send(401, "application/json", json.dumps({"ok": False, "error": "missing X-Brief-Key header"}))
+            return
+        if not _API_KEY_RE.match(key):
+            self._send(400, "application/json", json.dumps({"ok": False, "error": "malformed key"}))
+            return
+
+        # Static TIRRA_SUB_KEYS admin/dev keys have no SubscriberStore entry
+        # at all (see _authorized_for) — there is no per-customer account
+        # state to show for one, so this route is a 404 for them rather than
+        # a confusing empty account page.
+        configured = os.getenv("TIRRA_SUB_KEYS", "").strip()
+        if configured and key in {k.strip() for k in configured.split(",")}:
+            self._send(404, "application/json", json.dumps({"ok": False, "error": "no account for this key"}))
+            return
+
+        tier = _rate_limit_tier_for_key(key)
+        allowed, retry_after = _check_tier_rate_limit(key, tier)
+        if not allowed:
+            retry = max(1, int(retry_after) + 1)
+            self._send(
+                429,
+                "application/json",
+                json.dumps({"ok": False, "error": "rate limited", "retry_after_s": retry}),
+                extra_headers={"Retry-After": str(retry)},
+            )
+            return
+
+        from agent.payments.handler import SubscriberStore
+
+        store = SubscriberStore()
+        entry = self._entry_for_key(store, key)
+        if entry is None:
+            self._send(403, "application/json", json.dumps({"ok": False, "error": "invalid key"}))
+            return
+
+        since, reset_at = _month_bounds(time.time())
+        quota = _TIER_MONTHLY_QUOTAS.get(tier)
+        try:
+            from agent.payments.usage import UsageStore
+
+            used = UsageStore().count_since(key, since)
+        except Exception as exc:  # never break the account page over a usage-read hiccup
+            logging.getLogger(__name__).warning("[account] usage read failed: %s", exc)
+            used = None
+
+        # Best-effort, NEVER fatal to the page: management_urls requires a
+        # live Paddle round-trip (network, sandbox/live creds). A customer's
+        # own account view (tier, status, usage) must render even if Paddle
+        # is unreachable — same "never let an optional enrichment break the
+        # base response" pattern as handler.py's `_fetch_customer_email`.
+        management_urls = None
+        subscription_id = entry.get("subscription_id")
+        if subscription_id:
+            try:
+                from agent.payments.client import PaddleClient
+                from agent.payments.config import PaddleConfig
+
+                management_urls = PaddleClient(PaddleConfig.from_env()).get_subscription_management_urls(
+                    subscription_id
+                )
+            except Exception as exc:
+                logging.getLogger(__name__).warning(
+                    "[account] could not fetch Paddle management_urls for sub=%s: %s", subscription_id, exc
+                )
+
+        self._send(
+            200,
+            "application/json",
+            json.dumps(
+                {
+                    "ok": True,
+                    "tier": tier,
+                    "active": store.is_active_key(key),
+                    "active_until": entry.get("active_until"),
+                    "expires_at": entry.get("expires_at"),
+                    "usage": {
+                        "period_start": since,
+                        "period_reset_at": reset_at,
+                        "used": used,
+                        "quota": quota,
+                        "remaining": (max(0, quota - used) if (quota is not None and used is not None) else None),
+                    },
+                    "management_urls": management_urls,
+                }
+            ),
+        )
+
+    # ── CORS preflight ────────────────────────────────────────────────────────
+    #
+    # There was no `do_OPTIONS` at all — `BaseHTTPRequestHandler`'s default
+    # for an unimplemented verb is a bare 501, so ANY browser-based
+    # integration (a customer's own frontend calling this API with a
+    # non-simple request — e.g. any GET carrying the X-Brief-Key header, or
+    # any JSON POST) failed its CORS preflight before the real request was
+    # ever sent. This is routing/headers only — no auth, no rate limiting;
+    # a preflight carries no credentials and every route's own gate still
+    # applies to the actual request that follows it.
+    def do_OPTIONS(self) -> None:  # noqa: N802
+        self._send(
+            204,
+            "text/plain",
+            "",
+            extra_headers={
+                "Access-Control-Allow-Origin": os.getenv("TIRRA_CORS_ORIGIN", "*"),
+                "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type, X-Brief-Key, X-Ingest-Token",
+                "Access-Control-Max-Age": "86400",
+            },
+        )
 
     # ── Webhook (Paddle subscription lifecycle) ───────────────────────────────
     def do_POST(self) -> None:  # noqa: N802

@@ -16,6 +16,7 @@ from __future__ import annotations
 import functools
 import logging
 import re
+import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
 from dataclasses import dataclass, field
@@ -27,6 +28,14 @@ from agent.pipeline.store import PipelineStore
 from agent.tools.base import ToolRegistry
 
 log = logging.getLogger(__name__)
+
+# LESSONS F-13: how often the orphan-thread watchdog re-logs while a
+# timed-out node's operator is still running. Loud and repeated on purpose —
+# the whole point is that memory climbing after a "failed" timeout used to be
+# invisible until the box was already in swap. 30s is frequent enough to
+# catch it well before a 1.9GB box exhausts memory, cheap enough (one
+# `future.done()` check + one log call) to not matter on a 1 vCPU host.
+_DEFAULT_ORPHAN_LOG_INTERVAL_SECONDS = 30.0
 
 # Default: a run stuck in status='running' with no heartbeat for longer than
 # this is almost certainly a dead process, not slow work — see
@@ -110,11 +119,35 @@ class DAGExecutor:
         store: PipelineStore | None = None,
         max_workers: int = 4,
         stale_run_after_seconds: float = _DEFAULT_STALE_RUN_SECONDS,
+        orphan_log_interval_seconds: float = _DEFAULT_ORPHAN_LOG_INTERVAL_SECONDS,
     ) -> None:
         self._registry = tool_registry
         self._store = store
         self._max_workers = max_workers
         self._stale_run_after_seconds = stale_run_after_seconds
+        self._orphan_log_interval_seconds = orphan_log_interval_seconds
+
+        # LESSONS F-13, item 2: "do not start new work once a timeout has
+        # fired and the pool is degraded." A node timeout means its thread
+        # is still running and still allocating — we cannot know when (or
+        # if) it stops. This flag is intentionally scoped to *this executor
+        # instance's lifetime*, not to a single DagRun: run_chain.py builds
+        # one DAGExecutor and reuses it across every DAG in the nightly
+        # chain (exactly the sequence — train_gnn timeout, then
+        # generate_features timeout on top of it — that wedged the box on
+        # 2026-08-27). Once set, it never clears itself; a fresh process
+        # (the next scheduled run) gets a fresh executor and a clean slate.
+        self._degraded = False
+        self._degraded_reason: str | None = None
+
+    @property
+    def is_degraded(self) -> bool:
+        """True once any node in this executor's lifetime has timed out.
+
+        Public so callers (tests, run_chain.py) can observe/report the
+        state without reaching into a private attribute.
+        """
+        return self._degraded
 
     def execute(self, dag: DAG, trigger: str = "manual") -> DagRun:
         """Execute a DAG. Returns a DagRun with all node results."""
@@ -261,6 +294,33 @@ class DAGExecutor:
         if not executable:
             return results
 
+        # LESSONS F-13, item 2: once an earlier timeout has left this
+        # executor "degraded" (a thread from some prior node may still be
+        # running and allocating memory), do not start any *new* work —
+        # a leaked thread plus new allocations on top of it is exactly how
+        # the 1.9GB box went to 20MB available on 2026-08-27. This checks at
+        # layer granularity: nodes already submitted within an in-flight
+        # layer can't be un-submitted (Python can't cancel a running
+        # thread), but no later layer, and no later DAG sharing this same
+        # executor instance (see run_chain.py), will submit anything new.
+        if self._degraded:
+            for nid in executable:
+                nr = run.node_results[nid]
+                nr.status = "skipped"
+                nr.error = (
+                    "Skipped: executor pool degraded by an earlier timeout in this "
+                    f"process ({self._degraded_reason}) — not starting new work while "
+                    "a leaked thread may still be consuming memory/CPU."
+                )
+                nr.started_at = nr.finished_at = time.time()
+                results[nid] = nr
+                log.error(
+                    "Node %s skipped: pool degraded (%s)",
+                    nid,
+                    self._degraded_reason,
+                )
+            return results
+
         # Execute in parallel. NOTE: this pool is deliberately *not* used as
         # a context manager. ``ThreadPoolExecutor.__exit__`` calls
         # ``shutdown(wait=True)``, which blocks until every submitted task
@@ -274,9 +334,18 @@ class DAGExecutor:
         pool = ThreadPoolExecutor(max_workers=min(self._max_workers, len(executable)))
         try:
             futures: dict[str, Future[NodeResult]] = {}
+            cancel_events: dict[str, threading.Event] = {}
             for nid in executable:
                 node = dag.nodes[nid]
-                future = pool.submit(self._execute_node, node, upstream_outputs)
+                # LESSONS F-13, item 1: a per-node cancellation signal. We
+                # cannot forcibly stop the thread this runs in, but an
+                # operator that polls this Event can choose to stop its own
+                # work early once its timeout has fired. Not set here — it's
+                # only ever set from the TimeoutError branch below, i.e.
+                # after this node has actually blown its budget.
+                cancel_event = threading.Event()
+                cancel_events[nid] = cancel_event
+                future = pool.submit(self._execute_node, node, upstream_outputs, cancel_event)
                 futures[nid] = future
 
             for nid, future in futures.items():
@@ -297,6 +366,37 @@ class DAGExecutor:
                         started_at=time.time(),
                         finished_at=time.time(),
                     )
+                    # Ask the still-running operator to stop cooperatively.
+                    # Cheap and best-effort: an operator that never checks
+                    # this is exactly as well (or badly) off as before.
+                    cancel_events[nid].set()
+
+                    # From here on, this executor instance is "degraded" —
+                    # see the guard above _execute_layer's pool creation.
+                    if not self._degraded:
+                        self._degraded = True
+                        self._degraded_reason = f"node {nid!r} in DAG {dag.name!r} exceeded its {node.timeout}s timeout"
+                        log.error(
+                            "Executor pool now considered DEGRADED: %s. No further "
+                            "nodes will start in this process until it is restarted.",
+                            self._degraded_reason,
+                        )
+
+                    # LESSONS F-13, item 3: make the leak visible while it's
+                    # happening, not just once it eventually finishes. This
+                    # previously only surfaced in `_reconcile_timeout`, which
+                    # fires exactly once the orphaned thread completes — the
+                    # whole window where memory was quietly climbing (the
+                    # 40+ minutes observed on 2026-08-27) had zero log
+                    # output. Daemon thread so it never blocks process exit.
+                    watchdog = threading.Thread(
+                        target=self._watch_orphan,
+                        args=(dag.name, nid, node.timeout, future),
+                        name=f"orphan-watch-{dag.name}-{nid}",
+                        daemon=True,
+                    )
+                    watchdog.start()
+
                     # The thread behind `future` is still running. Reconcile
                     # the record once it actually finishes instead of
                     # permanently reporting "failed" for work that quietly
@@ -342,6 +442,41 @@ class DAGExecutor:
             pool.shutdown(wait=False)
 
         return results
+
+    def _watch_orphan(
+        self,
+        dag_name: str,
+        node_id: str,
+        node_timeout: float,
+        future: Future[NodeResult],
+    ) -> None:
+        """Loudly re-log a timed-out node's operator for as long as it keeps
+        running (LESSONS F-13, item 3).
+
+        Runs on its own daemon thread, one per timed-out node. Before this,
+        the only evidence that an operator was still alive past its timeout
+        was memory quietly climbing — nothing in the logs distinguished a
+        genuinely dead/reaped node from one silently eating RAM for 40+
+        minutes. Exits as soon as ``future`` completes (successfully or
+        not); ``_reconcile_timeout`` (registered as a done-callback) handles
+        correcting the actual recorded outcome.
+        """
+        started = time.time()
+        while not future.done():
+            time.sleep(self._orphan_log_interval_seconds)
+            if future.done():
+                break
+            elapsed = time.time() - started
+            log.error(
+                "ORPHAN THREAD: %s/%s is still running %.0fs after its %ss timeout "
+                "expired (thread cannot be forcibly stopped). This is the exact "
+                "signature that ran a 1.9GB box into swap on 2026-08-27 — see "
+                "LESSONS.md F-13.",
+                dag_name,
+                node_id,
+                elapsed,
+                node_timeout,
+            )
 
     def _reconcile_timeout(
         self,
@@ -438,8 +573,17 @@ class DAGExecutor:
         self,
         node: Any,  # Node type
         upstream_outputs: dict[str, Any],
+        cancel_event: threading.Event | None = None,
     ) -> NodeResult:
-        """Execute a single node with retry logic."""
+        """Execute a single node with retry logic.
+
+        ``cancel_event`` (LESSONS F-13) is forwarded to the operator on
+        every attempt. It starts unset; the caller in ``_execute_layer``
+        sets it only after this node's own ``future.result(timeout=...)``
+        has already raised ``TimeoutError`` — i.e. this thread checking it
+        mid-attempt is exactly the cooperative-cancellation path for an
+        operator that polls it.
+        """
         nr = NodeResult(node_id=node.id, status="running", started_at=time.time())
 
         # Build params for the operator
@@ -455,7 +599,11 @@ class DAGExecutor:
         last_error: str | None = None
         for attempt in range(node.retries):
             try:
-                result = operator.execute(exec_params, upstream_results=upstream_outputs)
+                result = operator.execute(
+                    exec_params,
+                    upstream_results=upstream_outputs,
+                    cancel_event=cancel_event,
+                )
                 nr.status = "completed"
                 nr.output = result
                 nr.finished_at = time.time()
@@ -464,6 +612,23 @@ class DAGExecutor:
             except Exception as exc:
                 last_error = str(exc)
                 nr.retries_used = attempt + 1
+
+                # LESSONS F-13, item 2: if the operator raised *because* it
+                # observed cancel_event and bailed out early, don't retry —
+                # this node's timeout has already fired (that's the only way
+                # cancel_event gets set) and burning another attempt is more
+                # of exactly the "new work after degradation" this executor
+                # is trying not to do.
+                if cancel_event is not None and cancel_event.is_set():
+                    nr.status = "failed"
+                    nr.error = f"Cancelled after timeout: {last_error}"
+                    nr.finished_at = time.time()
+                    log.warning(
+                        "Node %s stopped after cancellation (no further retries): %s",
+                        node.id,
+                        last_error,
+                    )
+                    return nr
 
                 # Rule 5: a source with no credential configured (FRED, NASA
                 # FIRMS, EIA, ...) is not a broken node — it's an honest,

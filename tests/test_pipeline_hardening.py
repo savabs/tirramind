@@ -330,6 +330,211 @@ class TestStaleRunReaping:
 #    every tool + DAGExecutor share) ──────────────────────────────
 
 
+# ── LESSONS F-13: timeout does not stop the thread ────────────────
+#
+# Production incident (2026-08-27): a node's timeout marked it "failed" and
+# moved on, but the operator's thread kept running — Python cannot forcibly
+# kill a running thread. train_gnn (>1800s) and generate_features (>120s)
+# both leaked threads that kept allocating memory, running a 1.9GB box down
+# to 20MB available with swap nearly full. These tests verify the fix:
+# (1) operators are handed a cancellation signal they can poll,
+# (2) the executor stops starting new work once it knows a thread may be
+#     leaking ("degraded"), and
+# (3) a still-running timed-out operator is logged loudly and repeatedly,
+# not just once at the very end.
+# Critically: none of this ever reports a timed-out-then-cancelled node as
+# a success (rule 1 — a returned dict is success, so a node that actually
+# raises after being cancelled must stay "failed").
+
+
+def _cancel_aware_op(sleep_total: float, poll: float = 0.02, captured: list | None = None):
+    """FunctionOperator callback that polls ``cancel_event`` and raises
+    (rather than returning a dict) as soon as it's set — so a cooperative
+    operator's own thread actually stops working once cancelled, instead of
+    running to completion regardless."""
+
+    def _fn(params: dict, upstream: dict, cancel_event=None) -> dict:
+        if captured is not None:
+            captured.append(cancel_event)
+        deadline = time.time() + sleep_total
+        while time.time() < deadline:
+            if cancel_event is not None and cancel_event.is_set():
+                raise RuntimeError("stopped early: cancel_event was set")
+            time.sleep(poll)
+        return {"status": "completed_fully"}
+
+    return _fn
+
+
+def _counting_op(counter: list):
+    """FunctionOperator callback that records every call it actually makes,
+    so tests can assert a skipped node's operator was never invoked."""
+
+    def _fn(params: dict, upstream: dict, cancel_event=None) -> dict:
+        counter.append(1)
+        return {"ran": True}
+
+    return _fn
+
+
+def _ignores_cancel_op(sleep_total: float):
+    """A plain, non-cooperative operator — the realistic majority case
+    today. Sleeps for its full duration regardless of cancel_event, so
+    tests using it can verify the orphan-watchdog logging path (which must
+    work even when the operator itself never checks the signal)."""
+
+    def _fn(params: dict, upstream: dict, cancel_event=None) -> dict:
+        time.sleep(sleep_total)
+        return {"status": "completed_fully"}
+
+    return _fn
+
+
+class TestCooperativeCancellation:
+    def test_cancel_event_is_set_after_node_times_out(self, registry, store):
+        captured: list = []
+        dag = DAG(name="cancel_dag")
+        dag.add(
+            "n1",
+            operator=_cancel_aware_op(sleep_total=5.0, captured=captured),
+            timeout=0.1,
+            retries=1,
+        )
+        executor = DAGExecutor(tool_registry=registry, store=store)
+        run = executor.execute(dag)
+
+        # Transient state right after execute() returns: still "failed",
+        # exactly as before this fix — the timeout itself is unchanged.
+        assert run.node_results["n1"].status == "failed"
+        assert "timed out" in (run.node_results["n1"].error or "")
+
+        deadline = time.time() + 3.0
+        while not captured and time.time() < deadline:
+            time.sleep(0.02)
+        assert captured, "operator was never invoked with a cancel_event"
+        cancel_event = captured[0]
+
+        deadline = time.time() + 3.0
+        while not cancel_event.is_set() and time.time() < deadline:
+            time.sleep(0.02)
+        assert cancel_event.is_set(), "cancel_event was never set after the node's timeout fired"
+
+    def test_cooperative_operator_actually_stops_and_is_not_reported_success(self, registry, store):
+        """The real point of cancellation: a cooperative operator's thread
+        exits in roughly one poll interval after the timeout, not after its
+        full (here 5s) runtime — and the run must still show "failed", not
+        flip to "completed" just because the operator eventually returned
+        control instead of raising an unrelated exception."""
+        dag = DAG(name="cancel_stops_dag")
+        dag.add(
+            "n1",
+            operator=_cancel_aware_op(sleep_total=5.0, poll=0.02),
+            timeout=0.1,
+            retries=3,  # even with retries configured, a cancelled node must not retry
+        )
+        executor = DAGExecutor(tool_registry=registry, store=store)
+
+        started = time.time()
+        run = executor.execute(dag)
+        assert run.node_results["n1"].status == "failed"
+
+        # Give the operator's thread time to notice cancel_event and raise,
+        # and the done-callback time to reconcile — bounded well under the
+        # 5s it would take if cancellation did nothing.
+        deadline = time.time() + 2.0
+        while "Cancelled after timeout" not in (run.node_results["n1"].error or "") and time.time() < deadline:
+            time.sleep(0.02)
+        elapsed = time.time() - started
+
+        assert elapsed < 2.5, (
+            f"cooperative operator took {elapsed:.2f}s to stop; cancel_event should have "
+            "ended it in well under its full 5s sleep"
+        )
+        nr = run.node_results["n1"]
+        assert nr.status == "failed", "a cancelled-then-raised operator must never be reported as completed"
+        assert "Cancelled after timeout" in nr.error
+        assert store.get_run(run.run_id)["status"] == "failed"
+
+
+class TestDegradedPoolGuard:
+    def test_timeout_marks_executor_degraded(self, registry, store):
+        dag = DAG(name="degrade_dag")
+        dag.add("slow", operator=_ignores_cancel_op(sleep_total=2.0), timeout=0.1, retries=1)
+        executor = DAGExecutor(tool_registry=registry, store=store)
+
+        assert executor.is_degraded is False
+        executor.execute(dag)
+        assert executor.is_degraded is True
+
+    def test_degraded_executor_skips_later_layer_without_running_it(self, registry, store):
+        """A node timeout in layer 0 must stop layer 1 from ever starting
+        new work on this executor instance — reproduces the exact shape of
+        the 2026-08-27 incident where train_gnn's timeout was followed by
+        generate_features being scheduled into an already-degraded process."""
+        n0_calls: list = []
+        n2_calls: list = []
+        dag = DAG(name="degrade_layers_dag")
+        dag.add("n0", operator=_counting_op(n0_calls))  # layer 0, unrelated root
+        dag.add("slow", operator=_ignores_cancel_op(sleep_total=2.0), timeout=0.1, retries=1)  # layer 0
+        dag.add("n2", operator=_counting_op(n2_calls), depends_on=["n0"])  # layer 1
+
+        executor = DAGExecutor(tool_registry=registry, store=store)
+        run = executor.execute(dag)
+
+        assert executor.is_degraded is True
+        assert n0_calls == [1], "n0 was already submitted in the same (degraded) layer as 'slow' — it should still run"
+        assert n2_calls == [], "n2's operator must never be invoked once the pool is degraded"
+        nr2 = run.node_results["n2"]
+        assert nr2.status == "skipped"
+        assert "degraded" in nr2.error
+
+    def test_degraded_executor_skips_next_dag_in_the_same_process(self, registry, store):
+        """run_chain.py reuses one DAGExecutor across every DAG in the
+        nightly chain — degradation must carry across DAG boundaries within
+        that one process, not just within a single DagRun."""
+        dag1 = DAG(name="first_dag")
+        dag1.add("slow", operator=_ignores_cancel_op(sleep_total=2.0), timeout=0.1, retries=1)
+
+        calls: list = []
+        dag2 = DAG(name="second_dag")
+        dag2.add("n1", operator=_counting_op(calls))
+
+        executor = DAGExecutor(tool_registry=registry, store=store)
+        executor.execute(dag1)
+        assert executor.is_degraded is True
+
+        run2 = executor.execute(dag2)
+        assert calls == [], "second DAG's node must not run once this executor is degraded"
+        assert run2.node_results["n1"].status == "skipped"
+
+
+class TestOrphanThreadLogging:
+    def test_logs_loudly_while_timed_out_operator_still_running(self, registry, store, caplog):
+        import logging as _logging
+
+        caplog.set_level(_logging.ERROR, logger="agent.pipeline.executor")
+        dag = DAG(name="orphan_dag")
+        dag.add("slow", operator=_ignores_cancel_op(sleep_total=0.5), timeout=0.05, retries=1)
+        executor = DAGExecutor(
+            tool_registry=registry,
+            store=store,
+            orphan_log_interval_seconds=0.05,
+        )
+        executor.execute(dag)
+
+        # Let the orphaned thread run its course and the watchdog get at
+        # least one poll interval in before it exits.
+        deadline = time.time() + 2.0
+        while not any("ORPHAN THREAD" in r.message for r in caplog.records) and time.time() < deadline:
+            time.sleep(0.02)
+
+        orphan_logs = [r for r in caplog.records if "ORPHAN THREAD" in r.message]
+        assert orphan_logs, "no ORPHAN THREAD log emitted while the timed-out operator was still running"
+        assert orphan_logs[0].levelno == _logging.ERROR
+        assert "slow" in orphan_logs[0].message
+        assert "orphan_dag" in orphan_logs[0].message
+
+
 class TestConcurrentStoreAccess:
     def test_concurrent_writes_from_many_threads_do_not_raise(self, tmp_path):
         """Reproduces the shape of daily_collection's first layer: ~50

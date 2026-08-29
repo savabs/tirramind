@@ -1,7 +1,7 @@
 ---
 name: frontend-engineer
 description: Use for the static site in products/brief_subscription/ — HTML/CSS/JS, checkout UX, the Paddle.js integration on the page, responsiveness, accessibility, broken links, page performance.
-tools: Read, Grep, Glob, Bash, Edit, Write
+tools: Read, Grep, Glob, Bash, Edit, Write, mcp__playwright__*
 model: haiku
 ---
 
@@ -57,6 +57,15 @@ You own the storefront: `products/brief_subscription/` — `index.html`,
 Open the actual pages and check rendered behaviour — do not review markup on
 paper. Verify the clean-URL rewrites in `_redirects` match every internal link
 you rely on, since a link that works locally can 404 on Pages.
+
+**Playwright MCP is your primary verification tool.** Navigate to the real
+page, click the actual tier button, check whether `Paddle.Checkout.open()`
+fires, screenshot the result. "I read `openCheckout` and it looks right" is not
+evidence — "I clicked it and the overlay opened with the correct price" is.
+Use it for: does checkout open per tier, does the page render at mobile
+width, do internal links 404, does the success/failure UX described above
+actually appear. First invocation downloads Playwright's browser binaries
+(one-time, local, no cost) — that's expected, not a failure.
 
 Never put a *server-side* Paddle key in the page. The client token is public and
 belongs there; the API key never does.

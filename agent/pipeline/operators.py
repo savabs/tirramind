@@ -12,7 +12,9 @@ Both catch exceptions and return structured error info instead of crashing.
 
 from __future__ import annotations
 
+import inspect
 import logging
+import threading
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import Any
@@ -30,8 +32,20 @@ class Operator(ABC):
         self,
         params: dict[str, Any],
         upstream_results: dict[str, Any] | None = None,
+        cancel_event: threading.Event | None = None,
     ) -> Any:
-        """Execute the operator. Returns result data or raises."""
+        """Execute the operator. Returns result data or raises.
+
+        ``cancel_event`` (LESSONS F-13): the executor sets this once the
+        node's timeout has already fired, so the *caller* has stopped
+        waiting on this call but the thread running it has not — Python
+        cannot forcibly kill a running thread. Long-running operators
+        SHOULD poll ``cancel_event.is_set()`` between chunks of work and
+        return/raise early when set, so a "timed out" node actually stops
+        doing work instead of just being ignored by the executor. Operators
+        that don't check it behave exactly as before this signal existed —
+        this parameter is additive, not a new requirement.
+        """
         ...
 
 
@@ -45,7 +59,15 @@ class ToolOperator(Operator):
         self,
         params: dict[str, Any],
         upstream_results: dict[str, Any] | None = None,
+        cancel_event: threading.Event | None = None,
     ) -> Any:
+        # Tool.execute()'s contract (owned by the L1 data engineers) has no
+        # cancellation parameter today — a single HTTP fetch is short enough
+        # that this has never been the leak vector; the model/feature-builder
+        # FunctionOperators are. Accepting and dropping cancel_event here
+        # keeps the Operator interface uniform without forcing a change onto
+        # every tool. Revisit only if a specific tool's own timeout becomes
+        # the leak (that decision belongs to whoever owns that tool).
         tool_name = params.get("__tool__")
         if tool_name is None:
             raise ValueError("ToolOperator requires '__tool__' in params")
@@ -87,19 +109,41 @@ class ToolOperator(Operator):
 
 
 class FunctionOperator(Operator):
-    """Executes a pure Python callable."""
+    """Executes a pure Python callable.
+
+    DAG node functions have historically had the signature
+    ``fn(params, upstream_results) -> dict``. To wire cooperative
+    cancellation (LESSONS F-13) through without breaking every existing
+    node function, this operator inspects the callable's signature *once*
+    at construction: if it declares a ``cancel_event`` parameter (or takes
+    ``**kwargs``), the executor's cancellation ``threading.Event`` is
+    forwarded; otherwise the call is made exactly as before. A function
+    that ignores this is no worse off than before the parameter existed.
+    """
 
     def __init__(self, fn: Callable[..., Any]) -> None:
         if not callable(fn):
             raise TypeError(f"FunctionOperator requires a callable, got {type(fn)}")
         self._fn = fn
+        try:
+            sig = inspect.signature(fn)
+            self._accepts_cancel_event = "cancel_event" in sig.parameters or any(
+                p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+            )
+        except (TypeError, ValueError):
+            # Builtins / C-extension callables without an inspectable
+            # signature — fall back to the old, unconditional call shape.
+            self._accepts_cancel_event = False
 
     def execute(
         self,
         params: dict[str, Any],
         upstream_results: dict[str, Any] | None = None,
+        cancel_event: threading.Event | None = None,
     ) -> Any:
         log.debug("FunctionOperator executing: %s", self._fn.__name__)
+        if self._accepts_cancel_event:
+            return self._fn(params, upstream_results or {}, cancel_event=cancel_event)
         return self._fn(params, upstream_results or {})
 
 

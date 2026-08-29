@@ -67,6 +67,18 @@ name what would settle anything still open.
   registered as `subagent_type` unless Claude Code has been restarted since they
   were written — if dispatch by type fails, spawn a general-purpose agent and
   instruct it to read its role file first.
+- **Browser tooling for frontend/customer-journey work.** `frontend-engineer`
+  and `customer-lifecycle` carry `mcp__playwright__*` tool access (navigate,
+  click, fill, screenshot, accessibility snapshot) — dispatch them, don't spawn
+  a bare general-purpose agent, when the ask requires actually driving
+  `products/brief_subscription/` (does checkout open, does the pricing page
+  render, is there a dead link) rather than reading its HTML. The
+  `claude-in-chrome` skill is a second option for interactive/manual checks
+  against a real logged-in Chrome session (e.g. verifying a live Paddle
+  sandbox flow) — reach for that when the check needs a real browser session
+  rather than a scripted one. Neither tool is a substitute for tracing
+  server-side hops (webhook delivery, key minting) — those still need code
+  reading, per `customer-lifecycle`'s standard of evidence.
 - The owner prefers a hard truth over a comfortable roadmap. Lead with whatever
   is most likely to be wrong.
 - Constraints that bind: CLAUDE.md §7 ("$0 until proven edge"), §3 (research →
