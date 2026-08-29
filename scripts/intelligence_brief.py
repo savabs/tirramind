@@ -42,7 +42,17 @@ from scripts.brief_sections import (  # noqa: E402
     render_insider_sell_intent_section,
     render_wow_diff_section,
 )
-from scripts.live_intelligence_digest import build_digest  # noqa: E402
+from scripts.live_intelligence_digest import (  # noqa: E402
+    _SCORABLE,
+    _extract_series_multi,
+    build_digest,
+)
+
+# Sparkline window: how many trailing raw points of the finding's own series
+# get plotted (see _sparkline / _attach_sparklines below). Fixed, not derived
+# from n_points, so the methodology line below can state one number that is
+# always true.
+_SPARK_WINDOW = 30
 
 METHODOLOGY = (
     "Deterministic z-score anomaly detection + Bayesian Online Changepoint "
@@ -50,7 +60,13 @@ METHODOLOGY = (
     "No LLM, no prediction — this surfaces statistically anomalous moves "
     "against each series' own historical baseline (per-finding baseline "
     "length shown below). Every number here is reproducible from the source "
-    "APIs; nothing is inferred by a model."
+    "APIs; nothing is inferred by a model. Where shown, the block sparkline "
+    f"(U+2581-U+2588) plots up to the last {_SPARK_WINDOW} raw observations of "
+    "that SAME series, min-max normalised within that window — shape only, "
+    "not absolute scale; '│' marks the latest reading. The baseline "
+    "percentile alongside it ranks that latest reading against its full "
+    "history (excluding itself) — a plain-English magnitude readout that "
+    "does not require reading bar heights."
 )
 
 # Human-readable section headings, grouped by source. Order here is the
@@ -97,6 +113,118 @@ FIELD_LABELS: dict[str, str] = {
 }
 
 
+# Unicode block glyphs, lowest to highest (U+2581 .. U+2588).
+_SPARK_GLYPHS = "▁▂▃▄▅▆▇█"
+
+
+def _fmt_range_num(v: float) -> str:
+    """Compact human number for the sparkline's range annotation.
+
+    Plain `:g` formatting renders large values (e.g. DeFi TVL in the
+    billions) as `2.72161e+09` — technically correct, unreadable in a
+    one-line digest. Abbreviates to K/M/B; leaves smaller magnitudes (CFTC
+    contract counts, percentages) as plain numbers, which is what most
+    findings actually are.
+    """
+    av = abs(v)
+    if av >= 1e9:
+        return f"{v / 1e9:.2f}B"
+    if av >= 1e6:
+        return f"{v / 1e6:.2f}M"
+    if av >= 1e3:
+        return f"{v:,.0f}"
+    return f"{v:g}"
+
+
+def _sparkline(values: list[float]) -> str:
+    """Render `values` as a min-max normalised block sparkline.
+
+    A flat window (max == min, e.g. a level field that hasn't moved) renders
+    as a solid mid-height bar for every point rather than dividing by zero —
+    that IS the honest shape (no movement), not missing data.
+    """
+    if not values:
+        return ""
+    lo, hi = min(values), max(values)
+    span = hi - lo
+    n = len(_SPARK_GLYPHS) - 1
+    if span < 1e-12:
+        return _SPARK_GLYPHS[n // 2] * len(values)
+    out = []
+    for v in values:
+        idx = int(round((v - lo) / span * n))
+        out.append(_SPARK_GLYPHS[max(0, min(n, idx))])
+    return "".join(out)
+
+
+def _percentile_in_baseline(values: list[float]) -> float | None:
+    """Latest value's percentile rank against its own prior history.
+
+    Excludes the latest value from the comparison set — same train/test split
+    as `_zscore_anomaly`'s `hist = x[:-1]` in live_intelligence_digest.py, so
+    this percentile and the z-score printed beside it are answering the same
+    question ("how does the latest reading compare to what came before") in
+    two different units, not two different questions.
+    """
+    if len(values) < 2:
+        return None
+    latest = values[-1]
+    hist = values[:-1]
+    rank = sum(1 for v in hist if v <= latest)
+    return round(100.0 * rank / len(hist), 1)
+
+
+def _attach_sparklines(store: Any, anomalies: list[dict[str, Any]]) -> None:
+    """Attach a real-data sparkline + baseline percentile to each finding, in
+    place (mutates the dicts already in `anomalies`).
+
+    Reuses live_intelligence_digest's OWN `_SCORABLE` type map and
+    `_extract_series_multi` extraction — the exact function `build_digest`
+    used to build the series the z-score beside each finding was computed
+    from — rather than re-deriving the dedupe/type-union logic here. A
+    second, hand-written version of that dedupe could silently drift (e.g. a
+    different max(rowid) tie-break, or missing the instrument_universe
+    multi-type union — see that module's docstring) and draw a chart that
+    contradicts its own z-score. This module does not own
+    live_intelligence_digest.py and does not modify it — only imports two
+    already-existing names from it, same pattern as this file's existing
+    `from scripts.live_intelligence_digest import build_digest`.
+
+    A finding whose series cannot be re-derived (unknown source, store
+    error, fewer than 2 points) gets NO sparkline/percentile — never a
+    fabricated or placeholder one, per the no-fake-chart requirement.
+    """
+    series_cache: dict[str, dict] = {}
+    for a in anomalies:
+        source = a.get("source")
+        field = a.get("field")
+        entity_id = a.get("entity_id")
+        if not source or not field or not entity_id:
+            continue
+        type_specs = _SCORABLE.get(source)
+        if not type_specs:
+            continue
+        if source not in series_cache:
+            try:
+                series_cache[source] = _extract_series_multi(store, source, type_specs)
+            except Exception as exc:
+                logger.warning("[brief] sparkline series fetch failed for source=%s: %s", source, exc)
+                series_cache[source] = {}
+        entry = series_cache[source].get((entity_id, field))
+        if not entry:
+            continue
+        values = entry[0]
+        if len(values) < 2:
+            continue
+        window = values[-_SPARK_WINDOW:]
+        a["spark_glyphs"] = _sparkline(window)
+        a["spark_window_n"] = len(window)
+        a["spark_total_n"] = len(values)
+        a["spark_lo"] = round(min(window), 4)
+        a["spark_hi"] = round(max(window), 4)
+        a["spark_percentile"] = _percentile_in_baseline(values)
+
+
 def fetch_report(
     db_path: str = ".tirra_pipeline/pipeline.db",
     max_rows: int = 8,
@@ -111,7 +239,9 @@ def fetch_report(
     from agent.pipeline.store import PipelineStore
 
     store = PipelineStore(db_path)
-    return build_digest(store, top_n=max_rows)
+    report = build_digest(store, top_n=max_rows)
+    _attach_sparklines(store, report["digest"])
+    return report
 
 
 def fetch_anomalies(
@@ -248,6 +378,18 @@ def _render_finding(a: dict[str, Any]) -> list[str] | None:
         weeks_text = _weeks_ago_text(a.get("changepoint_weeks_ago"))
         detail += f" · structural break {weeks_text}" if weeks_text else " · structural break detected"
     lines.append(detail)
+
+    spark = a.get("spark_glyphs")
+    if spark:
+        window_n = a.get("spark_window_n")
+        total_n = a.get("spark_total_n")
+        lo = a.get("spark_lo")
+        hi = a.get("spark_hi")
+        pct = a.get("spark_percentile")
+        window_note = f"last {window_n} of {total_n} pts" if window_n != total_n else f"all {total_n} pts"
+        pct_note = f" · {pct:g}th pct of full baseline" if pct is not None else ""
+        lines.append(f"    {spark}│  ({window_note}, range {_fmt_range_num(lo)}–{_fmt_range_num(hi)}{pct_note})")
+
     return lines
 
 
