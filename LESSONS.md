@@ -598,11 +598,11 @@ for as long as the parent lives, and the parent cannot exit while it runs.
 
 **Why this hid for months:** it produces exactly the signature we had blamed
 entirely on the executor's status handling — a run stuck in `running` with no
-error recorded. The status bug (fixed in 0b52ab7) was real, but a process
+error recorded. The status bug (fixed in b7a126b) was real, but a process
 OOM-killed or wedged behind an orphaned thread produces the same evidence. We
 fixed the *reporting* first and assumed that was the whole story.
 
-**Fix:** (30bb00f)
+**Fix:** (6d656ba)
 - `TIRRA_PIPELINE_WORKERS=1` on single-core hosts; documented in
   `deploy/env.production.example` with the measurement.
 - Nightly chain narrowed to the light, product-feeding DAGs. `gnn_inference`,

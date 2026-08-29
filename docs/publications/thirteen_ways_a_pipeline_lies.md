@@ -71,7 +71,7 @@ emitted a `log.warning` and left the node result's status as `"completed"`.
 A run whose writes all threw was byte-for-byte indistinguishable, in
 `dag_runs`, from a run that succeeded.
 
-**Fix** (`0b52ab7`). Storage exceptions set status to `failed`. A stale-run
+**Fix** (`b7a126b`). Storage exceptions set status to `failed`. A stale-run
 reaper plus a heartbeat so a process that dies mid-flight stops claiming to be
 `running`. And a distinct classification for missing-credential skips, so an
 unconfigured source degrades loudly instead of returning an empty list that
@@ -178,7 +178,7 @@ RSS. Nothing compared that default against `nproc`.
 Net: a 30-minute `train_gnn` timeout leaves an orphaned thread eating RAM for
 as long as the parent lives, and the parent cannot exit while it runs.
 
-**Fix** (`30bb00f`, `50308b3`). Workers set to 1 on single-core hosts, with the
+**Fix** (`6d656ba`, `dec920b`). Workers set to 1 on single-core hosts, with the
 measurement recorded next to the setting. The executor now logs an explicit
 `ORPHAN THREAD` line naming the node and how far past its timeout it still is,
 and refuses to start new work in a pool a timeout has already degraded. The
@@ -236,7 +236,7 @@ which is real, the series genuinely changes shape there — and the elapsed time
 from that index to now, measured in the series' own index space, is 0.0 weeks.
 "A structural break, zero weeks ago." Rendered to the customer as *this week*.
 
-**Fix** (`1bba4d4`). The read path now dedupes on `(entity_id, observed_at)`,
+**Fix** (`1e86f0f`). The read path now dedupes on `(entity_id, observed_at)`,
 keeping `max(rowid)` so the most recently written value for a timestamp wins.
 Cotton went from 169 points to 159 and its "this week" changepoint became
 `None`. Ondo TVL went from 3,570 points to 1,190 — roughly 3x duplication in
@@ -282,7 +282,7 @@ was broken. No exception was raised, no row was missing, no test failed. The
 statistics were computed correctly on the wrong denominator, and 86% of the
 output was noise.
 
-**Fix** (`dd93bdc`). The scorable-source table now maps a *tuple* of
+**Fix** (`2782d21`). The scorable-source table now maps a *tuple* of
 `(observation_type, fields)` pairs per source and unions across type names,
 with the later entry winning on the overlap period. `realized_vol_20d` findings
 went 29 → 4.
@@ -327,7 +327,7 @@ with no error logged anywhere:
 175,275 observations per run, read from disk, matched against nothing,
 discarded in silence.
 
-**Fix** (`85c9777`). Corrected field names. Findings went from 8 (100% CFTC) to
+**Fix** (`2957703`). Corrected field names. Findings went from 8 (100% CFTC) to
 26 across three sources. The DeFi TVL series turned out to carry 3,123- and
 3,570-point baselines with genuine changepoints — far deeper history than
 CFTC's 169 weekly points. The best data in the system had been invisible
@@ -553,7 +553,7 @@ failure count is a suite nobody reads, and inside that unread failure count
 were six tests quietly reporting success for a reason that had nothing to do
 with the code under test.
 
-**Fix** (`95674ff`). Fixture default changed to −7.0 so the code actually runs;
+**Fix** (`74017b1`). Fixture default changed to −7.0 so the code actually runs;
 the class went green *and* meaningful. Suite went 19 failures to 10, and the
 remaining 10 were real bugs fixed separately. The fix carries a seven-line
 comment naming the commit that introduced the gate, because the next person to
@@ -606,7 +606,7 @@ And the part that belongs in this list: **a test asserted the buggy behaviour.**
 produces. The suite was green *over* the corruption, and had been used as
 evidence that the corruption wasn't there.
 
-**Fix** (`e974ce3`). `ENRICHMENT_DIM` is now derived
+**Fix** (`7c79c02`). `ENRICHMENT_DIM` is now derived
 (`9 + len(OBSERVATION_TYPES)`), never written as a literal. An unknown entity
 type gets an **all-zero** one-hot — claiming no identity rather than the wrong
 one. A new `validate_schema_against_store()` raises before anything trains or
@@ -768,18 +768,18 @@ Nothing is anonymised and nothing is rounded in my favour.
 
 | # | Evidence |
 |---|---|
-| 1 | `0b52ab7`; `SELECT dag_name, status, COUNT(*) FROM dag_runs GROUP BY 1,2` |
+| 1 | `b7a126b`; `SELECT dag_name, status, COUNT(*) FROM dag_runs GROUP BY 1,2` |
 | 2 | `agent/pipeline/executor.py:215` and `:250`; unfixed |
-| 3 | LESSONS.md F-13; `30bb00f`, `50308b3`; `agent/pipeline/executor.py:328-354`, `:471` |
-| 4 | `1bba4d4`; duplicate-count query in the text above |
-| 5 | `dd93bdc`; point counts per `observation_type` in `entity_observations` |
-| 6 | `85c9777`; `4294 + 162251 + 8730 = 175275` |
+| 3 | LESSONS.md F-13; `6d656ba`, `dec920b`; `agent/pipeline/executor.py:328-354`, `:471` |
+| 4 | `1e86f0f`; duplicate-count query in the text above |
+| 5 | `2782d21`; point counts per `observation_type` in `entity_observations` |
+| 6 | `2957703`; `4294 + 162251 + 8730 = 175275` |
 | 7 | `agent/fusion/surprise.py:190-196`, weights at `:74-100`; decomposition over `entity_alerts` |
 | 8 | `agent/fusion/convergence.py:184-199`; `SELECT MIN/MAX(correlated_surprise_score) FROM convergence_clusters` |
 | 9 | `agent/fusion/convergence.py:167` and `:175` (docstring at `:46`); `grep -n contributing_tools agent/fusion/entity_scorer.py` returns nothing |
 | 10 | `agent/fusion/convergence.py:97`, default `surprise_threshold=2.0`; `MIN(composite_surprise) = 64241535` |
-| 11 | `95674ff`; `tests/test_entity_linking.py::TestGDELTEventInvolves` (line 611); `agent/tools/gdelt.py:50-53,716` |
-| 12 | LESSONS.md F-12; `e974ce3` |
+| 11 | `74017b1`; `tests/test_entity_linking.py::TestGDELTEventInvolves` (line 611); `agent/tools/gdelt.py:50-53,716` |
+| 12 | LESSONS.md F-12; `7c79c02` |
 | 13 | `docs/research/cftc_forward_return_event_study.md`; `scripts/cftc_event_study.py` |
 
 The failure log this is drawn from — F-01 through F-13, each with symptom, root

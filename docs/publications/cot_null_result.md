@@ -7,7 +7,7 @@ tags:
   - topic/quant
 status: public
 code: scripts/cftc_event_study.py
-commit: 85d86b0
+commit: 2597e8b
 ---
 
 # No detectable forward-return edge in CFTC Commitments-of-Traders positioning anomalies
@@ -235,7 +235,7 @@ anomalies in the product's own history could not be graded at all.**
    testable cells.
 
 Environment: Python 3.12.14, numpy 2.5.2, scipy 1.18.1, statsmodels 0.14.6.
-Repository commit `85d86b0`; `scripts/cftc_event_study.py`,
+Repository commit `2597e8b`; `scripts/cftc_event_study.py`,
 `agent/quant/scoring.py` and `agent/tools/cftc.py` are unmodified at that commit.
 
 ---
@@ -546,7 +546,7 @@ keyless.
 ```
 git clone <this repository>
 cd tirramind
-git checkout 85d86b0
+git checkout 2597e8b
 .venv/bin/python scripts/cftc_event_study.py
 ```
 
@@ -668,4 +668,4 @@ corrected here. Both corrections make the result *weaker*, not stronger.
 
 Both were found by re-deriving the note's numbers from the database rather than
 copying them forward. Everything else in the note reproduced exactly against
-commit `85d86b0`.
+commit `2597e8b`.
