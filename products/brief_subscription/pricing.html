@@ -367,10 +367,18 @@
     // Set to true to enable the tier. The architect will update these flags based
     // on customer-lifecycle findings.
     const TIER_AVAILABILITY = {
+      // ALL TIERS WITHDRAWN 2026-08-29. The subscription business was wound
+      // down after four measurements closed every path: no detectable
+      // predictive edge (0/51 hypotheses under Benjamini-Hochberg), no data
+      // moat (the CFTC serves all 194 fields free and keyless), a price dead
+      // zone (COTbase $12/mo, Barchart Premier $19.95/mo), and a graph that
+      // does not join across domains (3 cross-domain pairs, 4 entities).
+      // Entity Graph in particular was selling cross-source resolution that
+      // returns zero links. Nothing here is purchasable.
       data: false,
-      entity: true,
-      scheduler: true,
-      brief: true,
+      entity: false,
+      scheduler: false,
+      brief: false,
     };
 
     // ── Paused tiers (checkout-level blocks) ────────────────────────────────
