@@ -13,9 +13,9 @@ backend (`agent/brief_server.py`):
 | Tier | Price | Surface | Gate |
 |---|---|---|---|
 | **Data Platform** | $500–5,000/mo | `GET /api/v1/data`, `GET /api/v1/sources` — pre-computed deterministic signals from 47 sources | `tier ∈ {data, scheduler}` |
-| **Entity Graph** | $300–2,000/mo | `GET /evidence/*` — learned entity graph, cross-doc co-occurrence | `tier ∈ {entity, data, scheduler}` |
+| **Entity Graph** | $300–2,000/mo | `GET /evidence/*` — deterministic entity graph with cross-document co-occurrence, confidence-scored relationships, and audit-traceable evidence | `tier ∈ {entity, data, scheduler}` |
 | **Scheduler** | $50–2,000/mo | `GET /api/v1/dag/runs` — pipeline run visibility (custom DAG submission: beta) | `tier == scheduler` |
-| **Brief** | $19/mo | `GET /brief` / `/brief.json` / `/brief.md` — weekly positioning and flow anomaly digest (BOCPD-detected, multi-year baselines) | any active subscriber |
+| **Brief** | $29/mo | `GET /brief` / `/brief.json` / `/brief.md` — weekly positioning and flow anomaly digest (BOCPD-detected, multi-year baselines) | any active subscriber |
 | *(all tiers)* | — | `GET /api/v1/usage` — caller's own metered call summary | any active subscriber |
 
 A subscriber's tier is set by the Paddle price they bought, mapped via

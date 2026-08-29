@@ -90,19 +90,15 @@ Truthy values for flags: `1`, `true`, `yes`, `on`.
 
 ### Tier gates
 
-| Constant | Tiers accepted | Monthly price of those tiers |
-|---|---|---|
-| `_ENTITY_GRAPH_TIERS` | `entity`, `data`, `scheduler` | $300, $500, $50 |
-| `_DATA_PLATFORM_TIERS` | `data`, `scheduler` | $500, $50 |
-| `_SCHEDULER_TIERS` | `scheduler` | $50 |
-| (any valid key) | any active subscriber | — |
+The tier ladder is **monotonic**: each tier in the set unlocks everything at that price point and all tiers below it.
 
-> **Gating inversion, unresolved.** The `scheduler` tier costs $50/month and
-> appears in all three sets. A $50 Scheduler subscriber therefore passes the
-> gate for the $500 Data Platform and the $300 Entity Graph. The source comment
-> justifies this as "they paid for more surface", which is true of `data` but
-> not of `scheduler`. Verify this is intended before ungating the Data Platform
-> tier.
+| Constant | Tiers accepted | Monthly price |
+|---|---|---|
+| `_BRIEF_TIERS` | `brief`, `scheduler`, `entity`, `data` | $29, $50, $300, $500 |
+| `_SCHEDULER_TIERS` | `scheduler`, `entity`, `data` | $50, $300, $500 |
+| `_ENTITY_GRAPH_TIERS` | `entity`, `data` | $300, $500 |
+| `_DATA_PLATFORM_TIERS` | `data` | $500 |
+| (any valid key) | any active subscriber | — |
 
 ### Usage metering
 
@@ -602,6 +598,39 @@ Degree centrality over the document-evidence graph, not the production graph.
 
 ---
 
+## `GET /api/v1/admin/contact-messages`
+
+**Gate:** `X-Ingest-Token` (operator-only, not a customer-facing endpoint). **Metered:** no.
+
+Read submitted contact form messages. Returns paginated JSONL records from
+`TIRRA_CONTACT_LOG` (default `.tirra_opportunities/contact_messages.jsonl`).
+
+| Parameter | Type | Default | Notes |
+|---|---|---|---|
+| `limit` | int | 50 | Clamped to 1–1000 |
+| `offset` | int | 0 | Pagination: skip this many results |
+
+**Authorization** — `X-Ingest-Token` header (constant-time comparison):
+
+1. `TIRRA_INGEST_TOKEN` set → token must match exactly.
+2. Token empty and `TIRRA_REQUIRE_AUTH` truthy → deny all, log error (fail-closed).
+3. Token empty and `TIRRA_REQUIRE_AUTH` unset → dev mode, open.
+
+**Response**
+
+```json
+{"ok": true, "messages": [
+  {"received_at": 1787834185.0, "name": "...", "email": "...",
+   "subject": "...", "message": "...", "source_ip": "..."}
+],
+ "count": 50, "total": 842, "limit": 50, "offset": 0}
+```
+
+`count` is the number of messages in this page. `total` is the count of all
+messages ever received.
+
+---
+
 ## `GET /` · `GET /landing` · `GET /index.html`
 
 **Gate:** none. **Metered:** no.
@@ -690,6 +719,33 @@ must read the file manually. This is a deliberate choice, not an oversight.
 > has no `do_OPTIONS`, so `OPTIONS /api/v1/contact` returns **501** — verified
 > live 2026-08-27. The form cannot work from a browser until `do_OPTIONS` is
 > added.
+
+---
+
+## `POST /api/v1/rotate-key`
+
+**Gate:** any valid subscriber key. **Metered:** no.
+
+Self-service API key rotation. The old key is revoked immediately; the new key
+is returned in the response and shown only once.
+
+**Request** — No body expected. Authorization is header-only.
+
+```
+POST /api/v1/rotate-key
+X-Brief-Key: tirra_...
+```
+
+**Response**
+
+| Status | Body |
+|---|---|
+| 200 | `{"ok": true, "message": "key rotated", "new_key": "tirra_..."}` |
+| 403 | `{"ok": false, "error": "invalid or missing key"}` |
+
+The new key is returned **once**. If lost, use `GET /api/v1/claim` with a
+fresh transaction ID from a new purchase, or contact support to request
+another key.
 
 ---
 
@@ -826,19 +882,14 @@ Verified 2026-08-27. None of these are fixed.
    for it.
 3. **Source allowlist is narrower than the data.** 51 allowlisted names, 66
    distinct sources in `pipeline_data`.
-4. **`POST /api/v1/rotate-key` does not exist.**
-   `SubscriberStore.rotate_key_for_api_key()` is implemented and tested, but no
-   HTTP route reaches it. A customer who loses a key has no self-service path.
-5. **Rate limiters are per-process and in-memory.** Correct only because the
+4. **Rate limiters are per-process and in-memory.** Correct only because the
    deployment is a single process. A horizontal fleet makes the caps bypassable
    and needs a shared store.
-6. **Error format is inconsistent.** `403` and brief-missing `404` are
+5. **Error format is inconsistent.** `403` and brief-missing `404` are
    `text/plain`; everything else is JSON. Branch on status codes.
-7. **Numeric parameters fail silently.** `?limit=abc` returns `200` with the
+6. **Numeric parameters fail silently.** `?limit=abc` returns `200` with the
    default, not `400`. This is deliberate — an unparseable value must never
    produce a `500` — but it means a client typo is invisible.
-8. **Tier gate inversion.** The $50 `scheduler` tier passes the $500 Data
-   Platform and $300 Entity Graph gates.
 
 ---
 

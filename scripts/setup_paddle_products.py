@@ -47,7 +47,7 @@ _TIERS = [
     ("data", "TirraMind — Data Platform", "Data Platform — monthly API access", "50000"),
     ("entity", "TirraMind — Entity Graph", "Entity Graph — monthly API access", "30000"),
     ("scheduler", "TirraMind — Scheduler", "Scheduler — monthly API access", "5000"),
-    ("brief", "TirraMind — Opportunity Brief", "Opportunity Brief — weekly, billed monthly", "1900"),
+    ("brief", "TirraMind — Opportunity Brief", "Opportunity Brief — weekly, billed monthly", "2900"),
 ]
 
 

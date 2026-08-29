@@ -176,7 +176,7 @@
   <div class="wrap">
     <header>
       <div class="brand">Tirra<em>Mind</em></div>
-      <nav><a href="/">&larr; Back home</a></nav>
+      <nav><a href="/docs">Docs</a> <a href="/">&larr; Back home</a></nav>
     </header>
     <main>
       <h1>Pricing</h1>
@@ -204,7 +204,7 @@
           <h2>Entity Graph</h2>
           <div class="price"><span class="price-amount">$300</span><span> / month, up to $2,000 (enterprise)</span></div>
         </div>
-        <p class="tagline">A deterministic, no-LLM pipeline that extracts entities and relationships from ingested documents — PDF, news, CSV, plain text — with every mention and link tracing back to the exact source sentence it came from. Cross-document co-occurrence — the same pair recurring across sources, not just one — is the signal.</p>
+        <p class="tagline">A deterministic, no-LLM pipeline that extracts entities and relationships from ingested documents — PDF, news, CSV, plain text — with every mention and link tracing back to the exact source sentence it came from. Cross-document co-occurrence — the same pair recurring across sources, not just one — is the signal. <span style="display: block; margin-top: 8px; font-size: 13px; color: #059669;">14-day free trial, cancel anytime</span></p>
         <ul>
           <li>Entity search — every mention and relationship cites its source document and sentence; confidence scores are deterministic (co-occurrence-based), not model output</li>
           <li>Cross-document co-occurrence analytics — surfaces entities and relationships that recur across the ingested corpus</li>
@@ -248,7 +248,7 @@
           <h2>Scheduler</h2>
           <div class="price"><span class="price-amount">$50</span><span> / month, up to $2,000 (enterprise)</span></div>
         </div>
-        <p class="tagline">Read-only visibility into the DAG-based execution engine that runs our own pipeline in production — run history, status, and timing per DAG.</p>
+        <p class="tagline">Read-only visibility into the DAG-based execution engine that runs our own pipeline in production — run history, status, and timing per DAG. <span style="display: block; margin-top: 8px; font-size: 13px; color: #059669;">14-day free trial, cancel anytime</span></p>
         <ul>
           <li>List recent runs by DAG name, with status and timing</li>
           <li>Inspect a specific run's node-level results</li>
@@ -278,9 +278,9 @@
       <div class="plan brief-plan" id="brief">
         <div class="plan-head">
           <h2>Brief</h2>
-          <div class="price"><span class="price-amount">$19</span><span> / month</span></div>
+          <div class="price"><span class="price-amount">$29</span><span> / month</span></div>
         </div>
-        <p class="tagline">Weekly positioning and flow anomaly digest built on deterministic z-scores over multi-year baselines and Bayesian online changepoint detection (BOCPD). No LLM, no predictions — just the math. The entry rung of metered API access.</p>
+        <p class="tagline">Weekly positioning and flow anomaly digest built on deterministic z-scores over multi-year baselines and Bayesian online changepoint detection (BOCPD). No LLM, no predictions — just the math. The entry rung of metered API access. <span style="display: block; margin-top: 8px; font-size: 13px; color: #059669;">14-day free trial, cancel anytime</span></p>
         <ul>
           <!-- Numbers here MUST match what the digest actually computes. They
                were "169-week" and "3,000+ point", measured before duplicate
@@ -288,6 +288,9 @@
                cut CFTC baselines to ~160 and DeFi to ~1,190. Re-measure with
                build_digest() before editing these figures again. -->
           <li>Positioning extremes and flow anomalies detected via BOCPD over multi-year CFTC commitment-of-traders baselines (up to ~160 weekly observations), DeFi TVL series of 1,000+ points, and instrument volatility</li>
+          <li>Seven additional CFTC positioning fields: swap-dealer and producer/merchant net positioning, top-4 concentration in long and short contracts</li>
+          <li>Instrument volume and return anomalies: trading volume spikes and price move outliers on the same entity sets</li>
+          <li>Insider sell-intent signals and credit-stress indicators with week-over-week change detection</li>
           <li>Weekly digest delivered as markdown and JSON — includes entity IDs, flagged timestamps, z-scores, and raw signal values for reproducibility</li>
           <li>Metered API access: same subscriber key as other tiers; usage tracked in your account</li>
         </ul>
@@ -333,6 +336,7 @@
 
     <footer>
       <div>
+        <a href="/docs">Docs</a>
         <a href="/terms">Terms</a>
         <a href="/privacy">Privacy</a>
         <a href="/refunds">Refunds</a>

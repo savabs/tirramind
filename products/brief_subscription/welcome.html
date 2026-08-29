@@ -243,7 +243,7 @@
   <div class="wrap">
     <header>
       <div class="brand">Tirra<em>Mind</em></div>
-      <nav><a href="/">&larr; Back home</a></nav>
+      <nav><a href="/docs">Docs</a> <a href="/">&larr; Back home</a></nav>
     </header>
     <main>
       <h1>Welcome</h1>
@@ -257,6 +257,12 @@
 
         <div id="successState" style="display: none;">
           <div class="message success">Your subscription is confirmed and active.</div>
+
+          <div id="trialAlert" style="display: none;">
+            <div class="message info" style="margin-top: 16px;">
+              You are on a <strong>14-day free trial</strong>. Your trial ends on <span id="trialEndDate"></span>. After the trial period, your subscription will renew at the regular price. You can cancel anytime.
+            </div>
+          </div>
 
           <p style="margin-bottom: 8px; color: var(--mut);">Your API key:</p>
           <div class="key-block">
@@ -272,8 +278,9 @@
           <div class="next-steps">
             <strong>Next steps:</strong>
             <ul style="margin-left: 20px;">
-              <li>Add your key to your application using the header <code>X-Brief-Key: &lt;your key&gt;</code></li>
-              <li>Read the <a href="/pricing" style="color: var(--acc);">pricing page</a> to see available endpoints</li>
+              <li>Try your first API call: <code style="word-break: break-all;">curl -H "X-Brief-Key: &lt;your key&gt;" https://api.tirramind.com/brief.json</code></li>
+              <li>Read the <a href="/docs" style="color: var(--acc);">documentation</a> for full API reference and examples</li>
+              <li>Check the <a href="/pricing" style="color: var(--acc);">pricing page</a> to see available endpoints and tiers</li>
               <li><a href="/contact" style="color: var(--acc);">Contact us</a> if you have questions</li>
             </ul>
           </div>
@@ -282,7 +289,7 @@
         <div id="alreadyClaimedState" style="display: none;">
           <div class="message info">This key has already been delivered.</div>
           <p style="margin-top: 16px; color: var(--mut);">
-            If you've lost your API key, please <a href="/contact" style="color: var(--acc);">contact us</a> to request a rotation.
+            You can rotate your API key anytime using: <code style="background: var(--code-bg); padding: 3px 8px; border-radius: 5px;">POST /api/v1/rotate-key</code> with your current API key in the <code>X-Brief-Key</code> header. See the <a href="/pricing" style="color: var(--acc);">pricing page</a> for more details.
           </p>
         </div>
 
@@ -302,6 +309,7 @@
 
     <footer>
       <div>
+        <a href="/docs">Docs</a>
         <a href="/terms">Terms</a>
         <a href="/privacy">Privacy</a>
         <a href="/refunds">Refunds</a>
@@ -374,6 +382,18 @@
                 setTimeout(() => { copyBtn.textContent = 'Copy'; }, 2000);
               });
             };
+
+            // Show trial info if applicable
+            if (data.is_trial && data.trial_end_at) {
+              const trialEnd = new Date(data.trial_end_at * 1000);
+              document.getElementById('trialEndDate').textContent = trialEnd.toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+              });
+              document.getElementById('trialAlert').style.display = 'block';
+            }
+
             showState('success');
             subtitle.textContent = 'Your API key is ready';
             return;

@@ -1,0 +1,1163 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>API Reference — TirraMind</title>
+  <meta name="description" content="Complete HTTP API reference for TirraMind's deterministic signal infrastructure. Authentication, endpoints, examples, and rate limits.">
+  <style>
+    :root {
+      --ink: #111;
+      --mut: #666;
+      --acc: #3730a3;
+      --acc-soft: #eef2ff;
+      --bg: #fafafa;
+      --surface: #fff;
+      --line: #e5e5e5;
+      --code-bg: #f3f3f6;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.06);
+      --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --ink: #f5f5f5;
+        --mut: #a0a0a0;
+        --acc: #8b5cf6;
+        --acc-soft: #3730a3;
+        --bg: #0f0f0f;
+        --surface: #1a1a1a;
+        --line: #2a2a2a;
+        --code-bg: #222;
+      }
+    }
+    * { box-sizing: border-box; margin: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+    .wrap { max-width: 900px; margin: 0 auto; padding: 0 32px; }
+    header {
+      padding: 40px 0 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--line);
+      position: sticky;
+      top: 0;
+      background: var(--bg);
+      z-index: 100;
+    }
+    .brand { font-weight: 700; font-size: 16px; letter-spacing: -0.015em; }
+    .brand em { font-style: normal; color: var(--acc); }
+    nav a {
+      color: var(--mut);
+      text-decoration: none;
+      font-size: 13.5px;
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+    nav a:hover, nav a:focus { color: var(--ink); outline: none; }
+    nav a:focus-visible { outline: 2px solid var(--acc); outline-offset: 4px; }
+    main { padding: 60px 0 60px; }
+    h1 { font-size: 44px; letter-spacing: -0.02em; margin-bottom: 12px; font-weight: 750; }
+    h2 { font-size: 22px; letter-spacing: -0.015em; margin-top: 48px; margin-bottom: 16px; font-weight: 700; }
+    h3 { font-size: 16px; letter-spacing: -0.01em; margin-top: 32px; margin-bottom: 12px; font-weight: 600; }
+    .lede { color: var(--mut); font-size: 17px; max-width: 600px; margin-bottom: 48px; line-height: 1.65; }
+
+    .section { margin-bottom: 56px; }
+    .highlight {
+      background: var(--acc-soft);
+      padding: 20px;
+      border-radius: 8px;
+      margin: 16px 0;
+      border-left: 4px solid var(--acc);
+    }
+    .highlight-code {
+      background: var(--code-bg);
+      border-radius: 8px;
+      padding: 16px;
+      margin: 16px 0;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      color: var(--ink);
+      overflow-x: auto;
+      line-height: 1.6;
+    }
+    .endpoint {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+    .endpoint-title {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--acc);
+      margin-bottom: 12px;
+    }
+    .endpoint-desc {
+      font-size: 14px;
+      margin-bottom: 16px;
+      line-height: 1.65;
+    }
+    .params-table, .response-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      margin: 16px 0;
+    }
+    .params-table th, .response-table th {
+      background: var(--code-bg);
+      text-align: left;
+      padding: 8px 12px;
+      font-weight: 600;
+      border-bottom: 1px solid var(--line);
+    }
+    .params-table td, .response-table td {
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--line);
+    }
+    .params-table tr:last-child td, .response-table tr:last-child td {
+      border-bottom: none;
+    }
+    code {
+      background: var(--code-bg);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+    }
+    .highlight-code code {
+      background: transparent;
+      padding: 0;
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+    .badge-get { background: #dbeafe; color: #0c4a6e; }
+    @media (prefers-color-scheme: dark) {
+      .badge-get { background: #1e3a8a; color: #bfdbfe; }
+    }
+    .badge-post { background: #dcfce7; color: #15803d; }
+    @media (prefers-color-scheme: dark) {
+      .badge-post { background: #166534; color: #86efac; }
+    }
+    .badge-required { background: #fee2e2; color: #7c2d12; }
+    @media (prefers-color-scheme: dark) {
+      .badge-required { background: #7c2d12; color: #fecaca; }
+    }
+    .badge-tier { background: var(--acc-soft); color: var(--acc); }
+    @media (prefers-color-scheme: dark) {
+      .badge-tier { background: var(--acc-soft); color: var(--acc); }
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin: 16px 0;
+    }
+    .error-box {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-left: 4px solid #ef4444;
+      border-radius: 4px;
+      padding: 12px;
+      margin: 8px 0;
+      font-size: 13px;
+    }
+
+    footer {
+      border-top: 1px solid var(--line);
+      padding: 40px 0 48px;
+      color: var(--mut);
+      font-size: 13px;
+      margin-top: 60px;
+    }
+    footer a { color: var(--mut); text-decoration: none; margin-right: 24px; transition: color 0.2s; }
+    footer a:hover, footer a:focus { color: var(--ink); }
+    footer a:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+    .contact { margin-top: 12px; font-size: 12.5px; }
+
+    .toc {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 24px;
+      margin-bottom: 48px;
+    }
+    .toc ul { margin-left: 20px; margin-top: 12px; }
+    .toc li { margin-bottom: 8px; }
+    .toc a { color: var(--acc); text-decoration: none; }
+    .toc a:hover, .toc a:focus { text-decoration: underline; }
+
+    @media (max-width: 768px) {
+      .wrap { padding: 0 24px; }
+      h1 { font-size: 32px; }
+      .grid-2 { grid-template-columns: 1fr; }
+      header { padding: 24px 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="brand">Tirra<em>Mind</em> API</div>
+      <nav><a href="/pricing">← Pricing</a></nav>
+    </header>
+    <main>
+      <h1>API Reference</h1>
+      <p class="lede">
+        Complete reference for TirraMind's HTTP API. Every tier provides deterministic signal intelligence — no predictions, no LLM hallucinations, just the math.
+      </p>
+
+      <div class="toc">
+        <strong>Quick links</strong>
+        <ul>
+          <li><a href="#quickstart">Quickstart</a></li>
+          <li><a href="#authentication">Authentication</a></li>
+          <li><a href="#tiers">Tiers and gates</a></li>
+          <li><a href="#routes">Endpoints</a></li>
+          <li><a href="#errors">Error codes</a></li>
+          <li><a href="#rate-limits">Rate limits</a></li>
+        </ul>
+      </div>
+
+      <!-- ────────────────────────────────────────────────────────────────── -->
+      <section class="section" id="quickstart">
+        <h2>Quickstart</h2>
+        <p>Get your first API call working in under a minute:</p>
+        <ol style="margin-left: 20px; margin-top: 12px; margin-bottom: 16px;">
+          <li>Subscribe to a tier at <a href="/pricing" style="color: var(--acc);">/pricing</a></li>
+          <li>Retrieve your API key at <a href="/welcome" style="color: var(--acc);">/welcome</a> after payment</li>
+          <li>Use the key with any endpoint below</li>
+        </ol>
+
+        <p style="margin-top: 24px; font-weight: 600;">Your first request (Brief tier):</p>
+        <div class="highlight-code">curl -H "X-Brief-Key: tirra_..." https://api.tirramind.com/brief.json</div>
+
+        <p style="margin-top: 24px; font-weight: 600;">Production base URL:</p>
+        <div class="highlight">
+          <code>https://api.tirramind.com</code>
+        </div>
+      </section>
+
+      <!-- ────────────────────────────────────────────────────────────────── -->
+      <section class="section" id="authentication">
+        <h2>Authentication</h2>
+
+        <h3>Sending your key</h3>
+        <p>Use the <code>X-Brief-Key</code> header (recommended):</p>
+        <div class="highlight-code">curl -H "X-Brief-Key: tirra_..." https://api.tirramind.com/brief.json</div>
+
+        <p style="margin-top: 24px;">Passing the key in the query string is <strong>rejected</strong>:</p>
+        <div class="highlight-code">curl 'https://api.tirramind.com/brief.json?key=tirra_...'
+&rarr; 400 {"ok": false, "error": "query-string API keys are disabled &mdash;
+           pass the key via the X-Brief-Key header"}</div>
+        <p style="margin-top: 12px; font-size: 13px; color: var(--mut);">
+          Query strings are written to access logs and leak via <code>Referer</code>
+          headers, so a key passed that way is a key you have to rotate. Use the header.
+        </p>
+
+        <h3>Key format and safety</h3>
+        <p>Your key is a long random string starting with <code>tirra_</code>. Treat it like a password:</p>
+        <ul style="margin-left: 20px; margin-top: 12px;">
+          <li>Do not commit it to version control</li>
+          <li>Do not pass it in URLs (use the header instead)</li>
+          <li>Store it in an environment variable or secrets manager</li>
+          <li>If compromised, rotate it immediately via <code>POST /api/v1/rotate-key</code></li>
+        </ul>
+      </section>
+
+      <!-- ────────────────────────────────────────────────────────────────── -->
+      <section class="section" id="tiers">
+        <h2>Tiers and gates</h2>
+        <p>The API is tiered by price. Higher tiers unlock everything below them — the ladder is monotonic:</p>
+
+        <div style="margin-top: 24px;">
+          <strong>Brief ($29/month)</strong>
+          <p style="margin-top: 8px; color: var(--mut);">Entry rung. Unlocks:</p>
+          <ul style="margin-left: 20px; margin-top: 8px;">
+            <li><code>/brief</code>, <code>/brief.json</code>, <code>/brief.md</code></li>
+            <li><code>/api/v1/usage</code></li>
+            <li><code>POST /api/v1/rotate-key</code></li>
+          </ul>
+        </div>
+
+        <div style="margin-top: 24px;">
+          <strong>Scheduler ($50/month)</strong>
+          <p style="margin-top: 8px; color: var(--mut);">Adds pipeline visibility. Unlocks everything above plus:</p>
+          <ul style="margin-left: 20px; margin-top: 8px;">
+            <li><code>/api/v1/dag/runs</code></li>
+          </ul>
+        </div>
+
+        <div style="margin-top: 24px;">
+          <strong>Entity Graph ($300/month)</strong>
+          <p style="margin-top: 8px; color: var(--mut);">Adds deterministic entity and relationship extraction. Unlocks everything above plus:</p>
+          <ul style="margin-left: 20px; margin-top: 8px;">
+            <li><code>/api/v1/entity-graph/entities</code></li>
+            <li><code>/api/v1/entity-graph/entity</code></li>
+            <li><code>/api/v1/entity-graph/links</code></li>
+            <li><code>/evidence/graph</code>, <code>/evidence/stats</code>, <code>/evidence/analytics</code>, <code>/evidence/graph/export</code>, <code>/evidence/graph/centrality</code></li>
+          </ul>
+        </div>
+
+        <div style="margin-top: 24px;">
+          <strong>Data Platform ($500/month)</strong>
+          <p style="margin-top: 8px; color: var(--mut);">Full infrastructure access. Unlocks everything above plus:</p>
+          <ul style="margin-left: 20px; margin-top: 8px;">
+            <li><code>/api/v1/sources</code></li>
+            <li><code>/api/v1/data</code></li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- ────────────────────────────────────────────────────────────────── -->
+      <section class="section" id="routes">
+        <h2>Endpoints</h2>
+
+        <!-- ──────────────────────────────────────────────────────────────── -->
+        <div class="endpoint">
+          <div class="endpoint-title"><span class="badge badge-get">GET</span> /api/v1/claim</div>
+          <div class="endpoint-desc">Claim your API key after completing a purchase. Exchange a Paddle transaction ID for your key.</div>
+          <p>No tier required (unauthenticated — no key needed yet)</p>
+
+          <h3>Example</h3>
+          <div class="highlight-code">curl 'https://api.tirramind.com/api/v1/claim?txn=txn_0a1b2c3d4e5f'</div>
+
+          <h3>Parameters</h3>
+          <table class="params-table">
+            <tr>
+              <th>Name</th>
+              <th>Type</th>
+              <th>Notes</th>
+            </tr>
+            <tr>
+              <td><code>txn</code></td>
+              <td>string</td>
+              <td><span class="badge badge-required">required</span> Transaction ID from Paddle confirmation email</td>
+            </tr>
+          </table>
+
+          <h3>Response (200 - claimed)</h3>
+          <div class="highlight-code">{
+  "ok": true,
+  "status": "claimed",
+  "api_key": "tirra_...",
+  "tier": "brief",
+  "subscription_id": "sub_..."
+}</div>
+
+          <h3>Response (202 - pending)</h3>
+          <p style="font-size: 13px; margin-bottom: 8px;">Provisioning is still in progress. Retry after the specified delay.</p>
+          <div class="highlight-code">{
+  "ok": true,
+  "status": "pending",
+  "retry_after_s": 3,
+  "message": "payment received — provisioning your key"
+}</div>
+
+          <h3>Errors</h3>
+          <div class="error-box"><strong>400</strong> — Missing or malformed transaction ID.</div>
+          <div class="error-box"><strong>404</strong> — No transaction found for this ID.</div>
+          <div class="error-box"><strong>422</strong> — Transaction exists but payment did not complete.</div>
+          <div class="error-box"><strong>429</strong> — Rate limited (8 requests per 10 minutes per transaction).</div>
+        </div>
+
+        <!-- ──────────────────────────────────────────────────────────────── -->
+        <div class="endpoint">
+          <div class="endpoint-title"><span class="badge badge-get">GET</span> /status</div>
+          <div class="endpoint-desc">System delivery status. Useful for monitoring and health checks.</div>
+          <p>No tier required (unauthenticated)</p>
+
+          <h3>Example</h3>
+          <div class="highlight-code">curl https://api.tirramind.com/status</div>
+
+          <h3>Response (200)</h3>
+          <div class="highlight-code">{
+  "out_dir": ".tirra_delivery",
+  "total_deliveries": 8,
+  "latest": {
+    "delivered_at": 1787834185.3,
+    "json_path": ".tirra_delivery/intelligence_brief.json",
+    "md_path": ".tirra_delivery/intelligence_brief.md",
+    "n_contracts": 5,
+    "n_anomalies": 8,
+    "duration_ms": 0.69
+  }
+}</div>
+
+          <p style="margin-top: 16px; font-size: 13px; color: var(--mut);">
+            <code>latest</code> is <code>null</code> when no brief has been delivered yet. <code>total_deliveries</code> is the cumulative count.
+          </p>
+        </div>
+
+        <!-- ──────────────────────────────────────────────────────────────── -->
+        <div class="endpoint">
+          <div class="endpoint-title"><span class="badge badge-get">GET</span> /brief · /brief.json</div>
+          <div class="endpoint-desc">Latest delivered intelligence brief as JSON. Both paths return identical JSON content.</div>
+          <p><span class="badge badge-tier">Brief</span></p>
+
+          <h3>Example</h3>
+          <div class="highlight-code">curl -H "X-Brief-Key: tirra_..." https://api.tirramind.com/brief.json</div>
+          <div class="highlight-code">curl -H "X-Brief-Key: tirra_..." https://api.tirramind.com/brief</div>
+
+          <h3>Response (200)</h3>
+          <div class="highlight-code">{
+  "brief_type": "weekly",
+  "contract_opportunities": [
+    {
+      "award_id": "...",
+      "recipient": "...",
+      "agency": "...",
+      "description": "...",
+      "amount_usd": 1000000,
+      "p_win": 0.65,
+      "expected_value_usd": 650000
+    }
+  ],
+  "live_anomalies": [
+    {
+      "source": "cftc",
+      "observation_type": "positioning_extreme",
+      "entity_id": "...",
+      "field": "net_long",
+      "zscore": 3.2,
+      "flagged_ts": 1787834185.0,
+      "latest_value": 42000
+    }
+  ]
+}</div>
+
+          <h3>Errors</h3>
+          <div class="error-box"><strong>403</strong> — No valid key provided or key does not have Brief tier. See /pricing.</div>
+          <div class="error-box"><strong>404</strong> — No brief has been delivered yet.</div>
+        </div>
+
+        <!-- ──────────────────────────────────────────────────────────────── -->
+        <div class="endpoint">
+          <div class="endpoint-title"><span class="badge badge-get">GET</span> /brief.md</div>
+          <div class="endpoint-desc">Latest brief as Markdown. Same content as JSON, rendered for readability.</div>
+          <p><span class="badge badge-tier">Brief</span></p>
+
+          <h3>Example</h3>
+          <div class="highlight-code">curl -H "X-Brief-Key: tirra_..." https://api.tirramind.com/brief.md</div>
+
+          <h3>Response (200)</h3>
+          <p style="font-size: 13px; color: var(--mut);">Markdown-rendered brief. Same structure as JSON.</p>
+        </div>
+
+        <!-- ──────────────────────────────────────────────────────────────── -->
+        <div class="endpoint">
+          <div class="endpoint-title"><span class="badge badge-get">GET</span> /api/v1/usage</div>
+          <div class="endpoint-desc">Your API usage summary for this key. Includes request counts by endpoint.</div>
+          <p><span class="badge badge-tier">Brief+</span></p>
+
+          <h3>Example</h3>
+          <div class="highlight-code">curl -H "X-Brief-Key: tirra_..." https://api.tirramind.com/api/v1/usage</div>
+
+          <h3>Parameters</h3>
+          <table class="params-table">
+            <tr>
+              <th>Name</th>
+              <th>Type</th>
+              <th>Notes</th>
+            </tr>
+            <tr>
+              <td><code>since</code></td>
+              <td>float (optional)</td>
+              <td>Unix epoch seconds. Only count requests after this time.</td>
+            </tr>
+          </table>
+
+          <h3>Response (200)</h3>
+          <div class="highlight-code">{
+  "ok": true,
+  "total": 42,
+  "by_endpoint": {
+    "/brief.json": 30,
+    "/api/v1/data": 12
+  }
+}</div>
+        </div>
+
+        <!-- ──────────────────────────────────────────────────────────────── -->
+        <div class="endpoint">
+          <div class="endpoint-title"><span class="badge badge-get">GET</span> /api/v1/sources</div>
+          <div class="endpoint-desc">List all queryable external data sources. Use this to discover valid source names for <code>/api/v1/data</code>.</div>
+          <p><span class="badge badge-tier">Data Platform</span></p>
+
+          <h3>Example</h3>
+          <div class="highlight-code">curl -H "X-Brief-Key: tirra_..." https://api.tirramind.com/api/v1/sources</div>
+
+          <h3>Response (200)</h3>
+          <div class="highlight-code">{
+  "ok": true,
+  "sources": [
+    {
+      "source": "cftc",
+      "rows": 8192,
+      "last_fetched_at": 1787834185.7
+    },
+    {
+      "source": "gdelt",
+      "rows": 342000,
+      "last_fetched_at": 1787834100.0
+    }
+  ]
+}</div>
+        </div>
+
+        <!-- ──────────────────────────────────────────────────────────────── -->
+        <div class="endpoint">
+          <div class="endpoint-title"><span class="badge badge-get">GET</span> /api/v1/data</div>
+          <div class="endpoint-desc">Query rows from a specific external data source. Use <code>/api/v1/sources</code> first to discover available sources.</div>
+          <p><span class="badge badge-tier">Data Platform</span></p>
+
+          <h3>Example</h3>
+          <div class="highlight-code">curl -H "X-Brief-Key: tirra_..." \
+  'https://api.tirramind.com/api/v1/data?source=cftc&limit=50'</div>
+
+          <h3>Parameters</h3>
+          <table class="params-table">
+            <tr>
+              <th>Name</th>
+              <th>Type</th>
+              <th>Default</th>
+              <th>Notes</th>
+            </tr>
+            <tr>
+              <td><code>source</code></td>
+              <td>string</td>
+              <td><span class="badge badge-required">required</span></td>
+              <td>Must be in the allowlist from <code>/api/v1/sources</code></td>
+            </tr>
+            <tr>
+              <td><code>limit</code></td>
+              <td>int</td>
+              <td>100</td>
+              <td>Clamped to 1–1000</td>
+            </tr>
+            <tr>
+              <td><code>since</code></td>
+              <td>float</td>
+              <td>none</td>
+              <td>Unix epoch seconds. Only rows fetched after this time.</td>
+            </tr>
+            <tr>
+              <td><code>until</code></td>
+              <td>float</td>
+              <td>none</td>
+              <td>Unix epoch seconds. Only rows fetched before this time.</td>
+            </tr>
+          </table>
+
+          <h3>Response (200)</h3>
+          <div class="highlight-code">{
+  "ok": true,
+  "source": "cftc",
+  "rows": [
+    {
+      "id": 1,
+      "source": "cftc",
+      "fetched_at": 1787834185.7,
+      "params": {...},
+      "data": {...}
+    }
+  ]
+}</div>
+
+          <h3>Errors</h3>
+          <div class="error-box"><strong>400</strong> — Missing or unknown source. See <code>/api/v1/sources</code> for valid names.</div>
+        </div>
+
+        <!-- ──────────────────────────────────────────────────────────────── -->
+        <div class="endpoint">
+          <div class="endpoint-title"><span class="badge badge-get">GET</span> /api/v1/dag/runs</div>
+          <div class="endpoint-desc">Pipeline execution history. View DAG run status, timing, and node-level results.</div>
+          <p><span class="badge badge-tier">Scheduler+</span></p>
+
+          <h3>Example</h3>
+          <div class="highlight-code">curl -H "X-Brief-Key: tirra_..." \
+  'https://api.tirramind.com/api/v1/dag/runs?dag_name=daily_collection&limit=10'</div>
+
+          <h3>Parameters</h3>
+          <table class="params-table">
+            <tr>
+              <th>Name</th>
+              <th>Type</th>
+              <th>Default</th>
+              <th>Notes</th>
+            </tr>
+            <tr>
+              <td><code>dag_name</code></td>
+              <td>string</td>
+              <td>none</td>
+              <td>Filter by DAG name (exact match). Omit to see all.</td>
+            </tr>
+            <tr>
+              <td><code>limit</code></td>
+              <td>int</td>
+              <td>20</td>
+              <td>Clamped to 1–1000</td>
+            </tr>
+          </table>
+
+          <h3>Response (200)</h3>
+          <div class="highlight-code">{
+  "ok": true,
+  "runs": [
+    {
+      "run_id": "69f521c3b194",
+      "dag_name": "daily_collection",
+      "started_at": 1787834100.0,
+      "finished_at": 1787834185.7,
+      "status": "completed",
+      "trigger": "manual",
+      "node_results": {
+        "fetch_cftc": {"status": "completed"},
+        "fetch_gdelt": {"status": "completed"}
+      }
+    }
+  ]
+}</div>
+        </div>
+
+        <!-- ──────────────────────────────────────────────────────────────── -->
+        <div class="endpoint">
+          <div class="endpoint-title"><span class="badge badge-get">GET</span> /api/v1/entity-graph/entities</div>
+          <div class="endpoint-desc">List entities from the production graph. Paginated with type filtering.</div>
+          <p><span class="badge badge-tier">Entity Graph+</span></p>
+
+          <h3>Example</h3>
+          <div class="highlight-code">curl -H "X-Brief-Key: tirra_..." \
+  'https://api.tirramind.com/api/v1/entity-graph/entities?type=company&limit=50'</div>
+
+          <h3>Parameters</h3>
+          <table class="params-table">
+            <tr>
+              <th>Name</th>
+              <th>Type</th>
+              <th>Default</th>
+              <th>Notes</th>
+            </tr>
+            <tr>
+              <td><code>type</code></td>
+              <td>string</td>
+              <td>none</td>
+              <td>Filter by entity_type (optional)</td>
+            </tr>
+            <tr>
+              <td><code>limit</code></td>
+              <td>int</td>
+              <td>100</td>
+              <td>Clamped to 1–1000</td>
+            </tr>
+            <tr>
+              <td><code>offset</code></td>
+              <td>int</td>
+              <td>0</td>
+              <td>Pagination: skip this many results</td>
+            </tr>
+          </table>
+
+          <h3>Response (200)</h3>
+          <div class="highlight-code">{
+  "ok": true,
+  "entities": [
+    {
+      "entity_id": "01146d...",
+      "entity_type": "company",
+      "canonical_name": "TirraMind Inc",
+      "created_at": 1787000000.0
+    }
+  ],
+  "count": 50,
+  "total": 6172,
+  "limit": 100,
+  "offset": 0
+}</div>
+        </div>
+
+        <!-- ──────────────────────────────────────────────────────────────── -->
+        <div class="endpoint">
+          <div class="endpoint-title"><span class="badge badge-get">GET</span> /api/v1/entity-graph/entity</div>
+          <div class="endpoint-desc">Get a single entity by ID plus all its linked relationships in both directions.</div>
+          <p><span class="badge badge-tier">Entity Graph+</span></p>
+
+          <h3>Example</h3>
+          <div class="highlight-code">curl -H "X-Brief-Key: tirra_..." \
+  'https://api.tirramind.com/api/v1/entity-graph/entity?id=01146d...&limit=100'</div>
+
+          <h3>Parameters</h3>
+          <table class="params-table">
+            <tr>
+              <th>Name</th>
+              <th>Type</th>
+              <th>Notes</th>
+            </tr>
+            <tr>
+              <td><code>id</code></td>
+              <td>string</td>
+              <td><span class="badge badge-required">required</span></td>
+            </tr>
+            <tr>
+              <td><code>limit</code></td>
+              <td>int</td>
+              <td>Max links to return. Default 100, clamped to 1–1000.</td>
+            </tr>
+          </table>
+
+          <h3>Response (200)</h3>
+          <div class="highlight-code">{
+  "ok": true,
+  "entity": {
+    "entity_id": "01146d...",
+    "entity_type": "company",
+    "canonical_name": "TirraMind Inc",
+    "created_at": 1787000000.0
+  },
+  "links": [
+    {
+      "link_id": 1,
+      "entity_id_a": "01146d...",
+      "entity_id_b": "02abc4...",
+      "link_type": "competitor",
+      "confidence": 0.92,
+      "source": "gdelt",
+      "created_at": 1787000100.0
+    }
+  ]
+}</div>
+
+          <h3>Errors</h3>
+          <div class="error-box"><strong>400</strong> — Missing <code>id</code> parameter.</div>
+          <div class="error-box"><strong>404</strong> — Entity not found.</div>
+        </div>
+
+        <!-- ──────────────────────────────────────────────────────────────── -->
+        <div class="endpoint">
+          <div class="endpoint-title"><span class="badge badge-get">GET</span> /api/v1/entity-graph/links</div>
+          <div class="endpoint-desc">List relationships in the entity graph. Filter by type and confidence.</div>
+          <p><span class="badge badge-tier">Entity Graph+</span></p>
+
+          <h3>Example</h3>
+          <div class="highlight-code">curl -H "X-Brief-Key: tirra_..." \
+  'https://api.tirramind.com/api/v1/entity-graph/links?link_type=competitor&min_confidence=0.9'</div>
+
+          <h3>Parameters</h3>
+          <table class="params-table">
+            <tr>
+              <th>Name</th>
+              <th>Type</th>
+              <th>Default</th>
+              <th>Notes</th>
+            </tr>
+            <tr>
+              <td><code>link_type</code></td>
+              <td>string</td>
+              <td>none</td>
+              <td>Filter by link type (optional)</td>
+            </tr>
+            <tr>
+              <td><code>min_confidence</code></td>
+              <td>float</td>
+              <td>0.0</td>
+              <td>Only links with confidence ≥ this value</td>
+            </tr>
+            <tr>
+              <td><code>limit</code></td>
+              <td>int</td>
+              <td>100</td>
+              <td>Clamped to 1–1000</td>
+            </tr>
+            <tr>
+              <td><code>offset</code></td>
+              <td>int</td>
+              <td>0</td>
+              <td>Pagination: skip this many results</td>
+            </tr>
+          </table>
+
+          <h3>Response (200)</h3>
+          <div class="highlight-code">{
+  "ok": true,
+  "links": [
+    {
+      "link_id": 1,
+      "entity_id_a": "01146d...",
+      "entity_id_b": "02abc4...",
+      "link_type": "competitor",
+      "confidence": 0.92,
+      "source": "gdelt",
+      "created_at": 1787000100.0
+    }
+  ],
+  "count": 100,
+  "total": 17581,
+  "limit": 100,
+  "offset": 0
+}</div>
+        </div>
+
+        <!-- ──────────────────────────────────────────────────────────────── -->
+        <div class="endpoint">
+          <div class="endpoint-title"><span class="badge badge-get">GET</span> /evidence/graph</div>
+          <div class="endpoint-desc">Search document evidence store for mentions of an entity.</div>
+          <p><span class="badge badge-tier">Entity Graph+</span></p>
+
+          <h3>Example</h3>
+          <div class="highlight-code">curl -H "X-Brief-Key: tirra_..." \
+  'https://api.tirramind.com/evidence/graph?q=nvidia'</div>
+
+          <h3>Parameters</h3>
+          <table class="params-table">
+            <tr>
+              <th>Name</th>
+              <th>Type</th>
+              <th>Notes</th>
+            </tr>
+            <tr>
+              <td><code>q</code></td>
+              <td>string</td>
+              <td><span class="badge badge-required">required</span> Entity string to search for</td>
+            </tr>
+          </table>
+
+          <h3>Response (200)</h3>
+          <div class="highlight-code">{
+  "ok": true,
+  "entity": "nvidia",
+  "mentions": 42,
+  "related": [
+    {"entity": "cuda", "co_occurrences": 38},
+    {"entity": "gpu", "co_occurrences": 35}
+  ]
+}</div>
+        </div>
+
+        <!-- ──────────────────────────────────────────────────────────────── -->
+        <div class="endpoint">
+          <div class="endpoint-title"><span class="badge badge-get">GET</span> /evidence/stats</div>
+          <div class="endpoint-desc">Overview of the document evidence store: document count, mentions, and links.</div>
+          <p><span class="badge badge-tier">Entity Graph+</span></p>
+
+          <h3>Example</h3>
+          <div class="highlight-code">curl -H "X-Brief-Key: tirra_..." https://api.tirramind.com/evidence/stats</div>
+
+          <h3>Response (200)</h3>
+          <div class="highlight-code">{
+  "ok": true,
+  "stats": {
+    "documents": 13,
+    "mentions": 1565,
+    "links": 5346
+  }
+}</div>
+        </div>
+
+        <!-- ──────────────────────────────────────────────────────────────── -->
+        <div class="endpoint">
+          <div class="endpoint-title"><span class="badge badge-get">GET</span> /evidence/analytics</div>
+          <div class="endpoint-desc">Cross-document co-occurrence analysis. Find entities that appear together across multiple documents.</div>
+          <p><span class="badge badge-tier">Entity Graph+</span></p>
+
+          <h3>Example</h3>
+          <div class="highlight-code">curl -H "X-Brief-Key: tirra_..." \
+  'https://api.tirramind.com/evidence/analytics?q=nvidia&min_docs=2'</div>
+
+          <h3>Parameters</h3>
+          <table class="params-table">
+            <tr>
+              <th>Name</th>
+              <th>Type</th>
+              <th>Default</th>
+              <th>Notes</th>
+            </tr>
+            <tr>
+              <td><code>q</code></td>
+              <td>string</td>
+              <td>none</td>
+              <td>Entity string. If omitted, returns overall co-occurrences.</td>
+            </tr>
+            <tr>
+              <td><code>min_docs</code></td>
+              <td>int</td>
+              <td>2</td>
+              <td>Only pairs appearing in this many documents</td>
+            </tr>
+          </table>
+
+          <h3>Response (200)</h3>
+          <div class="highlight-code">{
+  "ok": true,
+  "co_occurrences": [
+    {
+      "entity_a": "nvidia",
+      "entity_b": "cuda",
+      "documents": 8,
+      "confidence": 0.95
+    }
+  ],
+  "cross_doc_pairs": 142
+}</div>
+        </div>
+
+        <!-- ──────────────────────────────────────────────────────────────── -->
+        <div class="endpoint">
+          <div class="endpoint-title"><span class="badge badge-get">GET</span> /evidence/graph/export</div>
+          <div class="endpoint-desc">Export the entire document evidence graph as JSON.</div>
+          <p><span class="badge badge-tier">Entity Graph+</span></p>
+
+          <h3>Example</h3>
+          <div class="highlight-code">curl -H "X-Brief-Key: tirra_..." https://api.tirramind.com/evidence/graph/export</div>
+
+          <h3>Response (200)</h3>
+          <p style="font-size: 13px; color: var(--mut);">Complete graph structure with all entities, mentions, and relationships.</p>
+        </div>
+
+        <!-- ──────────────────────────────────────────────────────────────── -->
+        <div class="endpoint">
+          <div class="endpoint-title"><span class="badge badge-get">GET</span> /evidence/graph/centrality</div>
+          <div class="endpoint-desc">Degree centrality analysis. Find the most connected entities in the graph.</div>
+          <p><span class="badge badge-tier">Entity Graph+</span></p>
+
+          <h3>Example</h3>
+          <div class="highlight-code">curl -H "X-Brief-Key: tirra_..." \
+  'https://api.tirramind.com/evidence/graph/centrality?q=nvidia&top=20'</div>
+
+          <h3>Parameters</h3>
+          <table class="params-table">
+            <tr>
+              <th>Name</th>
+              <th>Type</th>
+              <th>Default</th>
+              <th>Notes</th>
+            </tr>
+            <tr>
+              <td><code>q</code></td>
+              <td>string</td>
+              <td>none</td>
+              <td>Entity to analyze. If omitted, returns global top entities.</td>
+            </tr>
+            <tr>
+              <td><code>top</code></td>
+              <td>int</td>
+              <td>10</td>
+              <td>Number of top entities to return (not clamped)</td>
+            </tr>
+          </table>
+
+          <h3>Response (200)</h3>
+          <div class="highlight-code">{
+  "ok": true,
+  "top_by_degree": [
+    {"entity": "gpu", "degree": 156},
+    {"entity": "cuda", "degree": 142}
+  ],
+  "neighbors": [
+    {"entity": "tensor", "degree": 89},
+    {"entity": "compute", "degree": 76}
+  ]
+}</div>
+        </div>
+
+        <!-- ──────────────────────────────────────────────────────────────── -->
+        <div class="endpoint">
+          <div class="endpoint-title"><span class="badge badge-post">POST</span> /api/v1/rotate-key</div>
+          <div class="endpoint-desc">Rotate your API key. The old key becomes invalid immediately. No request body required.</div>
+          <p><span class="badge badge-tier">Brief+</span></p>
+
+          <h3>Example</h3>
+          <div class="highlight-code">curl -X POST -H "X-Brief-Key: tirra_OLD_KEY" \
+  https://api.tirramind.com/api/v1/rotate-key</div>
+
+          <h3>Response (200)</h3>
+          <div class="highlight-code">{
+  "ok": true,
+  "message": "key rotated",
+  "new_key": "tirra_..."
+}</div>
+
+          <p style="margin-top: 16px; font-size: 13px; color: var(--mut);">
+            <strong>Important:</strong> Save the new key immediately. You will not be shown it again. The old key is revoked instantly.
+          </p>
+
+          <h3>Errors</h3>
+          <div class="error-box"><strong>403</strong> — Invalid or missing key.</div>
+        </div>
+
+        <!-- ──────────────────────────────────────────────────────────────── -->
+        <div class="endpoint">
+          <div class="endpoint-title"><span class="badge badge-post">POST</span> /api/v1/contact</div>
+          <div class="endpoint-desc">Submit a contact form. Messages are stored and reviewed by our team.</div>
+          <p>No tier required (public endpoint)</p>
+
+          <h3>Example</h3>
+          <div class="highlight-code">curl -X POST -H "Content-Type: application/json" \
+  -d '{
+    "name": "Alice Smith",
+    "email": "alice@example.com",
+    "subject": "API questions",
+    "message": "How do I filter entities by confidence?"
+  }' \
+  https://api.tirramind.com/api/v1/contact</div>
+
+          <h3>Request body</h3>
+          <table class="params-table">
+            <tr>
+              <th>Field</th>
+              <th>Type</th>
+              <th>Notes</th>
+            </tr>
+            <tr>
+              <td><code>name</code></td>
+              <td>string</td>
+              <td><span class="badge badge-required">required</span> Max 300 chars</td>
+            </tr>
+            <tr>
+              <td><code>email</code></td>
+              <td>string</td>
+              <td><span class="badge badge-required">required</span> Max 300 chars</td>
+            </tr>
+            <tr>
+              <td><code>subject</code></td>
+              <td>string</td>
+              <td><span class="badge badge-required">required</span> Max 300 chars</td>
+            </tr>
+            <tr>
+              <td><code>message</code></td>
+              <td>string</td>
+              <td><span class="badge badge-required">required</span> Max 8000 chars</td>
+            </tr>
+          </table>
+
+          <h3>Response (200)</h3>
+          <div class="highlight-code">{"ok": true, "message": "received"}</div>
+
+          <h3>Errors</h3>
+          <div class="error-box"><strong>400</strong> — Missing required fields or JSON parse error.</div>
+          <div class="error-box"><strong>413</strong> — Request body exceeds 8 KB.</div>
+          <div class="error-box"><strong>429</strong> — Rate limited. Max 5 messages per IP per hour.</div>
+        </div>
+
+      </section>
+
+      <!-- ────────────────────────────────────────────────────────────────── -->
+      <section class="section" id="errors">
+        <h2>Error codes</h2>
+
+        <h3>400 Bad Request</h3>
+        <p>Malformed request. Check your parameters:</p>
+        <ul style="margin-left: 20px; margin-top: 8px;">
+          <li>Invalid or missing required parameters</li>
+          <li>Unparseable JSON in request body</li>
+          <li>Query string key disabled (set <code>TIRRA_REJECT_QUERY_KEYS=1</code> in production)</li>
+        </ul>
+
+        <h3>403 Forbidden</h3>
+        <p>Authentication or authorization failed:</p>
+        <ul style="margin-left: 20px; margin-top: 8px;">
+          <li>No API key provided</li>
+          <li>API key is invalid or inactive</li>
+          <li>Tier gate: your subscription doesn't include this endpoint</li>
+        </ul>
+        <p style="margin-top: 12px;">
+          Response is always <code>text/plain</code>. Subscribe at <a href="/pricing" style="color: var(--acc);">/pricing</a> or upgrade your tier.
+        </p>
+
+        <h3>404 Not Found</h3>
+        <p>Resource or endpoint not found:</p>
+        <ul style="margin-left: 20px; margin-top: 8px;">
+          <li>Entity doesn't exist</li>
+          <li>No brief has been delivered yet</li>
+          <li>Route doesn't exist</li>
+        </ul>
+
+        <h3>429 Too Many Requests</h3>
+        <p>Rate limit exceeded. Response includes a <code>Retry-After</code> header:</p>
+        <div class="highlight-code">HTTP/1.1 429 Too Many Requests
+Retry-After: 60
+
+{"ok": false, "error": "rate limited", "retry_after_s": 60}</div>
+        <p style="margin-top: 12px;">Wait the specified number of seconds before retrying.</p>
+
+        <h3>500 Internal Server Error</h3>
+        <p>Unexpected server error. These should be rare. If you see this consistently, <a href="/contact" style="color: var(--acc);">contact us</a>.</p>
+
+        <h3>502 Bad Gateway</h3>
+        <p>Upstream service unavailable. This usually indicates a temporary issue with Paddle (payment verification).</p>
+      </section>
+
+      <!-- ────────────────────────────────────────────────────────────────── -->
+      <section class="section" id="rate-limits">
+        <h2>Rate limits and quotas</h2>
+
+        <h3>Global limits</h3>
+        <p>These limits apply to all endpoints unless noted otherwise:</p>
+        <ul style="margin-left: 20px; margin-top: 8px;">
+          <li><strong>Per-request timeout:</strong> No hard timeout, but requests must complete within reasonable time.</li>
+          <li><strong>Concurrent connections:</strong> Server supports up to 20 concurrent requests by default.</li>
+          <li><strong>Response size:</strong> No hard limit on response size. Large queries may take longer.</li>
+        </ul>
+
+        <h3>Endpoint-specific limits</h3>
+
+        <div style="background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin-top: 16px;">
+          <strong style="display: block; margin-bottom: 8px;">GET /api/v1/claim (transaction verification)</strong>
+          <p style="font-size: 13px; margin-bottom: 8px;">Per transaction: <strong>8 requests / 10 minutes</strong></p>
+          <p style="font-size: 13px;">Per source IP: <strong>20 requests / 1 hour</strong></p>
+        </div>
+
+        <div style="background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin-top: 12px;">
+          <strong style="display: block; margin-bottom: 8px;">POST /api/v1/contact (contact form)</strong>
+          <p style="font-size: 13px;">Per source IP: <strong>5 requests / 1 hour</strong></p>
+        </div>
+
+        <h3 style="margin-top: 32px;">Metering and usage tracking</h3>
+        <p>The following endpoints are metered — your usage counts toward any future quota system:</p>
+        <ul style="margin-left: 20px; margin-top: 8px;">
+          <li><code>/brief</code>, <code>/brief.json</code>, <code>/brief.md</code></li>
+          <li><code>/api/v1/sources</code></li>
+          <li><code>/api/v1/data</code></li>
+          <li><code>/api/v1/dag/runs</code></li>
+          <li><code>/api/v1/usage</code> (metering is skipped for this endpoint itself)</li>
+          <li><code>/evidence/*</code> (all evidence endpoints)</li>
+          <li><code>/api/v1/entity-graph/*</code> (all entity graph endpoints)</li>
+        </ul>
+
+        <p style="margin-top: 24px; font-size: 13px; color: var(--mut);">
+          Query your usage at any time with <code>GET /api/v1/usage</code>.
+        </p>
+      </section>
+
+    </main>
+
+    <footer>
+      <div>
+        <a href="/pricing">Pricing</a>
+        <a href="/terms">Terms</a>
+        <a href="/privacy">Privacy</a>
+        <a href="/refunds">Refunds</a>
+        <a href="/contact">Contact</a>
+      </div>
+      <div class="contact">TirraMind — deterministic signal infrastructure licensed as an API</div>
+    </footer>
+  </div>
+</body>
+</html>
