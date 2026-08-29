@@ -264,6 +264,46 @@ def _entity_name(store, entity_id: str, cache: _EntityNameCache) -> str:
     return name
 
 
+def _diversify(findings: list[dict[str, Any]], top_n: int, per_field_cap: int = 2) -> list[dict[str, Any]]:
+    """Select top_n without letting one (source, field) monopolise the edition.
+
+    The raw sort is (changepoint, |z|) descending, so EVERY changepoint finding
+    outranks every non-changepoint one. When a whole asset class moves together
+    that yields a page of near-duplicates: measured 2026-08-29, the top of the
+    edition was Palladium / Platinum / Copper / Gold all firing on `volume` with
+    changepoints — four renderings of one macro move, crowding out independent
+    signals like swap-dealer positioning that ranked just below.
+
+    Round-robin by (source, field): take the best remaining finding from each
+    field in turn, up to `per_field_cap` passes, then fill any shortfall from
+    what remains in rank order. Within a field the order is preserved, so the
+    strongest of a correlated cluster still surfaces — the other three just no
+    longer displace unrelated findings.
+
+    Nothing is lost: suppressed findings remain in the full list that
+    `anomalies_flagged` counts, and a caller can raise `top_n`.
+    """
+    if len(findings) <= top_n:
+        return findings
+    buckets: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for f in findings:  # already rank-ordered
+        buckets.setdefault((f["source"], f["field"]), []).append(f)
+    picked: list[dict[str, Any]] = []
+    for _round in range(per_field_cap):
+        for key in list(buckets):
+            if len(picked) >= top_n:
+                break
+            if buckets[key]:
+                picked.append(buckets[key].pop(0))
+        if len(picked) >= top_n:
+            break
+    if len(picked) < top_n:
+        chosen = {id(f) for f in picked}
+        picked.extend(f for f in findings if id(f) not in chosen)
+    picked.sort(key=lambda f: (f["changepoint"], abs(f["zscore"])), reverse=True)
+    return picked[:top_n]
+
+
 def build_digest(store, top_n=10):
     """Compute a real anomaly digest over the scorable signal surface.
 
@@ -345,7 +385,7 @@ def build_digest(store, top_n=10):
         "series_found": total_series,
         "anomalies_flagged": len(findings),
         "top_confidence": findings[0]["zscore"] if findings else 0.0,
-        "digest": findings[:top_n],
+        "digest": _diversify(findings, top_n),
     }
 
 

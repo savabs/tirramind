@@ -98,7 +98,7 @@ _PRICING_HTML = Path(__file__).resolve().parents[1] / "products/brief_subscripti
 # amount is in paise (INR minor unit), as a string — same convention as
 # create_price's `amount` for USD cents.
 _INR_OVERRIDES = {
-    "brief": {"rupees": 1_899, "amount": "189900"},
+    "brief": {"rupees": 2_899, "amount": "289900"},
     "scheduler": {"rupees": 4_999, "amount": "499900"},
     "entity": {"rupees": 29_999, "amount": "2999900"},
     "data": {"rupees": 49_999, "amount": "4999900"},
