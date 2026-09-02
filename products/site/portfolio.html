@@ -141,10 +141,10 @@
   <div class="stats">
     <div class="stat"><div class="n grad">4.3&times;</div><div class="k">wider spread once shared shocks are allowed</div></div>
     <div class="stat"><div class="n grad">62.6%</div><div class="k">true coverage of independence's &ldquo;80%&rdquo; interval on a concentrated book</div></div>
-    <div class="stat"><div class="n grad">21.6 GW</div><div class="k">how much worse the 1-in-10 bad case really is</div></div>
+    <div class="stat"><div class="n grad">21.4 GW</div><div class="k">how much worse the 1-in-10 bad case really is</div></div>
     <div class="stat"><div class="n grad">4.09&times;</div><div class="k">clustering by technology, the strongest shared shock</div></div>
   </div>
-  <p class="fine">1,637 active requests across MISO, CAISO, NYISO and ISO-NE. 355 GW under call.</p>
+  <p class="fine">1,636 active requests across MISO, CAISO, NYISO and ISO-NE. 355 GW under call.</p>
 
   <section>
     <h2>The thing everyone gets wrong</h2>
@@ -243,7 +243,7 @@
     <h2>What it does to the live book</h2>
     <div class="body">
       <p>
-        All 1,637 requests still active across four grid operators, 355 GW
+        All 1,636 requests still active across four grid operators, 355 GW
         queued. Both models agree the expected delivery is about 102 GW. They
         disagree completely about how sure of that anyone should be.
       </p>
@@ -277,14 +277,14 @@
       <table>
         <thead><tr><th>GW delivered</th><th>p10</th><th>p50</th><th>p90</th></tr></thead>
         <tbody>
-          <tr><td style="text-align:left">independence</td><td>94.9</td><td>101.7</td><td>108.7</td></tr>
-          <tr class="hi"><td style="text-align:left"><strong>shared shocks</strong></td><td><strong>73.3</strong></td><td>102.3</td><td><strong>133.9</strong></td></tr>
+          <tr><td style="text-align:left">independence</td><td>94.8</td><td>101.7</td><td>108.7</td></tr>
+          <tr class="hi"><td style="text-align:left"><strong>shared shocks</strong></td><td><strong>73.4</strong></td><td>102.6</td><td><strong>134.2</strong></td></tr>
         </tbody>
       </table>
       <p>
         Same centre. <strong>4.3&times; the spread.</strong> The one-in-ten bad
-        case is 21.6 GW worse than the independent arithmetic implies &mdash;
-        and 21.6 GW is roughly the entire active queue of ISO-NE and NYISO
+        case is 21.4 GW worse than the independent arithmetic implies &mdash;
+        and 21.4 GW is roughly the entire active queue of ISO-NE and NYISO
         combined. That is the number a lender sizing a facility, or a
         manufacturer sizing a factory, is currently getting wrong.
       </p>
@@ -350,10 +350,10 @@
         <span class="d">10,996 requests with known outcomes. About one in five gets built; above 1,000 MW it is one in nineteen</span></span>
         <span class="arw">&rarr;</span>
       </a>
-      <a class="card" href="https://github.com/savabs/queue_attrition">
-        <span><span class="t">github.com/savabs/queue_attrition</span><br>
-        <span class="d">The code, including the permutation test that had to pass before any of this was fitted</span></span>
-        <span class="arw">&rarr;</span>
+      <a class="card" href="/predictions.csv" download>
+        <span><span class="t">The underlying ledger, as a CSV</span><br>
+        <span class="d">All 1,636 calls with their probabilities, features, deadlines and named referee. The model repository is not public yet</span></span>
+        <span class="arw">&darr;</span>
       </a>
     </div>
   </section>
