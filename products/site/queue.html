@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>The AI power queue is mostly vapour</title>
+<meta name="description" content="10,996 US interconnection requests, four ISOs, with outcomes. About 1 in 5 gets built. Requests of 1,000 MW or more: 1 in 19.">
+<meta property="og:title" content="The AI power queue is mostly vapour">
+<meta property="og:description" content="10,996 interconnection requests with outcomes. 17-21% get built. Above 1,000 MW it is 5.3%. Method, caveats and the raw source URL included.">
+<style>
+  :root{
+    --bg:#060608; --ink:#fafafa; --mut:#93939c; --dim:#5c5c66;
+    --a1:#8b5cf6; --a2:#ec4899; --a3:#22d3ee;
+    --line:#1a1a20; --card:#0d0d11;
+  }
+  @media (prefers-color-scheme: light){
+    :root{ --bg:#fbfbfd; --ink:#0a0a0a; --mut:#5a5a66; --dim:#9a9aa6;
+           --a1:#7c3aed; --a2:#db2777; --a3:#0891b2;
+           --line:#e8e8ee; --card:#fff; }
+  }
+  *{box-sizing:border-box;margin:0}
+  body{
+    background:var(--bg);color:var(--ink);line-height:1.6;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased;overflow-x:hidden;position:relative;
+  }
+  body::before{
+    content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+    background:
+      radial-gradient(58ch 40ch at 12% -8%, color-mix(in srgb,var(--a1) 22%,transparent), transparent 70%),
+      radial-gradient(50ch 36ch at 92% 4%, color-mix(in srgb,var(--a2) 16%,transparent), transparent 70%);
+  }
+  .wrap{max-width:860px;margin:0 auto;padding:0 28px;position:relative;z-index:1}
+
+  header{padding:19vh 0 0}
+  .eyebrow{
+    display:inline-flex;align-items:center;gap:10px;font-size:11.5px;
+    letter-spacing:.2em;text-transform:uppercase;color:var(--mut);
+    font-weight:700;margin-bottom:30px;
+  }
+  .pip{width:6px;height:6px;border-radius:50%;
+       background:linear-gradient(var(--a1),var(--a2));
+       box-shadow:0 0 14px var(--a1)}
+  h1{
+    font-size:clamp(42px,8.4vw,88px);line-height:.98;font-weight:850;
+    letter-spacing:-.045em;margin-bottom:30px;
+  }
+  .grad{
+    background:linear-gradient(103deg,var(--a1) 0%,var(--a2) 52%,var(--a3) 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  .lede{font-size:clamp(17.5px,2.5vw,22px);color:var(--mut);max-width:58ch;line-height:1.6}
+  .lede strong{color:var(--ink);font-weight:650}
+
+  .stats{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));
+    gap:1px;background:var(--line);border:1px solid var(--line);
+    border-radius:16px;overflow:hidden;margin:68px 0 18px;
+  }
+  .stat{background:var(--card);padding:28px 22px;position:relative}
+  .n{
+    font-size:clamp(29px,4.6vw,40px);font-weight:850;letter-spacing:-.035em;
+    font-variant-numeric:tabular-nums;line-height:1;margin-bottom:10px;
+  }
+  .k{font-size:12.5px;color:var(--mut);line-height:1.5}
+  .fine{font-size:12.5px;color:var(--dim);margin-bottom:78px}
+
+  section{padding:0 0 70px}
+  h2{font-size:11.5px;letter-spacing:.2em;text-transform:uppercase;
+     color:var(--mut);font-weight:700;margin-bottom:24px}
+  .body{font-size:16.5px;color:var(--mut);max-width:63ch}
+  .body strong{color:var(--ink);font-weight:600}
+  p+p{margin-top:17px}
+
+  .pull{
+    font-size:clamp(20px,3vw,27px);font-weight:650;line-height:1.35;
+    letter-spacing:-.02em;color:var(--ink);max-width:24ch;
+    margin:44px 0;padding-left:24px;
+    border-left:3px solid transparent;
+    border-image:linear-gradient(var(--a1),var(--a2)) 1;
+  }
+
+  .links{display:grid;gap:11px}
+  a.card{
+    display:flex;gap:16px;align-items:baseline;
+    background:var(--card);border:1px solid var(--line);border-radius:13px;
+    padding:20px 23px;text-decoration:none;color:inherit;
+    transition:border-color .2s,transform .2s;
+  }
+  a.card:hover{border-color:color-mix(in srgb,var(--a1) 60%,transparent);transform:translateY(-2px)}
+  a.card:focus-visible{outline:2px solid var(--a1);outline-offset:3px}
+  .t{font-weight:680;font-size:15.5px;letter-spacing:-.01em}
+  .d{font-size:13.5px;color:var(--mut);line-height:1.5}
+  .arw{margin-left:auto;color:var(--dim)}
+
+  footer{border-top:1px solid var(--line);padding:34px 0 70px;
+         color:var(--dim);font-size:13px}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.92em;color:var(--mut)}
+  @media (max-width:640px){header{padding:10vh 0 0}.stats{margin-top:46px}}
+</style>
+<style>
+  table{width:100%;border-collapse:collapse;margin:26px 0;font-size:14.5px}
+  th,td{text-align:left;padding:11px 12px;border-bottom:1px solid var(--line)}
+  th{color:var(--mut);font-weight:650;font-size:11.5px;letter-spacing:.09em;text-transform:uppercase}
+  td:nth-child(n+2),th:nth-child(n+2){text-align:right;font-variant-numeric:tabular-nums}
+  tr.hi td{background:color-mix(in srgb,var(--a2) 11%,transparent)}
+  pre{background:var(--card);border:1px solid var(--line);border-radius:11px;
+      padding:15px 17px;overflow-x:auto;margin:18px 0}
+  pre code{font-size:13px;color:var(--a3)}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.92em}
+</style>
+
+</head>
+
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow"><span class="pip"></span>Base rates &middot; September 2026</div>
+    <h1>The AI power queue<br><span class="grad">is mostly vapour.</span></h1>
+    <p class="lede">
+      Every forecast of the AI buildout quotes the interconnection queue &mdash;
+      466 GW waiting in ERCOT, 699 GW in MISO &mdash; as though it were a
+      pipeline. I pulled 10,996 requests with known outcomes from four grid
+      operators. <strong>About one in five gets built. Above 1,000 MW, it is
+      one in nineteen.</strong>
+    </p>
+  </header>
+
+  <div class="stats">
+    <div class="stat"><div class="n grad">10,996</div><div class="k">interconnection requests, four ISOs, with outcomes</div></div>
+    <div class="stat"><div class="n grad">17&ndash;21%</div><div class="k">of resolved requests were built</div></div>
+    <div class="stat"><div class="n grad">5.3%</div><div class="k">for requests of 1,000 MW or more</div></div>
+    <div class="stat"><div class="n grad">0</div><div class="k">of it behind a login &mdash; the source URL is below</div></div>
+  </div>
+  <p class="fine">MISO, NYISO, CAISO and ISO-NE. PJM needs a free key; ERCOT blocks scripted access; SPP timed out.</p>
+
+  <section>
+    <h2>Size is the whole story</h2>
+    <div class="body">
+      <p>
+        Attrition is monotone above 100 MW, and the largest bucket is an order
+        of magnitude worse than the smallest. Wilson 95% intervals, because
+        several of these sit close to zero where the normal approximation
+        misbehaves.
+      </p>
+      <table>
+        <thead><tr><th>capacity</th><th>n</th><th>built</th><th>95% CI</th></tr></thead>
+        <tbody>
+          <tr><td>under 20 MW</td><td>1,024</td><td>28.8%</td><td>26.1&ndash;31.7</td></tr>
+          <tr><td>20&ndash;100 MW</td><td>1,639</td><td>19.0%</td><td>17.2&ndash;21.0</td></tr>
+          <tr><td>100&ndash;300 MW</td><td>1,654</td><td>23.9%</td><td>21.9&ndash;26.0</td></tr>
+          <tr><td>300&ndash;1,000 MW</td><td>680</td><td>12.6%</td><td>10.4&ndash;15.4</td></tr>
+          <tr class="hi"><td><strong>1,000 MW and above</strong></td><td>169</td><td><strong>5.3%</strong></td><td>2.8&ndash;9.8</td></tr>
+        </tbody>
+      </table>
+      <div class="pull">The AI datacenter story is entirely gigawatt-scale &mdash; the one size class that historically almost never completes.</div>
+      <p>
+        By fuel, after normalising four different ISO vocabularies onto one set:
+        gas 33.1%, solar 23.2%, wind 19.5%, storage 9.5%.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Why it is a range and not a number</h2>
+    <div class="body">
+      <p>
+        Dividing built by built-plus-withdrawn over everything gives
+        <strong>14.2%</strong>. That is too low, and the reason matters: a
+        request filed in 2024 has not had time to be built, so counting it now
+        records censoring as failure.
+      </p>
+      <p>
+        Rates are therefore computed per queue-year cohort, and a cohort is only
+        quoted once at least 90% of it has reached a terminal state. On that
+        basis the answer is <strong>21.4%</strong> across 5,436 requests.
+      </p>
+      <p>
+        That number is biased the other way. 1,354 resolved records carry no
+        queue date and drop out of every cohort &mdash; and they are 1,351
+        withdrawals to 3 builds, mostly pre-2000 rows. Put all of them back and
+        the rate is <strong>17.2%</strong>.
+      </p>
+      <p>
+        So: 17.2% to 21.4%. Neither end is quoted on its own, because either
+        one alone would be a choice about which bias to hide.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Two bugs I hit, in case you are doing this too</h2>
+    <div class="body">
+      <p>
+        <strong>Mixed date formats silently destroyed 7,400 of 9,640 dates.</strong>
+        The four ISOs write queue dates four ways &mdash;
+        <code>2003-11-18 08:00:00</code>, <code>1/14/2025</code>,
+        <code>2025-10-08T00:37:52+00:00</code>, <code>2008-01-30</code>.
+        <code>pandas.to_datetime</code> infers one format from the first
+        non-null value and coerces everything that disagrees to <code>NaT</code>.
+        84% of dates vanished, and the loss is indistinguishable from ordinary
+        missingness. It surfaced only because the script cross-tabulates
+        date-missingness against outcome before trusting any cohort.
+      </p>
+      <p>
+        <strong>Unnormalised fuel labels invented a finding.</strong> The first
+        table read <em>Solar 32.1%</em> beside <em>Photovoltaic 13.0%</em>, and
+        <em>Wind 19.1%</em> beside <em>Wnd 26.9%</em>. Same technologies,
+        different ISO vocabularies &mdash; the gap was measuring which ISO the
+        rows came from. Anyone reporting that split would have published an
+        artifact.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>What this does not show</h2>
+    <div class="body">
+      <p>
+        Fuel and ISO are not independent, so the fuel numbers are not a
+        controlled comparison. CAISO&rsquo;s public queue report stops at March
+        2023. MISO&rsquo;s queue only begins in 2015. &ldquo;Completed&rdquo; means an
+        interconnection agreement completed, not that electrons flowed. And
+        these are historical base rates &mdash; no model is fitted here and no
+        forecast is offered.
+      </p>
+      <p>
+        Nor does it cover the two markets you most want: ERCOT publishes large
+        load only in aggregate and blocks scripted access, and PJM sits behind
+        a free API key.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Check it yourself</h2>
+    <div class="body">
+      <p>
+        MISO serves its entire queue &mdash; 3,828 requests with status, county,
+        capacity and dates &mdash; from one unauthenticated URL:
+      </p>
+      <pre><code>https://www.misoenergy.org/api/giqueue/getprojects</code></pre>
+      <p>
+        Count the withdrawals. It takes about a minute, and you do not have to
+        take my word for any of the above.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Why believe these numbers</h2>
+    <div class="body">
+      <p>
+        Because the last time I measured my own work, it failed. I built a
+        signal product on public financial data, tested whether it predicted
+        anything, and <strong>zero of fifty-one hypotheses survived
+        Benjamini&ndash;Hochberg correction.</strong> I withdrew the product and
+        published the null with its power calculation attached. A ranking I had
+        been about to sell turned out to be 90% Unix timestamp.
+      </p>
+    </div>
+    <div class="links">
+      <a class="card" href="/predictions">
+        <span><span class="t">1,636 predictions with deadlines attached</span><br>
+        <span class="d">These base rates, turned into a call on every request still active &mdash; written down now, settling from 2028, nothing resolved yet</span></span>
+        <span class="arw">&rarr;</span>
+      </a>
+      <a class="card" href="/">
+        <span><span class="t">The null result and the failure log</span><br>
+        <span class="d">51 hypotheses, 0 survivors, the power calculation, and thirteen documented ways the pipeline lied to me</span></span>
+        <span class="arw">&rarr;</span>
+      </a>
+      <a class="card" href="https://savabs.github.io/">
+        <span><span class="t">Everything else I have measured</span><br>
+        <span class="d">An agent harness that lost to a single API call, thirteen ways a pipeline lied, and a null result with its power calculation</span></span>
+        <span class="arw">&rarr;</span>
+      </a>
+      <a class="card" href="https://github.com/savabs">
+        <span><span class="t">github.com/savabs</span><br>
+        <span class="d">Where to find me. I am archiving what these queues say each day, because the operators overwrite it and nobody keeps the old value</span></span>
+        <span class="arw">&rarr;</span>
+      </a>
+    </div>
+  </section>
+
+  <footer>
+    Base rates, September 2026. Figures reproducible from public sources.
+    <code>github.com/savabs</code>
+  </footer>
+
+</div>
+</body>
+</html>

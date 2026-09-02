@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>1,636 predictions, none of them scored yet</title>
+<meta name="description" content="An open ledger of calibrated probabilities on every active US interconnection request in four ISOs. Published before the outcomes, with a settle date on each. Nothing has resolved.">
+<meta property="og:title" content="1,636 predictions, none of them scored yet">
+<meta property="og:description" content="Every active interconnection request in four ISOs, given a probability and a deadline, written down before the outcome. 355 GW under call. The model will not back a single gigawatt project.">
+<style>
+  :root{
+    --bg:#060608; --ink:#fafafa; --mut:#93939c; --dim:#5c5c66;
+    --a1:#8b5cf6; --a2:#ec4899; --a3:#22d3ee;
+    --line:#1a1a20; --card:#0d0d11;
+  }
+  @media (prefers-color-scheme: light){
+    :root{ --bg:#fbfbfd; --ink:#0a0a0a; --mut:#5a5a66; --dim:#9a9aa6;
+           --a1:#7c3aed; --a2:#db2777; --a3:#0891b2;
+           --line:#e8e8ee; --card:#fff; }
+  }
+  *{box-sizing:border-box;margin:0}
+  body{
+    background:var(--bg);color:var(--ink);line-height:1.6;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased;overflow-x:hidden;position:relative;
+  }
+  body::before{
+    content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+    background:
+      radial-gradient(58ch 40ch at 12% -8%, color-mix(in srgb,var(--a1) 22%,transparent), transparent 70%),
+      radial-gradient(50ch 36ch at 92% 4%, color-mix(in srgb,var(--a2) 16%,transparent), transparent 70%);
+  }
+  .wrap{max-width:860px;margin:0 auto;padding:0 28px;position:relative;z-index:1}
+
+  header{padding:19vh 0 0}
+  .eyebrow{
+    display:inline-flex;align-items:center;gap:10px;font-size:11.5px;
+    letter-spacing:.2em;text-transform:uppercase;color:var(--mut);
+    font-weight:700;margin-bottom:30px;
+  }
+  .pip{width:6px;height:6px;border-radius:50%;
+       background:linear-gradient(var(--a1),var(--a2));
+       box-shadow:0 0 14px var(--a1)}
+  h1{
+    font-size:clamp(42px,8.4vw,88px);line-height:.98;font-weight:850;
+    letter-spacing:-.045em;margin-bottom:30px;
+  }
+  .grad{
+    background:linear-gradient(103deg,var(--a1) 0%,var(--a2) 52%,var(--a3) 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  .lede{font-size:clamp(17.5px,2.5vw,22px);color:var(--mut);max-width:58ch;line-height:1.6}
+  .lede strong{color:var(--ink);font-weight:650}
+
+  .stats{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));
+    gap:1px;background:var(--line);border:1px solid var(--line);
+    border-radius:16px;overflow:hidden;margin:68px 0 18px;
+  }
+  .stat{background:var(--card);padding:28px 22px;position:relative}
+  .n{
+    font-size:clamp(29px,4.6vw,40px);font-weight:850;letter-spacing:-.035em;
+    font-variant-numeric:tabular-nums;line-height:1;margin-bottom:10px;
+  }
+  .k{font-size:12.5px;color:var(--mut);line-height:1.5}
+  .fine{font-size:12.5px;color:var(--dim);margin-bottom:78px}
+
+  section{padding:0 0 70px}
+  h2{font-size:11.5px;letter-spacing:.2em;text-transform:uppercase;
+     color:var(--mut);font-weight:700;margin-bottom:24px}
+  .body{font-size:16.5px;color:var(--mut);max-width:63ch}
+  .body strong{color:var(--ink);font-weight:600}
+  p+p{margin-top:17px}
+
+  .pull{
+    font-size:clamp(20px,3vw,27px);font-weight:650;line-height:1.35;
+    letter-spacing:-.02em;color:var(--ink);max-width:24ch;
+    margin:44px 0;padding-left:24px;
+    border-left:3px solid transparent;
+    border-image:linear-gradient(var(--a1),var(--a2)) 1;
+  }
+
+  .links{display:grid;gap:11px}
+  a.card{
+    display:flex;gap:16px;align-items:baseline;
+    background:var(--card);border:1px solid var(--line);border-radius:13px;
+    padding:20px 23px;text-decoration:none;color:inherit;
+    transition:border-color .2s,transform .2s;
+  }
+  a.card:hover{border-color:color-mix(in srgb,var(--a1) 60%,transparent);transform:translateY(-2px)}
+  a.card:focus-visible{outline:2px solid var(--a1);outline-offset:3px}
+  .t{font-weight:680;font-size:15.5px;letter-spacing:-.01em}
+  .d{font-size:13.5px;color:var(--mut);line-height:1.5}
+  .arw{margin-left:auto;color:var(--dim)}
+
+  footer{border-top:1px solid var(--line);padding:34px 0 70px;
+         color:var(--dim);font-size:13px}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.92em;color:var(--mut)}
+  @media (max-width:640px){header{padding:10vh 0 0}.stats{margin-top:46px}}
+</style>
+<style>
+  table{width:100%;border-collapse:collapse;margin:26px 0;font-size:14.5px}
+  th,td{text-align:left;padding:11px 12px;border-bottom:1px solid var(--line)}
+  th{color:var(--mut);font-weight:650;font-size:11.5px;letter-spacing:.09em;text-transform:uppercase}
+  td:nth-child(n+2),th:nth-child(n+2){text-align:right;font-variant-numeric:tabular-nums}
+  tr.hi td{background:color-mix(in srgb,var(--a2) 11%,transparent)}
+  pre{background:var(--card);border:1px solid var(--line);border-radius:11px;
+      padding:15px 17px;overflow-x:auto;margin:18px 0}
+  pre code{font-size:13px;color:var(--a3)}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.92em}
+</style>
+
+</head>
+
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow"><span class="pip"></span>Open ledger &middot; 2 September 2026</div>
+    <h1>1,636 predictions.<br><span class="grad">None scored yet.</span></h1>
+    <p class="lede">
+      Every interconnection request still active in four US grid operators now
+      has a probability of ever being built, written down before the outcome,
+      each with a date it must settle by. <strong>355 gigawatts under
+      call.</strong> The ledger is public, append-only, and today it is
+      completely empty of results &mdash; which is the only honest state for a
+      record that started this morning.
+    </p>
+  </header>
+
+  <div class="stats">
+    <div class="stat"><div class="n grad">1,636</div><div class="k">calls, each with a probability and a deadline</div></div>
+    <div class="stat"><div class="n grad">355 GW</div><div class="k">of capacity under prediction</div></div>
+    <div class="stat"><div class="n grad">0</div><div class="k">resolved so far &mdash; nothing to show, by construction</div></div>
+    <div class="stat"><div class="n grad">2028</div><div class="k">the earliest date any of them must settle</div></div>
+  </div>
+  <p class="fine">MISO, CAISO, NYISO, ISO-NE. Model <code>logistic-v1</code>, trained on 5,436 resolved requests, base rate 21.4%.</p>
+
+  <section>
+    <h2>Why publish an empty scoreboard</h2>
+    <div class="body">
+      <p>
+        Because the alternative is what everyone else does. A backtest is a
+        claim about a past you already saw. The only version of a forecasting
+        record that cannot be edited into looking good is one where the
+        predictions are timestamped in public and the outcomes have not
+        happened yet.
+      </p>
+      <p>
+        So the interesting part of this page is not the numbers. It is that
+        <strong>the numbers are fixed now and I cannot touch them.</strong>
+        Come back in 2028 and the same rows will be here with results attached,
+        including the ones that went badly.
+      </p>
+      <div class="pull">A track record you can start reading before it flatters anyone.</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>The rules, set before the first row</h2>
+    <div class="body">
+      <p>
+        Four constraints are enforced by the code that writes the ledger, not
+        by my good intentions:
+      </p>
+      <table>
+        <thead><tr><th>rule</th><th style="text-align:left">what it prevents</th></tr></thead>
+        <tbody>
+          <tr><td style="text-align:left"><strong>Append-only</strong></td><td style="text-align:left">A second call on the same project is refused. No quietly revising a number as the odds change.</td></tr>
+          <tr><td style="text-align:left"><strong>Outcomes written once</strong></td><td style="text-align:left">A resolved row cannot be re-resolved. No re-grading a miss into a hit.</td></tr>
+          <tr><td style="text-align:left"><strong>Deadline required</strong></td><td style="text-align:left">Every row carries <code>resolves_by</code>. No prediction that stays open forever because it never quite failed.</td></tr>
+          <tr><td style="text-align:left"><strong>Referee named upfront</strong></td><td style="text-align:left">Each row names its <code>outcome_source</code> at prediction time &mdash; the ISO's own terminal status, captured daily. No choosing the friendly source afterwards.</td></tr>
+        </tbody>
+      </table>
+      <p>
+        The last one is the reason for the daily snapshot archive. Grid
+        operators publish current state and overwrite it in place; nobody keeps
+        yesterday's value. If the referee is a file that can be rewritten, the
+        record is worthless, so the archive captures each queue every morning
+        and the ledger points at it.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Not one confident gigawatt call</h2>
+    <div class="body">
+      <p>
+        The AI buildout story is told entirely in gigawatts. The model, trained
+        on twenty years of what actually happened to requests like these, will
+        not back a single one of them.
+      </p>
+      <table>
+        <thead><tr><th>the largest requests under call</th><th>ISO</th><th>MW</th><th>built?</th></tr></thead>
+        <tbody>
+          <tr><td style="text-align:left">ATLAS COMPLEX &mdash; solar + storage</td><td>CAISO</td><td>3,200</td><td>7.9%</td></tr>
+          <tr><td style="text-align:left">unnamed &mdash; gas</td><td>MISO</td><td>2,220</td><td>26.6%</td></tr>
+          <tr><td style="text-align:left">unnamed</td><td>MISO</td><td>2,220</td><td>7.1%</td></tr>
+          <tr><td style="text-align:left">unnamed</td><td>MISO</td><td>2,015</td><td>1.4%</td></tr>
+          <tr><td style="text-align:left">unnamed &mdash; gas</td><td>MISO</td><td>1,540</td><td>10.1%</td></tr>
+          <tr><td style="text-align:left">HOLMAN &mdash; hybrid</td><td>CAISO</td><td>1,500</td><td>2.1%</td></tr>
+          <tr class="hi"><td style="text-align:left"><strong>all 31 requests of 1,000 MW or more</strong></td><td>&mdash;</td><td>&mdash;</td><td><strong>12.2% avg</strong></td></tr>
+        </tbody>
+      </table>
+      <p>
+        MISO does not publish project names, which is why so many of the
+        biggest rows are blank. They are identified in the ledger by county,
+        interconnection point and queue date instead.
+      </p>
+      <p>
+        Across the whole book: <strong>335 of 1,636 requests expected to be
+        built, delivering 63 GW of the 355 GW queued</strong> &mdash; 17.8% of
+        the advertised capacity. MISO holds 243 GW of that and carries the
+        highest average probability, 26.0%; NYISO the lowest at 4.5%.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>What this model is good at, and what it is not</h2>
+    <div class="body">
+      <p>
+        Validated walk-forward by queue vintage &mdash; trained only on
+        cohorts that had already resolved, tested on the next one, never the
+        reverse. Scored against quoting the base rate, which is the honest
+        benchmark; scoring against zero would flatter it for free.
+      </p>
+      <table>
+        <thead><tr><th>measure</th><th>value</th></tr></thead>
+        <tbody>
+          <tr><td style="text-align:left">Brier score, model</td><td>0.1540</td></tr>
+          <tr><td style="text-align:left">Brier score, quoting the base rate</td><td>0.1668</td></tr>
+          <tr class="hi"><td style="text-align:left"><strong>skill over the base rate</strong></td><td><strong>+7.7%</strong></td></tr>
+          <tr><td style="text-align:left">calibration bins covering</td><td>2 of 7</td></tr>
+        </tbody>
+      </table>
+      <p>
+        Those two rows disagree, and the disagreement is the finding.
+        <strong>It ranks well and it quantifies badly.</strong> Projects it
+        rates higher do get built more often &mdash; that ordering is real and
+        it is worth something. But the numbers themselves are too spread out:
+      </p>
+      <table>
+        <thead><tr><th>model says</th><th>n</th><th>actually built</th><th>95% CI</th><th>ok?</th></tr></thead>
+        <tbody>
+          <tr><td style="text-align:left">0&ndash;5%</td><td>794</td><td>4.3%</td><td>3.1&ndash;5.9</td><td>too low</td></tr>
+          <tr><td style="text-align:left">5&ndash;10%</td><td>959</td><td>10.7%</td><td>8.9&ndash;12.9</td><td>too low</td></tr>
+          <tr><td style="text-align:left">10&ndash;15%</td><td>629</td><td>14.6%</td><td>12.1&ndash;17.6</td><td>&check;</td></tr>
+          <tr><td style="text-align:left">15&ndash;20%</td><td>556</td><td>19.1%</td><td>16.0&ndash;22.5</td><td>&check;</td></tr>
+          <tr><td style="text-align:left">20&ndash;30%</td><td>999</td><td>27.7%</td><td>25.0&ndash;30.6</td><td>too low</td></tr>
+          <tr><td style="text-align:left">30&ndash;50%</td><td>809</td><td>35.0%</td><td>31.8&ndash;38.3</td><td>too high</td></tr>
+          <tr class="hi"><td style="text-align:left"><strong>above 50%</strong></td><td>352</td><td><strong>49.4%</strong></td><td>44.2&ndash;54.6</td><td><strong>far too high</strong></td></tr>
+        </tbody>
+      </table>
+      <p>
+        When it says 65% it means about 49%. Its confidence outruns its
+        evidence at the top end, and the same over-spreading makes it too
+        gloomy at the bottom. Isotonic recalibration fixed one bin and cost
+        skill, so this is not a mapping that can be patched &mdash; it is the
+        model being more certain than the data supports.
+      </p>
+      <p>
+        Two things I checked before believing that. Non-stationarity: ruled
+        out, the build rate is flat from 22.2% before 2012 to 21.3% after 2017,
+        and a trailing base rate gains 0.16%. And the high bins are thin and
+        concentrated in a few segments, which is the live hypothesis for the
+        over-spreading and the next thing to measure.
+      </p>
+      <div class="pull">Use the ordering. Do not yet use the number as a probability.</div>
+      <p>
+        The ledger publishes the raw number anyway, because a record that only
+        keeps the parts of the model that work is not a record.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>A bug caught on the way here</h2>
+    <div class="body">
+      <p>
+        The first version of this ledger was written and thrown away the same
+        morning. Every deadline came straight from the ISO's own proposed
+        completion date &mdash; and a stalled project keeps the date it missed.
+        <strong>62 rows carried a deadline already in the past, the earliest
+        2002.</strong> A prediction that was due to settle before it was made
+        cannot be falsified, so those 62 were not predictions at all.
+      </p>
+      <p>
+        Alongside it, the same mixed-date-format trap that had already
+        destroyed 84% of the queue dates earlier in this project: 63 rows in
+        <code>M/D/YYYY</code> among 1,573 in ISO-8601, because the value was
+        passed through as a string instead of parsed.
+      </p>
+      <p>
+        Both fixed by parsing each date individually and flooring every
+        deadline two years past the day the call was made. The broken file is
+        kept in the repository rather than deleted, because a correction you
+        cannot check is just a claim. Rewriting an append-only ledger is
+        defensible exactly once &mdash; on the day it was created, with nothing
+        resolved and nothing published. From here it is frozen.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Read it yourself</h2>
+    <div class="body">
+      <p>
+        Every row, with the probability, the features it was computed from, the
+        deadline and the named referee. 1,636 rows, 476 KB.
+      </p>
+    </div>
+    <div class="links">
+      <a class="card" href="/predictions.csv" download>
+        <span><span class="t">predictions.csv</span><br>
+        <span class="d">The full open ledger as published on 2 September 2026 &mdash; nothing resolved, nothing to hide behind</span></span>
+        <span class="arw">&darr;</span>
+      </a>
+      <a class="card" href="/queue">
+        <span><span class="t">The base rates underneath this</span><br>
+        <span class="d">10,996 requests with known outcomes. About one in five gets built; above 1,000 MW it is one in nineteen</span></span>
+        <span class="arw">&rarr;</span>
+      </a>
+      <a class="card" href="https://savabs.github.io/">
+        <span><span class="t">Everything else I have measured</span><br>
+        <span class="d">An agent harness that lost to a single API call, thirteen ways a pipeline lied, and a null result with its power calculation</span></span>
+        <span class="arw">&rarr;</span>
+      </a>
+    </div>
+  </section>
+
+  <footer>
+    Open ledger, published 2 September 2026. Probabilities from
+    <code>logistic-v1</code>; resolution by ISO terminal status, captured daily.
+    <code>github.com/savabs</code>
+  </footer>
+
+</div>
+</body>
+</html>
