@@ -45,8 +45,14 @@ stating plainly that nothing has resolved. Reachable from `/` and `/queue`.
 - [x] PL.4 — Write `products/site/predictions.html`
 - [x] PL.5 — Cross-link from `index.html` and `queue.html`
 - [x] PL.6 — Deploy to Cloudflare Pages and verify all four URLs return 200
-- [ ] PL.7 — Fix the calibration over-spreading (model says 65%, means 49%);
+- [x] PL.7 — Publish the portfolio-risk result at `/portfolio`: outcomes
+      co-move (permutation null, every level p < 0.00025), independence
+      understates a concentrated book's spread by 4.3x
+- [ ] PL.9 — Fix the calibration over-spreading (model says 65%, means 49%);
       live hypothesis is thin segment-concentrated high bins
+- [ ] PL.10 — Capacity calibration still runs +6.1% after MW-weighting, and the
+      live book is 68% MISO against 19% in training. The `/portfolio` page says
+      so; closing the gap is the work
 - [ ] PL.8 — First resolutions: score the ledger as ISOs report terminal
       statuses into the snapshot archive, well before the 2028 deadlines
 

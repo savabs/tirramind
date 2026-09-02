@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>Forty projects are not forty coin flips</title>
+<meta name="description" content="Interconnection outcomes co-move. Measured against a permutation null, every grouping level clusters. Independence understates a concentrated book's tail risk by 4.3x.">
+<meta property="og:title" content="Forty projects are not forty coin flips">
+<meta property="og:description" content="On a single-fuel book, the independence arithmetic's 80% confidence interval is wrong more than a third of the time. Measured, not assumed.">
+<style>
+  :root{
+    --bg:#060608; --ink:#fafafa; --mut:#93939c; --dim:#5c5c66;
+    --a1:#8b5cf6; --a2:#ec4899; --a3:#22d3ee;
+    --line:#1a1a20; --card:#0d0d11;
+  }
+  @media (prefers-color-scheme: light){
+    :root{ --bg:#fbfbfd; --ink:#0a0a0a; --mut:#5a5a66; --dim:#9a9aa6;
+           --a1:#7c3aed; --a2:#db2777; --a3:#0891b2;
+           --line:#e8e8ee; --card:#fff; }
+  }
+  *{box-sizing:border-box;margin:0}
+  body{
+    background:var(--bg);color:var(--ink);line-height:1.6;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased;overflow-x:hidden;position:relative;
+  }
+  body::before{
+    content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+    background:
+      radial-gradient(58ch 40ch at 12% -8%, color-mix(in srgb,var(--a1) 22%,transparent), transparent 70%),
+      radial-gradient(50ch 36ch at 92% 4%, color-mix(in srgb,var(--a2) 16%,transparent), transparent 70%);
+  }
+  .wrap{max-width:860px;margin:0 auto;padding:0 28px;position:relative;z-index:1}
+
+  header{padding:19vh 0 0}
+  .eyebrow{
+    display:inline-flex;align-items:center;gap:10px;font-size:11.5px;
+    letter-spacing:.2em;text-transform:uppercase;color:var(--mut);
+    font-weight:700;margin-bottom:30px;
+  }
+  .pip{width:6px;height:6px;border-radius:50%;
+       background:linear-gradient(var(--a1),var(--a2));
+       box-shadow:0 0 14px var(--a1)}
+  h1{
+    font-size:clamp(42px,8.4vw,88px);line-height:.98;font-weight:850;
+    letter-spacing:-.045em;margin-bottom:30px;
+  }
+  .grad{
+    background:linear-gradient(103deg,var(--a1) 0%,var(--a2) 52%,var(--a3) 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  .lede{font-size:clamp(17.5px,2.5vw,22px);color:var(--mut);max-width:58ch;line-height:1.6}
+  .lede strong{color:var(--ink);font-weight:650}
+
+  .stats{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));
+    gap:1px;background:var(--line);border:1px solid var(--line);
+    border-radius:16px;overflow:hidden;margin:68px 0 18px;
+  }
+  .stat{background:var(--card);padding:28px 22px;position:relative}
+  .n{
+    font-size:clamp(29px,4.6vw,40px);font-weight:850;letter-spacing:-.035em;
+    font-variant-numeric:tabular-nums;line-height:1;margin-bottom:10px;
+  }
+  .k{font-size:12.5px;color:var(--mut);line-height:1.5}
+  .fine{font-size:12.5px;color:var(--dim);margin-bottom:78px}
+
+  section{padding:0 0 70px}
+  h2{font-size:11.5px;letter-spacing:.2em;text-transform:uppercase;
+     color:var(--mut);font-weight:700;margin-bottom:24px}
+  .body{font-size:16.5px;color:var(--mut);max-width:63ch}
+  .body strong{color:var(--ink);font-weight:600}
+  p+p{margin-top:17px}
+
+  .pull{
+    font-size:clamp(20px,3vw,27px);font-weight:650;line-height:1.35;
+    letter-spacing:-.02em;color:var(--ink);max-width:24ch;
+    margin:44px 0;padding-left:24px;
+    border-left:3px solid transparent;
+    border-image:linear-gradient(var(--a1),var(--a2)) 1;
+  }
+
+  .links{display:grid;gap:11px}
+  a.card{
+    display:flex;gap:16px;align-items:baseline;
+    background:var(--card);border:1px solid var(--line);border-radius:13px;
+    padding:20px 23px;text-decoration:none;color:inherit;
+    transition:border-color .2s,transform .2s;
+  }
+  a.card:hover{border-color:color-mix(in srgb,var(--a1) 60%,transparent);transform:translateY(-2px)}
+  a.card:focus-visible{outline:2px solid var(--a1);outline-offset:3px}
+  .t{font-weight:680;font-size:15.5px;letter-spacing:-.01em}
+  .d{font-size:13.5px;color:var(--mut);line-height:1.5}
+  .arw{margin-left:auto;color:var(--dim)}
+
+  footer{border-top:1px solid var(--line);padding:34px 0 70px;
+         color:var(--dim);font-size:13px}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.92em;color:var(--mut)}
+  @media (max-width:640px){header{padding:10vh 0 0}.stats{margin-top:46px}}
+</style>
+<style>
+  table{width:100%;border-collapse:collapse;margin:26px 0;font-size:14.5px}
+  th,td{text-align:left;padding:11px 12px;border-bottom:1px solid var(--line)}
+  th{color:var(--mut);font-weight:650;font-size:11.5px;letter-spacing:.09em;text-transform:uppercase}
+  td:nth-child(n+2),th:nth-child(n+2){text-align:right;font-variant-numeric:tabular-nums}
+  tr.hi td{background:color-mix(in srgb,var(--a2) 11%,transparent)}
+  pre{background:var(--card);border:1px solid var(--line);border-radius:11px;
+      padding:15px 17px;overflow-x:auto;margin:18px 0}
+  pre code{font-size:13px;color:var(--a3)}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.92em}
+</style>
+<style>
+  .chart{margin:34px 0 10px}
+  .chart svg{width:100%;height:auto;display:block;overflow:visible}
+  .band{opacity:.28}
+  .band2{opacity:.55}
+  .axl{font-size:2.6px;fill:var(--mut);font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .rowl{font-size:3px;fill:var(--ink);font-weight:650}
+  .tick{stroke:var(--line);stroke-width:.18}
+  .med{stroke:var(--ink);stroke-width:.5}
+  .caption{font-size:12.5px;color:var(--dim);margin-top:6px}
+</style>
+</head>
+
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow"><span class="pip"></span>Portfolio risk &middot; September 2026</div>
+    <h1>Forty projects are not<br><span class="grad">forty coin flips.</span></h1>
+    <p class="lede">
+      Give forty interconnection requests a 20% chance each and the arithmetic
+      says you will get eight, give or take two and a half. That arithmetic
+      assumes the forty are independent. They are not, and I measured how badly
+      &mdash; <strong>on a book concentrated in one technology, the standard
+      80% confidence interval is wrong more than a third of the time.</strong>
+    </p>
+  </header>
+
+  <div class="stats">
+    <div class="stat"><div class="n grad">4.3&times;</div><div class="k">wider spread once shared shocks are allowed</div></div>
+    <div class="stat"><div class="n grad">62.6%</div><div class="k">true coverage of independence's &ldquo;80%&rdquo; interval on a concentrated book</div></div>
+    <div class="stat"><div class="n grad">21.6 GW</div><div class="k">how much worse the 1-in-10 bad case really is</div></div>
+    <div class="stat"><div class="n grad">4.09&times;</div><div class="k">clustering by technology, the strongest shared shock</div></div>
+  </div>
+  <p class="fine">1,637 active requests across MISO, CAISO, NYISO and ISO-NE. 355 GW under call.</p>
+
+  <section>
+    <h2>The thing everyone gets wrong</h2>
+    <div class="body">
+      <p>
+        A probability per project answers <em>&ldquo;will this one be
+        built?&rdquo;</em> It does not answer <em>&ldquo;how much will my forty
+        deliver?&rdquo;</em> The distance between those two questions is
+        entirely the independence assumption, and it is almost always made
+        silently, by multiplying.
+      </p>
+      <p>
+        Projects in the same queue share an ISO study cycle, a transmission
+        owner's capital plan, an equipment supplier, a state policy regime.
+        When one of those turns, it does not move one project. It moves all of
+        them at once. Independence cannot represent that, so it produces a
+        distribution that is far too narrow &mdash; confident, tidy, and wrong
+        in exactly the tail you are trying to protect against.
+      </p>
+      <div class="pull">The average is fine. It is the bad case that is a fantasy.</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>I checked whether the correlation was real first</h2>
+    <div class="body">
+      <p>
+        A model of shared shocks invents risk if there are no shared shocks. So
+        before fitting one: do outcomes inside a group vary more than
+        independent draws would?
+      </p>
+      <p>
+        The test compares each group's build count against a <strong>permutation
+        null</strong> &mdash; same predicted probabilities, same group sizes,
+        group membership shuffled. That detail matters more than it sounds. The
+        underlying model is miscalibrated: it says 65% and means 49%. A textbook
+        chi-square test would have read that miscalibration as clustering and
+        &ldquo;found&rdquo; correlation that was not there. The permuted null
+        carries the same miscalibration, so only real structure survives it.
+      </p>
+      <table>
+        <thead><tr><th>outcomes shared by</th><th>groups</th><th>observed</th><th>permuted null</th><th>inflation</th></tr></thead>
+        <tbody>
+          <tr class="hi"><td style="text-align:left"><strong>fuel type</strong></td><td>13</td><td>13.23</td><td>3.24</td><td><strong>4.09&times;</strong></td></tr>
+          <tr><td style="text-align:left">state</td><td>27</td><td>5.64</td><td>2.15</td><td>2.62&times;</td></tr>
+          <tr><td style="text-align:left">ISO study cycle</td><td>59</td><td>7.41</td><td>3.93</td><td>1.88&times;</td></tr>
+          <tr><td style="text-align:left">county</td><td>132</td><td>2.14</td><td>1.19</td><td>1.80&times;</td></tr>
+          <tr><td style="text-align:left">ISO</td><td>4</td><td>15.41</td><td>8.77</td><td>1.76&times;</td></tr>
+          <tr><td style="text-align:left">transmission owner</td><td>22</td><td>4.32</td><td>2.51</td><td>1.72&times;</td></tr>
+        </tbody>
+      </table>
+      <p>
+        Every level significant at p &lt; 0.00025, the floor at 4,000
+        permutations. Note the nulls are 1.19 to 8.77 rather than the 1.0 a
+        table would assume &mdash; that gap <em>is</em> the miscalibration, and
+        it is the size of the mistake the naive test would have made.
+      </p>
+      <div class="pull">Technology is a stronger shared shock than geography.</div>
+      <p>
+        That is the commercially useful part. Tariffs, cell prices and turbine
+        lead times hit every project of a type simultaneously, wherever it sits.
+        <strong>A book spread across ten states but concentrated in solar is far
+        less diversified than it looks.</strong>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Then whether modelling it actually helps</h2>
+    <div class="body">
+      <p>
+        Correlation being real does not mean a given model of it predicts
+        better. So the structure was chosen by out-of-sample test, not by
+        picking the largest effect: draw books of 40 from held-out data, and
+        check how often the truth lands inside each model's 80% interval. The
+        target is 80%.
+      </p>
+      <table>
+        <thead><tr><th>the book you actually hold</th><th>independence</th><th>shared shocks</th></tr></thead>
+        <tbody>
+          <tr><td style="text-align:left">diversified, drawn at random</td><td>78.7%</td><td>89.0%</td></tr>
+          <tr><td style="text-align:left">all in one state</td><td>74.5%</td><td>88.1%</td></tr>
+          <tr class="hi"><td style="text-align:left"><strong>all in one technology</strong></td><td><strong>62.6%</strong></td><td><strong>81.5%</strong></td></tr>
+        </tbody>
+      </table>
+      <p>
+        Independence is tolerable for a diversified book and dangerous for a
+        concentrated one &mdash; which is the realistic case for a developer, a
+        lender, or anyone whose thesis is a single technology. Its
+        &ldquo;80%&rdquo; interval contains the truth 62.6% of the time.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>What it does to the live book</h2>
+    <div class="body">
+      <p>
+        All 1,637 requests still active across four grid operators, 355 GW
+        queued. Both models agree the expected delivery is about 102 GW. They
+        disagree completely about how sure of that anyone should be.
+      </p>
+      <div class="chart">
+        <svg viewBox="0 0 100 40" role="img" aria-label="Delivered capacity distribution under independence versus shared shocks">
+          <line class="tick" x1="0" y1="31" x2="100" y2="31"></line>
+          <line class="tick" x1="0" y1="4" x2="0" y2="31"></line>
+          <line class="tick" x1="22.2" y1="4" x2="22.2" y2="31"></line>
+          <line class="tick" x1="44.4" y1="4" x2="44.4" y2="31"></line>
+          <line class="tick" x1="66.7" y1="4" x2="66.7" y2="31"></line>
+          <line class="tick" x1="88.9" y1="4" x2="88.9" y2="31"></line>
+
+          <text class="rowl" x="0" y="8">independence</text>
+          <rect class="band"  x="36.7" y="10" width="19.6" height="6" rx="1" fill="var(--a3)"></rect>
+          <rect class="band2" x="42.3" y="10" width="8.1"  height="6" rx="1" fill="var(--a3)"></rect>
+          <line class="med" x1="46.3" y1="9.4" x2="46.3" y2="16.6"></line>
+
+          <text class="rowl" x="0" y="21">with shared shocks</text>
+          <rect class="band"  x="7.0"  y="23" width="85.7" height="6" rx="1" fill="var(--a2)"></rect>
+          <rect class="band2" x="29.4" y="23" width="35.6" height="6" rx="1" fill="var(--a2)"></rect>
+          <line class="med" x1="47.0" y1="22.4" x2="47.0" y2="29.6"></line>
+
+          <text class="axl" x="0"    y="35" text-anchor="start">60 GW</text>
+          <text class="axl" x="22.2" y="35" text-anchor="middle">80</text>
+          <text class="axl" x="44.4" y="35" text-anchor="middle">100</text>
+          <text class="axl" x="66.7" y="35" text-anchor="middle">120</text>
+          <text class="axl" x="88.9" y="35" text-anchor="middle">140</text>
+          <text class="axl" x="100"  y="39" text-anchor="end">pale band = 5th to 95th percentile &middot; solid = 25th to 75th &middot; line = median</text>
+        </svg>
+      </div>
+      <table>
+        <thead><tr><th>GW delivered</th><th>p10</th><th>p50</th><th>p90</th></tr></thead>
+        <tbody>
+          <tr><td style="text-align:left">independence</td><td>94.9</td><td>101.7</td><td>108.7</td></tr>
+          <tr class="hi"><td style="text-align:left"><strong>shared shocks</strong></td><td><strong>73.3</strong></td><td>102.3</td><td><strong>133.9</strong></td></tr>
+        </tbody>
+      </table>
+      <p>
+        Same centre. <strong>4.3&times; the spread.</strong> The one-in-ten bad
+        case is 21.6 GW worse than the independent arithmetic implies &mdash;
+        and 21.6 GW is roughly the entire active queue of ISO-NE and NYISO
+        combined. That is the number a lender sizing a facility, or a
+        manufacturer sizing a factory, is currently getting wrong.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Read the shape, not the level</h2>
+    <div class="body">
+      <p>
+        Two measured reasons the centre of that distribution deserves less
+        trust than its width. Both were found while building it and neither is
+        fixed.
+      </p>
+      <p>
+        <strong>Calibrating on projects is not calibrating on capacity.</strong>
+        Probabilities tuned so that each <em>project</em> is right overstate
+        delivered <em>capacity</em> by 20.8% out of sample, because the
+        gigawatts sit in large projects and large projects fail more inside
+        every size band. Re-fitting the calibration weighted by megawatts cuts
+        that to 6.1%. Adding project size as a feature does not help &mdash; the
+        bias is within size bands, not between them.
+      </p>
+      <p>
+        <strong>The live book is 68% MISO by capacity; the training history is
+        19% MISO.</strong> So the headline leans heavily on one operator's
+        record being representative. 18% of the book's capacity sits in
+        operator&times;technology cells with fewer than 40 resolved historical
+        requests.
+      </p>
+      <p>
+        The dispersion result is a ratio, and it survives both problems. The
+        central estimate does not. So the honest claim here is narrow and
+        deliberately so: <strong>not &ldquo;103 GW will be delivered&rdquo;, but
+        &ldquo;whatever the centre turns out to be, the spread around it is more
+        than four times what independence tells you.&rdquo;</strong>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Method</h2>
+    <div class="body">
+      <p>
+        Random-intercept logistic model fitted by marginal maximum likelihood,
+        integrating the group effect out with Gauss&ndash;Hermite quadrature.
+        Fixed effects held at the already-validated walk-forward model, so the
+        shared effect cannot quietly absorb ordinary lack of fit. Study cycle
+        carries a frailty of &tau;&nbsp;=&nbsp;1.06 on the log-odds scale, an
+        intra-class correlation of 25.5%. Levels are fitted one at a time and
+        therefore overlap, which is precisely why the combination was chosen by
+        out-of-sample coverage rather than by adding up the largest ones.
+      </p>
+    </div>
+    <div class="links">
+      <a class="card" href="/predictions">
+        <span><span class="t">The open ledger this runs on</span><br>
+        <span class="d">1,636 calls with deadlines attached, published before any outcome exists. Nothing resolved yet</span></span>
+        <span class="arw">&rarr;</span>
+      </a>
+      <a class="card" href="/queue">
+        <span><span class="t">The base rates underneath it</span><br>
+        <span class="d">10,996 requests with known outcomes. About one in five gets built; above 1,000 MW it is one in nineteen</span></span>
+        <span class="arw">&rarr;</span>
+      </a>
+      <a class="card" href="https://github.com/savabs/queue_attrition">
+        <span><span class="t">github.com/savabs/queue_attrition</span><br>
+        <span class="d">The code, including the permutation test that had to pass before any of this was fitted</span></span>
+        <span class="arw">&rarr;</span>
+      </a>
+    </div>
+  </section>
+
+  <footer>
+    Portfolio risk, September 2026. Correlation measured before it was modelled;
+    the model chosen by out-of-sample coverage.
+    <code>github.com/savabs</code>
+  </footer>
+
+</div>
+</body>
+</html>

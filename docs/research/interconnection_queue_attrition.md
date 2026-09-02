@@ -61,8 +61,35 @@ over-spreading: above 50% the model says 65 and means 49. It ranks; it does not
 yet quantify. Isotonic recalibration fixed one bin and cost skill, so this is
 not a mapping problem.
 
+## Portfolio risk
+
+Outcomes are not independent, and this was measured before it was modelled.
+Against a permutation null that keeps every predicted probability and every
+group size and shuffles only membership, every grouping level clusters
+significantly (p < 0.00025 at the 4,000-permutation floor): fuel 4.09x, state
+2.62x, ISO study cycle 1.88x, county 1.80x, ISO 1.76x, transmission owner
+1.72x. **Technology is a stronger shared shock than geography** — tariffs, cell
+prices and turbine lead times hit every project of a type at once.
+
+The permutation null was necessary rather than decorative: the underlying model
+is miscalibrated, miscalibration inflates raw dispersion, and the permuted
+nulls come back at 1.19–8.77 rather than the 1.0 a chi-square table assumes.
+
+Modelled as a random-intercept logit fitted by marginal ML with Gauss–Hermite
+quadrature; study cycle tau = 1.06, ICC 25.5%. Structure chosen by out-of-sample
+portfolio coverage, not by largest tau. On a book concentrated in one
+technology, independence's 80% interval covers only **62.6%** of the time
+against 81.5% with shared shocks. On the live book the spread is **4.3x wider**
+and the 1-in-10 case **21.6 GW worse**.
+
+Caveat carried on the page itself: calibrating on projects is not calibrating
+on capacity (+20.8% capacity bias, +6.1% after MW-weighted calibration), and the
+live book is 68% MISO by capacity against 19% in training. The dispersion is a
+ratio and survives both; the central estimate does not.
+
 ## Where it lives
 
 Code, data and the snapshot archive: `savabs/queue_attrition`.
 Published base rates: <https://tirramind.com/queue>.
 Open forward ledger: <https://tirramind.com/predictions>.
+Portfolio risk: <https://tirramind.com/portfolio>.
