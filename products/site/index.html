@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark light">
-<title>TirraMind — a measured result</title>
-<meta name="description" content="34 public data sources. 375,657 observations. 51 hypotheses tested under multiple-testing correction. The code, the study and the failure log are public.">
-<meta property="og:title" content="TirraMind — a measured result">
-<meta property="og:description" content="I tested my own signal product to destruction and published everything: the collector, the null result with its power calculation, and thirteen ways the pipeline lied to me.">
+<title>TirraMind — interconnection risk</title>
+<meta name="description" content="355 GW of US interconnection requests under live, calibrated prediction. About one in five gets built; above 1,000 MW, one in nineteen. Published before the outcomes exist.">
+<meta property="og:title" content="355 gigawatts are queued. One in five gets built.">
+<meta property="og:description" content="Calibrated probabilities on every active US interconnection request, published before the outcomes with a deadline on each. An open ledger, and a portfolio model that says these outcomes do not multiply.">
 <style>
   :root{
     --bg:#060608; --ink:#fafafa; --mut:#93939c; --dim:#5c5c66;
@@ -104,112 +104,116 @@
 <div class="wrap">
 
   <header>
-    <div class="eyebrow"><span class="pip"></span>Research artifact · 2026</div>
-    <h1>Most people ship it.<br><span class="grad">I measured it first.</span></h1>
+    <div class="eyebrow"><span class="pip"></span>Interconnection risk &middot; September 2026</div>
+    <h1>355 gigawatts are queued.<br><span class="grad">One in five gets built.</span></h1>
     <p class="lede">
-      TirraMind collected 34 free public data sources and detected statistical
-      anomalies across them. Then I ran the experiment almost nobody runs:
-      <strong>I tested whether my own product actually predicted anything.</strong>
+      Every forecast of the AI buildout quotes the interconnection queue as
+      though it were a pipeline. It is a waiting list, and most of it never
+      happens. I put a calibrated probability on every request still in it,
+      <strong>published before the outcomes exist</strong>, with a date each one
+      must settle by.
     </p>
   </header>
 
   <div class="stats">
-    <div class="stat"><div class="n grad">34</div><div class="k">public data sources, collected and normalised</div></div>
-    <div class="stat"><div class="n grad">375,657</div><div class="k">observations, deduplicated and baselined</div></div>
-    <div class="stat"><div class="n grad">51</div><div class="k">hypotheses tested under correction</div></div>
-    <div class="stat"><div class="n grad">0</div><div class="k">survived it</div></div>
+    <div class="stat"><div class="n grad">355 GW</div><div class="k">under live prediction across four grid operators</div></div>
+    <div class="stat"><div class="n grad">1 in 19</div><div class="k">how often requests of 1,000 MW or more get built</div></div>
+    <div class="stat"><div class="n grad">4.3&times;</div><div class="k">how much wider real portfolio risk is than the standard arithmetic</div></div>
+    <div class="stat"><div class="n grad">0</div><div class="k">predictions resolved so far &mdash; nothing to hide behind yet</div></div>
   </div>
-  <p class="fine">Every figure reproducible from the repository below.</p>
+  <p class="fine">MISO, CAISO, NYISO and ISO-NE. Every figure below reproducible from public sources.</p>
 
   <section>
-    <h2>The result</h2>
-    <div class="body">
-      <p>
-        Zero of fifty-one hypotheses survived Benjamini-Hochberg correction.
-        The study honoured the CFTC's publication lag, used the unconditional
-        return as its null rather than zero, and reported its own statistical
-        power — about 10%, which is stated up front because
-        <strong>overclaiming a null is the same error as overclaiming an edge.</strong>
-      </p>
-      <p>
-        It replicates the published literature exactly. Re-running the same
-        correction on a well-cited 2009 paper's own p-values gives the same
-        answer: nothing survives.
-      </p>
-      <div class="pull">The maths was correct. That turned out not to be the question.</div>
-      <p>
-        Along the way the pipeline lied to me thirteen documented times — while
-        reporting green every time. A ranking I was about to sell was
-        <strong>90% Unix timestamp.</strong> A quarter of my anomalies were
-        artifacts of a four-month baseline where three years of history sat
-        unused. Every one passed the tests I'd written.
-      </p>
-      <p>
-        So I wrote it all down, open-sourced the collector, and published the
-        null with the power calculation attached. The interesting artifact was
-        never the product.
-      </p>
-    </div>
-  </section>
-
-  <section>
-    <h2>Read it</h2>
-    <div class="links">
-      <a class="card" href="https://savabs.github.io/2026/08/29/thirteen-ways-a-pipeline-lies.html">
-        <span><span class="t">Thirteen Ways a Pipeline Lies</span><br>
-        <span class="d">How a codebase goes from “healthy-looking and empty” to “healthy-looking and full of constants” — and the one test that catches four of the worst</span></span>
-        <span class="arw">→</span>
-      </a>
-      <a class="card" href="https://savabs.github.io/2026/08/29/a-null-result-with-its-power-calculation.html">
-        <span><span class="t">A null result, with its power calculation</span><br>
-        <span class="d">The study, the leakage audit, and an honest account of exactly how much it proves</span></span>
-        <span class="arw">→</span>
-      </a>
-      <a class="card" href="https://github.com/savabs/tirramind">
-        <span><span class="t">The collector — full source</span><br>
-        <span class="d">34 collectors, Apache-2.0. The README opens with what doesn’t work</span></span>
-        <span class="arw">→</span>
-      </a>
-    </div>
-  </section>
-
-  <section>
-    <h2>What I do now</h2>
-    <div class="body">
-      <p>
-        The signal product is withdrawn &mdash; the evidence above is why. What
-        I kept is the part that killed it: measuring whether a number means what
-        it is being used to mean, before anyone bets on it.
-      </p>
-      <p>
-        Currently pointed at the AI power buildout, where the headline figure
-        everyone quotes &mdash; hundreds of gigawatts &ldquo;in the
-        interconnection queue&rdquo; &mdash; turns out to be mostly requests
-        that never get built.
-      </p>
-    </div>
+    <h2>The work</h2>
     <div class="links">
       <a class="card" href="/queue">
         <span><span class="t">The AI power queue is mostly vapour</span><br>
-        <span class="d">10,996 interconnection requests with outcomes. About 1 in 5 is built; above 1,000 MW it is 1 in 19. Method, caveats and the raw source URL</span></span>
+        <span class="d">10,996 interconnection requests with known outcomes. About 1 in 5 is built; above 1,000 MW it is 1 in 19. Method, caveats and the raw source URL</span></span>
         <span class="arw">&rarr;</span>
       </a>
       <a class="card" href="/predictions">
         <span><span class="t">1,636 predictions, none of them scored yet</span><br>
-        <span class="d">An open ledger: every active request in four ISOs given a probability and a deadline, published before the outcomes. 355 GW under call</span></span>
+        <span class="d">An open ledger. Every active request given a probability and a deadline, written down before any outcome exists, append-only from the day it was published</span></span>
         <span class="arw">&rarr;</span>
       </a>
       <a class="card" href="/portfolio">
         <span><span class="t">Forty projects are not forty coin flips</span><br>
-        <span class="d">Interconnection outcomes co-move. On a book concentrated in one technology, the standard 80% confidence interval is wrong more than a third of the time</span></span>
+        <span class="d">These outcomes co-move. On a book concentrated in one technology, the standard 80% confidence interval is wrong more than a third of the time</span></span>
+        <span class="arw">&rarr;</span>
+      </a>
+    </div>
+  </section>
+
+  <section>
+    <h2>What this actually is</h2>
+    <div class="body">
+      <p>
+        Not a forecast of prices, and not a view on who wins. A measurement of
+        whether physical infrastructure gets built &mdash; which is worth the
+        same to someone long the trade as to someone short it.
+      </p>
+      <p>
+        The claim is narrow on purpose: <strong>when it says 20%, that should
+        happen about 20% of the time.</strong> That is checkable, it resolves on
+        its own, and the ledger is public so it can be checked against me. Grid
+        operators publish current queue state and overwrite it in place, so the
+        revision history is captured every morning &mdash; nobody can go back
+        and buy the past.
+      </p>
+      <div class="pull">Numbers that can be wrong in public, on a schedule.</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Why believe any of it</h2>
+    <div class="body">
+      <p>
+        Because the last time I measured my own work, it failed, and I published
+        that instead of burying it. TirraMind collected 34 public data sources
+        and 375,657 observations to detect market anomalies. Then I ran the
+        experiment almost nobody runs and tested whether it predicted anything.
+        <strong>Zero of fifty-one hypotheses survived Benjamini&ndash;Hochberg
+        correction.</strong>
+      </p>
+      <p>
+        I reported the study's own statistical power &mdash; about 10% &mdash;
+        up front, because overclaiming a null is the same error as overclaiming
+        an edge. Along the way the pipeline lied to me thirteen documented times
+        while reporting green. A ranking I was about to sell was
+        <strong>90% Unix timestamp.</strong>
+      </p>
+      <div class="pull">The maths was correct. That turned out not to be the question.</div>
+      <p>
+        So the signal product was withdrawn and the failure log published. The
+        habit that killed it is the one thing worth keeping, and it is what runs
+        the work above: check whether the number means what it is being used to
+        mean, before anyone bets on it. The queue model publishes its own
+        calibration failure for the same reason.
+      </p>
+    </div>
+    <div class="links">
+      <a class="card" href="https://savabs.github.io/2026/08/29/a-null-result-with-its-power-calculation.html">
+        <span><span class="t">A null result, with its power calculation</span><br>
+        <span class="d">The study, the leakage audit, and an honest account of exactly how much it proves</span></span>
+        <span class="arw">&rarr;</span>
+      </a>
+      <a class="card" href="https://savabs.github.io/2026/08/29/thirteen-ways-a-pipeline-lies.html">
+        <span><span class="t">Thirteen Ways a Pipeline Lies</span><br>
+        <span class="d">How a codebase goes from &ldquo;healthy-looking and empty&rdquo; to &ldquo;healthy-looking and full of constants&rdquo; &mdash; and the one test that catches four of the worst</span></span>
+        <span class="arw">&rarr;</span>
+      </a>
+      <a class="card" href="https://savabs.github.io/">
+        <span><span class="t">Everything else I have measured</span><br>
+        <span class="d">Including an agent harness that lost to a single API call, on a measurement that killed my own project</span></span>
         <span class="arw">&rarr;</span>
       </a>
     </div>
   </section>
 
   <footer>
-    The signal product is withdrawn and not for sale.
-    <code>github.com/savabs/tirramind</code>
+    Interconnection risk, September 2026. The signal product is withdrawn and
+    not for sale; the collector remains open source.
+    <code>github.com/savabs</code>
   </footer>
 
 </div>
