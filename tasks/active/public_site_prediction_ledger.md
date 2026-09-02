@@ -48,6 +48,9 @@ stating plainly that nothing has resolved. Reachable from `/` and `/queue`.
 - [x] PL.7 — Publish the portfolio-risk result at `/portfolio`: outcomes
       co-move (permutation null, every level p < 0.00025), independence
       understates a concentrated book's spread by 4.3x
+- [x] PL.11 — Rewrite all four pages in plain language with new diagrams. 76
+      agents across three workflow passes; 53 invented claims caught and removed
+      before anything shipped
 - [ ] PL.9 — Fix the calibration over-spreading (model says 65%, means 49%);
       live hypothesis is thin segment-concentrated high bins
 - [ ] PL.10 — Capacity calibration still runs +6.1% after MW-weighting, and the

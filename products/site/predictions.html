@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark light">
 <title>1,636 predictions, none of them scored yet</title>
-<meta name="description" content="An open ledger of calibrated probabilities on every active US interconnection request in four ISOs. Published before the outcomes, with a settle date on each. Nothing has resolved.">
+<meta name="description" content="An open ledger of probabilities on every waiting request in four US grid operators, published before the outcomes. Nothing has settled.">
 <meta property="og:title" content="1,636 predictions, none of them scored yet">
-<meta property="og:description" content="Every active interconnection request in four ISOs, given a probability and a deadline, written down before the outcome. 355 GW under call. The model will not back a single gigawatt project.">
+<meta property="og:description" content="Every waiting request in four US grid operators, given a probability and a deadline before the outcome. 355 GW covered.">
 <style>
   :root{
     --bg:#060608; --ink:#fafafa; --mut:#93939c; --dim:#5c5c66;
@@ -110,237 +110,172 @@
   pre code{font-size:13px;color:var(--a3)}
   code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.92em}
 </style>
-
+<style>
+  .figure{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:24px 20px;margin:30px 0}
+  .figure svg{width:100%;height:auto;display:block}
+  .rules th,.rules td{text-align:left}
+</style>
 </head>
-
 <body>
 <div class="wrap">
-
-  <header>
-    <div class="eyebrow"><span class="pip"></span>Open ledger &middot; 2 September 2026</div>
-    <h1>1,636 predictions.<br><span class="grad">None scored yet.</span></h1>
-    <p class="lede">
-      Every interconnection request still active in four US grid operators now
-      has a probability of ever being built, written down before the outcome,
-      each with a date it must settle by. <strong>355 gigawatts under
-      call.</strong> The ledger is public, append-only, and today it is
-      completely empty of results &mdash; which is the only honest state for a
-      record that started this morning.
-    </p>
-  </header>
-
-  <div class="stats">
-    <div class="stat"><div class="n grad">1,636</div><div class="k">calls, each with a probability and a deadline</div></div>
-    <div class="stat"><div class="n grad">355 GW</div><div class="k">of capacity under prediction</div></div>
-    <div class="stat"><div class="n grad">0</div><div class="k">resolved so far &mdash; nothing to show, by construction</div></div>
-    <div class="stat"><div class="n grad">2028</div><div class="k">the earliest date any of them must settle</div></div>
-  </div>
-  <p class="fine">MISO, CAISO, NYISO, ISO-NE. Model <code>logistic-v1</code>, trained on 5,436 resolved requests, base rate 21.4%.</p>
-
-  <section>
-    <h2>Why publish an empty scoreboard</h2>
-    <div class="body">
-      <p>
-        Because the alternative is what everyone else does. A backtest is a
-        claim about a past you already saw. The only version of a forecasting
-        record that cannot be edited into looking good is one where the
-        predictions are timestamped in public and the outcomes have not
-        happened yet.
-      </p>
-      <p>
-        So the interesting part of this page is not the numbers. It is that
-        <strong>the numbers are fixed now and I cannot touch them.</strong>
-        Come back in 2028 and the same rows will be here with results attached,
-        including the ones that went badly.
-      </p>
-      <div class="pull">A track record you can start reading before it flatters anyone.</div>
-    </div>
-  </section>
-
-  <section>
-    <h2>The rules, set before the first row</h2>
-    <div class="body">
-      <p>
-        Four constraints are enforced by the code that writes the ledger, not
-        by my good intentions:
-      </p>
-      <table>
-        <thead><tr><th>rule</th><th style="text-align:left">what it prevents</th></tr></thead>
-        <tbody>
-          <tr><td style="text-align:left"><strong>Append-only</strong></td><td style="text-align:left">A second call on the same project is refused. No quietly revising a number as the odds change.</td></tr>
-          <tr><td style="text-align:left"><strong>Outcomes written once</strong></td><td style="text-align:left">A resolved row cannot be re-resolved. No re-grading a miss into a hit.</td></tr>
-          <tr><td style="text-align:left"><strong>Deadline required</strong></td><td style="text-align:left">Every row carries <code>resolves_by</code>. No prediction that stays open forever because it never quite failed.</td></tr>
-          <tr><td style="text-align:left"><strong>Referee named upfront</strong></td><td style="text-align:left">Each row names its <code>outcome_source</code> at prediction time &mdash; the ISO's own terminal status, captured daily. No choosing the friendly source afterwards.</td></tr>
-        </tbody>
-      </table>
-      <p>
-        The last one is the reason for the daily snapshot archive. Grid
-        operators publish current state and overwrite it in place; nobody keeps
-        yesterday's value. If the referee is a file that can be rewritten, the
-        record is worthless, so the archive captures each queue every morning
-        and the ledger points at it.
-      </p>
-    </div>
-  </section>
-
-  <section>
-    <h2>Not one confident gigawatt call</h2>
-    <div class="body">
-      <p>
-        The AI buildout story is told entirely in gigawatts. The model, trained
-        on twenty years of what actually happened to requests like these, will
-        not back a single one of them.
-      </p>
-      <table>
-        <thead><tr><th>the largest requests under call</th><th>ISO</th><th>MW</th><th>built?</th></tr></thead>
-        <tbody>
-          <tr><td style="text-align:left">ATLAS COMPLEX &mdash; solar + storage</td><td>CAISO</td><td>3,200</td><td>7.9%</td></tr>
-          <tr><td style="text-align:left">unnamed &mdash; gas</td><td>MISO</td><td>2,220</td><td>26.6%</td></tr>
-          <tr><td style="text-align:left">unnamed</td><td>MISO</td><td>2,220</td><td>7.1%</td></tr>
-          <tr><td style="text-align:left">unnamed</td><td>MISO</td><td>2,015</td><td>1.4%</td></tr>
-          <tr><td style="text-align:left">unnamed &mdash; gas</td><td>MISO</td><td>1,540</td><td>10.1%</td></tr>
-          <tr><td style="text-align:left">HOLMAN &mdash; hybrid</td><td>CAISO</td><td>1,500</td><td>2.1%</td></tr>
-          <tr class="hi"><td style="text-align:left"><strong>all 31 requests of 1,000 MW or more</strong></td><td>&mdash;</td><td>&mdash;</td><td><strong>12.2% avg</strong></td></tr>
-        </tbody>
-      </table>
-      <p>
-        MISO does not publish project names, which is why so many of the
-        biggest rows are blank. They are identified in the ledger by county,
-        interconnection point and queue date instead.
-      </p>
-      <p>
-        Across the whole book: <strong>335 of 1,636 requests expected to be
-        built, delivering 63 GW of the 355 GW queued</strong> &mdash; 17.8% of
-        the advertised capacity. MISO holds 243 GW of that and carries the
-        highest average probability, 26.0%; NYISO the lowest at 4.5%.
-      </p>
-    </div>
-  </section>
-
-  <section>
-    <h2>What this model is good at, and what it is not</h2>
-    <div class="body">
-      <p>
-        Validated walk-forward by queue vintage &mdash; trained only on
-        cohorts that had already resolved, tested on the next one, never the
-        reverse. Scored against quoting the base rate, which is the honest
-        benchmark; scoring against zero would flatter it for free.
-      </p>
-      <table>
-        <thead><tr><th>measure</th><th>value</th></tr></thead>
-        <tbody>
-          <tr><td style="text-align:left">Brier score, model</td><td>0.1540</td></tr>
-          <tr><td style="text-align:left">Brier score, quoting the base rate</td><td>0.1668</td></tr>
-          <tr class="hi"><td style="text-align:left"><strong>skill over the base rate</strong></td><td><strong>+7.7%</strong></td></tr>
-          <tr><td style="text-align:left">calibration bins covering</td><td>2 of 7</td></tr>
-        </tbody>
-      </table>
-      <p>
-        Those two rows disagree, and the disagreement is the finding.
-        <strong>It ranks well and it quantifies badly.</strong> Projects it
-        rates higher do get built more often &mdash; that ordering is real and
-        it is worth something. But the numbers themselves are too spread out:
-      </p>
-      <table>
-        <thead><tr><th>model says</th><th>n</th><th>actually built</th><th>95% CI</th><th>ok?</th></tr></thead>
-        <tbody>
-          <tr><td style="text-align:left">0&ndash;5%</td><td>794</td><td>4.3%</td><td>3.1&ndash;5.9</td><td>too low</td></tr>
-          <tr><td style="text-align:left">5&ndash;10%</td><td>959</td><td>10.7%</td><td>8.9&ndash;12.9</td><td>too low</td></tr>
-          <tr><td style="text-align:left">10&ndash;15%</td><td>629</td><td>14.6%</td><td>12.1&ndash;17.6</td><td>&check;</td></tr>
-          <tr><td style="text-align:left">15&ndash;20%</td><td>556</td><td>19.1%</td><td>16.0&ndash;22.5</td><td>&check;</td></tr>
-          <tr><td style="text-align:left">20&ndash;30%</td><td>999</td><td>27.7%</td><td>25.0&ndash;30.6</td><td>too low</td></tr>
-          <tr><td style="text-align:left">30&ndash;50%</td><td>809</td><td>35.0%</td><td>31.8&ndash;38.3</td><td>too high</td></tr>
-          <tr class="hi"><td style="text-align:left"><strong>above 50%</strong></td><td>352</td><td><strong>49.4%</strong></td><td>44.2&ndash;54.6</td><td><strong>far too high</strong></td></tr>
-        </tbody>
-      </table>
-      <p>
-        When it says 65% it means about 49%. Its confidence outruns its
-        evidence at the top end, and the same over-spreading makes it too
-        gloomy at the bottom. Isotonic recalibration fixed one bin and cost
-        skill, so this is not a mapping that can be patched &mdash; it is the
-        model being more certain than the data supports.
-      </p>
-      <p>
-        Two things I checked before believing that. Non-stationarity: ruled
-        out, the build rate is flat from 22.2% before 2012 to 21.3% after 2017,
-        and a trailing base rate gains 0.16%. And the high bins are thin and
-        concentrated in a few segments, which is the live hypothesis for the
-        over-spreading and the next thing to measure.
-      </p>
-      <div class="pull">Use the ordering. Do not yet use the number as a probability.</div>
-      <p>
-        The ledger publishes the raw number anyway, because a record that only
-        keeps the parts of the model that work is not a record.
-      </p>
-    </div>
-  </section>
-
-  <section>
-    <h2>A bug caught on the way here</h2>
-    <div class="body">
-      <p>
-        The first version of this ledger was written and thrown away the same
-        morning. Every deadline came straight from the ISO's own proposed
-        completion date &mdash; and a stalled project keeps the date it missed.
-        <strong>62 rows carried a deadline already in the past, the earliest
-        2002.</strong> A prediction that was due to settle before it was made
-        cannot be falsified, so those 62 were not predictions at all.
-      </p>
-      <p>
-        Alongside it, the same mixed-date-format trap that had already
-        destroyed 84% of the queue dates earlier in this project: 63 rows in
-        <code>M/D/YYYY</code> among 1,573 in ISO-8601, because the value was
-        passed through as a string instead of parsed.
-      </p>
-      <p>
-        Both fixed by parsing each date individually and flooring every
-        deadline two years past the day the call was made. The broken file is
-        kept in the repository rather than deleted, because a correction you
-        cannot check is just a claim. Rewriting an append-only ledger is
-        defensible exactly once &mdash; on the day it was created, with nothing
-        resolved and nothing published. From here it is frozen.
-      </p>
-    </div>
-  </section>
-
-  <section>
-    <h2>Read it yourself</h2>
-    <div class="body">
-      <p>
-        Every row, with the probability, the features it was computed from, the
-        deadline and the named referee. 1,636 rows, 476 KB.
-      </p>
-    </div>
-    <div class="links">
-      <a class="card" href="/portfolio">
-        <span><span class="t">What these probabilities do to a portfolio</span><br>
-        <span class="d">They do not multiply. Outcomes co-move, and independence understates a concentrated book's downside by 4.3x &mdash; measured against a permutation null</span></span>
-        <span class="arw">&rarr;</span>
-      </a>
-      <a class="card" href="/predictions.csv" download>
-        <span><span class="t">predictions.csv</span><br>
-        <span class="d">The full open ledger as published on 2 September 2026 &mdash; nothing resolved, nothing to hide behind</span></span>
-        <span class="arw">&darr;</span>
-      </a>
-      <a class="card" href="/queue">
-        <span><span class="t">The base rates underneath this</span><br>
-        <span class="d">10,996 requests with known outcomes. About one in five gets built; above 1,000 MW it is one in nineteen</span></span>
-        <span class="arw">&rarr;</span>
-      </a>
-      <a class="card" href="https://savabs.github.io/">
-        <span><span class="t">Everything else I have measured</span><br>
-        <span class="d">An agent harness that lost to a single API call, thirteen ways a pipeline lied, and a null result with its power calculation</span></span>
-        <span class="arw">&rarr;</span>
-      </a>
-    </div>
-  </section>
-
-  <footer>
-    Open ledger, published 2 September 2026. Probabilities from
-    <code>logistic-v1</code>; resolution by ISO terminal status, captured daily.
-    <code>github.com/savabs</code>
-  </footer>
-
+<header>
+<div class="eyebrow"><span class="pip"></span>Open ledger · 2 September 2026</div>
+<h1>1,636 predictions.<br><span class="grad">None scored yet.</span></h1>
+<p class="lede">Before anyone builds a power plant, they file a request to plug it into the grid. <strong>Most of those requests never become anything.</strong></p>
+<p class="lede">I took every request still waiting in four US grid operators. Each one now has a probability of ever being built, and a date by which it must settle — built, or dead. <strong>355 gigawatts covered.</strong></p>
+<p class="lede">The ledger is public. I can add rows. I cannot change one. Today it holds no results at all — the only honest state for a record that started this morning.</p>
+</header>
+<div class="stats">
+<div class="stat"><div class="n grad">1,636</div><div class="k">predictions, each with a probability and a deadline</div></div>
+<div class="stat"><div class="n grad">355</div><div class="k">gigawatts of capacity waiting in those four queues</div></div>
+<div class="stat"><div class="n grad">0</div><div class="k">settled so far &mdash; the record was written this morning, so nothing has had time to</div></div>
+<div class="stat"><div class="n grad">2028</div><div class="k">the first year any prediction is <em>required</em> to have settled. Many will settle sooner, as operators report outcomes</div></div>
+</div>
+<p class="fine">The four operators are MISO (the Midwest), CAISO (California), NYISO (New York) and ISO-NE (New England).</p>
+<section>
+<h2>Why publish an empty scoreboard</h2>
+<div class="body">
+<p>The usual way to show a model works is to test it on the past. But the past is already known. You can adjust the model until the old answers come out right.</p>
+<p>A record written in public before the answers exist is the one kind nobody can tidy up later. So that is what this is. The bad rows will stay too.</p>
+<div class="figure">
+<svg viewBox="0 0 100 41" role="img" aria-label="Two equal bars. The upper is full: 1,636 predictions, written and locked on 2 September 2026. The lower is empty: none of the 1,636 has settled yet. A time arrow runs from today towards 2028, the first year any prediction must have settled.">
+<text x="0" y="4.2" font-size="3" fill="var(--mut)">WRITTEN AND LOCKED · 2 SEPT 2026</text>
+<rect x="0" y="6.4" width="100" height="10" rx="1.6" fill="var(--a1)"/>
+<text x="50" y="13.2" text-anchor="middle" font-size="4" font-weight="700" fill="var(--card)">1,636 predictions</text>
+<rect x="0.3" y="20" width="99.4" height="10" rx="1.6" fill="none" stroke="var(--mut)" stroke-width="0.5" stroke-dasharray="2 1.7"/>
+<text x="50" y="26.8" text-anchor="middle" font-size="4" font-weight="700" fill="var(--mut)">0 of 1,636 settled</text>
+<line x1="0.5" y1="33.6" x2="94" y2="33.6" stroke="var(--mut)" stroke-width="0.4" stroke-dasharray="1.7 1.7"/>
+<path d="M94 31.4 L99 33.6 L94 35.8 Z" fill="var(--mut)"/>
+<line x1="0.5" y1="31.8" x2="0.5" y2="35.4" stroke="var(--ink)" stroke-width="0.9"/>
+<text x="0" y="39.6" font-size="3" fill="var(--mut)">today</text>
+<text x="99" y="39.6" text-anchor="end" font-size="3" fill="var(--mut)">2028 &middot; first must-settle year</text>
+</svg>
+</div>
+<div class="pull">Come back and check. The same rows will be here, results attached.</div>
+</div>
+</section>
+<section>
+<h2>The rules, set before the first row</h2>
+<div class="body">
+<p>Four rules are enforced by the code that writes the ledger, not by my good intentions:</p>
+<table class="rules">
+<thead><tr><th>rule</th><th>what it prevents</th></tr></thead>
+<tbody>
+<tr><td><strong>Add only</strong></td><td>A second prediction on the same project is refused. No quietly revising a number as the odds change.</td></tr>
+<tr><td><strong>Results written once</strong></td><td>A settled row cannot be settled again. No re-grading a miss into a hit.</td></tr>
+<tr><td><strong>Deadline required</strong></td><td>Every row carries a date it must settle by, in a column named <code>resolves_by</code>. No prediction that stays open forever because it never quite failed.</td></tr>
+<tr><td><strong>Referee named upfront</strong></td><td>Every row names its referee, in a column called <code>outcome_source</code>, the day the prediction is made: the operator's own final verdict. No picking a friendly source later.</td></tr>
+</tbody>
+</table>
+<p>That last rule is why there is a daily archive. Operators publish today's status and overwrite it in place, so nobody keeps yesterday's value.</p>
+<p>If the referee is a file that can be rewritten, the record is worthless. So the archive saves each waiting list every morning, and the ledger points at it.</p>
+</div>
+</section>
+<section>
+<h2>Not one confident bet on a giant project</h2>
+<div class="body">
+<p>Arguments about AI and electricity are held in gigawatts, so the biggest requests get quoted. The model is trained on twenty years of what happened to requests like these. It will not back a single one of them.</p>
+<p>Sizes below are in megawatts, MW. A thousand MW make one gigawatt.</p>
+<table>
+<thead><tr><th>the largest requests</th><th>operator</th><th>MW</th><th>chance built</th></tr></thead>
+<tbody>
+<tr><td>ATLAS COMPLEX — solar + storage</td><td>CAISO</td><td>3,200</td><td>7.9%</td></tr>
+<tr><td>unnamed — gas</td><td>MISO</td><td>2,220</td><td>26.6%</td></tr>
+<tr><td>unnamed</td><td>MISO</td><td>2,220</td><td>7.1%</td></tr>
+<tr><td>unnamed</td><td>MISO</td><td>2,015</td><td>1.4%</td></tr>
+<tr><td>unnamed — gas</td><td>MISO</td><td>1,540</td><td>10.1%</td></tr>
+<tr><td>HOLMAN — hybrid</td><td>CAISO</td><td>1,500</td><td>2.1%</td></tr>
+<tr class="hi"><td><strong>all 31 requests of 1,000 MW or more</strong></td><td>—</td><td>—</td><td><strong>12.2% avg</strong></td></tr>
+</tbody>
+</table>
+<p>MISO does not publish project names, so many of the biggest rows are blank. The ledger identifies them by county, connection point and queue date.</p>
+<p>Now the whole set. <strong>335 of the 1,636 requests are expected to be built.</strong> They carry 63 GW of the 355 GW queued, or 17.8% of the capacity advertised.</p>
+<p>MISO holds 243 GW of that, with the highest average probability, 26.0%. NYISO is lowest, at 4.5%.</p>
+</div>
+</section>
+<section>
+<h2>What this model is good at, and what it is not</h2>
+<div class="body">
+<p>The model is <code>logistic-v1</code>. The full history holds 10,996 requests whose fate is known. It learned from 5,436 of them, about one in five of which were built — 21.4%.</p>
+<p>It learned only from requests that had already finished, then was tested on the next group. Never the other way round.</p>
+<p>The test it has to pass: beat a flat guess of 21.4% for every project.</p>
+<p>Each prediction earns a penalty for how far it sat from what happened. Lower is better; zero is perfect.</p>
+<table>
+<thead><tr><th>measure</th><th>value</th></tr></thead>
+<tbody>
+<tr><td>penalty score (its name is the Brier score), the model</td><td>0.1540</td></tr>
+<tr><td>penalty score, the flat guess of 21.4%</td><td>0.1668</td></tr>
+<tr class="hi"><td><strong>how much smaller the model's penalty is</strong></td><td><strong>7.7%</strong></td></tr>
+<tr><td>groups where its numbers matched reality</td><td>2 of 7</td></tr>
+</tbody>
+</table>
+<p>So it beats the flat guess, by a little. Comparing it against guessing zero every time would have looked better and proved nothing.</p>
+<p>Next I split the predictions into seven groups by the probability the model gave. In only 2 of the 7 did its numbers match what really happened.</p>
+<p>Those two findings pull against each other. It beats the flat guess, yet its numbers are wrong in five groups out of seven. <strong>It gets the order right and the number wrong.</strong> Projects it rates higher do get built more often, and that ordering is worth something. But it pushes its percentages too far towards 0% and 100%.</p>
+<p>Here are the seven groups: how many projects in each, and the share that got built. The last column is a 95% range: where that true share very likely sits.</p>
+<table>
+<thead><tr><th>model says</th><th>projects</th><th>share built</th><th>very likely range</th><th>the model's number was</th></tr></thead>
+<tbody>
+<tr><td>0–5%</td><td>794</td><td>4.3%</td><td>3.1–5.9</td><td>too low</td></tr>
+<tr><td>5–10%</td><td>959</td><td>10.7%</td><td>8.9–12.9</td><td>too low</td></tr>
+<tr><td>10–15%</td><td>629</td><td>14.6%</td><td>12.1–17.6</td><td>about right</td></tr>
+<tr><td>15–20%</td><td>556</td><td>19.1%</td><td>16.0–22.5</td><td>about right</td></tr>
+<tr><td>20–30%</td><td>999</td><td>27.7%</td><td>25.0–30.6</td><td>too low</td></tr>
+<tr><td>30–50%</td><td>809</td><td>35.0%</td><td>31.8–38.3</td><td>too high</td></tr>
+<tr class="hi"><td><strong>above 50%</strong></td><td>352</td><td><strong>49.4%</strong></td><td>44.2–54.6</td><td><strong>far too high</strong></td></tr>
+</tbody>
+</table>
+<p>The bottom row is the damaging one. The model promised better than a coin toss. Only 49.4% were built. Take one example: across the group it rates above 50%, projects it calls 65% are built about 49% of the time.</p>
+<p>At the top end it claims more than the evidence supports. At the bottom end, for the same reason, it is too gloomy.</p>
+<p>I tried rescaling its numbers (a method called isotonic regression) to fit what happened. That fixed one group and left the model worse overall. So it cannot be patched by shifting numbers. The model is simply more certain than the data allows.</p>
+<p>I checked two other explanations first. Has the world changed underneath it? No. The build rate is flat: 22.2% before 2012, 21.3% after 2017. Using only recent history gains 0.16%, which is nothing.</p>
+<p>The second check: are the high groups big enough to trust? They are thin, and their projects cluster in a few parts of the queue. That is my best guess so far, and the next thing to measure.</p>
+<div class="pull">Trust which projects it ranks higher. Do not yet trust the percentage.</div>
+<p>The ledger publishes the raw percentage anyway, weakness and all. A record edited down to the parts that work is not a record.</p>
+</div>
+</section>
+<section>
+<h2>A bug caught on the way here</h2>
+<div class="body">
+<p>The first version of this ledger was written and thrown away the same morning. Every deadline came straight from the operator's own proposed completion date. A stalled project keeps the date it missed.</p>
+<p>So <strong>62 rows carried a deadline already in the past, the earliest 2002.</strong> Their deadline was gone before the prediction existed. Nothing can prove them wrong. They were not predictions at all.</p>
+<p>The same file had a second fault. 63 rows wrote dates as 9/2/2026 and 1,573 wrote them as 2026-09-02. The code never read them as dates; it copied the characters across.</p>
+<p>Mixed date formats had already ruined 84% of the queue dates earlier in this project.</p>
+<p>Both are fixed. Every date is now read on its own, and every deadline is set at least two years past the day the prediction was made. The broken file is kept in the repository, not deleted, because a correction you cannot check is just a claim.</p>
+<p>You may rewrite a ledger like this on one day only: the day you create it, before anything is published. That day has passed. It is frozen now.</p>
+</div>
+</section>
+<section>
+<h2>Read it yourself</h2>
+<div class="body">
+<p>Every row gives the probability, the facts behind it, the deadline and the referee. 1,636 rows, 476 KB.</p>
+</div>
+<div class="links">
+<a class="card" href="/portfolio">
+<span><span class="t">What these probabilities do to a portfolio</span><br>
+<span class="d">They do not multiply. Projects fail together. Treat them as separate and you understate the worst loss a concentrated book can take by 4.3 times. Checked on shuffled data</span></span>
+<span class="arw">→</span>
+</a>
+<a class="card" href="/predictions.csv" download>
+<span><span class="t">predictions.csv</span><br>
+<span class="d">The full ledger, as published on 2 September 2026</span></span>
+<span class="arw">↓</span>
+</a>
+<a class="card" href="/queue">
+<span><span class="t">The history underneath this</span><br>
+<span class="d">About one in five requests gets built. Above 1,000 MW it is one in nineteen</span></span>
+<span class="arw">→</span>
+</a>
+<a class="card" href="https://savabs.github.io/">
+<span><span class="t">Everything else I have measured</span><br>
+<span class="d">A tool I built that lost to just asking the model once. Thirteen ways a data pipeline lied to me. A test that found nothing, published with the sum showing how little that proves</span></span>
+<span class="arw">→</span>
+</a>
+</div>
+</section>
+<footer>
+Open ledger, published 2 September 2026. Probabilities from <code>logistic-v1</code>. Settled by the grid operator's own final verdict — built, or dead — captured every morning. <code>github.com/savabs</code>
+</footer>
 </div>
 </body>
 </html>

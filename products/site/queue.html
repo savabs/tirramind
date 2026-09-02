@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark light">
 <title>The AI power queue is mostly vapour</title>
-<meta name="description" content="10,996 US interconnection requests, four ISOs, with outcomes. About 1 in 5 gets built. Requests of 1,000 MW or more: 1 in 19.">
+<meta name="description" content="10,996 finished requests to join the US grid. About 1 in 5 got built; at 1,000 MW and above, 1 in 19.">
 <meta property="og:title" content="The AI power queue is mostly vapour">
-<meta property="og:description" content="10,996 interconnection requests with outcomes. 17-21% get built. Above 1,000 MW it is 5.3%. Method, caveats and the raw source URL included.">
+<meta property="og:description" content="10,996 finished requests across four US grid operators. 17&ndash;21% got built, about 1 in 5; at 1,000 MW and above, 5.3%, about 1 in 19. Method, limits and the raw source URL included.">
 <style>
   :root{
     --bg:#060608; --ink:#fafafa; --mut:#93939c; --dim:#5c5c66;
@@ -110,191 +110,85 @@
   pre code{font-size:13px;color:var(--a3)}
   code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.92em}
 </style>
-
 </head>
-
 <body>
 <div class="wrap">
-
-  <header>
-    <div class="eyebrow"><span class="pip"></span>Base rates &middot; September 2026</div>
-    <h1>The AI power queue<br><span class="grad">is mostly vapour.</span></h1>
-    <p class="lede">
-      Every forecast of the AI buildout quotes the interconnection queue &mdash;
-      466 GW waiting in ERCOT, 699 GW in MISO &mdash; as though it were a
-      pipeline. I pulled 10,996 requests with known outcomes from four grid
-      operators. <strong>About one in five gets built. Above 1,000 MW, it is
-      one in nineteen.</strong>
-    </p>
-  </header>
-
-  <div class="stats">
-    <div class="stat"><div class="n grad">10,996</div><div class="k">interconnection requests, four ISOs, with outcomes</div></div>
-    <div class="stat"><div class="n grad">17&ndash;21%</div><div class="k">of resolved requests were built</div></div>
-    <div class="stat"><div class="n grad">5.3%</div><div class="k">for requests of 1,000 MW or more</div></div>
-    <div class="stat"><div class="n grad">0</div><div class="k">of it behind a login &mdash; the source URL is below</div></div>
-  </div>
-  <p class="fine">MISO, NYISO, CAISO and ISO-NE. PJM needs a free key; ERCOT blocks scripted access; SPP timed out.</p>
-
-  <section>
-    <h2>Size is the whole story</h2>
-    <div class="body">
-      <p>
-        Attrition is monotone above 100 MW, and the largest bucket is an order
-        of magnitude worse than the smallest. Wilson 95% intervals, because
-        several of these sit close to zero where the normal approximation
-        misbehaves.
-      </p>
-      <table>
-        <thead><tr><th>capacity</th><th>n</th><th>built</th><th>95% CI</th></tr></thead>
-        <tbody>
-          <tr><td>under 20 MW</td><td>1,024</td><td>28.8%</td><td>26.1&ndash;31.7</td></tr>
-          <tr><td>20&ndash;100 MW</td><td>1,639</td><td>19.0%</td><td>17.2&ndash;21.0</td></tr>
-          <tr><td>100&ndash;300 MW</td><td>1,654</td><td>23.9%</td><td>21.9&ndash;26.0</td></tr>
-          <tr><td>300&ndash;1,000 MW</td><td>680</td><td>12.6%</td><td>10.4&ndash;15.4</td></tr>
-          <tr class="hi"><td><strong>1,000 MW and above</strong></td><td>169</td><td><strong>5.3%</strong></td><td>2.8&ndash;9.8</td></tr>
-        </tbody>
-      </table>
-      <div class="pull">The AI datacenter story is entirely gigawatt-scale &mdash; the one size class that historically almost never completes.</div>
-      <p>
-        By fuel, after normalising four different ISO vocabularies onto one set:
-        gas 33.1%, solar 23.2%, wind 19.5%, storage 9.5%.
-      </p>
-    </div>
-  </section>
-
-  <section>
-    <h2>Why it is a range and not a number</h2>
-    <div class="body">
-      <p>
-        Dividing built by built-plus-withdrawn over everything gives
-        <strong>14.2%</strong>. That is too low, and the reason matters: a
-        request filed in 2024 has not had time to be built, so counting it now
-        records censoring as failure.
-      </p>
-      <p>
-        Rates are therefore computed per queue-year cohort, and a cohort is only
-        quoted once at least 90% of it has reached a terminal state. On that
-        basis the answer is <strong>21.4%</strong> across 5,436 requests.
-      </p>
-      <p>
-        That number is biased the other way. 1,354 resolved records carry no
-        queue date and drop out of every cohort &mdash; and they are 1,351
-        withdrawals to 3 builds, mostly pre-2000 rows. Put all of them back and
-        the rate is <strong>17.2%</strong>.
-      </p>
-      <p>
-        So: 17.2% to 21.4%. Neither end is quoted on its own, because either
-        one alone would be a choice about which bias to hide.
-      </p>
-    </div>
-  </section>
-
-  <section>
-    <h2>Two bugs I hit, in case you are doing this too</h2>
-    <div class="body">
-      <p>
-        <strong>Mixed date formats silently destroyed 7,400 of 9,640 dates.</strong>
-        The four ISOs write queue dates four ways &mdash;
-        <code>2003-11-18 08:00:00</code>, <code>1/14/2025</code>,
-        <code>2025-10-08T00:37:52+00:00</code>, <code>2008-01-30</code>.
-        <code>pandas.to_datetime</code> infers one format from the first
-        non-null value and coerces everything that disagrees to <code>NaT</code>.
-        84% of dates vanished, and the loss is indistinguishable from ordinary
-        missingness. It surfaced only because the script cross-tabulates
-        date-missingness against outcome before trusting any cohort.
-      </p>
-      <p>
-        <strong>Unnormalised fuel labels invented a finding.</strong> The first
-        table read <em>Solar 32.1%</em> beside <em>Photovoltaic 13.0%</em>, and
-        <em>Wind 19.1%</em> beside <em>Wnd 26.9%</em>. Same technologies,
-        different ISO vocabularies &mdash; the gap was measuring which ISO the
-        rows came from. Anyone reporting that split would have published an
-        artifact.
-      </p>
-    </div>
-  </section>
-
-  <section>
-    <h2>What this does not show</h2>
-    <div class="body">
-      <p>
-        Fuel and ISO are not independent, so the fuel numbers are not a
-        controlled comparison. CAISO&rsquo;s public queue report stops at March
-        2023. MISO&rsquo;s queue only begins in 2015. &ldquo;Completed&rdquo; means an
-        interconnection agreement completed, not that electrons flowed. And
-        these are historical base rates &mdash; no model is fitted here and no
-        forecast is offered.
-      </p>
-      <p>
-        Nor does it cover the two markets you most want: ERCOT publishes large
-        load only in aggregate and blocks scripted access, and PJM sits behind
-        a free API key.
-      </p>
-    </div>
-  </section>
-
-  <section>
-    <h2>Check it yourself</h2>
-    <div class="body">
-      <p>
-        MISO serves its entire queue &mdash; 3,828 requests with status, county,
-        capacity and dates &mdash; from one unauthenticated URL:
-      </p>
-      <pre><code>https://www.misoenergy.org/api/giqueue/getprojects</code></pre>
-      <p>
-        Count the withdrawals. It takes about a minute, and you do not have to
-        take my word for any of the above.
-      </p>
-    </div>
-  </section>
-
-  <section>
-    <h2>Why believe these numbers</h2>
-    <div class="body">
-      <p>
-        Because the last time I measured my own work, it failed. I built a
-        signal product on public financial data, tested whether it predicted
-        anything, and <strong>zero of fifty-one hypotheses survived
-        Benjamini&ndash;Hochberg correction.</strong> I withdrew the product and
-        published the null with its power calculation attached. A ranking I had
-        been about to sell turned out to be 90% Unix timestamp.
-      </p>
-    </div>
-    <div class="links">
-      <a class="card" href="/portfolio">
-        <span><span class="t">Forty projects are not forty coin flips</span><br>
-        <span class="d">These outcomes co-move. Independence understates the downside on a concentrated book by 4.3x</span></span>
-        <span class="arw">&rarr;</span>
-      </a>
-      <a class="card" href="/predictions">
-        <span><span class="t">1,636 predictions with deadlines attached</span><br>
-        <span class="d">These base rates, turned into a call on every request still active &mdash; written down now, settling from 2028, nothing resolved yet</span></span>
-        <span class="arw">&rarr;</span>
-      </a>
-      <a class="card" href="/">
-        <span><span class="t">The null result and the failure log</span><br>
-        <span class="d">51 hypotheses, 0 survivors, the power calculation, and thirteen documented ways the pipeline lied to me</span></span>
-        <span class="arw">&rarr;</span>
-      </a>
-      <a class="card" href="https://savabs.github.io/">
-        <span><span class="t">Everything else I have measured</span><br>
-        <span class="d">An agent harness that lost to a single API call, thirteen ways a pipeline lied, and a null result with its power calculation</span></span>
-        <span class="arw">&rarr;</span>
-      </a>
-      <a class="card" href="https://github.com/savabs">
-        <span><span class="t">github.com/savabs</span><br>
-        <span class="d">Where to find me. I am archiving what these queues say each day, because the operators overwrite it and nobody keeps the old value</span></span>
-        <span class="arw">&rarr;</span>
-      </a>
-    </div>
-  </section>
-
-  <footer>
-    Base rates, September 2026. Figures reproducible from public sources.
-    <code>github.com/savabs</code>
-  </footer>
-
+<header>
+<div class="eyebrow"><span class="pip"></span>Measured &middot; September 2026</div>
+<h1>The AI power queue<br><span class="grad">is mostly vapour.</span></h1>
+<p class="lede">To connect a power plant or a big datacenter to the grid, you file a request with your region&rsquo;s grid operator and wait in line. That line is the queue.</p>
+<p class="lede">A gigawatt (GW) is 1,000 megawatts (MW), the size AI datacenter projects ask for. Texas has 466 GW in line, the Midwest 699 GW. Forecasters quote those totals as if everything in line were on its way.</p>
+<p class="lede">I counted 10,996 requests that are already finished &mdash; built, or given up on. <strong>About one in five got built. At 1,000 MW and above, one in nineteen.</strong></p>
+</header>
+<div class="stats">
+<div class="stat"><div class="n grad">10,996</div><div class="k">requests to join the grid, all already finished</div></div>
+<div class="stat"><div class="n grad">17&ndash;21%</div><div class="k">of finished requests got built &mdash; about one in five. It is a range because 1,354 records carry no date, and because only years old enough to have finished are counted</div></div>
+<div class="stat"><div class="n grad">5.3%</div><div class="k">of requests at 1,000 MW and above got built &mdash; one in nineteen</div></div>
+</div>
+<p class="fine">The four operators run the Midwest, New York, California and New England &mdash; MISO, NYISO, CAISO and ISO-NE. <strong>Texas is not among them</strong>, so the 466 GW above is not in these figures: it blocks automated downloads. Nor is the mid-Atlantic (PJM), which needs a free key, nor the central plains (SPP), which never answered.</p>
+<section class="body">
+<h2>Size is the whole story</h2>
+<p><strong>Above 100 MW, each step up in size cuts the chance of being built:</strong> 23.9%, then 12.6%, then 5.3%. Under 100 MW the pattern breaks. The 20&ndash;100 MW band does worse than both of its neighbours.</p>
+<table>
+<thead><tr><th>size</th><th>requests</th><th>built</th><th>range</th></tr></thead>
+<tbody>
+<tr><td>under 20 MW</td><td>1,024</td><td>28.8%</td><td>26.1&ndash;31.7%</td></tr>
+<tr><td>20&ndash;100 MW</td><td>1,639</td><td>19.0%</td><td>17.2&ndash;21.0%</td></tr>
+<tr><td>100&ndash;300 MW</td><td>1,654</td><td>23.9%</td><td>21.9&ndash;26.0%</td></tr>
+<tr><td>300&ndash;1,000 MW</td><td>680</td><td>12.6%</td><td>10.4&ndash;15.4%</td></tr>
+<tr class="hi"><td><strong>1,000 MW and above</strong></td><td>169</td><td><strong>5.3%</strong></td><td>2.8&ndash;9.8%</td></tr>
+</tbody>
+</table>
+<p>The last column is the range the true rate is likely to sit in. It is drawn so that, on twenty sets of data like this, about nineteen of the ranges &mdash; 95% of them &mdash; would contain the true rate. Bands with fewer requests get wider ranges. These are Wilson intervals, named so you can recompute them: the ordinary textbook formula misbehaves for rates this close to zero, which is exactly where the big projects sit.</p>
+<div class="pull">The AI datacenter story is entirely gigawatt-scale &mdash; the size class that, historically, almost never gets built.</div>
+<p>Built rates by what the plant runs on. Spellings were merged first &mdash; the second bug below says why.</p>
+<table>
+<thead><tr><th>runs on</th><th>built</th></tr></thead>
+<tbody>
+<tr><td>gas</td><td>33.1%</td></tr><tr><td>solar</td><td>23.2%</td></tr><tr><td>wind</td><td>19.5%</td></tr><tr><td>storage</td><td>9.5%</td></tr>
+</tbody>
+</table>
+</section>
+<section class="body">
+<h2>Why it is a range, not one number</h2>
+<p><strong>The headline is about 1 in 5.</strong> Here is the working behind it. I counted three ways, and they disagree.</p>
+<p><strong>14.2%</strong> counts the built ones across every request that has ended. That is too low. A request filed in 2024 has not had time to be built. Counting it now marks a project still waiting as a failure.</p>
+<p><strong>21.4%</strong> groups requests by the year they joined the line, and counts each year on its own. I only use a year once at least 90% of its requests have finished. That leaves 5,436 requests.</p>
+<p>That is too high. 1,354 finished requests carry no filing date, so they drop out of every year group. Almost all are failures: 1,351 given up on, 3 built. Most of them were filed before 2000.</p>
+<p><strong>17.2%</strong> puts the dateless ones back in. So the answer sits between 17.2% and 21.4%. I show both ends. Showing one would hide one of the two flaws above.</p>
+</section>
+<section class="body">
+<h2>Two bugs I hit</h2>
+<p><strong>Mixed date formats silently destroyed 7,400 of 9,640 dates.</strong> Operators write filing dates four ways: <code>2003-11-18 08:00:00</code>, <code>1/14/2025</code>, <code>2025-10-08T00:37:52+00:00</code>, <code>2008-01-30</code>. The date tool (<code>pandas.to_datetime</code>) read the first, assumed the rest matched, and blanked the others. 84% vanished. A blanked date looks exactly like one nobody filled in. It surfaced only because the script checks whether requests with no date got built at a different rate.</p>
+<p><strong>Sloppy technology labels invented a finding.</strong> My first table read <em>Solar 32.1%</em> beside <em>Photovoltaic 13.0%</em>, and <em>Wind 19.1%</em> beside <em>Wnd 26.9%</em>. Each operator spells a technology its own way. The difference was not solar against photovoltaic. It only showed which operator had filed the row. Anyone who published that split would have published a mistake. So &ldquo;Solar&rdquo; and &ldquo;Photovoltaic&rdquo; became one label, and so did &ldquo;Wind&rdquo; and &ldquo;Wnd&rdquo;.</p>
+</section>
+<section class="body">
+<h2>What this does not show</h2>
+<p><strong>The technology split is not a fair fight.</strong> Regions build different things. Part of the difference between gas and solar is really about where the project is, not what it burns.</p>
+<p><strong>Coverage has holes.</strong> California&rsquo;s report stops at March 2023. The Midwest queue begins in 2015. <strong>&ldquo;Built&rdquo; is generous.</strong> It means the paperwork with the operator finished, not that the plant switched on. <strong>No forecast.</strong> This counts what already happened. No model is fitted.</p>
+<p><strong>The two markets you most want are missing.</strong> Texas publishes requests from very large electricity users only as a lump total, and blocks software from downloading the detail. The mid-Atlantic operator makes you sign up for a free key. A third operator, in the central plains, timed out when I asked.</p>
+</section>
+<section class="body">
+<h2>Check it yourself</h2>
+<p>The Midwest operator serves its whole queue &mdash; 3,828 requests with status, county, capacity and dates &mdash; from one open address. No sign-up:</p>
+<pre><code>https://www.misoenergy.org/api/giqueue/getprojects</code></pre>
+<p>Count the ones given up on. It takes about a minute. You do not have to take my word for any of the above. Your totals will not match mine: the operators overwrite this file, and nobody keeps the old value.</p>
+</section>
+<section>
+<h2>Why believe these numbers</h2>
+<div class="body">
+<p>The last time I measured my own work, it failed, and I said so. I built a tool on public financial data and tested whether it predicted anything. I tested fifty-one ideas. Test that many and some will look good on luck alone. So I raised the bar (the Benjamini&ndash;Hochberg correction, named so you can repeat it) a result had to clear before I would call it real. <strong>Zero of the fifty-one cleared it.</strong></p>
+<p>I withdrew the product. I published the empty result, with my workings on the strength of the test. The ranking I had been about to sell turned out to be 90% driven by a date stored as a plain number.</p>
+</div>
+<div class="links">
+<a class="card" href="/portfolio"><span><span class="t">Forty projects move together</span><br><span class="d">Treat forty outcomes as forty separate bets and you understate how bad the worst case gets, by 4.3 times</span></span><span class="arw">&rarr;</span></a>
+<a class="card" href="/predictions"><span><span class="t">1,636 predictions with deadlines attached</span><br><span class="d">These same rates, turned into a call on every request still in line. Written down now, none of them due to settle later than 2028 and many sooner. Nothing resolved yet.</span></span><span class="arw">&rarr;</span></a>
+<a class="card" href="/"><span><span class="t">The result where I found nothing</span><br><span class="d">51 ideas, 0 survivors, and thirteen ways the pipeline lied to me</span></span><span class="arw">&rarr;</span></a>
+<a class="card" href="https://savabs.github.io/"><span><span class="t">Everything else I have measured</span><br><span class="d">An agent harness that lost to one direct call to the model, thirteen ways a pipeline lied to me, and the empty result with its workings</span></span><span class="arw">&rarr;</span></a>
+<a class="card" href="https://github.com/savabs"><span><span class="t">github.com/savabs</span><br><span class="d">I save what these queues say each day, because the operators overwrite it.</span></span><span class="arw">&rarr;</span></a>
+</div>
+</section>
+<footer>September 2026. Every figure comes from public sources, which the operators overwrite in place. <code>github.com/savabs</code></footer>
 </div>
 </body>
 </html>

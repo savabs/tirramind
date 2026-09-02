@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark light">
 <title>Forty projects are not forty coin flips</title>
-<meta name="description" content="Interconnection outcomes co-move. Measured against a permutation null, every grouping level clusters. Independence understates a concentrated book's tail risk by 4.3x.">
+<meta name="description" content="Power projects fail together: they share a technology, a state, a grid operator, a place in the queue. On forty projects all in one technology, the range the usual arithmetic calls 80% sure is right only 62.6% of the time.">
 <meta property="og:title" content="Forty projects are not forty coin flips">
-<meta property="og:description" content="On a single-fuel book, the independence arithmetic's 80% confidence interval is wrong more than a third of the time. Measured, not assumed.">
+<meta property="og:description" content="On this queue of 1,636 requests, assuming projects fail on their own makes the range of outcomes 4.3 times too narrow. Measured, not assumed.">
 <style>
   :root{
     --bg:#060608; --ink:#fafafa; --mut:#93939c; --dim:#5c5c66;
@@ -126,248 +126,228 @@
 <body>
 <div class="wrap">
 
-  <header>
-    <div class="eyebrow"><span class="pip"></span>Portfolio risk &middot; September 2026</div>
-    <h1>Forty projects are not<br><span class="grad">forty coin flips.</span></h1>
-    <p class="lede">
-      Give forty interconnection requests a 20% chance each and the arithmetic
-      says you will get eight, give or take two and a half. That arithmetic
-      assumes the forty are independent. They are not, and I measured how badly
-      &mdash; <strong>on a book concentrated in one technology, the standard
-      80% confidence interval is wrong more than a third of the time.</strong>
-    </p>
-  </header>
+<header>
+<div class="eyebrow"><span class="pip"></span>Portfolio risk &middot; September 2026</div>
+<h1>Forty projects are not<br><span class="grad">forty coin flips.</span></h1>
+<p class="lede">Give forty grid-connection requests a 20% chance each. The
+  arithmetic says eight get built, give or take two and a half projects. It
+  assumes the forty stand or fall on their own. They do not. I measured it.
+  <strong>Take forty projects that all use one technology. The arithmetic
+  offers a range it promises is right 80% of the time. It is
+  right 62.6% of the time.</strong></p>
+</header>
 
-  <div class="stats">
-    <div class="stat"><div class="n grad">4.3&times;</div><div class="k">wider spread once shared shocks are allowed</div></div>
-    <div class="stat"><div class="n grad">62.6%</div><div class="k">true coverage of independence's &ldquo;80%&rdquo; interval on a concentrated book</div></div>
-    <div class="stat"><div class="n grad">21.4 GW</div><div class="k">how much worse the 1-in-10 bad case really is</div></div>
-    <div class="stat"><div class="n grad">4.09&times;</div><div class="k">clustering by technology, the strongest shared shock</div></div>
+<div class="stats">
+<div class="stat"><div class="n grad">4.3&times;</div><div class="k">how much wider the spread of outcomes becomes once projects are allowed to fail together</div></div>
+<div class="stat"><div class="n grad">62.6%</div><div class="k">a range promised to be right 8 times in 10 was right only 6 times in 10, on forty projects in one technology</div></div>
+<div class="stat"><div class="n grad">21.4 GW</div><div class="k">how much further the bad case falls than the usual arithmetic says. The bad case is the level one outcome in ten lands below</div></div>
+<div class="stat"><div class="n grad">4.09&times;</div><div class="k">how much more build counts swing between technologies than shuffling explains. The strongest of six groupings I tested</div></div>
+</div>
+<p class="fine">1,636 requests still waiting across MISO, CAISO, NYISO and ISO-NE. 355 GW of capacity between them.</p>
+
+<section>
+<h2>The mistake</h2>
+<div class="body">
+  <p>A chance for one project answers one question. Will this one get built?
+    It does not answer the question that matters. How much will my forty
+    deliver? To get from the first to the second, almost everyone multiplies.
+    Multiplying assumes each project stands or falls on its own.</p>
+  <p>Projects in the same queue share things. A grid operator&rsquo;s study
+    cycle. A transmission owner&rsquo;s capital plan. An equipment supplier. A
+    state&rsquo;s policy. When one of those turns bad, every project sharing it
+    moves at once. That is a shared shock: one event, many projects. Multiplying
+    cannot represent it, so it hands you a range far too narrow.</p>
+  <div class="pull">The average is fine. It is the bad case that is a fantasy.</div>
+</div>
+</section>
+
+<section>
+<h2>First: do they really fail together?</h2>
+<div class="body">
+  <p>A model of shared shocks will invent them where there are none. So I
+    tested first. Do build counts inside a group swing more than they would if
+    every project stood alone?</p>
+  <p>Count how many projects got built in each real group. Then shuffle which
+    project sits in which group, keeping the same chances and group sizes, and
+    count again. Do that 4,000 times.</p>
+  <p>The shuffling matters. The underlying model is off: when it says 65% it
+    means 49%. A textbook test would read that error as projects failing
+    together, and find an effect that was not there. The shuffled version
+    carries the same error, so only the real effect survives.</p>
+  <p>The middle two columns measure how far build counts swing from group to
+    group. Bigger means more swing. The last divides real by shuffled.</p>
+  <table>
+    <thead><tr><th>projects grouped by</th><th>groups</th><th>real swing</th><th>swing after shuffling</th><th>real &divide; shuffled</th></tr></thead>
+    <tbody>
+      <tr class="hi"><td><strong>technology</strong></td><td>13</td><td>13.23</td><td>3.24</td><td><strong>4.09&times;</strong></td></tr>
+      <tr><td>state</td><td>27</td><td>5.64</td><td>2.15</td><td>2.62&times;</td></tr>
+      <tr><td>study cycle</td><td>59</td><td>7.41</td><td>3.93</td><td>1.88&times;</td></tr>
+      <tr><td>county</td><td>132</td><td>2.14</td><td>1.19</td><td>1.80&times;</td></tr>
+      <tr><td>grid operator</td><td>4</td><td>15.41</td><td>8.77</td><td>1.76&times;</td></tr>
+      <tr><td>transmission owner</td><td>22</td><td>4.32</td><td>2.51</td><td>1.72&times;</td></tr>
+    </tbody>
+  </table>
+  <p>A shuffled swing of 1.0 would mean the model&rsquo;s chances were exactly
+    right. The shuffled swings run 1.19 to 8.77 instead. That gap is the
+    model&rsquo;s own error. It is also the size of the mistake a textbook test
+    would have made, since a textbook test expects 1.0.</p>
+  <p>No shuffle ever reached the real swing, on any row. Chance alone would do
+    that less than one time in 4,000 &mdash; written 0.00025, and the smallest
+    number 4,000 shuffles can report. It makes luck a poor explanation. It says
+    nothing about the size of the effect.</p>
+  <div class="pull">Technology is a stronger shared shock than geography.</div>
+  <p>Tariffs, cell prices and turbine lead times hit
+    every project of a type at once, wherever it sits. <strong>Forty projects
+    across ten states but all solar are far less spread out than they
+    look.</strong></p>
+</div>
+</section>
+
+<section>
+<h2>Second: does modelling it help?</h2>
+<div class="body">
+  <p>That they fail together is real. It does not follow that my model of it
+    predicts better. So I picked the model by testing, not by chasing the
+    biggest effect.</p>
+  <p>Draw sets of 40 from years the model never saw. Ask each model for a range
+    it calls 80% sure. Count how often the truth lands inside. The target is
+    80%. A model that scores below 80% is overpromising. A model that scores
+    above 80% is vaguer than it needs to be.</p>
+  <table>
+    <thead><tr><th>the forty you actually hold</th><th>each on its own</th><th>failing together</th></tr></thead>
+    <tbody>
+      <tr><td>mixed, drawn at random</td><td>78.7%</td><td>89.0%</td></tr>
+      <tr><td>all in one state</td><td>74.5%</td><td>88.1%</td></tr>
+      <tr class="hi"><td><strong>all in one technology</strong></td><td><strong>62.6%</strong></td><td><strong>81.5%</strong></td></tr>
+    </tbody>
+  </table>
+  <p>The usual arithmetic is tolerable on a mixed set and dangerous on a
+    concentrated one. Concentrated is the real case for a developer or lender
+    betting on one technology. The range is meant to miss one time in five. It
+    misses nearly two times in five.</p>
+  <p>Shared shocks fix that row. They overshoot the other two: 89.0% and 88.1%
+    against a target of 80%. Those ranges are wider than they need to be. Too
+    wide is safer than too narrow. It is still not right.</p>
+</div>
+</section>
+
+<section>
+<h2>What it does to the live queue</h2>
+<div class="body">
+  <p>All 1,636 requests still waiting across four grid operators, 355 GW of
+    capacity. Both models expect about 102 GW delivered. They disagree
+    completely about how sure anyone should be.</p>
+  <div class="chart">
+    <svg viewBox="0 0 100 47" role="img" aria-label="Gigawatts delivered. Treating each project on its own gives a narrow bar from 94.8 to 108.7. Letting projects fail together gives a bar over four times wider, from 73.4 to 134.2, whose bad case is 21.4 gigawatts lower.">
+    <line class="tick" x1="0" y1="4" x2="0" y2="38"></line>
+    <line class="tick" x1="22.22" y1="4" x2="22.22" y2="38"></line>
+    <line class="tick" x1="44.44" y1="4" x2="44.44" y2="38"></line>
+    <line class="tick" x1="66.67" y1="4" x2="66.67" y2="38"></line>
+    <line class="tick" x1="88.89" y1="4" x2="88.89" y2="38"></line>
+    <line class="tick" x1="0" y1="38" x2="100" y2="38"></line>
+    <text class="rowl" x="0" y="8">each project on its own</text>
+    <rect class="band2" x="38.67" y="9.5" width="15.44" height="6" rx="1" fill="var(--a3)"></rect>
+    <line class="med" x1="46.33" y1="8.9" x2="46.33" y2="16.1"></line>
+    <text class="rowl" x="0" y="21">failing together</text>
+    <rect class="band2" x="14.89" y="22.5" width="67.56" height="6" rx="1" fill="var(--a2)"></rect>
+    <line class="med" x1="47.33" y1="21.9" x2="47.33" y2="29.1"></line>
+    <path class="med" fill="none" d="M38.67 15.5V22.5M38.67 28.5V32M14.89 28.5V32H38.67"/>
+    <text class="axl" x="0" y="35.6">21.4 GW worse in the bad case</text>
+    <text class="axl" x="0" y="41.5">60 GW</text>
+    <text class="axl" x="22.22" y="41.5" text-anchor="middle">80</text>
+    <text class="axl" x="44.44" y="41.5" text-anchor="middle">100</text>
+    <text class="axl" x="66.67" y="41.5" text-anchor="middle">120</text>
+    <text class="axl" x="88.89" y="41.5" text-anchor="middle">140</text>
+    <text class="axl" x="0" y="45.5">bar = one in ten to nine in ten &middot; line = middle &middot; the rarer cases run further out still</text>
+    </svg>
   </div>
-  <p class="fine">1,636 active requests across MISO, CAISO, NYISO and ISO-NE. 355 GW under call.</p>
+  <table>
+    <thead><tr><th>GW delivered</th><th>one in ten</th><th>middle</th><th>nine in ten</th></tr></thead>
+    <tbody>
+      <tr><td>each on its own</td><td>94.8</td><td>101.7</td><td>108.7</td></tr>
+      <tr class="hi"><td><strong>failing together</strong></td><td><strong>73.4</strong></td><td>102.6</td><td><strong>134.2</strong></td></tr>
+    </tbody>
+  </table>
+  <p>Same centre. <strong>4.3&times; the spread.</strong> The bad case is 21.4 GW
+    worse than the usual arithmetic implies. That is about a fifth of the 102 GW
+    expected. It is the number a lender sizing a loan, or a manufacturer sizing
+    a factory, gets wrong.</p>
+</div>
+</section>
 
-  <section>
-    <h2>The thing everyone gets wrong</h2>
-    <div class="body">
-      <p>
-        A probability per project answers <em>&ldquo;will this one be
-        built?&rdquo;</em> It does not answer <em>&ldquo;how much will my forty
-        deliver?&rdquo;</em> The distance between those two questions is
-        entirely the independence assumption, and it is almost always made
-        silently, by multiplying.
-      </p>
-      <p>
-        Projects in the same queue share an ISO study cycle, a transmission
-        owner's capital plan, an equipment supplier, a state policy regime.
-        When one of those turns, it does not move one project. It moves all of
-        them at once. Independence cannot represent that, so it produces a
-        distribution that is far too narrow &mdash; confident, tidy, and wrong
-        in exactly the tail you are trying to protect against.
-      </p>
-      <div class="pull">The average is fine. It is the bad case that is a fantasy.</div>
-    </div>
-  </section>
+<section>
+<h2>Read the shape, not the level</h2>
+<div class="body">
+  <p>Two problems, found while building this. Neither is fixed.</p>
+  <p><strong>Getting the project count right does not get the gigawatts
+    right.</strong> Tune the chances until the project count comes out right. Do
+    that, and delivered capacity comes out 20.8% too high on projects the model
+    never saw. The gigawatts sit in the big projects, and big projects fail more
+    often.</p>
+  <p>Re-tuning by megawatts instead cuts that to 6.1%. Telling the model how big
+    each project is does not help. Compare only projects of a similar size and
+    the bias is still there.</p>
+  <p><strong>The live queue is 68% MISO by capacity. The history I trained on is
+    19% MISO.</strong> So the headline leans hard on one operator&rsquo;s record
+    being typical. Split the history by operator and technology, and
+    some slices hold fewer than 40 finished requests. Those thin slices cover
+    18% of the queue&rsquo;s capacity.</p>
+  <p>The 4.3-times-wider figure divides one spread by another, and it survives
+    both problems. The centre does not. So the claim is deliberately narrow.
+    <strong>Not &ldquo;103 GW will be delivered&rdquo;. Rather: whatever the
+    centre turns out to be, the spread around it is more than four times what
+    the usual arithmetic tells you.</strong></p>
+</div>
+</section>
 
-  <section>
-    <h2>I checked whether the correlation was real first</h2>
-    <div class="body">
-      <p>
-        A model of shared shocks invents risk if there are no shared shocks. So
-        before fitting one: do outcomes inside a group vary more than
-        independent draws would?
-      </p>
-      <p>
-        The test compares each group's build count against a <strong>permutation
-        null</strong> &mdash; same predicted probabilities, same group sizes,
-        group membership shuffled. That detail matters more than it sounds. The
-        underlying model is miscalibrated: it says 65% and means 49%. A textbook
-        chi-square test would have read that miscalibration as clustering and
-        &ldquo;found&rdquo; correlation that was not there. The permuted null
-        carries the same miscalibration, so only real structure survives it.
-      </p>
-      <table>
-        <thead><tr><th>outcomes shared by</th><th>groups</th><th>observed</th><th>permuted null</th><th>inflation</th></tr></thead>
-        <tbody>
-          <tr class="hi"><td style="text-align:left"><strong>fuel type</strong></td><td>13</td><td>13.23</td><td>3.24</td><td><strong>4.09&times;</strong></td></tr>
-          <tr><td style="text-align:left">state</td><td>27</td><td>5.64</td><td>2.15</td><td>2.62&times;</td></tr>
-          <tr><td style="text-align:left">ISO study cycle</td><td>59</td><td>7.41</td><td>3.93</td><td>1.88&times;</td></tr>
-          <tr><td style="text-align:left">county</td><td>132</td><td>2.14</td><td>1.19</td><td>1.80&times;</td></tr>
-          <tr><td style="text-align:left">ISO</td><td>4</td><td>15.41</td><td>8.77</td><td>1.76&times;</td></tr>
-          <tr><td style="text-align:left">transmission owner</td><td>22</td><td>4.32</td><td>2.51</td><td>1.72&times;</td></tr>
-        </tbody>
-      </table>
-      <p>
-        Every level significant at p &lt; 0.00025, the floor at 4,000
-        permutations. Note the nulls are 1.19 to 8.77 rather than the 1.0 a
-        table would assume &mdash; that gap <em>is</em> the miscalibration, and
-        it is the size of the mistake the naive test would have made.
-      </p>
-      <div class="pull">Technology is a stronger shared shock than geography.</div>
-      <p>
-        That is the commercially useful part. Tariffs, cell prices and turbine
-        lead times hit every project of a type simultaneously, wherever it sits.
-        <strong>A book spread across ten states but concentrated in solar is far
-        less diversified than it looks.</strong>
-      </p>
-    </div>
-  </section>
+<section>
+<h2>Method</h2>
+<div class="body">
+  <p>Every project keeps its own chance of being built. On top of that, each
+    group gets one shared push, up or down, applied to all its members. Small
+    pushes are assumed to be commoner than large ones, in the usual bell shape.
+    I fit the settings that make the real outcomes most likely, allowing for
+    every push a group might have had.</p>
+  <p>The per-project chances are frozen at my earlier model. That model was
+    tested by training on old years and predicting later ones. Freezing
+    it stops the shared push from soaking up ordinary error.</p>
+  <p>Study cycle measures 1.06 on the scale the
+    model works in, where 0 would mean no shared push at all. Put another way:
+    25.5% of the variation the per-project model leaves unexplained sits between
+    study cycles rather than within them.</p>
+  <p>Groups were fitted one at a time. A project belongs to several at once, so
+    their effects overlap and cannot be added up. So I chose the combination by
+    testing on unseen years.</p>
+</div>
+<div class="links">
+  <a class="card" href="/predictions">
+    <span><span class="t">The open ledger this runs on</span><br>
+    <span class="d">1,636 predictions with deadlines attached, published before any outcome exists. Nothing resolved yet</span></span>
+    <span class="arw">&rarr;</span>
+  </a>
+  <a class="card" href="/queue">
+    <span><span class="t">The track record underneath it</span><br>
+    <span class="d">10,996 requests with known outcomes. About one in five gets built; above 1,000 MW it is one in nineteen</span></span>
+    <span class="arw">&rarr;</span>
+  </a>
+  <a class="card" href="https://github.com/savabs/queue_attrition">
+    <span><span class="t">github.com/savabs/queue_attrition</span><br>
+    <span class="d">The code, including the shuffle test. It had to pass before any of this was fitted, and the run stops if it fails</span></span>
+    <span class="arw">&rarr;</span>
+  </a>
+  <a class="card" href="/predictions.csv" download>
+    <span><span class="t">The underlying ledger, as a CSV</span><br>
+    <span class="d">All 1,636 predictions: the chance, the deadline, what the model looked at, and who settles it</span></span>
+    <span class="arw">&darr;</span>
+  </a>
+</div>
+</section>
 
-  <section>
-    <h2>Then whether modelling it actually helps</h2>
-    <div class="body">
-      <p>
-        Correlation being real does not mean a given model of it predicts
-        better. So the structure was chosen by out-of-sample test, not by
-        picking the largest effect: draw books of 40 from held-out data, and
-        check how often the truth lands inside each model's 80% interval. The
-        target is 80%.
-      </p>
-      <table>
-        <thead><tr><th>the book you actually hold</th><th>independence</th><th>shared shocks</th></tr></thead>
-        <tbody>
-          <tr><td style="text-align:left">diversified, drawn at random</td><td>78.7%</td><td>89.0%</td></tr>
-          <tr><td style="text-align:left">all in one state</td><td>74.5%</td><td>88.1%</td></tr>
-          <tr class="hi"><td style="text-align:left"><strong>all in one technology</strong></td><td><strong>62.6%</strong></td><td><strong>81.5%</strong></td></tr>
-        </tbody>
-      </table>
-      <p>
-        Independence is tolerable for a diversified book and dangerous for a
-        concentrated one &mdash; which is the realistic case for a developer, a
-        lender, or anyone whose thesis is a single technology. Its
-        &ldquo;80%&rdquo; interval contains the truth 62.6% of the time.
-      </p>
-    </div>
-  </section>
-
-  <section>
-    <h2>What it does to the live book</h2>
-    <div class="body">
-      <p>
-        All 1,636 requests still active across four grid operators, 355 GW
-        queued. Both models agree the expected delivery is about 102 GW. They
-        disagree completely about how sure of that anyone should be.
-      </p>
-      <div class="chart">
-        <svg viewBox="0 0 100 40" role="img" aria-label="Delivered capacity distribution under independence versus shared shocks">
-          <line class="tick" x1="0" y1="31" x2="100" y2="31"></line>
-          <line class="tick" x1="0" y1="4" x2="0" y2="31"></line>
-          <line class="tick" x1="22.2" y1="4" x2="22.2" y2="31"></line>
-          <line class="tick" x1="44.4" y1="4" x2="44.4" y2="31"></line>
-          <line class="tick" x1="66.7" y1="4" x2="66.7" y2="31"></line>
-          <line class="tick" x1="88.9" y1="4" x2="88.9" y2="31"></line>
-
-          <text class="rowl" x="0" y="8">independence</text>
-          <rect class="band"  x="36.7" y="10" width="19.6" height="6" rx="1" fill="var(--a3)"></rect>
-          <rect class="band2" x="42.3" y="10" width="8.1"  height="6" rx="1" fill="var(--a3)"></rect>
-          <line class="med" x1="46.3" y1="9.4" x2="46.3" y2="16.6"></line>
-
-          <text class="rowl" x="0" y="21">with shared shocks</text>
-          <rect class="band"  x="7.0"  y="23" width="85.7" height="6" rx="1" fill="var(--a2)"></rect>
-          <rect class="band2" x="29.4" y="23" width="35.6" height="6" rx="1" fill="var(--a2)"></rect>
-          <line class="med" x1="47.0" y1="22.4" x2="47.0" y2="29.6"></line>
-
-          <text class="axl" x="0"    y="35" text-anchor="start">60 GW</text>
-          <text class="axl" x="22.2" y="35" text-anchor="middle">80</text>
-          <text class="axl" x="44.4" y="35" text-anchor="middle">100</text>
-          <text class="axl" x="66.7" y="35" text-anchor="middle">120</text>
-          <text class="axl" x="88.9" y="35" text-anchor="middle">140</text>
-          <text class="axl" x="100"  y="39" text-anchor="end">pale band = 5th to 95th percentile &middot; solid = 25th to 75th &middot; line = median</text>
-        </svg>
-      </div>
-      <table>
-        <thead><tr><th>GW delivered</th><th>p10</th><th>p50</th><th>p90</th></tr></thead>
-        <tbody>
-          <tr><td style="text-align:left">independence</td><td>94.8</td><td>101.7</td><td>108.7</td></tr>
-          <tr class="hi"><td style="text-align:left"><strong>shared shocks</strong></td><td><strong>73.4</strong></td><td>102.6</td><td><strong>134.2</strong></td></tr>
-        </tbody>
-      </table>
-      <p>
-        Same centre. <strong>4.3&times; the spread.</strong> The one-in-ten bad
-        case is 21.4 GW worse than the independent arithmetic implies &mdash;
-        and 21.4 GW is roughly the entire active queue of ISO-NE and NYISO
-        combined. That is the number a lender sizing a facility, or a
-        manufacturer sizing a factory, is currently getting wrong.
-      </p>
-    </div>
-  </section>
-
-  <section>
-    <h2>Read the shape, not the level</h2>
-    <div class="body">
-      <p>
-        Two measured reasons the centre of that distribution deserves less
-        trust than its width. Both were found while building it and neither is
-        fixed.
-      </p>
-      <p>
-        <strong>Calibrating on projects is not calibrating on capacity.</strong>
-        Probabilities tuned so that each <em>project</em> is right overstate
-        delivered <em>capacity</em> by 20.8% out of sample, because the
-        gigawatts sit in large projects and large projects fail more inside
-        every size band. Re-fitting the calibration weighted by megawatts cuts
-        that to 6.1%. Adding project size as a feature does not help &mdash; the
-        bias is within size bands, not between them.
-      </p>
-      <p>
-        <strong>The live book is 68% MISO by capacity; the training history is
-        19% MISO.</strong> So the headline leans heavily on one operator's
-        record being representative. 18% of the book's capacity sits in
-        operator&times;technology cells with fewer than 40 resolved historical
-        requests.
-      </p>
-      <p>
-        The dispersion result is a ratio, and it survives both problems. The
-        central estimate does not. So the honest claim here is narrow and
-        deliberately so: <strong>not &ldquo;103 GW will be delivered&rdquo;, but
-        &ldquo;whatever the centre turns out to be, the spread around it is more
-        than four times what independence tells you.&rdquo;</strong>
-      </p>
-    </div>
-  </section>
-
-  <section>
-    <h2>Method</h2>
-    <div class="body">
-      <p>
-        Random-intercept logistic model fitted by marginal maximum likelihood,
-        integrating the group effect out with Gauss&ndash;Hermite quadrature.
-        Fixed effects held at the already-validated walk-forward model, so the
-        shared effect cannot quietly absorb ordinary lack of fit. Study cycle
-        carries a frailty of &tau;&nbsp;=&nbsp;1.06 on the log-odds scale, an
-        intra-class correlation of 25.5%. Levels are fitted one at a time and
-        therefore overlap, which is precisely why the combination was chosen by
-        out-of-sample coverage rather than by adding up the largest ones.
-      </p>
-    </div>
-    <div class="links">
-      <a class="card" href="/predictions">
-        <span><span class="t">The open ledger this runs on</span><br>
-        <span class="d">1,636 calls with deadlines attached, published before any outcome exists. Nothing resolved yet</span></span>
-        <span class="arw">&rarr;</span>
-      </a>
-      <a class="card" href="/queue">
-        <span><span class="t">The base rates underneath it</span><br>
-        <span class="d">10,996 requests with known outcomes. About one in five gets built; above 1,000 MW it is one in nineteen</span></span>
-        <span class="arw">&rarr;</span>
-      </a>
-      <a class="card" href="https://github.com/savabs/queue_attrition">
-        <span><span class="t">github.com/savabs/queue_attrition</span><br>
-        <span class="d">The code, including <code>frailty.py</code> &mdash; the permutation test that had to pass before any of this was fitted, and the stage that exits if it does not</span></span>
-        <span class="arw">&rarr;</span>
-      </a>
-      <a class="card" href="/predictions.csv" download>
-        <span><span class="t">The underlying ledger, as a CSV</span><br>
-        <span class="d">All 1,636 calls with their probabilities, features, deadlines and named referee</span></span>
-        <span class="arw">&darr;</span>
-      </a>
-    </div>
-  </section>
-
-  <footer>
-    Portfolio risk, September 2026. Correlation measured before it was modelled;
-    the model chosen by out-of-sample coverage.
-    <code>github.com/savabs</code>
-  </footer>
+<footer>
+Portfolio risk, September 2026. I showed that projects fail together before I
+modelled it. I chose the model by testing on unseen years.
+<code>github.com/savabs</code>
+</footer>
 
 </div>
 </body>

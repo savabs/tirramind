@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark light">
-<title>TirraMind — interconnection risk</title>
-<meta name="description" content="355 GW of US interconnection requests under live, calibrated prediction. About one in five gets built; above 1,000 MW, one in nineteen. Published before the outcomes exist.">
+<title>355 gigawatts are queued. One in five gets built.</title>
+<meta name="description" content="355 GW of US power projects wait to plug in. About one in five gets built; above 1,000 MW, one in nineteen. Each waiting project gets a probability, published before the outcome exists.">
 <meta property="og:title" content="355 gigawatts are queued. One in five gets built.">
-<meta property="og:description" content="Calibrated probabilities on every active US interconnection request, published before the outcomes with a deadline on each. An open ledger, and a portfolio model that says these outcomes do not multiply.">
+<meta property="og:description" content="I put a probability on every power project still waiting to join four US grids, published before anyone knows the answer. And they do not fail independently.">
 <style>
   :root{
     --bg:#060608; --ink:#fafafa; --mut:#93939c; --dim:#5c5c66;
@@ -99,125 +99,67 @@
   code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.92em;color:var(--mut)}
   @media (max-width:640px){header{padding:10vh 0 0}.stats{margin-top:46px}}
 </style>
+<style>
+.fig{margin:0 0 78px}.diagram{width:100%;height:auto;display:block;border:1px solid var(--line);padding:18px}
+.fig figcaption{font-size:12.5px;color:var(--dim);margin-top:12px;max-width:63ch}
+</style>
 </head>
 <body>
 <div class="wrap">
-
-  <header>
-    <div class="eyebrow"><span class="pip"></span>Interconnection risk &middot; September 2026</div>
-    <h1>355 gigawatts are queued.<br><span class="grad">One in five gets built.</span></h1>
-    <p class="lede">
-      Every forecast of the AI buildout quotes the interconnection queue as
-      though it were a pipeline. It is a waiting list, and most of it never
-      happens. I put a calibrated probability on every request still in it,
-      <strong>published before the outcomes exist</strong>, with a date each one
-      must settle by.
-    </p>
-  </header>
-
-  <div class="stats">
-    <div class="stat"><div class="n grad">355 GW</div><div class="k">under live prediction across four grid operators</div></div>
-    <div class="stat"><div class="n grad">1 in 19</div><div class="k">how often requests of 1,000 MW or more get built</div></div>
-    <div class="stat"><div class="n grad">4.3&times;</div><div class="k">how much wider real portfolio risk is than the standard arithmetic</div></div>
-    <div class="stat"><div class="n grad">0</div><div class="k">predictions resolved so far &mdash; nothing to hide behind yet</div></div>
-  </div>
-  <p class="fine">MISO, CAISO, NYISO and ISO-NE. Every figure below reproducible from public sources.</p>
-
-  <section>
-    <h2>The work</h2>
-    <div class="links">
-      <a class="card" href="/queue">
-        <span><span class="t">The AI power queue is mostly vapour</span><br>
-        <span class="d">10,996 interconnection requests with known outcomes. About 1 in 5 is built; above 1,000 MW it is 1 in 19. Method, caveats and the raw source URL</span></span>
-        <span class="arw">&rarr;</span>
-      </a>
-      <a class="card" href="/predictions">
-        <span><span class="t">1,636 predictions, none of them scored yet</span><br>
-        <span class="d">An open ledger. Every active request given a probability and a deadline, written down before any outcome exists, append-only from the day it was published</span></span>
-        <span class="arw">&rarr;</span>
-      </a>
-      <a class="card" href="/portfolio">
-        <span><span class="t">Forty projects are not forty coin flips</span><br>
-        <span class="d">These outcomes co-move. On a book concentrated in one technology, the standard 80% confidence interval is wrong more than a third of the time</span></span>
-        <span class="arw">&rarr;</span>
-      </a>
-    </div>
-  </section>
-
-  <section>
-    <h2>What this actually is</h2>
-    <div class="body">
-      <p>
-        Not a forecast of prices, and not a view on who wins. A measurement of
-        whether physical infrastructure gets built &mdash; which is worth the
-        same to someone long the trade as to someone short it.
-      </p>
-      <p>
-        The claim is narrow on purpose: <strong>when it says 20%, that should
-        happen about 20% of the time.</strong> That is checkable, it resolves on
-        its own, and the ledger is public so it can be checked against me. Grid
-        operators publish current queue state and overwrite it in place, so the
-        revision history is captured every morning &mdash; nobody can go back
-        and buy the past.
-      </p>
-      <div class="pull">Numbers that can be wrong in public, on a schedule.</div>
-    </div>
-  </section>
-
-  <section>
-    <h2>Why believe any of it</h2>
-    <div class="body">
-      <p>
-        Because the last time I measured my own work, it failed, and I published
-        that instead of burying it. TirraMind collected 34 public data sources
-        and 375,657 observations to detect market anomalies. Then I ran the
-        experiment almost nobody runs and tested whether it predicted anything.
-        <strong>Zero of fifty-one hypotheses survived Benjamini&ndash;Hochberg
-        correction.</strong>
-      </p>
-      <p>
-        I reported the study's own statistical power &mdash; about 10% &mdash;
-        up front, because overclaiming a null is the same error as overclaiming
-        an edge. Along the way the pipeline lied to me thirteen documented times
-        while reporting green. A ranking I was about to sell was
-        <strong>90% Unix timestamp.</strong>
-      </p>
-      <div class="pull">The maths was correct. That turned out not to be the question.</div>
-      <p>
-        So the signal product was withdrawn and the failure log published. The
-        habit that killed it is the one thing worth keeping, and it is what runs
-        the work above: check whether the number means what it is being used to
-        mean, before anyone bets on it. The queue model publishes its own
-        calibration failure for the same reason.
-      </p>
-    </div>
-    <div class="links">
-      <a class="card" href="https://savabs.github.io/2026/08/29/a-null-result-with-its-power-calculation.html">
-        <span><span class="t">A null result, with its power calculation</span><br>
-        <span class="d">The study, the leakage audit, and an honest account of exactly how much it proves</span></span>
-        <span class="arw">&rarr;</span>
-      </a>
-      <a class="card" href="https://savabs.github.io/2026/08/29/thirteen-ways-a-pipeline-lies.html">
-        <span><span class="t">Thirteen Ways a Pipeline Lies</span><br>
-        <span class="d">How a codebase goes from &ldquo;healthy-looking and empty&rdquo; to &ldquo;healthy-looking and full of constants&rdquo; &mdash; and the one test that catches four of the worst</span></span>
-        <span class="arw">&rarr;</span>
-      </a>
-      <a class="card" href="https://savabs.github.io/">
-        <span><span class="t">Everything else I have measured</span><br>
-        <span class="d">Including an agent harness that lost to a single API call, on a measurement that killed my own project</span></span>
-        <span class="arw">&rarr;</span>
-      </a>
-    </div>
-  </section>
-
-  <footer>
-    Interconnection risk, September 2026. Figures reproducible from public
-    sources; the ledger is <a href="/predictions.csv" style="color:inherit">downloadable</a>.
-    The earlier signal product is withdrawn and not for sale &mdash; its
-    <a href="https://github.com/savabs/tirramind" style="color:inherit">collector remains open source</a>.
-    <code>github.com/savabs</code>
-  </footer>
-
+<header>
+<div class="eyebrow"><span class="pip"></span>The grid waiting list &middot; September 2026</div>
+<h1>355 gigawatts are queued.<br><span class="grad">One in five gets built.</span></h1>
+<p class="lede">Power plants must ask permission to plug into the grid. They then wait on a public list, often for years.</p>
+<p class="lede">Forecasts of the AI buildout quote that list as a construction schedule. Most of it never happens. I give each waiting application a percentage chance of being built, <strong>published before anyone knows the result</strong>.</p>
+</header>
+<div class="stats">
+<div class="stat"><div class="n grad">355 GW</div><div class="k">of capacity waiting to plug in, across four grid operators</div></div>
+<div class="stat"><div class="n grad">1 in 19</div><div class="k">how often an application for 1,000 MW or more gets built. 1,000 MW is 1 GW</div></div>
+<div class="stat"><div class="n grad">4.3&times;</div><div class="k">how much wider the real range of outcomes is than the usual arithmetic says</div></div>
+<div class="stat"><div class="n grad">0</div><div class="k">of my predictions have come due yet. Nothing is settled, so there is no track record to show</div></div>
+</div>
+<p class="fine">The four grid operators are MISO, CAISO, NYISO and ISO-NE. Texas (ERCOT), PJM and the central plains (SPP) are <strong>not</strong> in these figures. Every figure is rebuildable from public sources.</p>
+<figure class="fig">
+<svg class="diagram" viewBox="0 0 100 48" role="img" aria-label="Two bars. Among applications old enough to have finished, about 1 in 5 was built; among those of 1,000 MW and above, 1 in 19.">
+<g font-size="3.6" font-weight="700" fill="var(--mut)"><text x="3" y="6">DECIDED APPLICATIONS, OLD ENOUGH TO HAVE FINISHED</text><text x="3" y="30">APPLICATIONS OF 1,000 MW AND ABOVE</text></g>
+<g fill="none" stroke="var(--dim)" stroke-width=".5"><rect x="3" y="8.5" width="94" height="8" rx="1"/><rect x="3" y="32.5" width="94" height="8" rx="1"/></g>
+<rect x="3" y="8.5" width="18.8" height="8" rx="1" fill="var(--a1)"/><rect x="3" y="32.5" width="4.95" height="8" rx="1" fill="var(--a2)"/>
+<g font-size="4" font-weight="800"><text x="3" y="21" fill="var(--a1)">1 IN 5 BUILT</text><text x="3" y="45" fill="var(--a2)">1 IN 19 BUILT</text></g>
+<text x="97" y="21" font-size="3.4" fill="var(--mut)" text-anchor="end">THE REST NOT BUILT</text>
+</svg>
+<figcaption>Both bars count applications, not gigawatts. The 1-in-5 rate is measured on requests filed long enough ago that nearly all of them have finished &mdash; count every one of the 10,996 and it drops to 14.2%, because recent projects have not had time yet. Neither bar includes my 1,636 predictions. Those have no result.</figcaption>
+</figure>
+<section>
+<h2>The work</h2>
+<div class="links">
+<a class="card" href="/queue"><span><span class="t">The AI power queue is mostly vapour</span><br><span class="d">Method, caveats and the raw source URL</span></span><span class="arw">&rarr;</span></a>
+<a class="card" href="/predictions"><span><span class="t">1,636 predictions, no results yet</span><br><span class="d">Each waiting application gets a percentage chance and a deadline, set before any result exists. New ones are added. Old ones never change</span></span><span class="arw">&rarr;</span></a>
+<a class="card" href="/portfolio"><span><span class="t">Forty projects are not forty coin flips</span><br><span class="d">These outcomes rise and fall together. The usual 80% range is meant to be right four times in five. On projects of one kind it is wrong more than a third of the time</span></span><span class="arw">&rarr;</span></a>
+</div>
+</section>
+<section>
+<h2>What this actually is</h2>
+<div class="body">
+<p>This measures one thing: whether a power project gets built. Not prices, not who wins. <strong>When it says 20%, that should happen about 20% of the time.</strong> A single prediction cannot be judged that way. You can only judge the whole list, once the results come in. The list is public, so anyone can check whether I was right.</p>
+<p>Each prediction carries a deadline for its result. The grid operators replace the list with a new one and delete the old, so I save a copy every morning. Nobody can go back and buy the queue as it once stood.</p>
+</div>
+</section>
+<section>
+<h2>Why believe any of it</h2>
+<div class="body">
+<p>Last time I measured my own work it failed, and I published that rather than bury it. TirraMind collected 34 public data sources and 375,657 observations to find market patterns. Then I tested whether it predicted anything. <strong>Zero of fifty-one ideas survived.</strong> Try fifty-one at once and a few look like winners by pure luck. So I set a harder pass mark (the Benjamini&ndash;Hochberg correction, named so you can repeat it). None of mine cleared it.</p>
+<p>I said up front how weak the test was. Even if a real effect existed, the study had about a 10% chance of spotting it. Finding nothing is honest. There may still be something there. My test was too weak to see it.</p>
+<p>Two things went wrong, both written up. My data-processing code gave wrong or empty results <strong>thirteen documented times</strong>. Every time, its own checks said everything was fine. And <strong>90% of the score</strong> I was about to sell came from the date alone. The model had largely learned what day it was.</p>
+<div class="pull">The maths was correct. That turned out not to be the question.</div>
+<p>That habit killed the product. I withdrew it and published the failure log. It is the same habit behind the work above: check what a number really means before anyone bets on it. It already applies to this model: I have measured where its percentages are wrong &mdash; in five of seven groups &mdash; and that failure is published beside the predictions, not buried.</p>
+</div>
+<div class="links">
+<a class="card" href="https://savabs.github.io/2026/08/29/a-null-result-with-its-power-calculation.html"><span><span class="t">Nothing found, and how easily it could be missed</span><br><span class="d">The study, the check for a leaked answer, and how little it proves</span></span><span class="arw">&rarr;</span></a>
+<a class="card" href="https://savabs.github.io/2026/08/29/thirteen-ways-a-pipeline-lies.html"><span><span class="t">Thirteen Ways a Pipeline Lies</span><br><span class="d">Code can return nothing and still report that all is well. Or the same number over and over. Plus the test that catches four of the worst</span></span><span class="arw">&rarr;</span></a>
+<a class="card" href="https://savabs.github.io/"><span><span class="t">Everything else I have measured</span><br><span class="d">Including an AI system of mine that lost to just asking the model directly &mdash; the measurement that killed my own project</span></span><span class="arw">&rarr;</span></a>
+</div>
+</section>
+<footer>September 2026. The prediction list is <a href="/predictions.csv" style="color:inherit">downloadable</a>. The earlier signal product is withdrawn and not for sale &mdash; its <a href="https://github.com/savabs/tirramind" style="color:inherit">collector remains open source</a>. <code>github.com/savabs</code></footer>
 </div>
 </body>
 </html>
