@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark light">
 <title>The AI power queue is mostly vapour</title>
-<meta name="description" content="10,996 finished requests to join the US grid. About 1 in 5 got built; at 1,000 MW and above, 1 in 19.">
+<meta name="description" content="9,643 requests to join the US grid. About 1 in 5 of the finished ones got built; at 1,000 MW and above, 1 in 19.">
 <meta property="og:title" content="The AI power queue is mostly vapour">
-<meta property="og:description" content="10,996 finished requests across four US grid operators. 17&ndash;21% got built, about 1 in 5; at 1,000 MW and above, 5.3%, about 1 in 19. Method, limits and the raw source URL included.">
+<meta property="og:description" content="9,643 requests across four US grid operators. 21.4% of the finished ones got built, about 1 in 5; at 1,000 MW and above, 5.3%, about 1 in 19. Method, limits and the raw source URL included.">
 <style>
   :root{
     --bg:#060608; --ink:#fafafa; --mut:#93939c; --dim:#5c5c66;
@@ -118,11 +118,11 @@
 <h1>The AI power queue<br><span class="grad">is mostly vapour.</span></h1>
 <p class="lede">To connect a power plant or a big datacenter to the grid, you file a request with your region&rsquo;s grid operator and wait in line. That line is the queue.</p>
 <p class="lede">A gigawatt (GW) is 1,000 megawatts (MW), the size AI datacenter projects ask for. Texas has 466 GW in line, the Midwest 699 GW. Forecasters quote those totals as if everything in line were on its way.</p>
-<p class="lede">I counted 10,996 requests that are already finished &mdash; built, or given up on. <strong>About one in five got built. At 1,000 MW and above, one in nineteen.</strong></p>
+<p class="lede">I counted 9,643 requests, 8,006 of them already finished &mdash; built, or given up on. <strong>About one in five got built. At 1,000 MW and above, one in nineteen.</strong></p>
 </header>
 <div class="stats">
-<div class="stat"><div class="n grad">10,996</div><div class="k">requests to join the grid, all already finished</div></div>
-<div class="stat"><div class="n grad">17&ndash;21%</div><div class="k">of finished requests got built &mdash; about one in five. It is a range because 1,354 records carry no date, and because only years old enough to have finished are counted</div></div>
+<div class="stat"><div class="n grad">9,643</div><div class="k">requests to join the grid, 8,006 of them already finished</div></div>
+<div class="stat"><div class="n grad">21.4%</div><div class="k">of finished requests got built &mdash; about one in five &mdash; counting only years old enough to have finished</div></div>
 <div class="stat"><div class="n grad">5.3%</div><div class="k">of requests at 1,000 MW and above got built &mdash; one in nineteen</div></div>
 </div>
 <p class="fine">The four operators run the Midwest, New York, California and New England &mdash; MISO, NYISO, CAISO and ISO-NE. <strong>Texas is not among them</strong>, so the 466 GW above is not in these figures: it blocks automated downloads. Nor is the mid-Atlantic (PJM), which needs a free key, nor the central plains (SPP), which never answered.</p>
@@ -150,17 +150,18 @@
 </table>
 </section>
 <section class="body">
-<h2>Why it is a range, not one number</h2>
-<p><strong>The headline is about 1 in 5.</strong> Here is the working behind it. I counted three ways, and they disagree.</p>
-<p><strong>14.2%</strong> counts the built ones across every request that has ended. That is too low. A request filed in 2024 has not had time to be built. Counting it now marks a project still waiting as a failure.</p>
-<p><strong>21.4%</strong> groups requests by the year they joined the line, and counts each year on its own. I only use a year once at least 90% of its requests have finished. That leaves 5,436 requests.</p>
-<p>That is too high. 1,354 finished requests carry no filing date, so they drop out of every year group. Almost all are failures: 1,351 given up on, 3 built. Most of them were filed before 2000.</p>
-<p><strong>17.2%</strong> puts the dateless ones back in. So the answer sits between 17.2% and 21.4%. I show both ends. Showing one would hide one of the two flaws above.</p>
+<h2>How the number is worked out</h2>
+<p><strong>The headline is about 1 in 5.</strong> Here is the working. Two ways of counting, and only one of them is honest.</p>
+<p><strong>16.6%</strong> counts the built ones across every request that has ended. That is too low. A request filed in 2024 has not had time to be built. Counting it now marks a project still waiting as a failure.</p>
+<p><strong>21.4%</strong> groups requests by the year they joined the line and counts each year on its own, using a year only once at least 90% of its requests have finished. That leaves 5,433 requests, and it is the figure above.</p>
+<p>Only 4 finished requests carry no filing date, so almost nothing drops out of the year groups. Put all four back in and the answer moves to 21.5%. That is the whole uncertainty from missing dates.</p>
+<p><strong>This page used to say 17&ndash;21%.</strong> The lower end was wrong, and the third bug below is why.</p>
 </section>
 <section class="body">
-<h2>Two bugs I hit</h2>
+<h2>Three bugs I hit</h2>
 <p><strong>Mixed date formats silently destroyed 7,400 of 9,640 dates.</strong> Operators write filing dates four ways: <code>2003-11-18 08:00:00</code>, <code>1/14/2025</code>, <code>2025-10-08T00:37:52+00:00</code>, <code>2008-01-30</code>. The date tool (<code>pandas.to_datetime</code>) read the first, assumed the rest matched, and blanked the others. 84% vanished. A blanked date looks exactly like one nobody filled in. It surfaced only because the script checks whether requests with no date got built at a different rate.</p>
 <p><strong>Sloppy technology labels invented a finding.</strong> My first table read <em>Solar 32.1%</em> beside <em>Photovoltaic 13.0%</em>, and <em>Wind 19.1%</em> beside <em>Wnd 26.9%</em>. Each operator spells a technology its own way. The difference was not solar against photovoltaic. It only showed which operator had filed the row. Anyone who published that split would have published a mistake. So &ldquo;Solar&rdquo; and &ldquo;Photovoltaic&rdquo; became one label, and so did &ldquo;Wind&rdquo; and &ldquo;Wnd&rdquo;.</p>
+<p><strong>1,350 blank spreadsheet rows were being counted as failed projects.</strong> One operator publishes its withdrawn projects on a spreadsheet tab holding 2,515 rows, but only 1,452 of them are projects. The rest are padding: no reference number, no name, no date, no location, capacity 0.0, and a status column filled down to &ldquo;Withdrawn&rdquo;. The reader ingested every one as a withdrawn project. They never reached the headline, because every rate here counts only requests with a filing date and these have none &mdash; but they inflated the total from 9,643 to 10,996, and they dragged the all-in figure from 16.6% down to 14.2%. Worse, they were the entire reason this page used to quote a range: the low end assumed 1,351 dateless failures that were never projects. Found by pointing my own data-checking tool at my own dataset, weeks after publishing it.</p>
 </section>
 <section class="body">
 <h2>What this does not show</h2>
