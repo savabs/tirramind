@@ -77,6 +77,42 @@ a buyer would receive nothing at all.
       sufficient for receiving; sending needs a separate provider.
       Verification: a message sent to the address arrives.
 
+## Addendum — CI unblocked while landing this (2026-09-06)
+
+Opening PR #1 was the first time this repo's CI had actually executed since
+2026-09-02: every run in between failed in 3-7 seconds with "the job was not
+started because your account is locked due to a billing issue", so no job ever
+started and the suite's real state was invisible.
+
+Once billing was fixed, `test (3.11)` and `test (3.12)` failed on:
+
+    ERROR collecting tests/test_sde.py
+    ModuleNotFoundError: No module named 'torchsde'
+    Interrupted: 1 error during collection
+
+`agent/quant/sde.py` imports `torchsde` at module scope. `torchsde` is in the
+`[ml]` extra, and `.github/workflows/ci.yml` deliberately installs only
+`.[dev,quant]` before hand-installing torch and torch-geometric to avoid the
+2 GB CUDA wheel. So `tests/test_sde.py` could never be collected in CI -- and
+because pytest aborts the whole run on a collection error, **one absent optional
+dependency was taking all 10,943 tests down with it.**
+
+Fixed with `pytest.importorskip("torchsde")` in `tests/test_sde.py`.
+
+Verified by simulating CI locally -- blocking every module in the `[ml]` extra
+that CI does not install (`torchsde`, `torchdiffeq`, `torchcde`, `mambapy`,
+`ts2vec`) via a `sitecustomize` meta-path finder raising `ModuleNotFoundError`:
+
+- `tests/test_sde.py` alone: 1 skipped, no error
+- full suite: **10,943/10,952 collected, 9 deselected, zero collection errors**
+
+`torchsde` was the only landmine of the five.
+
+Not fixed here: the `lint` job fails on 211 pre-existing ruff errors and 111
+files needing reformatting, none of them touched by this PR. Reformatting 111
+files onto a security change would bury a five-file diff, so that is tracked
+separately.
+
 ## Completion Checklist
 
 - [ ] Research note exists and is current — N/A, remediation
