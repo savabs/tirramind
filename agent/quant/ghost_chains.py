@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -143,10 +143,10 @@ def rolling_zscore(series: np.ndarray, idx: int, window: int) -> float:
 
 def _parse_ts(ts: str | float | int) -> datetime:
     if isinstance(ts, (int, float)):
-        return datetime.fromtimestamp(float(ts), tz=timezone.utc)
+        return datetime.fromtimestamp(float(ts), tz=UTC)
     s = str(ts).strip()
     if s.replace(".", "", 1).isdigit():
-        return datetime.fromtimestamp(float(s), tz=timezone.utc)
+        return datetime.fromtimestamp(float(s), tz=UTC)
     s = s.replace("Z", "+00:00")
     if "T" not in s and len(s) >= 10 and s[4] == "-":
         s = s[:10] + "T00:00:00+00:00"
@@ -290,7 +290,7 @@ def _load_ais_obs_series(
         return [], np.array([]), ""
     day_order = sorted(day_values.keys())
     times = [
-        datetime.fromisoformat(d + "T12:00:00+00:00").replace(tzinfo=timezone.utc)
+        datetime.fromisoformat(d + "T12:00:00+00:00").replace(tzinfo=UTC)
         for d in day_order
     ]
     values = np.array([day_values[d] for d in day_order], dtype=float)
@@ -324,7 +324,7 @@ def _load_ais_daily_counts(con: sqlite3.Connection) -> tuple[list[datetime], np.
         day_counts[day] = day_counts.get(day, 0) + 1
     day_order = sorted(day_counts.keys())
     times = [
-        datetime.fromisoformat(d + "T12:00:00+00:00").replace(tzinfo=timezone.utc)
+        datetime.fromisoformat(d + "T12:00:00+00:00").replace(tzinfo=UTC)
         for d in day_order
     ]
     values = np.array([day_counts[d] for d in day_order], dtype=float)
@@ -454,7 +454,7 @@ def evaluate_node(
     as_of: datetime | None = None,
 ) -> NodeMatch | None:
     """Return the strongest anomaly for one template node, or None."""
-    as_of = as_of or datetime.now(timezone.utc)
+    as_of = as_of or datetime.now(UTC)
     times, values, entity_label = _series_for_node(con, node)
     if len(times) == 0:
         return None
@@ -483,7 +483,7 @@ def match_chain(
     as_of: datetime | None = None,
 ) -> ChainMatch | None:
     """Match all nodes in a template. Returns None if any node fails."""
-    as_of = as_of or datetime.now(timezone.utc)
+    as_of = as_of or datetime.now(UTC)
     matches: list[NodeMatch] = []
     for node in template.nodes:
         m = evaluate_node(con, node, as_of)

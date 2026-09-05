@@ -8,8 +8,6 @@ parameter clamping, URL encoding, output formatting, registry integration, bandi
 """
 
 from datetime import UTC, datetime, timedelta
-
-UTC = UTC
 from unittest.mock import MagicMock, patch
 
 import httpx

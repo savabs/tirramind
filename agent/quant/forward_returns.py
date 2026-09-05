@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import bisect
 import math
-from typing import Any
+from datetime import UTC
 
 import numpy as np
 
@@ -103,10 +103,10 @@ def _latest_lookup_ts_per_entity_on_date(
     iso_date: str,
 ) -> dict[str, int]:
     """For each entity, latest lookup key ts on calendar day *iso_date*."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     day_start = (
-        datetime.fromisoformat(iso_date).replace(tzinfo=timezone.utc).timestamp()
+        datetime.fromisoformat(iso_date).replace(tzinfo=UTC).timestamp()
     )
     day_end = day_start + 86400.0
     best: dict[str, tuple[int, int]] = {}  # eid → (ts, priority=ts)

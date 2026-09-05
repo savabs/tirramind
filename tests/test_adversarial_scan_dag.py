@@ -37,7 +37,7 @@ class TestConstants:
         assert DAG_NAME == "adversarial_scan"
 
     def test_depends_on(self) -> None:
-        assert ["convergence_detection"] == DEPENDS_ON
+        assert DEPENDS_ON == ["convergence_detection"]
 
 
 class TestDAGStructure:

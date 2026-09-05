@@ -35,7 +35,6 @@ Covers:
 
 from __future__ import annotations
 
-import math
 import time
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -43,6 +42,8 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
+from agent.models.gnn.trainer import SyntheticGraphGenerator, Trainer, TrainerConfig
+from agent.pipeline.store import PipelineStore
 from agent.portfolio.constructor import (
     PortfolioConstructor,
     PortfolioWeights,
@@ -51,9 +52,6 @@ from agent.portfolio.constructor import (
     _hrp_weights,
     _sample_covariance,
 )
-from agent.models.gnn.trainer import Trainer, TrainerConfig, SyntheticGraphGenerator
-from agent.pipeline.store import PipelineStore
-
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 

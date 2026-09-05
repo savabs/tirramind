@@ -6,7 +6,6 @@ Standalone raw intelligence (no GNN). See [[n1_n4_playground_spec]] hero readout
 
 from __future__ import annotations
 
-import json
 import sqlite3
 from dataclasses import asdict, dataclass, field
 from typing import Any
@@ -15,7 +14,6 @@ from agent.quant.microstructure_signals import (
     InstrumentMicroPanel,
     MicroThresholds,
     build_instrument_panel,
-    classify_cftc_positioning,
     list_instruments_by_asset_class,
     load_cftc_ranks_by_ticker,
     normalize_cftc_rank,

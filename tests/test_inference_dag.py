@@ -13,8 +13,6 @@ from __future__ import annotations
 
 import time
 from datetime import UTC, date
-
-UTC = UTC
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 

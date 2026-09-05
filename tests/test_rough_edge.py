@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import math
-import pytest
+
 import torch
+
+from agent.quant.options import implied_volatility
 from agent.quant.rough import RoughBergomiModel, estimate_hurst_exponent
-from agent.quant.options import implied_volatility, BlackScholes
 
 
 class TestRoughVolatility:

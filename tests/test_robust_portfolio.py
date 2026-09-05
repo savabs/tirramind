@@ -38,6 +38,7 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
+from agent.pipeline.store import PipelineStore
 from agent.portfolio.robust_constructor import (
     RobustPortfolioWeights,
     WassersteinRobustPortfolio,
@@ -47,8 +48,6 @@ from agent.portfolio.robust_constructor import (
     robust_covariance,
     wasserstein_1d,
 )
-from agent.pipeline.store import PipelineStore
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────
 

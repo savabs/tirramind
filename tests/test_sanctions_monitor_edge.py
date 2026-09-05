@@ -14,8 +14,6 @@ cache interaction, tool metadata, output formatting, limit/bounds.
 from __future__ import annotations
 
 from datetime import UTC
-
-UTC = UTC
 from unittest.mock import MagicMock, patch
 
 import httpx

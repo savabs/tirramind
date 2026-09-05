@@ -39,12 +39,10 @@ import pytest
 import torch
 
 from agent.convergence.neural_hawkes import (
-    HawkesResult,
     NeuralHawkesEncoder,
     _NHPModel,
-    _MIN_VOCAB_SIZE,
 )
-from agent.models.gnn.trainer import Trainer, TrainerConfig, SyntheticGraphGenerator
+from agent.models.gnn.trainer import SyntheticGraphGenerator, Trainer, TrainerConfig
 from agent.pipeline.store import PipelineStore
 
 # ── Helpers ──────────────────────────────────────────────────────────────────

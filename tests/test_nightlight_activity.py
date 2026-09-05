@@ -40,8 +40,6 @@ Covers:
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -56,7 +54,6 @@ from agent.tools.nightlight_activity import (
     _extract_ndvi,
     _zone_area_str,
 )
-
 
 # ═══════════════════════════════════════════════════════════════
 # 1–7. EconomicZone manifest

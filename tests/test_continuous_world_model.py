@@ -14,13 +14,10 @@ Covers:
 
 from __future__ import annotations
 
-import math
 import time
 import types
 
-import pytest
 import torch
-import torch.nn as nn
 
 # ─── helpers ──────────────────────────────────────────────────────────────
 
@@ -110,9 +107,9 @@ class TestSignaturePathBuilder:
 
     def test_build_control_knots(self):
         from agent.models.gnn.signature_path import (
+            SignaturePathBuilder,
             build_control_knots,
             compute_d_z,
-            SignaturePathBuilder,
         )
 
         builder = SignaturePathBuilder(message_dim=32, proj_dim=4, depth=3)
@@ -367,8 +364,8 @@ class TestHeterogeneousCDEFunc:
     def test_column_norm_clipping(self):
         """All columns of F must have L2 norm ≤ 1.0."""
         from agent.models.gnn.heterogeneous_cde_func import (
-            HeterogeneousCDEFunc,
             _COL_NORM_CLIP,
+            HeterogeneousCDEFunc,
         )
 
         func = HeterogeneousCDEFunc(hidden_dim=16, d_z=8, memory_dim=16)

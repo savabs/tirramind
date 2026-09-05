@@ -16,7 +16,7 @@ Tick-level OFI/VPIN require trade data — not computed here.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from typing import Any
 
 import numpy as np

@@ -32,19 +32,17 @@ from pathlib import Path
 import pytest
 import torch
 
+from agent.models.gnn.graph_builder import (
+    BASE_FEAT_DIM,
+    _build_node_features,
+)
 from agent.models.gnn.signature_encoder import (
     PATH_CHANNELS,
     SIGNATURE_DIM,
-    SIGNATURE_DEPTH,
     PathSignatureEncoder,
     compute_entity_signature,
     compute_path_signature,
     entity_observations_to_path,
-)
-from agent.models.gnn.graph_builder import (
-    BASE_FEAT_DIM,
-    ENRICHMENT_DIM,
-    _build_node_features,
 )
 from agent.models.gnn.trainer import (
     SyntheticGraphGenerator,
@@ -52,7 +50,6 @@ from agent.models.gnn.trainer import (
     TrainerConfig,
 )
 from agent.pipeline.store import PipelineStore
-
 
 # ── Shared fixtures ──────────────────────────────────────────────────────────
 

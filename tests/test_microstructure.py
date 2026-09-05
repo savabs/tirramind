@@ -10,16 +10,17 @@ Test Coverage:
 - T6-T8: Gradient flow tests
 """
 
+import numpy as np
 import pytest
 import torch
-import numpy as np
+
 from agent.quant.microstructure import (
-    SpreadEstimator,
-    OrderFlowImbalance,
-    VPINCalculator,
     KyleLambdaEstimator,
     MicrostructureFeatureExtractor,
-    VolumeBucket
+    OrderFlowImbalance,
+    SpreadEstimator,
+    VolumeBucket,
+    VPINCalculator,
 )
 
 

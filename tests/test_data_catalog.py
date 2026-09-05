@@ -41,19 +41,19 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock
 
 import pytest
 
 from agent.data_catalog.catalog import (
+    _MANIFEST_BY_NAME,
+    _TOOL_MANIFEST,
     CatalogReport,
     DataCatalog,
     FreshnessStatus,
     ToolMeta,
-    _MANIFEST_BY_NAME,
-    _TOOL_MANIFEST,
 )
-from agent.models.gnn.trainer import Trainer, TrainerConfig, SyntheticGraphGenerator
+from agent.models.gnn.trainer import SyntheticGraphGenerator, Trainer, TrainerConfig
 from agent.pipeline.store import PipelineStore
 
 # ── Helpers ───────────────────────────────────────────────────────────────

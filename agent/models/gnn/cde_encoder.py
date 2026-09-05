@@ -32,7 +32,7 @@ References
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import torch
 import torch.nn as nn
@@ -162,8 +162,8 @@ class CDEMemoryEncoder(nn.Module):
         self,
         events: list[dict],
         embeddings: dict[str, torch.Tensor],
-        id_map: "Any",
-        memory: "HeteroMemory",
+        id_map: Any,
+        memory: HeteroMemory,
         t_start: float,
         t_end: float,
     ) -> None:
@@ -251,7 +251,7 @@ class CDEMemoryEncoder(nn.Module):
     def _update_cde_batch(
         self,
         cde_nodes: list[tuple[int, list[tuple[float, torch.Tensor]]]],
-        memory: "HeteroMemory",
+        memory: HeteroMemory,
         t_start: float,
         t_end: float,
     ) -> None:

@@ -50,7 +50,7 @@ from agent.convergence.vine_copula import (
     _pair_hash,
     _pseudo_observations,
 )
-from agent.models.gnn.trainer import Trainer, TrainerConfig, SyntheticGraphGenerator
+from agent.models.gnn.trainer import SyntheticGraphGenerator, Trainer, TrainerConfig
 from agent.pipeline.store import PipelineStore
 
 # ── Helpers ──────────────────────────────────────────────────────────────────

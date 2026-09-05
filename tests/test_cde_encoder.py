@@ -21,11 +21,10 @@ from pathlib import Path
 import pytest
 import torch
 
-from agent.models.gnn.cde_encoder import CDEFunc, CDEMemoryEncoder, _CDE_AVAILABLE
-from agent.models.gnn.het_tgn import HetTGN, HeteroMemory
+from agent.models.gnn.cde_encoder import _CDE_AVAILABLE, CDEFunc, CDEMemoryEncoder
 from agent.models.gnn.graph_builder import IDMap
+from agent.models.gnn.het_tgn import HeteroMemory, HetTGN
 from agent.models.gnn.trainer import (
-    InjectedPattern,
     SyntheticGraphGenerator,
     Trainer,
     TrainerConfig,

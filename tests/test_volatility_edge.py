@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import math
-import pytest
 import torch
+
 from agent.quant.volatility import (
-    SVIParameterization,
-    SABRModel,
     ImpliedVolatilitySurface,
+    SABRModel,
+    SVIParameterization,
 )
 
 

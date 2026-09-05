@@ -69,8 +69,8 @@ from typing import Any
 import numpy as np
 import scipy.cluster.hierarchy as sch
 import scipy.spatial.distance as ssd
-from scipy.sparse.csgraph import laplacian
 from scipy.sparse import csr_matrix
+from scipy.sparse.csgraph import laplacian
 
 log = logging.getLogger(__name__)
 
@@ -389,7 +389,7 @@ class TDARegimeDetector:
 
     # ── Public API ────────────────────────────────────────────────────────
 
-    def fit_baseline(self, returns: np.ndarray) -> "TDARegimeDetector":
+    def fit_baseline(self, returns: np.ndarray) -> TDARegimeDetector:
         """Store a baseline diagram from a calm/training period.
 
         Args:

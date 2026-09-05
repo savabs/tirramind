@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
-import math
-import pytest
 import torch
+
 from agent.quant.options import (
-    BlackScholes,
-    implied_volatility,
     BaroneAdesiWhaley,
-    HestonCOS,
     BatesCOS,
+    BlackScholes,
+    HestonCOS,
     MertonCOS,
     VarianceGammaCOS,
+    implied_volatility,
 )
 
 

@@ -27,8 +27,6 @@ from __future__ import annotations
 import logging
 import time
 from datetime import UTC, datetime, timedelta
-
-UTC = UTC
 from typing import TYPE_CHECKING, Any
 
 import httpx

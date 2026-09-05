@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from datetime import UTC
 
 import numpy as np
 
@@ -54,12 +55,12 @@ def test_require_future_after_guard():
 
 def test_forward_return_vector_for_date():
     """Calendar-date alignment: close timestamp mid-day still maps to ISO date."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     day = 86400.0 * 7 / 5
     iso = "2024-01-15"
     noon = (
-        datetime.fromisoformat(iso).replace(tzinfo=timezone.utc).timestamp()
+        datetime.fromisoformat(iso).replace(tzinfo=UTC).timestamp()
         + 43200.0
     )
     obs = [

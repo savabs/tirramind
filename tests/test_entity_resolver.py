@@ -22,18 +22,15 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
-from unittest.mock import patch
 
-import pytest
-
+from agent.models.gnn.graph_builder import GraphBuilder
+from agent.models.gnn.trainer import SyntheticGraphGenerator, Trainer, TrainerConfig
 from agent.pipeline.entity_resolver import (
     EntityResolver,
     _normalize_name,
     resolve_entities,
 )
 from agent.pipeline.store import PipelineStore
-from agent.models.gnn.graph_builder import GraphBuilder
-from agent.models.gnn.trainer import Trainer, TrainerConfig, SyntheticGraphGenerator
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 

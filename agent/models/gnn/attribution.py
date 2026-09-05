@@ -70,8 +70,8 @@ from typing import TYPE_CHECKING, Any
 import torch
 
 if TYPE_CHECKING:
-    from agent.models.gnn.het_tgn import HetTGN
     from agent.models.gnn.graph_builder import IDMap
+    from agent.models.gnn.het_tgn import HetTGN
 
 log = logging.getLogger(__name__)
 
@@ -155,9 +155,9 @@ class BarraAttribution:
 
     def compute(
         self,
-        model: "HetTGN",
+        model: HetTGN,
         data: Any,
-        id_map: "IDMap",
+        id_map: IDMap,
         target_entity_ids: list[str] | None = None,
     ) -> dict[str, AttributionResult]:
         """Compute per-entity factor attribution via HGT attention capture.
@@ -249,7 +249,7 @@ class BarraAttribution:
     def store_results(
         self,
         store: Any,
-        results: dict[str, "AttributionResult"],
+        results: dict[str, AttributionResult],
     ) -> int:
         """Persist attribution signals to the pipeline store.
 
@@ -283,9 +283,9 @@ class BarraAttribution:
 
     def _capture_attention(
         self,
-        model: "HetTGN",
+        model: HetTGN,
         data: Any,
-        id_map: "IDMap",
+        id_map: IDMap,
     ) -> list[dict[tuple[str, str, str], torch.Tensor]]:
         """Run one no_grad forward pass and collect per-layer attention.
 

@@ -31,15 +31,14 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import date, datetime, timedelta, timezone; UTC = timezone.utc
+from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from agent.data.cache import DataCache
-from agent.tools.base import Tool, ToolResult
-
 from agent.pipeline.store import PipelineStore
+from agent.tools.base import Tool, ToolResult
 
 if TYPE_CHECKING:
     pass

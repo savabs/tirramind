@@ -86,25 +86,25 @@ class PreflightResult:
 
     # Convenience factory
     @staticmethod
-    def passed() -> "PreflightResult":
+    def passed() -> PreflightResult:
         return PreflightResult(ok=True, reason=FailureReason.OK, detail="")
 
     @staticmethod
-    def missing_config(detail: str, fix: str = "") -> "PreflightResult":
+    def missing_config(detail: str, fix: str = "") -> PreflightResult:
         return PreflightResult(
             ok=False, reason=FailureReason.MISSING_CONFIG,
             detail=detail, fix=fix,
         )
 
     @staticmethod
-    def no_data(detail: str, fix: str = "") -> "PreflightResult":
+    def no_data(detail: str, fix: str = "") -> PreflightResult:
         return PreflightResult(
             ok=False, reason=FailureReason.NO_DATA,
             detail=detail, fix=fix,
         )
 
     @staticmethod
-    def model_not_ready(detail: str, fix: str = "") -> "PreflightResult":
+    def model_not_ready(detail: str, fix: str = "") -> PreflightResult:
         return PreflightResult(
             ok=False, reason=FailureReason.MODEL_NOT_READY,
             detail=detail, fix=fix,

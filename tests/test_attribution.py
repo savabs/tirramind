@@ -35,10 +35,9 @@ Covers:
 
 from __future__ import annotations
 
-import math
 import time
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock
 
 import pytest
 import torch
@@ -47,9 +46,8 @@ from agent.models.gnn.attribution import (
     AttributionResult,
     BarraAttribution,
 )
-from agent.models.gnn.trainer import Trainer, TrainerConfig, SyntheticGraphGenerator
+from agent.models.gnn.trainer import SyntheticGraphGenerator, Trainer, TrainerConfig
 from agent.pipeline.store import PipelineStore
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────
 

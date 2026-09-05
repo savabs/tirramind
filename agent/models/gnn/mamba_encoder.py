@@ -70,14 +70,14 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import torch
 import torch.nn as nn
 
 if TYPE_CHECKING:
-    from agent.models.gnn.het_tgn import HeteroMemory
     from agent.models.gnn.graph_builder import IDMap
+    from agent.models.gnn.het_tgn import HeteroMemory
 
 log = logging.getLogger(__name__)
 
@@ -239,8 +239,8 @@ class MambaMemoryEncoder(nn.Module):
         self,
         events: list[dict[str, Any]],
         embeddings: dict[str, torch.Tensor],
-        id_map: "IDMap",
-        memory: "HeteroMemory",
+        id_map: IDMap,
+        memory: HeteroMemory,
     ) -> None:
         """Update HeteroMemory for every node that received events.
 
@@ -311,7 +311,7 @@ class MambaMemoryEncoder(nn.Module):
         gid: int,
         msgs: torch.Tensor,
         times: torch.Tensor,
-        memory: "HeteroMemory",
+        memory: HeteroMemory,
         device: torch.device,
     ) -> None:
         """Run Mamba (or GRU fallback) for one node and write new memory.

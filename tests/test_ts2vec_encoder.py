@@ -28,20 +28,16 @@ Covers:
 
 from __future__ import annotations
 
-import math
-from pathlib import Path
-
 import numpy as np
 import pytest
-import torch
 
 from agent.models.gnn.graph_builder import (
     BASE_FEAT_DIM,
     GraphBuilder,
     _build_node_features,
 )
+from agent.models.gnn.trainer import SyntheticGraphGenerator, Trainer, TrainerConfig
 from agent.models.gnn.ts2vec_encoder import TS2VecEncoder
-from agent.models.gnn.trainer import Trainer, TrainerConfig, SyntheticGraphGenerator
 from agent.pipeline.store import PipelineStore
 
 # ── Fixtures ─────────────────────────────────────────────────────────────────

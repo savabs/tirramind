@@ -517,7 +517,7 @@ def _hrp_weights(
 
     # Step 2: hierarchical clustering (Ward linkage for minimum variance)
     try:
-        from scipy.cluster.hierarchy import linkage, leaves_list  # noqa: PLC0415
+        from scipy.cluster.hierarchy import leaves_list, linkage  # noqa: PLC0415
 
         condensed = _condensed_distance(dist)
         z = linkage(condensed, method="ward")
@@ -604,9 +604,7 @@ def _sample_covariance(ret: np.ndarray, shrinkage: float = 0.05) -> np.ndarray:
     """
     n = ret.shape[0]
     cov = np.cov(ret)
-    if cov.ndim == 0:
-        cov = np.array([[float(cov)]])
-    elif cov.shape == ():
+    if cov.ndim == 0 or cov.shape == ():
         cov = np.array([[float(cov)]])
 
     mu_var = np.trace(cov) / max(n, 1)

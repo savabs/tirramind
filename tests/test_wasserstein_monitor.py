@@ -40,7 +40,7 @@ from agent.convergence.wasserstein_monitor import (
     WassersteinResult,
     _w1_1d_normalised,
 )
-from agent.models.gnn.trainer import Trainer, TrainerConfig, SyntheticGraphGenerator
+from agent.models.gnn.trainer import SyntheticGraphGenerator, Trainer, TrainerConfig
 from agent.pipeline.store import PipelineStore
 
 # ── Helpers ──────────────────────────────────────────────────────────────────

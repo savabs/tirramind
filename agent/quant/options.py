@@ -8,7 +8,6 @@ under the Black-Scholes-Merton and Barone-Adesi Whaley frameworks in PyTorch.
 from __future__ import annotations
 
 import math
-from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -37,7 +36,7 @@ class BlackScholes(nn.Module):
         T: torch.Tensor,
         r: torch.Tensor,
         sigma: torch.Tensor,
-        q: Optional[torch.Tensor] = None,
+        q: torch.Tensor | None = None,
         is_call: bool | torch.Tensor = True,
     ) -> torch.Tensor:
         """Calculate European option prices under Black-Scholes-Merton.
@@ -96,7 +95,7 @@ class BlackScholes(nn.Module):
         T: torch.Tensor,
         r: torch.Tensor,
         sigma: torch.Tensor,
-        q: Optional[torch.Tensor] = None,
+        q: torch.Tensor | None = None,
         is_call: bool | torch.Tensor = True,
     ) -> dict[str, torch.Tensor]:
         """Compute analytical Greeks for European options.
@@ -184,7 +183,7 @@ class BlackScholes(nn.Module):
         T: torch.Tensor,
         r: torch.Tensor,
         sigma: torch.Tensor,
-        q: Optional[torch.Tensor] = None,
+        q: torch.Tensor | None = None,
         is_call: bool | torch.Tensor = True,
     ) -> dict[str, torch.Tensor]:
         """Compute Greeks via PyTorch autograd for full differentiability.
@@ -231,7 +230,7 @@ def implied_volatility(
     T: torch.Tensor,
     r: torch.Tensor,
     market_price: torch.Tensor,
-    q: Optional[torch.Tensor] = None,
+    q: torch.Tensor | None = None,
     is_call: bool = True,
     max_iters: int = 20,
     tolerance: float = 1e-7,
@@ -298,7 +297,7 @@ class BaroneAdesiWhaley(nn.Module):
         T: torch.Tensor,
         r: torch.Tensor,
         sigma: torch.Tensor,
-        q: Optional[torch.Tensor] = None,
+        q: torch.Tensor | None = None,
         is_call: bool | torch.Tensor = True,
     ) -> torch.Tensor:
         """Price American options using the Barone-Adesi-Whaley quadratic approximation.
@@ -514,7 +513,7 @@ class FourierCOS(nn.Module):
         K: torch.Tensor,
         T: torch.Tensor,
         r: torch.Tensor,
-        q: Optional[torch.Tensor] = None,
+        q: torch.Tensor | None = None,
         is_call: bool | torch.Tensor = True,
     ) -> torch.Tensor:
         """Price European options under the subclass specific risk-neutral model."""

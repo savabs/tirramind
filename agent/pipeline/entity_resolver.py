@@ -41,7 +41,6 @@ References
 from __future__ import annotations
 
 import logging
-import time
 import unicodedata
 from collections import defaultdict
 from typing import Any
@@ -205,9 +204,9 @@ class EntityResolver:
         """
         try:
             import pandas as pd
+            import splink.comparison_library as cl
             from splink import Linker, SettingsCreator, block_on
             from splink.backends.duckdb import DuckDBAPI
-            import splink.comparison_library as cl
         except ImportError:
             log.warning(
                 "splink not installed — skipping probabilistic entity resolution."

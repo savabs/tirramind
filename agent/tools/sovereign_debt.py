@@ -33,7 +33,7 @@ import io
 import logging
 import re
 import time
-from datetime import datetime, timezone; UTC = timezone.utc
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 import defusedxml.ElementTree as ET

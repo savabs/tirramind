@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 # ISO-2 → ISO-3 for GDELT country entity bridge
@@ -167,7 +167,7 @@ def _gdelt_cutoff_ts(con: sqlite3.Connection, lookback_days: int) -> float:
     max_ts = float(row[0] or 0.0)
     if max_ts <= 0:
         return (
-            datetime.now(timezone.utc) - timedelta(days=lookback_days)
+            datetime.now(UTC) - timedelta(days=lookback_days)
         ).timestamp()
     return max_ts - lookback_days * 86400.0
 

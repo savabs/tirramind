@@ -31,7 +31,6 @@ Covers:
 
 from __future__ import annotations
 
-import math
 import time
 from pathlib import Path
 
@@ -41,11 +40,10 @@ import torch
 
 from agent.convergence.gdn_monitor import (
     GDNMonitor,
-    GDNResult,
-    _GDNModel,
     _forward_fill,
+    _GDNModel,
 )
-from agent.models.gnn.trainer import Trainer, TrainerConfig, SyntheticGraphGenerator
+from agent.models.gnn.trainer import SyntheticGraphGenerator, Trainer, TrainerConfig
 from agent.pipeline.store import PipelineStore
 
 # ── Helpers ──────────────────────────────────────────────────────────────────

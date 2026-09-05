@@ -42,17 +42,14 @@ import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
+from agent.models.gnn.trainer import SyntheticGraphGenerator, Trainer, TrainerConfig
+from agent.pipeline.store import PipelineStore
 from agent.preflight import (
     FailureReason,
     FeaturePreflight,
     PreflightResult,
 )
-from agent.models.gnn.trainer import Trainer, TrainerConfig, SyntheticGraphGenerator
-from agent.pipeline.store import PipelineStore
 from agent.tools.nightlight_activity import NightlightActivityTool
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────
 

@@ -7,9 +7,6 @@ for feeding low-dimensional volatility structures into GNN nodes.
 
 from __future__ import annotations
 
-import math
-from typing import Optional
-
 import torch
 import torch.nn as nn
 
@@ -288,9 +285,9 @@ class ImpliedVolatilitySurface(nn.Module):
         T_max = self.maturities[-1]
 
         # Clamp T boundary slices to prevent extrapolations outside domain bounds
-        if T <= T_min:
+        if T_min >= T:
             return self.slices[self._get_key(T_min)].implied_volatility(k, T)
-        if T >= T_max:
+        if T_max <= T:
             return self.slices[self._get_key(T_max)].implied_volatility(k, T)
 
         # Locate interval index

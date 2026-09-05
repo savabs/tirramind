@@ -20,12 +20,12 @@ Doctrine:
 - No sentiment, mathematical field over finance
 """
 
+import math
+from dataclasses import dataclass
+
+import numpy as np
 import torch
 import torch.nn as nn
-from typing import Dict, List, Optional, Tuple
-from dataclasses import dataclass
-import numpy as np
-import math
 
 
 class SpreadEstimator(nn.Module):
@@ -172,8 +172,8 @@ class VPINCalculator(nn.Module):
         
     def bucket_trades(
         self,
-        trades: List[Tuple[float, float, int]]
-    ) -> List[VolumeBucket]:
+        trades: list[tuple[float, float, int]]
+    ) -> list[VolumeBucket]:
         """Partition trades into equal-volume buckets."""
         buckets = []
         acc_volume = 0.0
@@ -204,7 +204,7 @@ class VPINCalculator(nn.Module):
         
         return buckets
     
-    def classify_buckets_bvc(self, buckets: List[VolumeBucket]) -> torch.Tensor:
+    def classify_buckets_bvc(self, buckets: list[VolumeBucket]) -> torch.Tensor:
         """Classify each bucket volume as buy/sell using BVC."""
         N = len(buckets)
         classified = torch.zeros((N, 2))
@@ -230,7 +230,7 @@ class VPINCalculator(nn.Module):
     def compute_vpin(self, classified_buckets: torch.Tensor) -> torch.Tensor:
         """Compute VPIN over rolling window."""
         N = classified_buckets.shape[0]
-        if N < self.n_buckets:
+        if self.n_buckets > N:
             return torch.tensor([0.0])
         
         vpin_values = []
@@ -301,10 +301,10 @@ class MicrostructureFeatureExtractor(nn.Module):
         
     def forward(
         self,
-        ohlcv: Dict[str, torch.Tensor],
-        trades: Optional[List] = None,
-        precomputed_lambda: Optional[torch.Tensor] = None
-    ) -> Dict[str, torch.Tensor]:
+        ohlcv: dict[str, torch.Tensor],
+        trades: list | None = None,
+        precomputed_lambda: torch.Tensor | None = None
+    ) -> dict[str, torch.Tensor]:
         """Extract all available M9 features."""
         features = {}
         

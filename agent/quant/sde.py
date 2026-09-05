@@ -8,7 +8,6 @@ Models: GBM, HestonSDE.  Solvers: euler, milstein via torchsde.sdeint.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -39,7 +38,7 @@ class _SDEBase(nn.Module):
         self,
         y0: torch.Tensor,
         ts: torch.Tensor,
-        config: Optional[SDEConfig] = None,
+        config: SDEConfig | None = None,
         n_samples: int = 1,
     ) -> torch.Tensor:
         cfg = config or SDEConfig()
@@ -125,6 +124,6 @@ class HestonSDE(_SDEBase):
 
 
 def make_time_grid(
-    T: float = 1.0, n_steps: int = 252, device: Optional[torch.device] = None
+    T: float = 1.0, n_steps: int = 252, device: torch.device | None = None
 ) -> torch.Tensor:
     return torch.linspace(0.0, T, n_steps + 1, device=device)

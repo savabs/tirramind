@@ -56,7 +56,6 @@ References
 from __future__ import annotations
 
 import logging
-import math
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any
 
@@ -68,8 +67,8 @@ from agent.models.gnn.heterogeneous_cde_func import HeterogeneousCDEFunc
 from agent.models.gnn.signature_path import SignaturePathBuilder, compute_d_z
 
 if TYPE_CHECKING:
-    from agent.models.gnn.het_tgn import HeteroMemory
     from agent.models.gnn.graph_builder import IDMap
+    from agent.models.gnn.het_tgn import HeteroMemory
     from agent.models.gnn.mamba_encoder import MambaMemoryEncoder
 
 log = logging.getLogger(__name__)
@@ -137,7 +136,7 @@ class ContinuousWorldModel(nn.Module):
         use_signatures: bool = False,
         use_mamba_ctx: bool = False,
         use_diffusion: bool = False,
-        mamba_encoder: "MambaMemoryEncoder | None" = None,
+        mamba_encoder: MambaMemoryEncoder | None = None,
         sig_builder: SignaturePathBuilder | None = None,
         hawkes_encoder: Any | None = None,
     ) -> None:
@@ -172,7 +171,7 @@ class ContinuousWorldModel(nn.Module):
         if use_signatures and sig_builder is not None:
             self.sig_builder = sig_builder
 
-        self.mamba_encoder: "MambaMemoryEncoder | None" = None
+        self.mamba_encoder: MambaMemoryEncoder | None = None
         if use_mamba_ctx and mamba_encoder is not None:
             self.mamba_encoder = mamba_encoder
 
@@ -199,8 +198,8 @@ class ContinuousWorldModel(nn.Module):
     def update_memories(
         self,
         events: list[dict[str, Any]],
-        memory: "HeteroMemory",
-        id_map: "IDMap",
+        memory: HeteroMemory,
+        id_map: IDMap,
         embeddings: dict[str, torch.Tensor],
         training: bool = True,
     ) -> dict[str, torch.Tensor]:
@@ -349,8 +348,8 @@ class ContinuousWorldModel(nn.Module):
         msgs: torch.Tensor,
         times: torch.Tensor,
         t_prev: float,
-        memory: "HeteroMemory",
-        id_map: "IDMap",
+        memory: HeteroMemory,
+        id_map: IDMap,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Compute graph message m_i and Mamba context for a single entity.
 
@@ -383,7 +382,7 @@ class ContinuousWorldModel(nn.Module):
         msgs: torch.Tensor,
         times: torch.Tensor,
         t_prev: float,
-        memory: "HeteroMemory",
+        memory: HeteroMemory,
         gid: int,
     ) -> torch.Tensor:
         """Build Mamba input token sequence for an entity.
@@ -469,7 +468,7 @@ class ContinuousWorldModel(nn.Module):
         self,
         evts: list[dict[str, Any]],
         embeddings: dict[str, torch.Tensor],
-        id_map: "IDMap",
+        id_map: IDMap,
         z0: torch.Tensor,
     ) -> torch.Tensor:
         """Gather entity embedding messages for each event.

@@ -18,10 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
-from datetime import datetime, timezone
-
-# datetime.UTC is Python 3.11+; Kaggle / many dev boxes are still on 3.10.
-UTC = timezone.utc
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 

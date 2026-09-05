@@ -26,14 +26,13 @@ Covers:
 from __future__ import annotations
 
 import math
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 import torch
 
 from agent.models.gnn.mamba_encoder import MambaMemoryEncoder, _Time2Vec
-from agent.models.gnn.trainer import Trainer, TrainerConfig, SyntheticGraphGenerator
+from agent.models.gnn.trainer import SyntheticGraphGenerator, Trainer, TrainerConfig
 from agent.pipeline.store import PipelineStore
 
 # ── Fixtures ─────────────────────────────────────────────────────────────────
