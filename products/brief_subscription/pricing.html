@@ -353,13 +353,32 @@
     // safe to ship in this file; it cannot create charges on its own.
     //
     // Filled in automatically by: .venv/bin/python scripts/setup_paddle_products.py
-    const PADDLE_ENV = "live";
-    const PADDLE_CLIENT_TOKEN = "live_f2e811852c6b0d1430b835c1a8c";
+    //
+    // CREDENTIALS REMOVED 2026-09-05. The four tiers were withdrawn on
+    // 2026-08-29, but the live token and live price IDs stayed in this file
+    // behind the TIER_AVAILABILITY flags below. Those flags run on the
+    // visitor's machine, so they gate nothing: three lines in a browser
+    // console could re-open a live checkout for a product with no server to
+    // fulfil it. The first transaction on an account with no history being a
+    // refund or a chargeback is a materially worse signal to Paddle's risk
+    // team than one among many good charges.
+    //
+    // The values are gone from here so that no redeploy of this directory can
+    // construct a checkout. That is defence in depth, NOT the fix: the old
+    // values remain in this repo's public git history. The only control that
+    // actually works is server-side — the four prices must be archived in the
+    // Paddle dashboard. See tasks/active/ for that step.
+    //
+    // The REPLACE_ prefix below is load-bearing: the guard further down
+    // (`!PADDLE_CLIENT_TOKEN.startsWith("REPLACE_")`) means Paddle.Initialize
+    // is never called at all.
+    const PADDLE_ENV = "sandbox";
+    const PADDLE_CLIENT_TOKEN = "REPLACE_WITHDRAWN_2026-09-05";
     const TIER_PRICE_IDS = {
-      data: "pri_01m115xetf6w75k6c5zcwvzzcy",
-      entity: "pri_01m115xgaz1jf9mwm1dxcdxnyh",
-      scheduler: "pri_01m115xhnrk809xef82cd31d29",
-      brief: "pri_01m115xk4r22eee3qf6m2ptdk3",
+      data: "",
+      entity: "",
+      scheduler: "",
+      brief: "",
     };
 
     // ── Tier availability ──────────────────────────────────────────────────
