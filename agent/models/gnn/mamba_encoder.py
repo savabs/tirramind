@@ -166,16 +166,14 @@ class MambaMemoryEncoder(nn.Module):
             self.mamba: nn.Module = Mamba(cfg)
             self._has_mamba = True
             log.debug(
-                "MambaMemoryEncoder: using Mamba SSM "
-                "(d_model=%d, n_layers=%d, d_state=%d)",
+                "MambaMemoryEncoder: using Mamba SSM (d_model=%d, n_layers=%d, d_state=%d)",
                 memory_dim,
                 n_layers,
                 d_state,
             )
         except ImportError:
             log.warning(
-                "mambapy not available — MambaMemoryEncoder falling back to GRU. "
-                "Install with: pip install mambapy"
+                "mambapy not available — MambaMemoryEncoder falling back to GRU. Install with: pip install mambapy"
             )
             self.gru_cell = nn.GRUCell(memory_dim, memory_dim)
 
@@ -283,9 +281,7 @@ class MambaMemoryEncoder(nn.Module):
                     msg = torch.cat(
                         [
                             msg,
-                            torch.zeros(
-                                self.message_dim - msg.size(0), device=msg.device
-                            ),
+                            torch.zeros(self.message_dim - msg.size(0), device=msg.device),
                         ]
                     )
 
@@ -336,9 +332,7 @@ class MambaMemoryEncoder(nn.Module):
         time_feat = self.time_enc(dt)  # (K, time_dim)
 
         # Input tokens: project each (msg ‖ time_feat) → memory_dim
-        tokens = self.input_proj(
-            torch.cat([msgs, time_feat], dim=-1)
-        )  # (K, memory_dim)
+        tokens = self.input_proj(torch.cat([msgs, time_feat], dim=-1))  # (K, memory_dim)
 
         if self._has_mamba:
             # Prepend h_prev as context token → sequence of length K+1

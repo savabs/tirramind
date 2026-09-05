@@ -1199,7 +1199,7 @@ def backfill_ais_port_call_proxy(
     """Backfill daily Finnish port-call counts as Baltic activity proxy.
 
     Digitraffic has no historical AIS area snapshots; port-call tanker counts
-  are a consistent pre-live series until ``area_daily_activity`` accumulates.
+    are a consistent pre-live series until ``area_daily_activity`` accumulates.
     """
     if entity_id_from_key is None:
         return {"days_stored": 0, "error": "entity_id_from_key unavailable"}
@@ -1287,10 +1287,6 @@ def backfill_ais_area_daily(
     cache: DataCache | None = None,
 ) -> dict[str, Any]:
     """Port-call proxy history + today's live Baltic area snapshot."""
-    proxy = backfill_ais_port_call_proxy(
-        store, lookback_days=lookback_days, area_name=area_name, cache=cache
-    )
-    live = ingest_area_daily_snapshot(
-        store, area_name=area_name, cache=cache
-    )
+    proxy = backfill_ais_port_call_proxy(store, lookback_days=lookback_days, area_name=area_name, cache=cache)
+    live = ingest_area_daily_snapshot(store, area_name=area_name, cache=cache)
     return {"proxy": proxy, "live": live}

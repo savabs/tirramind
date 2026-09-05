@@ -1202,7 +1202,7 @@ def _describe_checkpoint_schema_drift(
         ckpt_w = ckpt_sd.get(key)
         if live_w is None or ckpt_w is None:
             continue
-        drift.append(f"    {etype}: trained_weights={ckpt_w.shape[1]} " f"expected_by_model={live_w.shape[1]}")
+        drift.append(f"    {etype}: trained_weights={ckpt_w.shape[1]} expected_by_model={live_w.shape[1]}")
 
     if not drift:
         return None
@@ -2045,7 +2045,7 @@ class Trainer:
         _va_lo, _va_hi = _obs_iso_range(val_obs)
         _te_lo, _te_hi = _obs_iso_range(test_obs)
         log.info(
-            "TRAINING_AUDIT: chronological 70/15/15 obs split — " "train [%s → %s]  val [%s → %s]  test [%s → %s]",
+            "TRAINING_AUDIT: chronological 70/15/15 obs split — train [%s → %s]  val [%s → %s]  test [%s → %s]",
             _tr_lo,
             _tr_hi,
             _va_lo,
@@ -3881,7 +3881,7 @@ class Trainer:
         )
         if missing or unexpected:
             log.warning(
-                "load_model_with_epoch_weights: %d missing keys, %d unexpected keys " "(strict=False).",
+                "load_model_with_epoch_weights: %d missing keys, %d unexpected keys (strict=False).",
                 len(missing),
                 len(unexpected),
             )
@@ -3889,7 +3889,7 @@ class Trainer:
         trainer._optimizer = torch.optim.Adam(trainer._model.parameters(), lr=config.learning_rate)
         ep_num = ep.get("epoch", "?")
         log.info(
-            "Overlayed per-epoch weights from %s (checkpoint epoch=%s) onto " "architecture from %s.",
+            "Overlayed per-epoch weights from %s (checkpoint epoch=%s) onto architecture from %s.",
             per_epoch_path,
             ep_num,
             full_checkpoint_path,

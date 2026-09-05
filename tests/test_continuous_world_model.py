@@ -314,9 +314,7 @@ class TestDiagonalDiffusionHead:
         z = torch.randn(2, 8)
         # Very unlikely all noise is zero in training
         noise, _ = head.sample_noise(z, dt=1.0, training=True)
-        assert not torch.all(
-            noise == 0
-        ), "Training noise should be non-zero (stochastic)"
+        assert not torch.all(noise == 0), "Training noise should be non-zero (stochastic)"
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -357,9 +355,7 @@ class TestHeterogeneousCDEFunc:
             mamba_ctx=torch.ones(1, 8),
         )
         F_with_ctx = func(t, z)
-        assert not torch.allclose(
-            F_no_ctx, F_with_ctx
-        ), "Context should change the drift output"
+        assert not torch.allclose(F_no_ctx, F_with_ctx), "Context should change the drift output"
 
     def test_column_norm_clipping(self):
         """All columns of F must have L2 norm ≤ 1.0."""
@@ -373,9 +369,9 @@ class TestHeterogeneousCDEFunc:
         z = torch.randn(4, 16) * 100
         F = func(torch.tensor([0.0]), z)  # (4, 16, 8)
         col_norms = F.norm(dim=1)  # (4, 8)
-        assert (
-            col_norms <= _COL_NORM_CLIP + 1e-5
-        ).all(), f"Column norm exceeded clip={_COL_NORM_CLIP}: max={col_norms.max().item():.4f}"
+        assert (col_norms <= _COL_NORM_CLIP + 1e-5).all(), (
+            f"Column norm exceeded clip={_COL_NORM_CLIP}: max={col_norms.max().item():.4f}"
+        )
 
     def test_clear_context(self):
         from agent.models.gnn.heterogeneous_cde_func import HeterogeneousCDEFunc
@@ -444,13 +440,9 @@ class TestContinuousWorldModelPhaseB:
         ]
         cwm.update_memories(events, memory, id_map, embeddings, training=False)
         # Entity 1 (global id 0) must have changed
-        assert not torch.allclose(
-            memory.memory[0], original[0]
-        ), "Entity 1 memory should have been updated"
+        assert not torch.allclose(memory.memory[0], original[0]), "Entity 1 memory should have been updated"
         # Entity 2 (global id 1) must be unchanged (no events)
-        assert torch.allclose(
-            memory.memory[1], original[1]
-        ), "Entity 2 memory should be unchanged (no events)"
+        assert torch.allclose(memory.memory[1], original[1]), "Entity 2 memory should be unchanged (no events)"
 
     def test_no_events_returns_zero_kl(self):
         cwm = self._make_cwm()
@@ -492,9 +484,9 @@ class TestContinuousWorldModelPhaseB:
         ]
         cwm.update_memories(events, memory, id_map, embeddings)
         # float32 at 500.0 is precise to <0.1s
-        assert (
-            abs(float(memory.last_update[0].item()) - t_last) < 0.1
-        ), f"Expected ~{t_last}, got {float(memory.last_update[0].item())}"
+        assert abs(float(memory.last_update[0].item()) - t_last) < 0.1, (
+            f"Expected ~{t_last}, got {float(memory.last_update[0].item())}"
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -546,9 +538,7 @@ class TestContinuousWorldModelPhaseE:
         with torch.no_grad():
             cwm.update_memories(events, memory1, id_map, embeddings, training=False)
             cwm.update_memories(events, memory2, id_map, embeddings, training=False)
-        assert torch.allclose(
-            memory1.memory, memory2.memory
-        ), "Inference should be deterministic (no stochastic noise)"
+        assert torch.allclose(memory1.memory, memory2.memory), "Inference should be deterministic (no stochastic noise)"
 
 
 # ═══════════════════════════════════════════════════════════════════════════

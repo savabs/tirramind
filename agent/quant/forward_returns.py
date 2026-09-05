@@ -105,9 +105,7 @@ def _latest_lookup_ts_per_entity_on_date(
     """For each entity, latest lookup key ts on calendar day *iso_date*."""
     from datetime import datetime
 
-    day_start = (
-        datetime.fromisoformat(iso_date).replace(tzinfo=UTC).timestamp()
-    )
+    day_start = datetime.fromisoformat(iso_date).replace(tzinfo=UTC).timestamp()
     day_end = day_start + 86400.0
     best: dict[str, tuple[int, int]] = {}  # eid → (ts, priority=ts)
     for (eid, ts), _ in lookup.items():
@@ -162,11 +160,7 @@ def sum_log_return_vector(
     out = np.full(len(entity_ids), np.nan, dtype=np.float64)
     for i, eid in enumerate(entity_ids):
         rows = daily_by_entity.get(eid, [])
-        vals = [
-            lr
-            for ts, lr in rows
-            if anchor_ts <= ts <= anchor_ts + buffer and math.isfinite(lr)
-        ]
+        vals = [lr for ts, lr in rows if anchor_ts <= ts <= anchor_ts + buffer and math.isfinite(lr)]
         if len(vals) >= max(1, horizon_days // 3):
             out[i] = float(sum(vals))
     return out
@@ -357,11 +351,7 @@ def label_method_correlation(
                 continue
             rows = daily.get(eid, [])
             buffer = horizon_days * CALENDAR_SECS_PER_TRADING_DAY
-            lrs = [
-                lr
-                for ts, lr in rows
-                if anchor_ts <= ts <= anchor_ts + buffer and math.isfinite(lr)
-            ]
+            lrs = [lr for ts, lr in rows if anchor_ts <= ts <= anchor_ts + buffer and math.isfinite(lr)]
             if len(lrs) < max(1, horizon_days // 3):
                 continue
             simple.append(s)

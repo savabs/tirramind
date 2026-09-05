@@ -68,8 +68,8 @@ def _make_eids(N: int) -> list[str]:
 # 1–3. wasserstein_1d
 # ═══════════════════════════════════════════════════════════════
 
-class TestWasserstein1d:
 
+class TestWasserstein1d:
     def test_same_distribution_zero(self):
         a = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
         assert wasserstein_1d(a, a) == pytest.approx(0.0)
@@ -91,8 +91,8 @@ class TestWasserstein1d:
 # 4–6. bootstrap_epsilon
 # ═══════════════════════════════════════════════════════════════
 
-class TestBootstrapEpsilon:
 
+class TestBootstrapEpsilon:
     def test_returns_non_negative(self):
         r = _make_returns(50, 3)
         eps = bootstrap_epsilon(r, n_bootstrap=20)
@@ -115,8 +115,8 @@ class TestBootstrapEpsilon:
 # 7–9. robust_covariance
 # ═══════════════════════════════════════════════════════════════
 
-class TestRobustCovariance:
 
+class TestRobustCovariance:
     def test_shape(self):
         r = _make_returns(50, 4)
         cov = robust_covariance(r, epsilon=0.01)
@@ -141,8 +141,8 @@ class TestRobustCovariance:
 # 10–12. _min_variance_weights
 # ═══════════════════════════════════════════════════════════════
 
-class TestMinVarianceWeights:
 
+class TestMinVarianceWeights:
     def test_sum_to_one(self):
         cov = np.diag([1.0, 2.0, 3.0])
         w = _min_variance_weights(cov)
@@ -164,8 +164,8 @@ class TestMinVarianceWeights:
 # 13–14. _blend_with_views
 # ═══════════════════════════════════════════════════════════════
 
-class TestBlendWithViews:
 
+class TestBlendWithViews:
     def test_sum_to_one(self):
         cov = np.diag([0.01, 0.02, 0.03])
         views = np.array([0.05, 0.01, 0.01])
@@ -183,12 +183,15 @@ class TestBlendWithViews:
 # 15–25. WassersteinRobustPortfolio
 # ═══════════════════════════════════════════════════════════════
 
-class TestWassersteinRobustPortfolio:
 
+class TestWassersteinRobustPortfolio:
     def test_result_frozen(self):
         r = RobustPortfolioWeights(
-            weights={"a": 0.5, "b": 0.5}, epsilon=0.01,
-            robust_cov=1.0, standard_cov=0.9, n_assets=2,
+            weights={"a": 0.5, "b": 0.5},
+            epsilon=0.01,
+            robust_cov=1.0,
+            standard_cov=0.9,
+            n_assets=2,
             built_at=time.time(),
         )
         with pytest.raises((AttributeError, TypeError)):
@@ -246,8 +249,11 @@ class TestWassersteinRobustPortfolio:
         mock_store = MagicMock()
         wp = WassersteinRobustPortfolio(epsilon=0.01)
         result = RobustPortfolioWeights(
-            weights={"a": 0.4, "b": 0.6}, epsilon=0.01,
-            robust_cov=1.0, standard_cov=0.9, n_assets=2,
+            weights={"a": 0.4, "b": 0.6},
+            epsilon=0.01,
+            robust_cov=1.0,
+            standard_cov=0.9,
+            n_assets=2,
             built_at=time.time(),
         )
         n = wp.store_weights(mock_store, result)
@@ -259,8 +265,11 @@ class TestWassersteinRobustPortfolio:
         mock_store.store_signal.side_effect = RuntimeError("fail")
         wp = WassersteinRobustPortfolio(epsilon=0.01)
         result = RobustPortfolioWeights(
-            weights={"a": 1.0}, epsilon=0.01,
-            robust_cov=0.5, standard_cov=0.4, n_assets=1,
+            weights={"a": 1.0},
+            epsilon=0.01,
+            robust_cov=0.5,
+            standard_cov=0.4,
+            n_assets=1,
             built_at=time.time(),
         )
         n = wp.store_weights(mock_store, result)

@@ -66,9 +66,7 @@ def _add_obs(
     rng = np.random.default_rng(seed)
     for obs_type in obs_types:
         entity_id = f"e_{obs_type}"
-        store.register_entity(
-            entity_type="company", canonical_name=entity_id, entity_id=entity_id
-        )
+        store.register_entity(entity_type="company", canonical_name=entity_id, entity_id=entity_id)
         times = sorted(rng.uniform(t_start, t_end, n_per_type))
         for t in times:
             store.store_entity_observation(
@@ -86,7 +84,6 @@ def _add_obs(
 
 
 class TestConstruction:
-
     def test_instantiates_defaults(self):
         enc = NeuralHawkesEncoder()
         assert enc.hidden_dim == 64
@@ -106,7 +103,6 @@ class TestConstruction:
 
 
 class TestNHPModel:
-
     def _make_model(self, n_types=4, hidden_dim=16):
         return _NHPModel(n_types=n_types, hidden_dim=hidden_dim, emb_dim=8)
 
@@ -151,15 +147,12 @@ class TestNHPModel:
 
 
 class TestVocabAndSequences:
-
     def _make_obs(self, types_counts: dict[str, int], t0: float = 0.0) -> list[dict]:
         obs = []
         t = t0
         for obs_type, count in types_counts.items():
             for _ in range(count):
-                obs.append(
-                    {"observation_type": obs_type, "observed_at": t, "value": {}}
-                )
+                obs.append({"observation_type": obs_type, "observed_at": t, "value": {}})
                 t += 3600.0
         return obs
 
@@ -214,7 +207,6 @@ class TestVocabAndSequences:
 
 
 class TestRun:
-
     def test_empty_store_returns_empty_dict(self, tmp_path):
         store = _make_store(tmp_path)
         enc = NeuralHawkesEncoder(n_iters=5)
@@ -232,9 +224,7 @@ class TestRun:
     def test_returns_result_for_each_event_type(self, tmp_path):
         store = _make_store(tmp_path)
         as_of = time.time()
-        _add_obs(
-            store, ["price", "ais_position", "sanctions"], 40, as_of - 60 * _DAY, as_of
-        )
+        _add_obs(store, ["price", "ais_position", "sanctions"], 40, as_of - 60 * _DAY, as_of)
         enc = NeuralHawkesEncoder(n_iters=5, hidden_dim=16, emb_dim=8)
         result = enc.run(store, as_of=as_of)
         assert len(result) == 3
@@ -271,9 +261,7 @@ class TestRun:
         store = _make_store(tmp_path)
         as_of = time.time()
         _add_obs(store, ["price", "ais"], 40, as_of - 60 * _DAY, as_of)
-        enc = NeuralHawkesEncoder(
-            n_iters=5, hidden_dim=16, emb_dim=8, forecast_hours=48.0
-        )
+        enc = NeuralHawkesEncoder(n_iters=5, hidden_dim=16, emb_dim=8, forecast_hours=48.0)
         result = enc.run(store, as_of=as_of)
         for r in result.values():
             assert r.forecast_hours == pytest.approx(48.0)
@@ -285,14 +273,11 @@ class TestRun:
 
 
 class TestStoreResults:
-
     def test_persists_signals_correct_naming(self, tmp_path):
         store = _make_store(tmp_path)
         as_of = time.time()
         _add_obs(store, ["price", "rate"], 40, as_of - 60 * _DAY, as_of)
-        enc = NeuralHawkesEncoder(
-            n_iters=5, hidden_dim=16, emb_dim=8, forecast_hours=72.0
-        )
+        enc = NeuralHawkesEncoder(n_iters=5, hidden_dim=16, emb_dim=8, forecast_hours=72.0)
         results = enc.run(store, as_of=as_of)
         n = enc.store_results(results, store)
         assert n == len(results)
@@ -304,9 +289,7 @@ class TestStoreResults:
         store = _make_store(tmp_path)
         as_of = time.time()
         _add_obs(store, ["price", "rate"], 40, as_of - 60 * _DAY, as_of)
-        enc = NeuralHawkesEncoder(
-            n_iters=5, hidden_dim=16, emb_dim=8, forecast_hours=72.0
-        )
+        enc = NeuralHawkesEncoder(n_iters=5, hidden_dim=16, emb_dim=8, forecast_hours=72.0)
         results = enc.run(store, as_of=as_of)
         enc.store_results(results, store)
         for event_type, r in results.items():
@@ -321,7 +304,6 @@ class TestStoreResults:
 
 
 class TestTrainerConfig:
-
     def test_use_hawkes_defaults_false(self):
         from agent.models.gnn.trainer import TrainerConfig
 
@@ -349,7 +331,6 @@ class TestTrainerConfig:
 
 
 class TestBuildModelIntegration:
-
     def _make_trainer(self, tmp_path: Path, use_hawkes: bool, tag: str) -> Trainer:
         store = _make_store(tmp_path, f"{tag}.db")
         gen = SyntheticGraphGenerator(
@@ -384,9 +365,7 @@ class TestBuildModelIntegration:
         t = self._make_trainer(tmp_path, use_hawkes=True, tag="hsig")
         # Add current-time observations (synthetic uses epoch-relative timestamps)
         as_of = time.time()
-        _add_obs(
-            t.store, ["price", "ais_position", "rate"], 50, as_of - 60 * _DAY, as_of
-        )
+        _add_obs(t.store, ["price", "ais_position", "rate"], 50, as_of - 60 * _DAY, as_of)
         t.build_model()
         # At least one hawkes.*.intensity_24h signal should be stored
         has_signal = False

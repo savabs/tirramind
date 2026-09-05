@@ -100,6 +100,7 @@ def runner_factory(tmp_path):
         # and bandit RNG were previously non-hermetic, causing run-order flakiness).
         runner._bandit._rng.seed(7)
         from agent.learning.reward import RewardWeightOptimizer
+
         runner._reward_optimizer = RewardWeightOptimizer(
             persist_path=runner._reward_optimizer._bo._persist_path, seed=7, n_random=5
         )
@@ -136,8 +137,6 @@ def test_autonomous_loop_arm_selection_improves_over_time(runner_factory, monkey
     late_share = success_share(late_arms)
 
     # The bandit must shift toward the successful arms over time.
-    assert late_share > early_share, (
-        f"no shift: early={early_share:.2f} late={late_share:.2f}"
-    )
+    assert late_share > early_share, f"no shift: early={early_share:.2f} late={late_share:.2f}"
     # And the majority of late selections should be successful arms.
     assert late_share > 0.5, f"late selections still mostly failing: {late_share:.2f}"

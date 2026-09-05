@@ -15,9 +15,7 @@ class TestSVIParameterization:
     def test_svi_bounds_and_clamping(self):
         """Verify SVI parameters stay bounded and output positive total variance."""
         # Intentionally initialize SVI with values violating logical bounds
-        svi = SVIParameterization(
-            a=-0.01, b=-0.1, rho=-1.5, m=0.0, sigma=-0.05, learnable=False
-        )
+        svi = SVIParameterization(a=-0.01, b=-0.1, rho=-1.5, m=0.0, sigma=-0.05, learnable=False)
 
         k = torch.tensor([-0.5, 0.0, 0.5], dtype=torch.float32)
         w = svi.total_variance(k)
@@ -31,9 +29,7 @@ class TestSVIParameterization:
 
     def test_svi_butterfly_arbitrage(self):
         """Verify Durrleman's g(k) check successfully computes density indicator."""
-        svi = SVIParameterization(
-            a=0.04, b=0.10, rho=-0.30, m=0.0, sigma=0.10, learnable=False
-        )
+        svi = SVIParameterization(a=0.04, b=0.10, rho=-0.30, m=0.0, sigma=0.10, learnable=False)
         k = torch.linspace(-0.5, 0.5, 20)
 
         g_k = svi.check_butterfly_arbitrage(k)
@@ -44,17 +40,13 @@ class TestSVIParameterization:
     def test_svi_fitting(self):
         """Verify SVI parameter fitting successfully converges on smile data."""
         # Target SVI slice
-        target_svi = SVIParameterization(
-            a=0.05, b=0.15, rho=-0.40, m=0.02, sigma=0.08, learnable=False
-        )
+        target_svi = SVIParameterization(a=0.05, b=0.15, rho=-0.40, m=0.02, sigma=0.08, learnable=False)
 
         k_market = torch.linspace(-0.3, 0.3, 15)
         w_market = target_svi.total_variance(k_market)
 
         # Fit with a fresh initialized learnable SVI
-        fit_svi = SVIParameterization(
-            a=0.02, b=0.05, rho=0.0, m=0.0, sigma=0.05, learnable=True
-        )
+        fit_svi = SVIParameterization(a=0.02, b=0.05, rho=0.0, m=0.0, sigma=0.05, learnable=True)
         final_loss = fit_svi.fit(k_market, w_market, lr=5e-2, epochs=500)
 
         # Assert fitting decreased the loss to near zero
@@ -87,9 +79,7 @@ class TestSABRModel:
     def test_sabr_fitting(self):
         """Verify SABR model parameters can be fitted to market implied volatilities."""
         # Create artificial SABR volatility smile
-        target_sabr = SABRModel(
-            alpha=0.25, beta=1.0, rho=-0.60, nu=0.50, learnable=False
-        )
+        target_sabr = SABRModel(alpha=0.25, beta=1.0, rho=-0.60, nu=0.50, learnable=False)
         K_market = torch.linspace(80.0, 120.0, 11)
         F = torch.tensor([100.0] * 11)
         T = torch.tensor([1.0] * 11)
@@ -123,12 +113,8 @@ class TestImpliedVolatilitySurface:
 
     def test_gnn_feature_extraction_and_backward_flow(self):
         """Verify GNN surface features extract correctly and backprop gradients flow to SVI params."""
-        slice_short = SVIParameterization(
-            a=0.03, b=0.10, rho=-0.40, m=0.0, sigma=0.06, learnable=True
-        )
-        slice_long = SVIParameterization(
-            a=0.06, b=0.14, rho=-0.30, m=0.0, sigma=0.09, learnable=True
-        )
+        slice_short = SVIParameterization(a=0.03, b=0.10, rho=-0.40, m=0.0, sigma=0.06, learnable=True)
+        slice_long = SVIParameterization(a=0.06, b=0.14, rho=-0.30, m=0.0, sigma=0.09, learnable=True)
 
         surface = ImpliedVolatilitySurface({0.1: slice_short, 1.0: slice_long})
 

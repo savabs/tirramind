@@ -71,13 +71,21 @@ def _add_obs(store: PipelineStore, tool: str, entity_id: str, ts: float) -> None
 def _make_trainer(tmp_path: Path, **cfg_kwargs) -> Trainer:
     store = _make_store(tmp_path, "trainer_pf.db")
     gen = SyntheticGraphGenerator(
-        num_companies=2, num_countries=1,
-        time_span=3600.0 * 3, base_event_rate=0.001, seed=99,
+        num_companies=2,
+        num_countries=1,
+        time_span=3600.0 * 3,
+        base_event_rate=0.001,
+        seed=99,
     )
     gen.generate(store)
     cfg = TrainerConfig(
-        hidden_dim=16, memory_dim=16, message_dim=16, time_dim=8,
-        num_heads=1, num_layers=1, **cfg_kwargs,
+        hidden_dim=16,
+        memory_dim=16,
+        message_dim=16,
+        time_dim=8,
+        num_heads=1,
+        num_layers=1,
+        **cfg_kwargs,
     )
     return Trainer(store, cfg)
 
@@ -86,8 +94,8 @@ def _make_trainer(tmp_path: Path, **cfg_kwargs) -> Trainer:
 # 1–6. PreflightResult
 # ═══════════════════════════════════════════════════════════════
 
-class TestPreflightResult:
 
+class TestPreflightResult:
     def test_passed_ok_true(self):
         r = PreflightResult.passed()
         assert r.ok is True
@@ -122,8 +130,8 @@ class TestPreflightResult:
 # 7–11. for_nightlight
 # ═══════════════════════════════════════════════════════════════
 
-class TestForNightlight:
 
+class TestForNightlight:
     def test_fails_missing_config_no_key(self):
         with patch.dict(os.environ, {}, clear=True):
             # Remove FIRMS_API_KEY if set
@@ -146,18 +154,14 @@ class TestForNightlight:
         store = _make_store(tmp_path, "nl_stale.db")
         old_ts = time.time() - 400 * 3600  # 400h ago
         _add_obs(store, "nightlight_activity", "zone1", old_ts)
-        ok, r = FeaturePreflight.for_nightlight(
-            firms_api_key="KEY", store=store, mode="ndvi", max_stale_hours=336.0
-        )
+        ok, r = FeaturePreflight.for_nightlight(firms_api_key="KEY", store=store, mode="ndvi", max_stale_hours=336.0)
         assert ok is False
         assert r.reason == FailureReason.NO_DATA
 
     def test_passes_when_data_fresh(self, tmp_path):
         store = _make_store(tmp_path, "nl_fresh.db")
         _add_obs(store, "nightlight_activity", "zone1", time.time())
-        ok, r = FeaturePreflight.for_nightlight(
-            firms_api_key="KEY", store=store, mode="ndvi", max_stale_hours=336.0
-        )
+        ok, r = FeaturePreflight.for_nightlight(firms_api_key="KEY", store=store, mode="ndvi", max_stale_hours=336.0)
         assert ok is True
 
 
@@ -165,8 +169,8 @@ class TestForNightlight:
 # 12–15. for_attribution
 # ═══════════════════════════════════════════════════════════════
 
-class TestForAttribution:
 
+class TestForAttribution:
     def test_fails_model_none(self):
         ok, r = FeaturePreflight.for_attribution(model=None)
         assert ok is False
@@ -181,9 +185,7 @@ class TestForAttribution:
         model = MagicMock()
         id_map = MagicMock()
         id_map.type_local = {}  # no instruments
-        ok, r = FeaturePreflight.for_attribution(
-            model=model, id_map=id_map, min_instrument_nodes=1
-        )
+        ok, r = FeaturePreflight.for_attribution(model=model, id_map=id_map, min_instrument_nodes=1)
         assert ok is False
         assert r.reason == FailureReason.NO_DATA
 
@@ -191,9 +193,7 @@ class TestForAttribution:
         model = MagicMock()
         id_map = MagicMock()
         id_map.type_local = {"instrument": {"e1": 0, "e2": 1}}
-        ok, r = FeaturePreflight.for_attribution(
-            model=model, id_map=id_map, min_instrument_nodes=1
-        )
+        ok, r = FeaturePreflight.for_attribution(model=model, id_map=id_map, min_instrument_nodes=1)
         assert ok is True
 
 
@@ -201,19 +201,15 @@ class TestForAttribution:
 # 16–17. for_portfolio
 # ═══════════════════════════════════════════════════════════════
 
-class TestForPortfolio:
 
+class TestForPortfolio:
     def test_fails_too_few_predictions(self):
-        ok, r = FeaturePreflight.for_portfolio(
-            store=None, return_preds={"e1": 0.01}, min_assets=2
-        )
+        ok, r = FeaturePreflight.for_portfolio(store=None, return_preds={"e1": 0.01}, min_assets=2)
         assert ok is False
         assert r.reason == FailureReason.NO_DATA
 
     def test_passes_with_enough_predictions(self):
-        ok, r = FeaturePreflight.for_portfolio(
-            store=None, return_preds={"e1": 0.01, "e2": -0.02}, min_assets=2
-        )
+        ok, r = FeaturePreflight.for_portfolio(store=None, return_preds={"e1": 0.01, "e2": -0.02}, min_assets=2)
         assert ok is True
 
 
@@ -221,8 +217,8 @@ class TestForPortfolio:
 # 18–20. for_data_catalog
 # ═══════════════════════════════════════════════════════════════
 
-class TestForDataCatalog:
 
+class TestForDataCatalog:
     def test_fails_when_flag_false(self):
         ok, r = FeaturePreflight.for_data_catalog(store=MagicMock(), use_data_catalog=False)
         assert ok is False
@@ -242,8 +238,8 @@ class TestForDataCatalog:
 # 21–22. for_gnn_inference
 # ═══════════════════════════════════════════════════════════════
 
-class TestForGnnInference:
 
+class TestForGnnInference:
     def test_fails_model_none(self):
         ok, r = FeaturePreflight.for_gnn_inference(model=None, store=None)
         assert ok is False
@@ -258,28 +254,22 @@ class TestForGnnInference:
 # 23–25. for_api_key
 # ═══════════════════════════════════════════════════════════════
 
-class TestForApiKey:
 
+class TestForApiKey:
     def test_fails_no_key(self):
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("MY_TEST_KEY", None)
-            ok, r = FeaturePreflight.for_api_key(
-                key_value="", env_var="MY_TEST_KEY", tool_name="TestTool"
-            )
+            ok, r = FeaturePreflight.for_api_key(key_value="", env_var="MY_TEST_KEY", tool_name="TestTool")
         assert ok is False
         assert r.reason == FailureReason.MISSING_CONFIG
 
     def test_passes_with_direct_key(self):
-        ok, r = FeaturePreflight.for_api_key(
-            key_value="abc123", env_var="MY_TEST_KEY", tool_name="TestTool"
-        )
+        ok, r = FeaturePreflight.for_api_key(key_value="abc123", env_var="MY_TEST_KEY", tool_name="TestTool")
         assert ok is True
 
     def test_passes_via_env_var(self):
         with patch.dict(os.environ, {"MY_TEST_KEY": "env_val"}):
-            ok, r = FeaturePreflight.for_api_key(
-                key_value=None, env_var="MY_TEST_KEY", tool_name="TestTool"
-            )
+            ok, r = FeaturePreflight.for_api_key(key_value=None, env_var="MY_TEST_KEY", tool_name="TestTool")
         assert ok is True
 
 
@@ -287,8 +277,8 @@ class TestForApiKey:
 # 26–29. _check_data_staleness
 # ═══════════════════════════════════════════════════════════════
 
-class TestCheckDataStaleness:
 
+class TestCheckDataStaleness:
     def test_no_rows_returns_no_data(self, tmp_path):
         store = _make_store(tmp_path, "stale_a.db")
         r = FeaturePreflight._check_data_staleness(store, "some_tool", 24.0)
@@ -317,8 +307,8 @@ class TestCheckDataStaleness:
 # 30–32. Integration with NightlightActivityTool + Trainer
 # ═══════════════════════════════════════════════════════════════
 
-class TestIntegration:
 
+class TestIntegration:
     def test_nightlight_tool_stops_on_missing_firms_key(self):
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("FIRMS_API_KEY", None)

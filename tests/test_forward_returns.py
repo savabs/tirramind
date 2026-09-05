@@ -46,9 +46,7 @@ def test_require_future_after_guard():
     ]
     lookup_open = build_forward_return_lookup(obs, horizon_days=21)
     future_ts = 21 * day
-    lookup_strict = build_forward_return_lookup(
-        obs, horizon_days=21, require_future_after=future_ts
-    )
+    lookup_strict = build_forward_return_lookup(obs, horizon_days=21, require_future_after=future_ts)
     assert len(lookup_open) >= 1
     assert len(lookup_strict) == 0
 
@@ -59,10 +57,7 @@ def test_forward_return_vector_for_date():
 
     day = 86400.0 * 7 / 5
     iso = "2024-01-15"
-    noon = (
-        datetime.fromisoformat(iso).replace(tzinfo=UTC).timestamp()
-        + 43200.0
-    )
+    noon = datetime.fromisoformat(iso).replace(tzinfo=UTC).timestamp() + 43200.0
     obs = [
         _daily_obs("AAPL", noon, 100.0),
         _daily_obs("AAPL", noon + 21 * day, 110.0),

@@ -215,16 +215,8 @@ class CDEMemoryEncoder(nn.Module):
             return
 
         # ── Partition: CDE nodes vs GRU fallback nodes ─────────────────
-        cde_nodes = [
-            (gid, evs)
-            for gid, evs in node_events.items()
-            if len(evs) >= self.min_events and _CDE_AVAILABLE
-        ]
-        gru_nodes = [
-            (gid, evs)
-            for gid, evs in node_events.items()
-            if len(evs) < self.min_events or not _CDE_AVAILABLE
-        ]
+        cde_nodes = [(gid, evs) for gid, evs in node_events.items() if len(evs) >= self.min_events and _CDE_AVAILABLE]
+        gru_nodes = [(gid, evs) for gid, evs in node_events.items() if len(evs) < self.min_events or not _CDE_AVAILABLE]
 
         # ── GRU fallback: process single-event nodes with HeteroMemory ─
         if gru_nodes:

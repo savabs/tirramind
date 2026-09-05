@@ -39,9 +39,9 @@ class RewardWeights:
     while still rewarding edge and knowledge.
     """
 
-    success_weight: float = 0.6   # objective success flag (the primary signal)
-    eval_weight: float = 0.15      # LLM-judged quality fine-tune (secondary)
-    sharpe_weight: float = 0.15     # strategy edge
+    success_weight: float = 0.6  # objective success flag (the primary signal)
+    eval_weight: float = 0.15  # LLM-judged quality fine-tune (secondary)
+    sharpe_weight: float = 0.15  # strategy edge
     facts_weight: float = 0.1
     novelty_bonus: float = 0.05
     dead_end_penalty: float = 0.3
@@ -101,12 +101,7 @@ def compute_reward(
 
     # Combine
     raw_reward = (
-        success_term
-        + eval_component
-        + sharpe_component
-        + facts_component
-        + novelty_component
-        - dead_end_component
+        success_term + eval_component + sharpe_component + facts_component + novelty_component - dead_end_component
     )
 
     # Clamp to [0, 1]

@@ -67,15 +67,9 @@ def populated_store(tmp_path):
 def small_store(tmp_path):
     """Store with just 2 companies and a handful of hand-crafted observations."""
     store = PipelineStore(str(tmp_path / "small.db"))
-    store.register_entity(
-        entity_type="company", canonical_name="Alpha Corp", entity_id="e1"
-    )
-    store.register_entity(
-        entity_type="company", canonical_name="Beta Ltd", entity_id="e2"
-    )
-    store.register_entity(
-        entity_type="company", canonical_name="Gamma Inc", entity_id="e3"
-    )
+    store.register_entity(entity_type="company", canonical_name="Alpha Corp", entity_id="e1")
+    store.register_entity(entity_type="company", canonical_name="Beta Ltd", entity_id="e2")
+    store.register_entity(entity_type="company", canonical_name="Gamma Inc", entity_id="e3")
     t0 = 1_000_000.0
     for i in range(8):
         store.store_entity_observation(
@@ -108,7 +102,6 @@ def small_store(tmp_path):
 
 
 class TestConstruction:
-
     def test_instantiates(self, encoder):
         assert encoder is not None
         assert encoder.output_dims == 16
@@ -121,7 +114,6 @@ class TestConstruction:
 
 
 class TestBuildSeries:
-
     def test_empty_observations_returns_zeros(self, encoder):
         out = encoder._build_series([], t_min=0.0, t_span=1000.0, T=16)
         assert out.shape == (16, 2)
@@ -162,14 +154,10 @@ class TestBuildSeries:
 
 
 class TestEncodeType:
-
     def _make_obs(self, eids: list[str], n_obs: int = 5, t0: float = 0.0):
         obs_by_entity = {}
         for eid in eids:
-            obs_by_entity[eid] = [
-                {"observed_at": t0 + i * 100.0, "value": {"value": float(i)}}
-                for i in range(n_obs)
-            ]
+            obs_by_entity[eid] = [{"observed_at": t0 + i * 100.0, "value": {"value": float(i)}} for i in range(n_obs)]
         return obs_by_entity
 
     def test_returns_none_when_no_observations(self, encoder):
@@ -205,7 +193,6 @@ class TestEncodeType:
 
 
 class TestFitAndEncode:
-
     def test_skips_singleton_types(self, encoder, small_store):
         """company has 3 entities — should be encoded.
         Any type with <2 entities is skipped."""
@@ -223,9 +210,7 @@ class TestFitAndEncode:
     def test_entity_with_no_obs_gets_zero_embedding(self, encoder, small_store):
         """e3 has observations, but let's test a freshly added entity with none."""
         store, t0 = small_store
-        store.register_entity(
-            entity_type="company", canonical_name="Orphan Co", entity_id="orphan"
-        )
+        store.register_entity(entity_type="company", canonical_name="Orphan Co", entity_id="orphan")
         result = encoder.fit_and_encode(store)
         if "company" in result and "orphan" in result["company"]:
             emb = result["company"]["orphan"]
@@ -235,9 +220,7 @@ class TestFitAndEncode:
         result = encoder.fit_and_encode(populated_store)
         for etype, embs in result.items():
             for eid, emb in embs.items():
-                assert emb.shape == (
-                    encoder.output_dims,
-                ), f"Wrong shape for {etype}/{eid}: {emb.shape}"
+                assert emb.shape == (encoder.output_dims,), f"Wrong shape for {etype}/{eid}: {emb.shape}"
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -246,7 +229,6 @@ class TestFitAndEncode:
 
 
 class TestBuildNodeFeatures:
-
     def _make_obs(self, entity_ids: list[str]):
         t = 1_000_000.0
         return [
@@ -263,21 +245,15 @@ class TestBuildNodeFeatures:
     def test_ts2vec_dim_zero_unchanged(self):
         eids = ["c1", "c2", "c3"]
         obs = self._make_obs(eids)
-        feats = _build_node_features(
-            "company", eids, obs, 1_001_000.0, ts2vec_embeddings=None, ts2vec_dim=0
-        )
+        feats = _build_node_features("company", eids, obs, 1_001_000.0, ts2vec_embeddings=None, ts2vec_dim=0)
         assert feats.shape[1] == BASE_FEAT_DIM
 
     def test_ts2vec_dim_positive_extends_features(self):
         eids = ["c1", "c2"]
         obs = self._make_obs(eids)
         ts_dim = 12
-        embs = {
-            "company": {eid: np.random.randn(ts_dim).astype(np.float32) for eid in eids}
-        }
-        feats = _build_node_features(
-            "company", eids, obs, 1_001_000.0, ts2vec_embeddings=embs, ts2vec_dim=ts_dim
-        )
+        embs = {"company": {eid: np.random.randn(ts_dim).astype(np.float32) for eid in eids}}
+        feats = _build_node_features("company", eids, obs, 1_001_000.0, ts2vec_embeddings=embs, ts2vec_dim=ts_dim)
         assert feats.shape[1] == BASE_FEAT_DIM + ts_dim
 
     def test_ts2vec_values_in_correct_offset(self):
@@ -286,9 +262,7 @@ class TestBuildNodeFeatures:
         ts_dim = 4
         fixed_emb = np.array([0.1, 0.2, 0.3, 0.4], dtype=np.float32)
         embs = {"company": {"c1": fixed_emb}}
-        feats = _build_node_features(
-            "company", eids, obs, 1_001_000.0, ts2vec_embeddings=embs, ts2vec_dim=ts_dim
-        )
+        feats = _build_node_features("company", eids, obs, 1_001_000.0, ts2vec_embeddings=embs, ts2vec_dim=ts_dim)
         offset = BASE_FEAT_DIM  # no enrichment, no price (not instrument), no sigs
         recovered = feats[0, offset : offset + ts_dim].numpy()
         np.testing.assert_allclose(recovered, fixed_emb, atol=1e-5)
@@ -300,11 +274,8 @@ class TestBuildNodeFeatures:
 
 
 class TestGraphBuilderPassThrough:
-
     def test_build_with_ts2vec_embeddings(self, populated_store, tmp_path):
-        enc = TS2VecEncoder(
-            output_dims=8, n_iters=5, time_bins=8, depth=3, device="cpu"
-        )
+        enc = TS2VecEncoder(output_dims=8, n_iters=5, time_bins=8, depth=3, device="cpu")
         embs = enc.fit_and_encode(populated_store)
 
         gb = GraphBuilder(populated_store)
@@ -312,22 +283,18 @@ class TestGraphBuilderPassThrough:
 
         for ntype in data.node_types:
             if ntype in embs and data[ntype].x.size(0) > 0:
-                assert (
-                    data[ntype].x.size(1) == BASE_FEAT_DIM + 8
-                ), f"Expected {BASE_FEAT_DIM + 8}, got {data[ntype].x.size(1)} for {ntype}"
+                assert data[ntype].x.size(1) == BASE_FEAT_DIM + 8, (
+                    f"Expected {BASE_FEAT_DIM + 8}, got {data[ntype].x.size(1)} for {ntype}"
+                )
 
     def test_build_from_cached_with_ts2vec_embeddings(self, populated_store):
-        enc = TS2VecEncoder(
-            output_dims=8, n_iters=5, time_bins=8, depth=3, device="cpu"
-        )
+        enc = TS2VecEncoder(output_dims=8, n_iters=5, time_bins=8, depth=3, device="cpu")
         embs = enc.fit_and_encode(populated_store)
 
         gb = GraphBuilder(populated_store)
         id_map, entities, links = gb.prepare_static()
         obs = populated_store.query_all_observations()
-        data, _, _ = gb.build_from_cached(
-            id_map, links, observations=obs, ts2vec_embeddings=embs, ts2vec_dim=8
-        )
+        data, _, _ = gb.build_from_cached(id_map, links, observations=obs, ts2vec_embeddings=embs, ts2vec_dim=8)
 
         for ntype in data.node_types:
             if ntype in embs and data[ntype].x.size(0) > 0:
@@ -340,7 +307,6 @@ class TestGraphBuilderPassThrough:
 
 
 class TestTrainerConfig:
-
     def test_use_ts2vec_defaults_false(self):
         assert TrainerConfig().use_ts2vec is False
 
@@ -357,7 +323,6 @@ class TestTrainerConfig:
 
 
 class TestBuildModelInChannels:
-
     def _make_trainer(self, tmp_path, use_ts2vec: bool, tag: str):
         store = PipelineStore(str(tmp_path / f"{tag}.db"))
         gen = SyntheticGraphGenerator(
@@ -392,18 +357,14 @@ class TestBuildModelInChannels:
             in_base = m_base.type_projections[ntype].in_features
             if ntype in t_ts2v._ts2vec_embeddings:
                 in_ts2v = m_ts2v.type_projections[ntype].in_features
-                assert (
-                    in_ts2v == in_base + 8
-                ), f"{ntype}: expected {in_base + 8}, got {in_ts2v}"
+                assert in_ts2v == in_base + 8, f"{ntype}: expected {in_base + 8}, got {in_ts2v}"
 
     def test_in_channels_unchanged_when_use_ts2vec_false(self, tmp_path):
         t = self._make_trainer(tmp_path, use_ts2vec=False, tag="notsv")
         m = t.build_model()
         for ntype in m.node_types:
             proj = m.type_projections[ntype]
-            assert (
-                proj.in_features == BASE_FEAT_DIM
-            ), f"Expected {BASE_FEAT_DIM}, got {proj.in_features} for {ntype}"
+            assert proj.in_features == BASE_FEAT_DIM, f"Expected {BASE_FEAT_DIM}, got {proj.in_features} for {ntype}"
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -412,7 +373,6 @@ class TestBuildModelInChannels:
 
 
 class TestTS2VecTrainingStep:
-
     def test_training_step_with_ts2vec_no_error(self, tmp_path):
         store = PipelineStore(str(tmp_path / "ts2v_train.db"))
         gen = SyntheticGraphGenerator(

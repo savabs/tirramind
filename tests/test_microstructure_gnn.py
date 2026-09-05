@@ -62,9 +62,9 @@ def test_graph_builder_microstructure_integration(tmp_path):
 
     # BASE (14) + PRICE (9) + MICRO (11) + M15 quant (15) = 49
     expected_dim = BASE_FEAT_DIM + PRICE_FEAT_DIM + MICROSTRUCTURE_DIM + M15_QUANT_DIM
-    assert (
-        instrument_features.shape[1] == expected_dim
-    ), f"Expected instrument feature dim {expected_dim}, got {instrument_features.shape[1]}"
+    assert instrument_features.shape[1] == expected_dim, (
+        f"Expected instrument feature dim {expected_dim}, got {instrument_features.shape[1]}"
+    )
 
     # AAPL has 40 days → non-zero micro block; MSFT has 1 day → zeros
     micro_offset = BASE_FEAT_DIM + PRICE_FEAT_DIM  # derive; BASE went 14 -> 15
@@ -75,9 +75,9 @@ def test_graph_builder_microstructure_integration(tmp_path):
     # Verify other node types don't have microstructure features
     country_features = data["country"].x
     # Country should have BASE only (no price/micro/M15 blocks).
-    assert (
-        country_features.shape[1] == BASE_FEAT_DIM
-    ), f"Country nodes should not have microstructure features, got {country_features.shape[1]}"
+    assert country_features.shape[1] == BASE_FEAT_DIM, (
+        f"Country nodes should not have microstructure features, got {country_features.shape[1]}"
+    )
 
 
 def test_graph_builder_with_enrichment():
@@ -106,9 +106,9 @@ def test_graph_builder_with_enrichment():
         # len(OBSERVATION_TYPES), because pinning it is exactly what let the
         # obs_type_dist block overflow and crash entity_scoring.
         expected_dim = BASE_FEAT_DIM + ENRICHMENT_DIM + PRICE_FEAT_DIM + MICROSTRUCTURE_DIM + M15_QUANT_DIM
-        assert (
-            data["instrument"].x.shape[1] == expected_dim
-        ), f"Expected dim {expected_dim} with enrichment, got {data['instrument'].x.shape[1]}"
+        assert data["instrument"].x.shape[1] == expected_dim, (
+            f"Expected dim {expected_dim} with enrichment, got {data['instrument'].x.shape[1]}"
+        )
 
         store.close()
         import os

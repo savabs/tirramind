@@ -64,10 +64,9 @@ class BlackScholes(nn.Module):
             q = torch.zeros_like(S_clamped)
 
         # Compute d1 and d2
-        d1 = (
-            torch.log(S_clamped / K_clamped)
-            + (r - q + 0.5 * sigma_clamped**2) * T_clamped
-        ) / (sigma_clamped * torch.sqrt(T_clamped))
+        d1 = (torch.log(S_clamped / K_clamped) + (r - q + 0.5 * sigma_clamped**2) * T_clamped) / (
+            sigma_clamped * torch.sqrt(T_clamped)
+        )
         d2 = d1 - sigma_clamped * torch.sqrt(T_clamped)
 
         # Option type mask
@@ -79,12 +78,12 @@ class BlackScholes(nn.Module):
             put_mask = 0.0 if is_call else 1.0
 
         # Calculate call and put prices
-        c_price = S_clamped * torch.exp(-q * T_clamped) * _norm_cdf(
-            d1
-        ) - K_clamped * torch.exp(-r * T_clamped) * _norm_cdf(d2)
-        p_price = K_clamped * torch.exp(-r * T_clamped) * _norm_cdf(
-            -d2
-        ) - S_clamped * torch.exp(-q * T_clamped) * _norm_cdf(-d1)
+        c_price = S_clamped * torch.exp(-q * T_clamped) * _norm_cdf(d1) - K_clamped * torch.exp(
+            -r * T_clamped
+        ) * _norm_cdf(d2)
+        p_price = K_clamped * torch.exp(-r * T_clamped) * _norm_cdf(-d2) - S_clamped * torch.exp(
+            -q * T_clamped
+        ) * _norm_cdf(-d1)
 
         return call_mask * c_price + put_mask * p_price
 
@@ -111,10 +110,9 @@ class BlackScholes(nn.Module):
             q = torch.zeros_like(S_clamped)
 
         sqrt_T = torch.sqrt(T_clamped)
-        d1 = (
-            torch.log(S_clamped / K_clamped)
-            + (r - q + 0.5 * sigma_clamped**2) * T_clamped
-        ) / (sigma_clamped * sqrt_T)
+        d1 = (torch.log(S_clamped / K_clamped) + (r - q + 0.5 * sigma_clamped**2) * T_clamped) / (
+            sigma_clamped * sqrt_T
+        )
         d2 = d1 - sigma_clamped * sqrt_T
 
         nd1 = _norm_pdf(d1)
@@ -131,10 +129,7 @@ class BlackScholes(nn.Module):
             put_mask = 0.0 if is_call else 1.0
 
         # Delta
-        delta = (
-            call_mask * torch.exp(-q * T_clamped) * Nd1
-            - put_mask * torch.exp(-q * T_clamped) * Nmd1
-        )
+        delta = call_mask * torch.exp(-q * T_clamped) * Nd1 - put_mask * torch.exp(-q * T_clamped) * Nmd1
 
         # Gamma (same for call and put)
         gamma = torch.exp(-q * T_clamped) * nd1 / (S_clamped * sigma_clamped * sqrt_T)
@@ -144,20 +139,12 @@ class BlackScholes(nn.Module):
 
         # Theta (time decay, negative for long options)
         theta_call = (
-            -S_clamped
-            * torch.exp(-q * T_clamped)
-            * nd1
-            * sigma_clamped
-            / (2.0 * sqrt_T)
+            -S_clamped * torch.exp(-q * T_clamped) * nd1 * sigma_clamped / (2.0 * sqrt_T)
             - q * S_clamped * torch.exp(-q * T_clamped) * Nd1
             - r * K_clamped * torch.exp(-r * T_clamped) * Nd2
         )
         theta_put = (
-            -S_clamped
-            * torch.exp(-q * T_clamped)
-            * nd1
-            * sigma_clamped
-            / (2.0 * sqrt_T)
+            -S_clamped * torch.exp(-q * T_clamped) * nd1 * sigma_clamped / (2.0 * sqrt_T)
             + q * S_clamped * torch.exp(-q * T_clamped) * Nmd1
             - r * K_clamped * torch.exp(-r * T_clamped) * Nmd2
         )
@@ -250,9 +237,7 @@ def implied_volatility(
     # For ATM options, initial guess is sqrt(2*pi/T) * (price / S)
     # For others, use the log-moneyness heuristic
     moneyness = torch.log(S_clamped / K_clamped)
-    atm_approx = torch.abs(market_price / S_clamped) * torch.sqrt(
-        2.0 * math.pi / T_clamped
-    )
+    atm_approx = torch.abs(market_price / S_clamped) * torch.sqrt(2.0 * math.pi / T_clamped)
     sigma = torch.where(
         torch.abs(moneyness) < 0.1,
         atm_approx,
@@ -265,9 +250,7 @@ def implied_volatility(
         vega = bs.analytical_greeks(S, K, T, r, sigma, q, is_call)["vega"]
 
         # Avoid division by zero when vega is tiny
-        vega_safe = torch.where(
-            torch.abs(vega) < 1e-10, torch.ones_like(vega) * 1e-10, vega
-        )
+        vega_safe = torch.where(torch.abs(vega) < 1e-10, torch.ones_like(vega) * 1e-10, vega)
 
         diff = price - market_price
         update = diff / vega_safe
@@ -325,9 +308,7 @@ class BaroneAdesiWhaley(nn.Module):
         b = r - q  # Cost of carry
 
         # Compute European price
-        eur_price = self.bs(
-            S_clamped, K_clamped, T_clamped, r, sigma_clamped, q, is_call
-        )
+        eur_price = self.bs(S_clamped, K_clamped, T_clamped, r, sigma_clamped, q, is_call)
 
         if isinstance(is_call, torch.Tensor):
             call_mask = is_call.float()
@@ -372,41 +353,33 @@ class BaroneAdesiWhaley(nn.Module):
         S_star_put = torch.clamp(S_star_put, min=K_clamped * 0.1)
 
         for _ in range(5):
-            d1_Sstar_put = (
-                torch.log(S_star_put / K_clamped) + (b_safe + 0.5 * sigma2) * T_clamped
-            ) / (sigma_clamped * torch.sqrt(T_clamped))
-            A1_iter = -(S_star_put / q1) * (
-                1.0 - torch.exp((b_safe - r) * T_clamped) * _norm_cdf(-d1_Sstar_put)
+            d1_Sstar_put = (torch.log(S_star_put / K_clamped) + (b_safe + 0.5 * sigma2) * T_clamped) / (
+                sigma_clamped * torch.sqrt(T_clamped)
             )
+            A1_iter = -(S_star_put / q1) * (1.0 - torch.exp((b_safe - r) * T_clamped) * _norm_cdf(-d1_Sstar_put))
             put_premium_iter = A1_iter * ((S_clamped / S_star_put) ** q1)
             # f(S*) = P_Eur(S*) + put_premium - (K - S*)
             f = (
-                self.bs(
-                    S_star_put, K_clamped, T_clamped, r, sigma_clamped, q, is_call=False
-                )
+                self.bs(S_star_put, K_clamped, T_clamped, r, sigma_clamped, q, is_call=False)
                 + put_premium_iter
                 - (K_clamped - S_star_put)
             )
             # f'(S*) = delta_put(S*) + d(put_premium)/dS + 1
             # d(put_premium)/dS = A1 * q1 * (S/S*)^(q1-1) * (1/S*)
             # At S=S*: d(put_premium)/dS = A1 * q1 / S*
-            delta_put = self.bs.analytical_greeks(
-                S_star_put, K_clamped, T_clamped, r, sigma_clamped, q, is_call=False
-            )["delta"]
+            delta_put = self.bs.analytical_greeks(S_star_put, K_clamped, T_clamped, r, sigma_clamped, q, is_call=False)[
+                "delta"
+            ]
             d_premium_dS = A1_iter * q1 / S_star_put
             fp = delta_put + d_premium_dS + 1.0
-            fp_safe = torch.where(
-                torch.abs(fp) < 1e-10, torch.ones_like(fp) * 1e-10, fp
-            )
+            fp_safe = torch.where(torch.abs(fp) < 1e-10, torch.ones_like(fp) * 1e-10, fp)
             S_star_put = S_star_put - f / fp_safe
             S_star_put = torch.clamp(S_star_put, min=K_clamped * 0.1)
 
-        d1_Sstar_put = (
-            torch.log(S_star_put / K_clamped) + (b_safe + 0.5 * sigma2) * T_clamped
-        ) / (sigma_clamped * torch.sqrt(T_clamped))
-        A1 = -(S_star_put / q1) * (
-            1.0 - torch.exp((b_safe - r) * T_clamped) * _norm_cdf(-d1_Sstar_put)
+        d1_Sstar_put = (torch.log(S_star_put / K_clamped) + (b_safe + 0.5 * sigma2) * T_clamped) / (
+            sigma_clamped * torch.sqrt(T_clamped)
         )
+        A1 = -(S_star_put / q1) * (1.0 - torch.exp((b_safe - r) * T_clamped) * _norm_cdf(-d1_Sstar_put))
 
         put_premium = A1 * ((S_clamped / S_star_put) ** q1)
         put_exercise = K_clamped - S_clamped
@@ -420,31 +393,23 @@ class BaroneAdesiWhaley(nn.Module):
         # Compute q2 only where needed to avoid division by zero in S_star_call
         # For safety, compute q2 everywhere but mask it out when b >= r
         q2 = (-b_coeff + sqrt_disc) / (2.0 * a_coeff)
-        S_star_call_raw = K_clamped * (
-            1.0 + (r / r_b_diff_safe) * sigma2 * T_clamped / 2.0
-        )
+        S_star_call_raw = K_clamped * (1.0 + (r / r_b_diff_safe) * sigma2 * T_clamped / 2.0)
         # Only compute early exercise premium when b < r; otherwise set S* = K to avoid NaN
         S_star_call = torch.where(b_lt_r > 0.5, S_star_call_raw, K_clamped)
 
-        d1_Sstar_call = (
-            torch.log(S_star_call / K_clamped) + (b_safe + 0.5 * sigma2) * T_clamped
-        ) / (sigma_clamped * torch.sqrt(T_clamped))
-        A2_raw = (S_star_call / q2) * (
-            1.0 - torch.exp((b_safe - r) * T_clamped) * _norm_cdf(d1_Sstar_call)
+        d1_Sstar_call = (torch.log(S_star_call / K_clamped) + (b_safe + 0.5 * sigma2) * T_clamped) / (
+            sigma_clamped * torch.sqrt(T_clamped)
         )
+        A2_raw = (S_star_call / q2) * (1.0 - torch.exp((b_safe - r) * T_clamped) * _norm_cdf(d1_Sstar_call))
         # Mask A2 to avoid inf*0 = NaN when b >= r
         A2 = torch.where(b_lt_r > 0.5, A2_raw, torch.zeros_like(eur_price))
 
         call_premium = A2 * ((S_clamped / S_star_call) ** q2)
         # Avoid NaN propagation when b >= r by using torch.where
-        call_premium_safe = torch.where(
-            b_lt_r > 0.5, call_premium, torch.zeros_like(eur_price)
-        )
+        call_premium_safe = torch.where(b_lt_r > 0.5, call_premium, torch.zeros_like(eur_price))
         call_exercise = S_clamped - K_clamped
         call_am = eur_price + call_premium_safe
-        call_am = torch.where(
-            (S_clamped >= S_star_call) & (b_lt_r > 0.5), call_exercise, call_am
-        )
+        call_am = torch.where((S_clamped >= S_star_call) & (b_lt_r > 0.5), call_exercise, call_am)
 
         return call_mask * call_am + put_mask * put_am
 
@@ -454,9 +419,7 @@ class BaroneAdesiWhaley(nn.Module):
 # ═══════════════════════════════════════════════════════════════
 
 
-def _chi_k(
-    k: torch.Tensor, a: torch.Tensor, b: torch.Tensor, c: torch.Tensor, d: torch.Tensor
-) -> torch.Tensor:
+def _chi_k(k: torch.Tensor, a: torch.Tensor, b: torch.Tensor, c: torch.Tensor, d: torch.Tensor) -> torch.Tensor:
     """Analytical integral of exp(y) * cos(k * pi * (y - a) / (b - a)) over [c, d]."""
     k_pi = k * math.pi
     b_a = b - a
@@ -470,16 +433,12 @@ def _chi_k(
     exp_d = torch.exp(d)
     exp_c = torch.exp(c)
 
-    val = (1.0 / (1.0 + term**2)) * (
-        exp_d * cos_d - exp_c * cos_c + term * exp_d * sin_d - term * exp_c * sin_c
-    )
+    val = (1.0 / (1.0 + term**2)) * (exp_d * cos_d - exp_c * cos_c + term * exp_d * sin_d - term * exp_c * sin_c)
     val_k0 = exp_d - exp_c
     return torch.where(k == 0, val_k0, val)
 
 
-def _psi_k(
-    k: torch.Tensor, a: torch.Tensor, b: torch.Tensor, c: torch.Tensor, d: torch.Tensor
-) -> torch.Tensor:
+def _psi_k(k: torch.Tensor, a: torch.Tensor, b: torch.Tensor, c: torch.Tensor, d: torch.Tensor) -> torch.Tensor:
     """Analytical integral of cos(k * pi * (y - a) / (b - a)) over [c, d]."""
     k_pi = k * math.pi
     b_a = b - a
@@ -560,12 +519,8 @@ class FourierCOS(nn.Module):
 
         # Payoff coefficients H_k
         zero = torch.zeros_like(a)
-        H_k_call = (2.0 / b_minus_a) * (
-            _chi_k(k, a, b, zero, b) - _psi_k(k, a, b, zero, b)
-        )
-        H_k_put = (2.0 / b_minus_a) * (
-            -_chi_k(k, a, b, a, zero) + _psi_k(k, a, b, a, zero)
-        )
+        H_k_call = (2.0 / b_minus_a) * (_chi_k(k, a, b, zero, b) - _psi_k(k, a, b, zero, b))
+        H_k_put = (2.0 / b_minus_a) * (-_chi_k(k, a, b, a, zero) + _psi_k(k, a, b, a, zero))
         H_k = call_mask * H_k_call + put_mask * H_k_put
 
         # Re{ phi(u) * exp(i * u * (x - a)) } expansion sum
@@ -589,9 +544,7 @@ class FourierCOS(nn.Module):
     ) -> torch.Tensor:
         raise NotImplementedError
 
-    def cumulants(
-        self, T: torch.Tensor, r: torch.Tensor, q: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    def cumulants(self, T: torch.Tensor, r: torch.Tensor, q: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         raise NotImplementedError
 
 
@@ -639,40 +592,24 @@ class HestonCOS(FourierCOS):
 
         # Little trap branch-cut stable formulation (Albrecher et al., 2007)
         exp_dT = torch.exp(-d * T)
-        exp1 = (
-            (v0 / xi**2)
-            * ((1.0 - exp_dT) / (1.0 - g * exp_dT))
-            * (kappa - 1j * rho * xi * u_c - d)
-        )
+        exp1 = (v0 / xi**2) * ((1.0 - exp_dT) / (1.0 - g * exp_dT)) * (kappa - 1j * rho * xi * u_c - d)
 
         log_term = torch.log((1.0 - g * exp_dT) / (1.0 - g))
-        exp2 = (kappa * theta / xi**2) * (
-            T * (kappa - 1j * rho * xi * u_c - d) - 2.0 * log_term
-        )
+        exp2 = (kappa * theta / xi**2) * (T * (kappa - 1j * rho * xi * u_c - d) - 2.0 * log_term)
 
         # Complete characteristic function including the risk-neutral drift
         phi_drift = torch.exp(1j * u_c * (r - q) * T)
 
         return phi_drift * torch.exp(exp1 + exp2)
 
-    def cumulants(
-        self, T: torch.Tensor, r: torch.Tensor, q: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    def cumulants(self, T: torch.Tensor, r: torch.Tensor, q: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         kappa = torch.clamp(self.kappa, min=1e-3)
         theta = torch.clamp(self.theta, min=1e-4)
         xi = torch.clamp(self.xi, min=1e-4)
         v0 = torch.clamp(self.v0, min=1e-4)
 
-        c1 = (
-            (r - q) * T
-            + ((1.0 - torch.exp(-kappa * T)) / (2.0 * kappa)) * (theta - v0)
-            - 0.5 * theta * T
-        )
-        c2 = (
-            theta * T
-            + (v0 / kappa) * (1.0 - torch.exp(-kappa * T))
-            + (xi**2 * theta * T) / (4.0 * kappa**2)
-        )
+        c1 = (r - q) * T + ((1.0 - torch.exp(-kappa * T)) / (2.0 * kappa)) * (theta - v0) - 0.5 * theta * T
+        c2 = theta * T + (v0 / kappa) * (1.0 - torch.exp(-kappa * T)) + (xi**2 * theta * T) / (4.0 * kappa**2)
         return c1, c2
 
 
@@ -720,21 +657,13 @@ class BatesCOS(FourierCOS):
 
         # Merton log-normal jump characteristic component
         jump_exponent = (
-            lambda_j
-            * T
-            * (
-                torch.exp(1j * u_c * self.mu_j - 0.5 * u_c**2 * sigma_j**2)
-                - 1.0
-                - 1j * u_c * k_j
-            )
+            lambda_j * T * (torch.exp(1j * u_c * self.mu_j - 0.5 * u_c**2 * sigma_j**2) - 1.0 - 1j * u_c * k_j)
         )
         phi_jump = torch.exp(jump_exponent)
 
         return phi_heston * phi_jump
 
-    def cumulants(
-        self, T: torch.Tensor, r: torch.Tensor, q: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    def cumulants(self, T: torch.Tensor, r: torch.Tensor, q: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         c1_h, c2_h = self.heston.cumulants(T, r, q)
         lambda_j = torch.clamp(self.lambda_j, min=0.0)
         sigma_j = torch.clamp(self.sigma_j, min=1e-4)
@@ -784,21 +713,13 @@ class MertonCOS(FourierCOS):
         phi_diffusion = torch.exp(-0.5 * u_c**2 * sigma**2 * T)
 
         jump_exponent = (
-            lambda_j
-            * T
-            * (
-                torch.exp(1j * u_c * self.mu_j - 0.5 * u_c**2 * sigma_j**2)
-                - 1.0
-                - 1j * u_c * k_j
-            )
+            lambda_j * T * (torch.exp(1j * u_c * self.mu_j - 0.5 * u_c**2 * sigma_j**2) - 1.0 - 1j * u_c * k_j)
         )
         phi_jump = torch.exp(jump_exponent)
 
         return phi_drift * phi_diffusion * phi_jump
 
-    def cumulants(
-        self, T: torch.Tensor, r: torch.Tensor, q: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    def cumulants(self, T: torch.Tensor, r: torch.Tensor, q: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         sigma = torch.clamp(self.sigma, min=1e-4)
         lambda_j = torch.clamp(self.lambda_j, min=0.0)
         sigma_j = torch.clamp(self.sigma_j, min=1e-4)
@@ -843,16 +764,12 @@ class VarianceGammaCOS(FourierCOS):
         omega = -(1.0 / nu) * torch.log(1.0 - self.theta * nu - 0.5 * sigma**2 * nu)
 
         phi_drift = torch.exp(1j * u_c * (r - q) * T)
-        vg_cf = (
-            1.0 - 1j * u_c * self.theta * nu + 0.5 * sigma**2 * nu * u_c**2
-        ) ** (-T / nu)
+        vg_cf = (1.0 - 1j * u_c * self.theta * nu + 0.5 * sigma**2 * nu * u_c**2) ** (-T / nu)
         phi_martingale = torch.exp(-1j * u_c * omega * T)
 
         return phi_drift * vg_cf * phi_martingale
 
-    def cumulants(
-        self, T: torch.Tensor, r: torch.Tensor, q: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    def cumulants(self, T: torch.Tensor, r: torch.Tensor, q: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         sigma = torch.clamp(self.sigma, min=1e-4)
         nu = torch.clamp(self.nu, min=1e-4)
 

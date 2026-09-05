@@ -205,9 +205,9 @@ class TestModelNodeTimeouts:
     def test_gnn_inference_node_has_generous_timeout(self):
         dag = build_inference_dag()
         node = dag.nodes["gnn_inference"]
-        assert (
-            node.timeout >= self._MIN_MODEL_NODE_TIMEOUT
-        ), f"gnn_inference timeout={node.timeout}s — a real graph build exceeded 69s; this node will be killed mid-run"
+        assert node.timeout >= self._MIN_MODEL_NODE_TIMEOUT, (
+            f"gnn_inference timeout={node.timeout}s — a real graph build exceeded 69s; this node will be killed mid-run"
+        )
 
     def test_all_inference_nodes_exceed_fetch_default(self):
         dag = build_inference_dag()
@@ -281,9 +281,9 @@ class TestFailuresAreNotSilent:
         from agent.pipeline.dags import inference as inference_mod
 
         src = inspect.getsource(inference_mod)
-        assert (
-            '"status": "error"' not in src
-        ), "an operator returns status='error'; the executor records that as completed — raise instead"
+        assert '"status": "error"' not in src, (
+            "an operator returns status='error'; the executor records that as completed — raise instead"
+        )
 
 
 class TestGNNInference:

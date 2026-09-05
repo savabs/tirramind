@@ -107,7 +107,6 @@ def _make_populated_store(
 
 
 class TestConstruction:
-
     def test_instantiates_defaults(self):
         m = GDNMonitor()
         assert m.hidden_dim == 64
@@ -127,7 +126,6 @@ class TestConstruction:
 
 
 class TestGDNModel:
-
     def _make_model(self, n_nodes=5, window=4, hidden_dim=16, top_k=2):
         return _GDNModel(
             n_nodes=n_nodes,
@@ -169,7 +167,6 @@ class TestGDNModel:
 
 
 class TestForwardFill:
-
     def test_leading_nan_filled_with_zero(self):
         arr = np.array([np.nan, np.nan, 3.0, 4.0])
         result = _forward_fill(arr)
@@ -190,7 +187,6 @@ class TestForwardFill:
 
 
 class TestRun:
-
     def test_empty_store_returns_empty(self, tmp_path):
         store = _make_store(tmp_path)
         m = GDNMonitor()
@@ -289,7 +285,6 @@ class TestRun:
 
 
 class TestStoreResults:
-
     def test_stores_per_entity_signals(self, tmp_path):
         store, as_of = _make_populated_store(tmp_path, n_entities=3, name="sig.db")
         m = GDNMonitor(n_iters=3, hidden_dim=8, emb_dim=4, n_bins=20, window=5)
@@ -324,7 +319,6 @@ class TestStoreResults:
 
 
 class TestTrainerConfig:
-
     def test_use_gdn_defaults_false(self):
         from agent.models.gnn.trainer import TrainerConfig
 
@@ -352,7 +346,6 @@ class TestTrainerConfig:
 
 
 class TestBuildModelIntegration:
-
     def _make_trainer(self, tmp_path: Path, use_gdn: bool, tag: str) -> Trainer:
         store = _make_store(tmp_path, f"{tag}.db")
         gen = SyntheticGraphGenerator(

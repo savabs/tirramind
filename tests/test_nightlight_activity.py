@@ -59,8 +59,8 @@ from agent.tools.nightlight_activity import (
 # 1–7. EconomicZone manifest
 # ═══════════════════════════════════════════════════════════════
 
-class TestManifest:
 
+class TestManifest:
     def test_frozen(self):
         z = ECONOMIC_ZONES[0]
         with pytest.raises((AttributeError, TypeError)):
@@ -99,8 +99,8 @@ class TestManifest:
 # 8–10. Helper functions
 # ═══════════════════════════════════════════════════════════════
 
-class TestHelpers:
 
+class TestHelpers:
     def test_zone_area_str_format(self):
         z = EconomicZone("test", "Test", lat=10.0, lon=20.0, bbox_deg=1.0, category="industrial")
         area = _zone_area_str(z)
@@ -129,8 +129,8 @@ class TestHelpers:
 # 11–15. _aggregate_frp
 # ═══════════════════════════════════════════════════════════════
 
-class TestAggregateFrp:
 
+class TestAggregateFrp:
     def test_empty_returns_zeros(self):
         result = _aggregate_frp([])
         assert result["frp_total_mw"] == 0.0
@@ -164,7 +164,7 @@ class TestAggregateFrp:
     def test_industrial_ratio_partial(self):
         rows = [
             {"frp": "200.0", "bright_ti4": "380.0", "confidence": "high"},
-            {"frp": "10.0",  "bright_ti4": "300.0", "confidence": "nominal"},
+            {"frp": "10.0", "bright_ti4": "300.0", "confidence": "nominal"},
         ]
         result = _aggregate_frp(rows)
         assert result["industrial_ratio"] == pytest.approx(0.5)
@@ -174,8 +174,8 @@ class TestAggregateFrp:
 # 16–18. _extract_ndvi
 # ═══════════════════════════════════════════════════════════════
 
-class TestExtractNdvi:
 
+class TestExtractNdvi:
     def _modis_payload(self, values: list) -> dict:
         return {
             "subset": [
@@ -206,8 +206,8 @@ class TestExtractNdvi:
 # 19–20. Tool metadata
 # ═══════════════════════════════════════════════════════════════
 
-class TestToolMetadata:
 
+class TestToolMetadata:
     def test_name(self):
         tool = NightlightActivityTool()
         assert tool.name == "nightlight_activity"
@@ -223,8 +223,8 @@ class TestToolMetadata:
 # 21–28. execute()
 # ═══════════════════════════════════════════════════════════════
 
-class TestExecute:
 
+class TestExecute:
     def test_invalid_mode(self):
         tool = NightlightActivityTool(firms_api_key="key")
         result = tool.execute(mode="invalid")
@@ -284,10 +284,11 @@ class TestExecute:
     def test_zone_ids_filter(self):
         tool = NightlightActivityTool(firms_api_key="key")
         called_zones = []
+
         def mock_fetch(zone, firms_key, days=7, source="VIIRS_SNPP_NRT"):
             called_zones.append(zone.zone_id)
-            return {"frp_total_mw": 100.0, "hotspot_count": 5,
-                    "mean_brightness_k": 350.0, "industrial_ratio": 0.8}
+            return {"frp_total_mw": 100.0, "hotspot_count": 5, "mean_brightness_k": 350.0, "industrial_ratio": 0.8}
+
         with patch("agent.tools.nightlight_activity._fetch_zone_frp", side_effect=mock_fetch):
             tool.execute(mode="nightlight", zone_ids=["permian_basin"])
         assert called_zones == ["permian_basin"]
@@ -297,8 +298,8 @@ class TestExecute:
 # 29–32. _ndvi_to_health
 # ═══════════════════════════════════════════════════════════════
 
-class TestNdviToHealth:
 
+class TestNdviToHealth:
     def test_sparse_below_half(self):
         h = NightlightActivityTool._ndvi_to_health(0.15)
         assert h < 0.5
@@ -320,18 +321,15 @@ class TestNdviToHealth:
 # 33–35. Persistence helpers
 # ═══════════════════════════════════════════════════════════════
 
-class TestPersistence:
 
+class TestPersistence:
     def _zone(self):
-        return EconomicZone(
-            "test_zone", "Test Zone", 10.0, 20.0, 1.0, "industrial", ("oil",)
-        )
+        return EconomicZone("test_zone", "Test Zone", 10.0, 20.0, 1.0, "industrial", ("oil",))
 
     def test_persist_nightlight_3_signals(self):
         mock_store = MagicMock()
         tool = NightlightActivityTool(store=mock_store)
-        frp_data = {"frp_total_mw": 100.0, "hotspot_count": 5,
-                    "mean_brightness_k": 350.0, "industrial_ratio": 0.8}
+        frp_data = {"frp_total_mw": 100.0, "hotspot_count": 5, "mean_brightness_k": 350.0, "industrial_ratio": 0.8}
         tool._persist_nightlight(self._zone(), frp_data, 1.0)
         assert mock_store.store_signal.call_count == 3
 
@@ -346,6 +344,5 @@ class TestPersistence:
         mock_store = MagicMock()
         mock_store.store_signal.side_effect = RuntimeError("disk error")
         tool = NightlightActivityTool(store=mock_store)
-        frp_data = {"frp_total_mw": 50.0, "hotspot_count": 2,
-                    "mean_brightness_k": 340.0, "industrial_ratio": 0.5}
+        frp_data = {"frp_total_mw": 50.0, "hotspot_count": 2, "mean_brightness_k": 340.0, "industrial_ratio": 0.5}
         tool._persist_nightlight(self._zone(), frp_data, 1.0)  # must not raise

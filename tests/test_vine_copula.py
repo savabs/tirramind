@@ -108,7 +108,6 @@ def _populate_linked_pair(
 
 
 class TestConstruction:
-
     def test_instantiates_defaults(self):
         enc = VineCopulaEncoder()
         assert enc.min_joint_obs == 20
@@ -127,7 +126,6 @@ class TestConstruction:
 
 
 class TestPairHash:
-
     def test_deterministic(self):
         h1 = _pair_hash("entity_abc", "entity_xyz")
         h2 = _pair_hash("entity_abc", "entity_xyz")
@@ -148,7 +146,6 @@ class TestPairHash:
 
 
 class TestKendallTau:
-
     def test_identical_arrays(self):
         x = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
         assert _kendall_tau(x, x) == pytest.approx(1.0, abs=1e-6)
@@ -172,7 +169,6 @@ class TestKendallTau:
 
 
 class TestPseudoObservations:
-
     def test_output_in_open_unit_interval(self):
         x = np.array([3.0, 1.0, 4.0, 1.5, 2.0])
         y = np.array([2.0, 4.0, 1.0, 3.0, 5.0])
@@ -194,7 +190,6 @@ class TestPseudoObservations:
 
 
 class TestTailDependenceFormulas:
-
     def test_clayton_large_theta_near_one(self):
         # λ_L = 2^{-1/θ} → 1 as θ → ∞
         assert _clayton_lambda_L(1000.0) == pytest.approx(1.0, abs=0.01)
@@ -217,7 +212,6 @@ class TestTailDependenceFormulas:
 
 
 class TestFitBivariateCopula:
-
     def test_positive_tau_both_tails_positive(self):
         rng = np.random.default_rng(7)
         z = rng.normal(0, 1, 200)
@@ -258,7 +252,6 @@ class TestFitBivariateCopula:
 
 
 class TestRun:
-
     def test_empty_store_returns_empty_dict(self, tmp_path):
         store = _make_store(tmp_path)
         enc = VineCopulaEncoder()
@@ -343,7 +336,6 @@ class TestRun:
 
 
 class TestStoreResults:
-
     def test_stores_four_signals_per_pair(self, tmp_path):
         store = _make_store(tmp_path)
         as_of = time.time()
@@ -390,7 +382,6 @@ class TestStoreResults:
 
 
 class TestTrainerConfig:
-
     def test_use_vine_copula_defaults_false(self):
         from agent.models.gnn.trainer import TrainerConfig
 
@@ -413,7 +404,6 @@ class TestTrainerConfig:
 
 
 class TestBuildModelIntegration:
-
     def _make_trainer(self, tmp_path: Path, use_vine_copula: bool, tag: str) -> Trainer:
         store = _make_store(tmp_path, f"{tag}.db")
         gen = SyntheticGraphGenerator(

@@ -772,9 +772,7 @@ class SovereignDebtTool(Tool):
                 if not date_str:
                     continue
                 try:
-                    obs_ts = datetime.strptime(date_str[:10], "%Y-%m-%d").replace(
-                        tzinfo=UTC
-                    ).timestamp()
+                    obs_ts = datetime.strptime(date_str[:10], "%Y-%m-%d").replace(tzinfo=UTC).timestamp()
                 except ValueError:
                     obs_ts = now_ts
                 yields = rec.get("yields") or {}

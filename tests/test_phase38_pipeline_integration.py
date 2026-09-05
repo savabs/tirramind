@@ -73,9 +73,9 @@ class TestSourceNameAlignment:
         }
         for node_id, expected_source in checks.items():
             node = dag.nodes[node_id]
-            assert (
-                node.table_name == expected_source
-            ), f"Node {node_id!r}: expected table_name={expected_source!r}, got {node.table_name!r}"
+            assert node.table_name == expected_source, (
+                f"Node {node_id!r}: expected table_name={expected_source!r}, got {node.table_name!r}"
+            )
 
 
 # ═══════════════════════════════════════════════════════════════

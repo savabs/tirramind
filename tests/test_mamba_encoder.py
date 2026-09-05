@@ -109,7 +109,6 @@ def mock_id_map():
 
 
 class TestMambaEncoderConstruction:
-
     def test_instantiates(self, encoder):
         assert encoder is not None
 
@@ -131,7 +130,6 @@ class TestMambaEncoderConstruction:
 
 
 class TestTime2Vec:
-
     def test_output_shape(self):
         enc = _Time2Vec(out_features=8)
         t = torch.tensor([0.0, 1.0, 2.0])
@@ -151,7 +149,6 @@ class TestTime2Vec:
 
 
 class TestUpdateSingleNode:
-
     def test_single_event_updates_memory(self, encoder, mock_memory):
         md = encoder.memory_dim
         gid = 0
@@ -159,9 +156,7 @@ class TestUpdateSingleNode:
         times = torch.tensor([1.0])
         original = mock_memory.memory[gid].clone()
         encoder._update_single_node(gid, msgs, times, mock_memory, torch.device("cpu"))
-        assert not torch.allclose(
-            mock_memory.memory[gid], original
-        ), "Memory should change after update"
+        assert not torch.allclose(mock_memory.memory[gid], original), "Memory should change after update"
         assert math.isclose(float(mock_memory.last_update[gid]), 1.0)
 
     def test_multiple_events_updates_memory(self, encoder, mock_memory):
@@ -189,7 +184,6 @@ class TestUpdateSingleNode:
 
 
 class TestUpdateMemoryFromEvents:
-
     def _make_embeddings(self, encoder, n=8):
         return {"company": torch.randn(n, encoder.message_dim)}
 
@@ -219,9 +213,7 @@ class TestUpdateMemoryFromEvents:
     def test_message_too_wide_truncated(self, encoder, mock_memory, mock_id_map):
         wide_emb = torch.randn(8, encoder.message_dim + 10)  # too wide
         embeddings = {"company": wide_emb}
-        events = [
-            {"entity_type": "company", "entity_id": "company_3", "observed_at": 2.0}
-        ]
+        events = [{"entity_type": "company", "entity_id": "company_3", "observed_at": 2.0}]
         encoder.update_memory_from_events(events, embeddings, mock_id_map, mock_memory)
         # Should not raise; memory updated
         assert mock_memory.memory[3].abs().sum() > 0
@@ -229,9 +221,7 @@ class TestUpdateMemoryFromEvents:
     def test_message_too_narrow_zero_padded(self, encoder, mock_memory, mock_id_map):
         narrow_emb = torch.randn(8, encoder.message_dim - 4)  # too narrow
         embeddings = {"company": narrow_emb}
-        events = [
-            {"entity_type": "company", "entity_id": "company_4", "observed_at": 2.0}
-        ]
+        events = [{"entity_type": "company", "entity_id": "company_4", "observed_at": 2.0}]
         encoder.update_memory_from_events(events, embeddings, mock_id_map, mock_memory)
         assert mock_memory.memory[4].abs().sum() > 0
 
@@ -242,7 +232,6 @@ class TestUpdateMemoryFromEvents:
 
 
 class TestHetTGNMambaIntegration:
-
     def test_mamba_encoder_instantiated_when_use_mamba_true(self, het_tgn_mamba):
         model, _ = het_tgn_mamba
         assert model.mamba_encoder is not None
@@ -294,9 +283,7 @@ class TestHetTGNMambaIntegration:
 
         model.mamba_encoder.update_memory_from_events = patched_update
         model.update_memory_from_events(events, embeddings, id_map)
-        assert (
-            len(call_log) == 1
-        ), "mamba_encoder.update_memory_from_events should have been called"
+        assert len(call_log) == 1, "mamba_encoder.update_memory_from_events should have been called"
 
     def test_update_memory_routes_through_gru_when_mamba_false(self, tmp_path):
         """When use_mamba=False, GRU path is used (mamba_encoder not called)."""
@@ -342,7 +329,6 @@ class TestHetTGNMambaIntegration:
 
 
 class TestTrainerConfigMamba:
-
     def test_use_mamba_defaults_false(self):
         assert TrainerConfig().use_mamba is False
 
@@ -377,7 +363,6 @@ class TestTrainerConfigMamba:
 
 
 class TestMambaTrainingStep:
-
     def test_training_step_runs_without_error(self, tmp_path):
         """One training epoch with use_mamba=True should not raise."""
         store = PipelineStore(str(tmp_path / "mamba_train.db"))
@@ -416,7 +401,6 @@ class TestMambaTrainingStep:
 
 
 class TestGRUFallback:
-
     def test_gru_fallback_when_mambapy_missing(self, small_memory_params):
         """When mambapy import fails, encoder uses GRU and still updates memory."""
         with patch.dict("sys.modules", {"mambapy": None, "mambapy.mamba": None}):

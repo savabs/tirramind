@@ -244,9 +244,7 @@ _TOOL_MANIFEST: list[ToolMeta] = [
         ("whale.",),
         "On-chain large transaction alerts",
     ),
-    ToolMeta(
-        "defi_flows", "crypto", 6.0, 12.0, ("defi.",), "DeFi protocol inflow/outflow"
-    ),
+    ToolMeta("defi_flows", "crypto", 6.0, 12.0, ("defi.",), "DeFi protocol inflow/outflow"),
     ToolMeta(
         "polymarket",
         "prediction",
@@ -362,9 +360,7 @@ _TOOL_MANIFEST: list[ToolMeta] = [
         "FDA drug approval & recall alerts",
     ),
     # ── News & Intelligence ───────────────────────────────────
-    ToolMeta(
-        "gdelt", "news", 6.0, 12.0, ("gdelt.",), "GDELT global event & tone signals"
-    ),
+    ToolMeta("gdelt", "news", 6.0, 12.0, ("gdelt.",), "GDELT global event & tone signals"),
     ToolMeta(
         "academic_preprints",
         "research",
@@ -431,9 +427,7 @@ _TOOL_MANIFEST: list[ToolMeta] = [
         ("disease.",),
         "WHO/CDC disease outbreak signals",
     ),
-    ToolMeta(
-        "weather_alerts", "event", 1.0, 6.0, ("weather.",), "NWS severe weather alerts"
-    ),
+    ToolMeta("weather_alerts", "event", 1.0, 6.0, ("weather.",), "NWS severe weather alerts"),
     ToolMeta(
         "food_security",
         "event",
@@ -634,9 +628,7 @@ class DataCatalog:
                 freshness_hours = float("inf")
 
             is_breach = freshness_hours > meta.sla_hours
-            hours_overdue = (
-                max(0.0, freshness_hours - meta.sla_hours) if is_breach else 0.0
-            )
+            hours_overdue = max(0.0, freshness_hours - meta.sla_hours) if is_breach else 0.0
 
             statuses[tool_name] = FreshnessStatus(
                 tool_name=tool_name,
@@ -682,15 +674,12 @@ class DataCatalog:
         try:
             conn = store._get_conn()
             rows = conn.execute(
-                "SELECT DISTINCT source_tool FROM entity_observations "
-                "WHERE entity_id=? ORDER BY source_tool",
+                "SELECT DISTINCT source_tool FROM entity_observations WHERE entity_id=? ORDER BY source_tool",
                 (entity_id,),
             ).fetchall()
             return [r[0] for r in rows]
         except Exception:
-            log.warning(
-                "DataCatalog.get_lineage failed for %s.", entity_id, exc_info=True
-            )
+            log.warning("DataCatalog.get_lineage failed for %s.", entity_id, exc_info=True)
             return []
 
     # ── Signal Storage ─────────────────────────────────────────────────────
@@ -716,11 +705,7 @@ class DataCatalog:
             for sig_name, value in [
                 (
                     f"catalog.{tool_name}.freshness_hours",
-                    (
-                        status.freshness_hours
-                        if status.freshness_hours != float("inf")
-                        else -1.0
-                    ),
+                    (status.freshness_hours if status.freshness_hours != float("inf") else -1.0),
                 ),
                 (f"catalog.{tool_name}.sla_breach", status.hours_overdue),
             ]:
@@ -733,9 +718,7 @@ class DataCatalog:
                     )
                     n_written += 1
                 except Exception:
-                    log.warning(
-                        "DataCatalog: failed to store %s.", sig_name, exc_info=True
-                    )
+                    log.warning("DataCatalog: failed to store %s.", sig_name, exc_info=True)
         return n_written
 
     # ── Helpers ────────────────────────────────────────────────────────────

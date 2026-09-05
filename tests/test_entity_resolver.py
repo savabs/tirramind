@@ -46,9 +46,7 @@ def _register(
     etype: str = "company",
     metadata: dict | None = None,
 ) -> None:
-    store.register_entity(
-        entity_type=etype, canonical_name=name, entity_id=eid, metadata=metadata
-    )
+    store.register_entity(entity_type=etype, canonical_name=name, entity_id=eid, metadata=metadata)
 
 
 def _add_alias(store: PipelineStore, eid: str, source: str, ext_id: str) -> None:
@@ -83,7 +81,6 @@ class TestNormalizeName:
 
 
 class TestDeterministicResolution:
-
     def test_shared_deterministic_alias_creates_link(self, tmp_path):
         """Two entities with the same ISIN in metadata → same_as link."""
         store = _make_store(tmp_path)
@@ -165,10 +162,7 @@ class TestDeterministicResolution:
 
 
 class TestProbabilisticResolution:
-
-    def _make_similar_names_store(
-        self, tmp_path: Path, n_decoys: int = 6
-    ) -> PipelineStore:
+    def _make_similar_names_store(self, tmp_path: Path, n_decoys: int = 6) -> PipelineStore:
         """Store with near-duplicate company names + decoys."""
         store = _make_store(tmp_path)
         _register(store, "e_apple1", "Apple Inc")
@@ -214,7 +208,6 @@ class TestProbabilisticResolution:
 
 
 class TestResolveEnd2End:
-
     def test_resolve_returns_total_count(self, tmp_path):
         """resolve() = deterministic + probabilistic counts combined."""
         store = _make_store(tmp_path)
@@ -241,7 +234,6 @@ class TestResolveEnd2End:
 
 
 class TestQueryAllEntityAliases:
-
     def test_returns_all_aliases(self, tmp_path):
         """query_all_entity_aliases returns all rows from entity_aliases."""
         store = _make_store(tmp_path)
@@ -268,7 +260,6 @@ class TestQueryAllEntityAliases:
 
 
 class TestSameAsEdgesInGraph:
-
     def test_same_as_edges_present_after_resolution(self, tmp_path):
         """After EntityResolver runs, same_as edges appear in graph edge_types."""
         store = _make_store(tmp_path)
@@ -294,7 +285,6 @@ class TestSameAsEdgesInGraph:
 
 
 class TestTrainerConfigEntityResolution:
-
     def test_use_entity_resolution_defaults_false(self):
         cfg = TrainerConfig()
         assert cfg.use_entity_resolution is False

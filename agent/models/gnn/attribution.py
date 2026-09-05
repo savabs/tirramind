@@ -191,9 +191,10 @@ class BarraAttribution:
         # CPU safety cap
         if len(candidates) > self.max_entities:
             log.warning(
-                "BarraAttribution: %d entities exceeds max_entities=%d; "
-                "truncating to first %d (alphabetical).",
-                len(candidates), self.max_entities, self.max_entities,
+                "BarraAttribution: %d entities exceeds max_entities=%d; truncating to first %d (alphabetical).",
+                len(candidates),
+                self.max_entities,
+                self.max_entities,
             )
             candidates = candidates[: self.max_entities]
 
@@ -273,7 +274,8 @@ class BarraAttribution:
                     n_written += 1
                 except Exception:
                     log.warning(
-                        "BarraAttribution: failed to store %s", signal_name,
+                        "BarraAttribution: failed to store %s",
+                        signal_name,
                         exc_info=True,
                     )
         log.info("BarraAttribution: stored %d signals.", n_written)
@@ -311,9 +313,7 @@ class BarraAttribution:
             return layers_attention
 
         except Exception:
-            log.warning(
-                "BarraAttribution: attention capture failed.", exc_info=True
-            )
+            log.warning("BarraAttribution: attention capture failed.", exc_info=True)
             return []
 
         finally:

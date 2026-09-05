@@ -63,9 +63,7 @@ def summarize_chain(
     call_iv = _atm_iv(calls, "call")
     put_iv = _atm_iv(puts, "put")
 
-    call_oi = (
-        float(calls["openInterest"].fillna(0).sum()) if len(calls) else 0.0
-    )
+    call_oi = float(calls["openInterest"].fillna(0).sum()) if len(calls) else 0.0
     put_oi = float(puts["openInterest"].fillna(0).sum()) if len(puts) else 0.0
     pc_oi = (put_oi / call_oi) if call_oi > 1e-6 else None
 

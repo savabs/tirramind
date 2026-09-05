@@ -157,7 +157,7 @@ class HeterogeneousCDEFunc(nn.Module):
 
         # Concatenate and compute drift
         combined = torch.cat([z, m, ctx], dim=-1)  # (batch, H+M+M)
-        F_flat = self.net(combined)                # (batch, H * d_z)
+        F_flat = self.net(combined)  # (batch, H * d_z)
         F = F_flat.view(batch, self._hidden_dim, self._d_z)  # (batch, H, d_z)
 
         # Column-norm clipping: each column of F has L2 norm ≤ 1.0

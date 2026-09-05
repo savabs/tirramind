@@ -53,6 +53,7 @@ from agent.pipeline.store import PipelineStore
 
 # ── Shared fixtures ──────────────────────────────────────────────────────────
 
+
 @pytest.fixture()
 def linear_path():
     """2D path along a straight line x=t, y=2t — 5 points."""
@@ -70,8 +71,12 @@ def rand_path():
 def simple_store(tmp_path: Path) -> PipelineStore:
     store = PipelineStore(str(tmp_path / "sig_test.db"))
     gen = SyntheticGraphGenerator(
-        num_companies=4, num_countries=2, num_vessels=2,
-        time_span=86400.0 * 4, base_event_rate=0.005, seed=99,
+        num_companies=4,
+        num_countries=2,
+        num_vessels=2,
+        time_span=86400.0 * 4,
+        base_event_rate=0.005,
+        seed=99,
     )
     gen.generate(store)
     return store
@@ -81,8 +86,8 @@ def simple_store(tmp_path: Path) -> PipelineStore:
 # 1–8. compute_path_signature
 # ═══════════════════════════════════════════════════════════════
 
-class TestComputePathSignature:
 
+class TestComputePathSignature:
     def test_output_shape_unbatched_depth3(self, rand_path):
         """Unbatched: output shape = (d + d^2 + d^3,) = 39 for d=3."""
         sig = compute_path_signature(rand_path, depth=3)
@@ -119,9 +124,7 @@ class TestComputePathSignature:
         S2_01, S2_10 = sig[3], sig[4]
         lhs = S1_0 * S1_1
         rhs = S2_01 + S2_10
-        assert abs((lhs - rhs).item()) < 1e-5, (
-            f"Shuffle identity violated: S1_0*S1_1={lhs:.6f}, S2_01+S2_10={rhs:.6f}"
-        )
+        assert abs((lhs - rhs).item()) < 1e-5, f"Shuffle identity violated: S1_0*S1_1={lhs:.6f}, S2_01+S2_10={rhs:.6f}"
 
     def test_single_point_path_zero_signature(self):
         """Single-point path has no increments → zero signature."""
@@ -154,8 +157,8 @@ class TestComputePathSignature:
 # 9–12. entity_observations_to_path
 # ═══════════════════════════════════════════════════════════════
 
-class TestEntityObservationsToPath:
 
+class TestEntityObservationsToPath:
     def _make_obs(self, n=5, base_t=1000.0, dt=100.0) -> list[dict]:
         return [
             {
@@ -210,12 +213,11 @@ class TestEntityObservationsToPath:
 # 13–14. compute_entity_signature
 # ═══════════════════════════════════════════════════════════════
 
-class TestComputeEntitySignature:
 
+class TestComputeEntitySignature:
     def _make_obs(self, n=5):
         return [
-            {"observed_at": float(i * 100), "observation_type": "trade_flow",
-             "value": {"usd_amount": float(i * 1e6)}}
+            {"observed_at": float(i * 100), "observation_type": "trade_flow", "value": {"usd_amount": float(i * 1e6)}}
             for i in range(n)
         ]
 
@@ -242,8 +244,8 @@ class TestComputeEntitySignature:
 # 15–16. PathSignatureEncoder
 # ═══════════════════════════════════════════════════════════════
 
-class TestPathSignatureEncoder:
 
+class TestPathSignatureEncoder:
     def test_forward_shape_unbatched(self):
         """(seq_len, channels) → (output_dim,)."""
         enc = PathSignatureEncoder(output_dim=16)
@@ -277,8 +279,8 @@ class TestPathSignatureEncoder:
 # 17–18. _build_node_features with use_signatures
 # ═══════════════════════════════════════════════════════════════
 
-class TestBuildNodeFeaturesSignatures:
 
+class TestBuildNodeFeaturesSignatures:
     def _make_obs(self, entity_id: str, n=5) -> list[dict]:
         return [
             {
@@ -324,19 +326,18 @@ class TestBuildNodeFeaturesSignatures:
 # 19–20. TrainerConfig + build_model
 # ═══════════════════════════════════════════════════════════════
 
-class TestTrainerConfigSignatures:
 
+class TestTrainerConfigSignatures:
     def test_use_signatures_defaults_false(self):
         cfg = TrainerConfig()
         assert cfg.use_signatures is False
 
     def test_build_model_use_signatures_true_expands_in_channels(self, simple_store):
         """use_signatures=True gives in_channels SIGNATURE_DIM larger than False."""
-        cfg_base = TrainerConfig(hidden_dim=16, memory_dim=16, message_dim=16,
-                                 time_dim=8, num_heads=1, num_layers=1)
-        cfg_sig = TrainerConfig(hidden_dim=16, memory_dim=16, message_dim=16,
-                                time_dim=8, num_heads=1, num_layers=1,
-                                use_signatures=True)
+        cfg_base = TrainerConfig(hidden_dim=16, memory_dim=16, message_dim=16, time_dim=8, num_heads=1, num_layers=1)
+        cfg_sig = TrainerConfig(
+            hidden_dim=16, memory_dim=16, message_dim=16, time_dim=8, num_heads=1, num_layers=1, use_signatures=True
+        )
         t_base = Trainer(simple_store, cfg_base)
         t_sig = Trainer(simple_store, cfg_sig)
         m_base = t_base.build_model()
@@ -347,24 +348,29 @@ class TestTrainerConfigSignatures:
             proj_base = m_base.type_projections[ntype]
             proj_sig = m_sig.type_projections[ntype]
             diff = proj_sig.in_features - proj_base.in_features
-            assert diff == SIGNATURE_DIM, (
-                f"{ntype}: expected +{SIGNATURE_DIM} in_features, got {diff}"
-            )
+            assert diff == SIGNATURE_DIM, f"{ntype}: expected +{SIGNATURE_DIM} in_features, got {diff}"
 
 
 # ═══════════════════════════════════════════════════════════════
 # 21. Full training loop with use_signatures=True
 # ═══════════════════════════════════════════════════════════════
 
+
 @pytest.mark.slow
 class TestSignatureTrainingLoop:
-
     def test_training_loop_no_nan_losses(self, simple_store):
         """2-epoch training with use_signatures=True produces finite losses."""
         cfg = TrainerConfig(
-            hidden_dim=16, memory_dim=16, message_dim=16, time_dim=8,
-            num_heads=1, num_layers=1, epochs=2, window_size=86400.0,
-            use_signatures=True, return_weight=0.0,
+            hidden_dim=16,
+            memory_dim=16,
+            message_dim=16,
+            time_dim=8,
+            num_heads=1,
+            num_layers=1,
+            epochs=2,
+            window_size=86400.0,
+            use_signatures=True,
+            return_weight=0.0,
         )
         trainer = Trainer(simple_store, cfg)
         trainer.build_model()
@@ -372,15 +378,21 @@ class TestSignatureTrainingLoop:
 
         for loss_name, values in history.items():
             for v in values:
-                assert math.isfinite(v), (
-                    f"NaN/Inf in history['{loss_name}']: {values}"
-                )
+                assert math.isfinite(v), f"NaN/Inf in history['{loss_name}']: {values}"
 
     def test_signatures_increase_first_epoch_loss_stability(self, simple_store):
         """Signature and baseline models both converge (no NaN divergence)."""
-        base_cfg = dict(hidden_dim=16, memory_dim=16, message_dim=16,
-                        time_dim=8, num_heads=1, num_layers=1, epochs=2,
-                        window_size=86400.0, return_weight=0.0)
+        base_cfg = dict(
+            hidden_dim=16,
+            memory_dim=16,
+            message_dim=16,
+            time_dim=8,
+            num_heads=1,
+            num_layers=1,
+            epochs=2,
+            window_size=86400.0,
+            return_weight=0.0,
+        )
 
         for use_sig in (False, True):
             trainer = Trainer(simple_store, TrainerConfig(**base_cfg, use_signatures=use_sig))

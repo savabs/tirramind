@@ -194,9 +194,7 @@ class _NHPModel(nn.Module):
             h = self._decay_hidden(h, dt)
 
             emb = self.type_emb(types[i].unsqueeze(0))  # (1, emb_dim)
-            log_dt = torch.tensor(
-                [[math.log(dt + 1.0)]], dtype=torch.float32, device=types.device
-            )
+            log_dt = torch.tensor([[math.log(dt + 1.0)]], dtype=torch.float32, device=types.device)
             x = torch.cat([emb, log_dt], dim=-1)  # (1, emb+1)
             h, c = self.lstm_cell(x, (h, c))
             all_h.append(h)
@@ -242,9 +240,7 @@ class _NHPModel(nn.Module):
             dt = float(delta_ts[i].item())
             h = self._decay_hidden(h, dt)
             emb = self.type_emb(types[i].unsqueeze(0))
-            log_dt = torch.tensor(
-                [[math.log(dt + 1.0)]], dtype=torch.float32, device=types.device
-            )
+            log_dt = torch.tensor([[math.log(dt + 1.0)]], dtype=torch.float32, device=types.device)
             x = torch.cat([emb, log_dt], dim=-1)
             h, c = self.lstm_cell(x, (h, c))
         return h
@@ -277,9 +273,7 @@ class _NHPModel(nn.Module):
             dt = float(delta_ts[i].item())
             h = self._decay_hidden(h, dt)
             emb = self.type_emb(types[i].unsqueeze(0))
-            log_dt = torch.tensor(
-                [[math.log(dt + 1.0)]], dtype=torch.float32, device=types.device
-            )
+            log_dt = torch.tensor([[math.log(dt + 1.0)]], dtype=torch.float32, device=types.device)
             x = torch.cat([emb, log_dt], dim=-1)
             h, c = self.lstm_cell(x, (h, c))
             all_h.append(h)  # each h: (1, hidden_dim)
@@ -330,9 +324,7 @@ class NeuralHawkesEncoder:
         self.lr = lr
         self.forecast_hours = forecast_hours
         self.session_days = session_days
-        self.device = torch.device(
-            device if device else ("cuda" if torch.cuda.is_available() else "cpu")
-        )
+        self.device = torch.device(device if device else ("cuda" if torch.cuda.is_available() else "cpu"))
 
         self._model: _NHPModel | None = None
         self._vocab: dict[str, int] = {}  # event_type_str → 1-indexed int
@@ -504,11 +496,7 @@ class NeuralHawkesEncoder:
         cursor = t_start
 
         while cursor < t_end:
-            window_obs = [
-                o
-                for o in sorted_obs
-                if cursor <= o.get("observed_at", 0.0) < cursor + session_secs
-            ]
+            window_obs = [o for o in sorted_obs if cursor <= o.get("observed_at", 0.0) < cursor + session_secs]
             cursor += session_secs
 
             if len(window_obs) < _MIN_EVENTS:
@@ -560,9 +548,7 @@ class NeuralHawkesEncoder:
                     continue
 
                 types_t = torch.tensor(types_list, dtype=torch.long, device=self.device)
-                dt_t = torch.tensor(
-                    delta_ts_list, dtype=torch.float32, device=self.device
-                )
+                dt_t = torch.tensor(delta_ts_list, dtype=torch.float32, device=self.device)
 
                 optimiser.zero_grad()
 

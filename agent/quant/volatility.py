@@ -76,14 +76,10 @@ class SVIParameterization(nn.Module):
         w = self.a + self.b * term
         return torch.clamp(w, min=1e-6)
 
-    def implied_volatility(
-        self, k: torch.Tensor, T: float | torch.Tensor
-    ) -> torch.Tensor:
+    def implied_volatility(self, k: torch.Tensor, T: float | torch.Tensor) -> torch.Tensor:
         """Calculate implied volatility sigma(k) for log-moneyness k and maturity T."""
         w = self.total_variance(k)
-        T_safe = (
-            torch.clamp(T, min=1e-5) if isinstance(T, torch.Tensor) else max(T, 1e-5)
-        )
+        T_safe = torch.clamp(T, min=1e-5) if isinstance(T, torch.Tensor) else max(T, 1e-5)
         return torch.sqrt(w / T_safe)
 
     def check_butterfly_arbitrage(self, k: torch.Tensor) -> torch.Tensor:
@@ -101,11 +97,7 @@ class SVIParameterization(nn.Module):
         w_prime_prime = self.b * (self.sigma**2 / (h**3))
 
         # Durrleman condition g(k)
-        g_k = (
-            (1.0 - k * w_prime / (2.0 * w)) ** 2
-            - (w_prime**2 / 4.0) * (1.0 / w + 0.25)
-            + w_prime_prime / 2.0
-        )
+        g_k = (1.0 - k * w_prime / (2.0 * w)) ** 2 - (w_prime**2 / 4.0) * (1.0 / w + 0.25) + w_prime_prime / 2.0
         return g_k
 
     def fit(
@@ -175,9 +167,7 @@ class SABRModel(nn.Module):
     def nu(self) -> torch.Tensor:
         return torch.clamp(self.raw_nu, min=1e-4)
 
-    def forward(
-        self, K: torch.Tensor, F: torch.Tensor, T: torch.Tensor
-    ) -> torch.Tensor:
+    def forward(self, K: torch.Tensor, F: torch.Tensor, T: torch.Tensor) -> torch.Tensor:
         """Compute SABR Hagan implied volatility.
 
         Args:
@@ -200,9 +190,7 @@ class SABRModel(nn.Module):
         # Denominator 1 (expansion of forward/strike geometry)
         one_beta = 1.0 - beta
         log_FK_2 = log_FK**2
-        den1 = (F_mid**one_beta) * (
-            1.0 + (one_beta**2 / 24.0) * log_FK_2 + (one_beta**4 / 1920.0) * (log_FK**4)
-        )
+        den1 = (F_mid**one_beta) * (1.0 + (one_beta**2 / 24.0) * log_FK_2 + (one_beta**4 / 1920.0) * (log_FK**4))
 
         # Singularity-protected z and chi(z) calculation
         z = (nu / alpha) * (F_mid**one_beta) * log_FK
@@ -210,16 +198,12 @@ class SABRModel(nn.Module):
         x_z = torch.log((sqrt_term + z - rho) / (1.0 - rho))
 
         # ATM limit expansion for z/chi(z)
-        ratio_num = z / torch.where(
-            torch.abs(x_z) < 1e-6, torch.ones_like(x_z) * 1e-6, x_z
-        )
+        ratio_num = z / torch.where(torch.abs(x_z) < 1e-6, torch.ones_like(x_z) * 1e-6, x_z)
         ratio_taylor = 1.0 - 0.5 * rho * z + ((2.0 - 3.0 * rho**2) / 12.0) * (z**2)
         ratio = torch.where(torch.abs(z) < 1e-4, ratio_taylor, ratio_num)
 
         # Term 3 (time expansion correction)
-        term3_num = (one_beta**2 / 24.0) * (
-            alpha**2 / torch.clamp(F_mid ** (2.0 * one_beta), min=1e-6)
-        )
+        term3_num = (one_beta**2 / 24.0) * (alpha**2 / torch.clamp(F_mid ** (2.0 * one_beta), min=1e-6))
         term3_mid = 0.25 * rho * beta * nu * alpha / (F_mid**one_beta)
         term3_end = ((2.0 - 3.0 * (rho**2)) / 24.0) * (nu**2)
         term3 = 1.0 + (term3_num + term3_mid + term3_end) * T
@@ -262,9 +246,7 @@ class ImpliedVolatilitySurface(nn.Module):
     def __init__(self, slices: dict[float, SVIParameterization]):
         super().__init__()
         self.maturities = sorted(list(slices.keys()))
-        self.slices = nn.ModuleDict(
-            {self._get_key(T): slices[T] for T in self.maturities}
-        )
+        self.slices = nn.ModuleDict({self._get_key(T): slices[T] for T in self.maturities})
 
     def _get_key(self, T: float | torch.Tensor) -> str:
         T_val = T.item() if isinstance(T, torch.Tensor) else float(T)
@@ -351,17 +333,11 @@ class ImpliedVolatilitySurface(nn.Module):
         skew = w_prime / (2.0 * closest_T * sig)
 
         # d2(sigma)/dk^2 = (2 * w * w'' - w'^2) / (4 * T^2 * sigma^3)
-        curvature = (2.0 * w * w_prime_prime - w_prime**2) / (
-            4.0 * (closest_T**2) * (sig**3)
-        )
+        curvature = (2.0 * w * w_prime_prime - w_prime**2) / (4.0 * (closest_T**2) * (sig**3))
 
         # Term structure slope
-        sig_short = self.slices[self._get_key(self.maturities[0])].implied_volatility(
-            k_atm, self.maturities[0]
-        )
-        sig_long = self.slices[self._get_key(self.maturities[-1])].implied_volatility(
-            k_atm, self.maturities[-1]
-        )
+        sig_short = self.slices[self._get_key(self.maturities[0])].implied_volatility(k_atm, self.maturities[0])
+        sig_long = self.slices[self._get_key(self.maturities[-1])].implied_volatility(k_atm, self.maturities[-1])
         term_slope = (
             (sig_long - sig_short) / (self.maturities[-1] - self.maturities[0])
             if len(self.maturities) > 1

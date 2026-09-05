@@ -158,9 +158,7 @@ class EntityResolver:
             return 0
 
         # Build index: det_key -> {normalised_value -> [entity_id, ...]}
-        key_index: dict[str, dict[str, list[str]]] = defaultdict(
-            lambda: defaultdict(list)
-        )
+        key_index: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
         for ent in entities:
             meta = ent.get("metadata") or {}
             eid = ent["entity_id"]
@@ -208,9 +206,7 @@ class EntityResolver:
             from splink import Linker, SettingsCreator, block_on
             from splink.backends.duckdb import DuckDBAPI
         except ImportError:
-            log.warning(
-                "splink not installed — skipping probabilistic entity resolution."
-            )
+            log.warning("splink not installed — skipping probabilistic entity resolution.")
             return 0
 
         entities = self._store.query_all_entities()
@@ -304,9 +300,7 @@ class EntityResolver:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 try:
-                    linker.training.estimate_probability_two_random_records_match(
-                        blocking_rules, recall=0.7
-                    )
+                    linker.training.estimate_probability_two_random_records_match(blocking_rules, recall=0.7)
                 except Exception:
                     pass  # use default prior if estimation fails
                 try:
@@ -320,9 +314,7 @@ class EntityResolver:
                 except Exception:
                     pass
 
-            df_pred = linker.inference.predict(
-                threshold_match_probability=self._threshold
-            ).as_pandas_dataframe()
+            df_pred = linker.inference.predict(threshold_match_probability=self._threshold).as_pandas_dataframe()
 
         except Exception as exc:
             log.warning("Splink failed for entity_type=%r: %s", etype, exc)

@@ -47,7 +47,7 @@ class OperationFeatureExtractor:
         word_set = set(words)
 
         features = np.zeros(N_FEATURES, dtype=np.float64)
-        features[0] = min(len(words) / 50.0, 1.0)      # operation length norm
+        features[0] = min(len(words) / 50.0, 1.0)  # operation length norm
         features[1] = 1.0 if word_set & _FETCH_KW else 0.0
         features[2] = 1.0 if word_set & _SCORE_KW else 0.0
         features[3] = 1.0 if word_set & _FUSE_KW else 0.0
@@ -55,7 +55,7 @@ class OperationFeatureExtractor:
         features[5] = 1.0 if word_set & _CLEAN_KW else 0.0
         features[6] = 0.5  # default complexity placeholder
         features[7] = 1.0  # is_core (signal ops are always core)
-        features[8] = min(failure_count / 3.0, 1.0)     # failure count norm
+        features[8] = min(failure_count / 3.0, 1.0)  # failure count norm
         features[9] = 1.0  # bias term
         return features
 
@@ -111,11 +111,7 @@ class LinUCBRouter:
         available = [
             a
             for a in range(self.n_actions)
-            if not (
-                budget_mask is not None
-                and a < len(budget_mask)
-                and not budget_mask[a]
-            )
+            if not (budget_mask is not None and a < len(budget_mask) and not budget_mask[a])
         ]
         if available and self._total_updates < self.min_samples:
             least_tried = min(
@@ -127,11 +123,7 @@ class LinUCBRouter:
 
         ucb_scores = np.zeros(self.n_actions)
         for a in range(self.n_actions):
-            blocked = (
-                budget_mask is not None
-                and a < len(budget_mask)
-                and not budget_mask[a]
-            )
+            blocked = budget_mask is not None and a < len(budget_mask) and not budget_mask[a]
             if blocked:
                 ucb_scores[a] = -np.inf
                 continue

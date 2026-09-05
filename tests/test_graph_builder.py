@@ -527,8 +527,7 @@ class TestLinkFutureBlindness:
         (attrs,) = (t["edge_attr"] for t in edge_data.values())
         age_days = attrs[0, 1].item()
         assert abs(age_days - 1.0) < 0.01, (
-            f"age_days={age_days} — should be 1.0 relative to the window, not "
-            "a huge number relative to wall-clock now"
+            f"age_days={age_days} — should be 1.0 relative to the window, not a huge number relative to wall-clock now"
         )
 
 

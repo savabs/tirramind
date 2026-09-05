@@ -78,8 +78,10 @@ def _populate_price_history(
         times = sorted(rng.uniform(t_start, t_end, n))
         for j, t in enumerate(times):
             store.store_entity_observation(
-                entity_id=eid, source_tool="test",
-                observation_type="price", observed_at=float(t),
+                entity_id=eid,
+                source_tool="test",
+                observation_type="price",
+                observed_at=float(t),
                 value={"close": float(prices[j])},
             )
 
@@ -88,8 +90,8 @@ def _populate_price_history(
 # 1–2. Construction
 # ═══════════════════════════════════════════════════════════════
 
-class TestConstruction:
 
+class TestConstruction:
     def test_defaults(self):
         pc = PortfolioConstructor()
         assert pc.delta == pytest.approx(2.5)
@@ -106,8 +108,8 @@ class TestConstruction:
 # 3–6. _black_litterman
 # ═══════════════════════════════════════════════════════════════
 
-class TestBlackLitterman:
 
+class TestBlackLitterman:
     def _make_inputs(self, n=4, seed=0):
         rng = np.random.default_rng(seed)
         cov = rng.normal(0, 1, (n, n))
@@ -164,8 +166,8 @@ class TestBlackLitterman:
 # 7–10. _hrp_weights
 # ═══════════════════════════════════════════════════════════════
 
-class TestHRPWeights:
 
+class TestHRPWeights:
     def test_weights_sum_to_one(self):
         rng = np.random.default_rng(7)
         cov = rng.normal(0, 1, (5, 5))
@@ -202,8 +204,8 @@ class TestHRPWeights:
 # 11–12. _sample_covariance
 # ═══════════════════════════════════════════════════════════════
 
-class TestSampleCovariance:
 
+class TestSampleCovariance:
     def test_symmetric(self):
         rng = np.random.default_rng(42)
         ret = rng.normal(0, 1, (4, 100))
@@ -221,8 +223,8 @@ class TestSampleCovariance:
 # 13–14. _forward_fill_prices
 # ═══════════════════════════════════════════════════════════════
 
-class TestForwardFillPrices:
 
+class TestForwardFillPrices:
     def test_leading_zeros_filled_with_first_valid(self):
         arr = np.array([0.0, 0.0, 100.0, 110.0])
         result = _forward_fill_prices(arr)
@@ -241,12 +243,14 @@ class TestForwardFillPrices:
 # 15–24. build_weights()
 # ═══════════════════════════════════════════════════════════════
 
-class TestBuildWeights:
 
+class TestBuildWeights:
     def _make_pc(self, min_history=5, n_bins=20):
         return PortfolioConstructor(
-            min_history=min_history, n_bins=n_bins,
-            lookback_days=30, tilt_factor=0.3,
+            min_history=min_history,
+            n_bins=n_bins,
+            lookback_days=30,
+            tilt_factor=0.3,
         )
 
     def test_returns_none_without_history(self, tmp_path):
@@ -327,7 +331,9 @@ class TestBuildWeights:
 
         assert result_high is not None and result_low is not None
         # High confidence: expected returns should be closer to pred values
-        diff_high = max(abs(result_high.expected_returns[e] - preds[e]) for e in eids if e in result_high.expected_returns)
+        diff_high = max(
+            abs(result_high.expected_returns[e] - preds[e]) for e in eids if e in result_high.expected_returns
+        )
         diff_low = max(abs(result_low.expected_returns[e] - preds[e]) for e in eids if e in result_low.expected_returns)
         assert diff_high < diff_low
 
@@ -339,11 +345,15 @@ class TestBuildWeights:
         _populate_price_history(store, eids, 80, as_of - 30 * _DAY, as_of)
 
         pc_smooth = PortfolioConstructor(
-            min_history=5, n_bins=20, lookback_days=30,
+            min_history=5,
+            n_bins=20,
+            lookback_days=30,
             turnover_lambda=0.8,  # heavy smoothing
         )
         pc_nosmooth = PortfolioConstructor(
-            min_history=5, n_bins=20, lookback_days=30,
+            min_history=5,
+            n_bins=20,
+            lookback_days=30,
             turnover_lambda=0.0,
         )
         preds = {e: 0.02 for e in eids}
@@ -364,8 +374,11 @@ class TestBuildWeights:
         eids = ["f1", "f2", "f3"]
         _populate_price_history(store, eids, 80, as_of - 30 * _DAY, as_of)
         pc = PortfolioConstructor(
-            min_history=5, n_bins=20, lookback_days=30,
-            tilt_factor=0.0, turnover_lambda=0.0,
+            min_history=5,
+            n_bins=20,
+            lookback_days=30,
+            tilt_factor=0.0,
+            turnover_lambda=0.0,
         )
         preds = {e: 0.05 * (i + 1) for i, e in enumerate(eids)}
         result = pc.build_weights(store, preds, as_of=as_of)
@@ -378,8 +391,8 @@ class TestBuildWeights:
 # 24. store_weights()
 # ═══════════════════════════════════════════════════════════════
 
-class TestStoreWeights:
 
+class TestStoreWeights:
     def test_calls_store_portfolio_weights(self):
         mock_store = MagicMock()
         pc = PortfolioConstructor()
@@ -394,31 +407,33 @@ class TestStoreWeights:
         )
         n = pc.store_weights(pw, mock_store, "2026-05-25")
         assert n == 2
-        mock_store.store_portfolio_weights.assert_called_once_with(
-            "2026-05-25", {"a": 0.6, "b": 0.4}
-        )
+        mock_store.store_portfolio_weights.assert_called_once_with("2026-05-25", {"a": 0.6, "b": 0.4})
 
 
 # ═══════════════════════════════════════════════════════════════
 # 25–28. TrainerConfig
 # ═══════════════════════════════════════════════════════════════
 
-class TestTrainerConfig:
 
+class TestTrainerConfig:
     def test_portfolio_delta_defaults_2_5(self):
         from agent.models.gnn.trainer import TrainerConfig
+
         assert TrainerConfig().portfolio_delta == pytest.approx(2.5)
 
     def test_portfolio_tilt_defaults_0_5(self):
         from agent.models.gnn.trainer import TrainerConfig
+
         assert TrainerConfig().portfolio_tilt_factor == pytest.approx(0.5)
 
     def test_portfolio_turnover_lambda_defaults_0_3(self):
         from agent.models.gnn.trainer import TrainerConfig
+
         assert TrainerConfig().portfolio_turnover_lambda == pytest.approx(0.3)
 
     def test_portfolio_min_history_defaults_20(self):
         from agent.models.gnn.trainer import TrainerConfig
+
         assert TrainerConfig().portfolio_min_history == 20
 
 
@@ -426,13 +441,16 @@ class TestTrainerConfig:
 # 29–30. Trainer.compute_portfolio()
 # ═══════════════════════════════════════════════════════════════
 
-class TestComputePortfolio:
 
+class TestComputePortfolio:
     def _make_trainer(self, tmp_path: Path, tag: str) -> tuple[Trainer, list[str]]:
         store = _make_store(tmp_path, f"{tag}.db")
         gen = SyntheticGraphGenerator(
-            num_companies=2, num_countries=1,
-            time_span=3600.0 * 4, base_event_rate=0.001, seed=42,
+            num_companies=2,
+            num_countries=1,
+            time_span=3600.0 * 4,
+            base_event_rate=0.001,
+            seed=42,
         )
         gen.generate(store)
 
@@ -442,8 +460,12 @@ class TestComputePortfolio:
         _populate_price_history(store, eids, 80, as_of - 30 * _DAY, as_of)
 
         cfg = TrainerConfig(
-            hidden_dim=16, memory_dim=16, message_dim=16, time_dim=8,
-            num_heads=1, num_layers=1,
+            hidden_dim=16,
+            memory_dim=16,
+            message_dim=16,
+            time_dim=8,
+            num_heads=1,
+            num_layers=1,
             portfolio_min_history=5,
             portfolio_lookback_days=30,
         )

@@ -59,13 +59,20 @@ def _make_store(tmp_path: Path, name: str = "attr.db") -> PipelineStore:
 def _make_trainer(tmp_path: Path, tag: str = "t") -> Trainer:
     store = _make_store(tmp_path, f"{tag}.db")
     gen = SyntheticGraphGenerator(
-        num_companies=2, num_countries=1,
-        time_span=3600.0 * 3, base_event_rate=0.001, seed=7,
+        num_companies=2,
+        num_countries=1,
+        time_span=3600.0 * 3,
+        base_event_rate=0.001,
+        seed=7,
     )
     gen.generate(store)
     cfg = TrainerConfig(
-        hidden_dim=16, memory_dim=16, message_dim=16, time_dim=8,
-        num_heads=1, num_layers=1,
+        hidden_dim=16,
+        memory_dim=16,
+        message_dim=16,
+        time_dim=8,
+        num_heads=1,
+        num_layers=1,
     )
     return Trainer(store, cfg)
 
@@ -104,8 +111,8 @@ def _make_hetero_data(etype, edge_index_tensor):
 # 1. AttributionResult structure
 # ═══════════════════════════════════════════════════════════════
 
-class TestAttributionResult:
 
+class TestAttributionResult:
     def test_fields_exist(self):
         ar = AttributionResult(
             entity_id="copper",
@@ -129,8 +136,8 @@ class TestAttributionResult:
 # 2–3. BarraAttribution construction
 # ═══════════════════════════════════════════════════════════════
 
-class TestConstruction:
 
+class TestConstruction:
     def test_defaults(self):
         ba = BarraAttribution()
         assert ba.target_type == "instrument"
@@ -148,8 +155,8 @@ class TestConstruction:
 # 4–7. _normalize
 # ═══════════════════════════════════════════════════════════════
 
-class TestNormalize:
 
+class TestNormalize:
     def _ba(self, min_attention=0.0):
         return BarraAttribution(min_attention=min_attention)
 
@@ -182,15 +189,17 @@ class TestNormalize:
 # 8–11. _aggregate_layers
 # ═══════════════════════════════════════════════════════════════
 
-class TestAggregateLayers:
 
+class TestAggregateLayers:
     def _make_layer_attn(self, etype, attn_vals, dst_vals, n_edges):
         """Returns (raw_per_layer, mock_data, n_layers)."""
         attn = torch.tensor(attn_vals, dtype=torch.float)
-        edge_index = torch.stack([
-            torch.zeros(n_edges, dtype=torch.long),  # src (unused)
-            torch.tensor(dst_vals, dtype=torch.long),
-        ])
+        edge_index = torch.stack(
+            [
+                torch.zeros(n_edges, dtype=torch.long),  # src (unused)
+                torch.tensor(dst_vals, dtype=torch.long),
+            ]
+        )
         raw_per_layer = [{etype: attn}]
         data = MagicMock()
         data.edge_types = [etype]
@@ -214,10 +223,12 @@ class TestAggregateLayers:
         ba = BarraAttribution(target_type="instrument")
         # Two identical layers
         attn = torch.tensor([0.6, 0.4], dtype=torch.float)
-        edge_index = torch.stack([
-            torch.zeros(2, dtype=torch.long),
-            torch.tensor([0, 1], dtype=torch.long),
-        ])
+        edge_index = torch.stack(
+            [
+                torch.zeros(2, dtype=torch.long),
+                torch.tensor([0, 1], dtype=torch.long),
+            ]
+        )
         layer = {etype: attn}
         raw_per_layer = [layer, layer]
         data = MagicMock()
@@ -233,10 +244,12 @@ class TestAggregateLayers:
         etype = ("vessel", "trades", "country")  # dst_type != "instrument"
         ba = BarraAttribution(target_type="instrument")
         attn = torch.tensor([0.8], dtype=torch.float)
-        edge_index = torch.stack([
-            torch.zeros(1, dtype=torch.long),
-            torch.zeros(1, dtype=torch.long),
-        ])
+        edge_index = torch.stack(
+            [
+                torch.zeros(1, dtype=torch.long),
+                torch.zeros(1, dtype=torch.long),
+            ]
+        )
         raw_per_layer = [{etype: attn}]
         data = MagicMock()
         data.edge_types = [etype]
@@ -250,10 +263,12 @@ class TestAggregateLayers:
         etype = ("vessel", "trades", "instrument")
         ba = BarraAttribution(target_type="instrument")
         attn = torch.tensor([0.5, 0.3], dtype=torch.float)  # 2 values
-        edge_index = torch.stack([
-            torch.zeros(5, dtype=torch.long),  # 5 edges → mismatch
-            torch.zeros(5, dtype=torch.long),
-        ])
+        edge_index = torch.stack(
+            [
+                torch.zeros(5, dtype=torch.long),  # 5 edges → mismatch
+                torch.zeros(5, dtype=torch.long),
+            ]
+        )
         raw_per_layer = [{etype: attn}]
         data = MagicMock()
         data.edge_types = [etype]
@@ -269,8 +284,8 @@ class TestAggregateLayers:
 # 12–21. compute()
 # ═══════════════════════════════════════════════════════════════
 
-class TestCompute:
 
+class TestCompute:
     def _ba(self, **kw):
         return BarraAttribution(target_type="instrument", **kw)
 
@@ -346,12 +361,14 @@ class TestCompute:
         trainer = _make_trainer(tmp_path, "filt")
         trainer.build_model()
         from agent.models.gnn.graph_builder import GraphBuilder
+
         data, id_map, _ = GraphBuilder(trainer.store).build()
         local_map = id_map.type_local.get("instrument", {})
         if len(local_map) < 2:
             pytest.skip("Not enough instrument nodes for filter test")
         only = [sorted(local_map.keys())[0]]
         from agent.models.gnn.attribution import BarraAttribution
+
         ba = BarraAttribution(target_type="instrument")
         results = ba.compute(trainer.model, data, id_map, target_entity_ids=only)
         # Should only return result for the requested entity (if has attention)
@@ -374,8 +391,8 @@ class TestCompute:
 # 22–24. store_results()
 # ═══════════════════════════════════════════════════════════════
 
-class TestStoreResults:
 
+class TestStoreResults:
     def _make_result(self, eid, factors):
         return AttributionResult(
             entity_id=eid,
@@ -392,7 +409,7 @@ class TestStoreResults:
         ba = BarraAttribution()
         results = {
             "copper": self._make_result("copper", {"vessel": 0.6, "company": 0.4}),
-            "gold":   self._make_result("gold",   {"vessel": 0.3, "country": 0.7}),
+            "gold": self._make_result("gold", {"vessel": 0.3, "country": 0.7}),
         }
         n = ba.store_results(mock_store, results)
         assert n == 4  # 2 entities × 2 factors each
@@ -423,8 +440,8 @@ class TestStoreResults:
 # 25–27. TrainerConfig defaults
 # ═══════════════════════════════════════════════════════════════
 
-class TestTrainerConfig:
 
+class TestTrainerConfig:
     def test_use_attribution_defaults_false(self):
         assert TrainerConfig().use_attribution is False
 
@@ -439,8 +456,8 @@ class TestTrainerConfig:
 # 28–30. Trainer.compute_attribution()
 # ═══════════════════════════════════════════════════════════════
 
-class TestTrainerComputeAttribution:
 
+class TestTrainerComputeAttribution:
     def test_returns_empty_if_model_not_built(self, tmp_path):
         trainer = _make_trainer(tmp_path, "nb")
         # Don't call build_model()
