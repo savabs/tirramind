@@ -30,6 +30,11 @@ repos:
     rev: v4.6.0
     hooks:
       - id: trailing-whitespace
+        # ghost_brief.py's templates end lines with two spaces on purpose —
+        # that is a Markdown hard line break. Stripping them reflows the
+        # rendered brief into one paragraph. pyproject.toml already ignores
+        # W291/W293 for this reason; this hook does not read that config.
+        exclude: ^agent/quant/ghost_brief\.py$
       - id: end-of-file-fixer
       - id: check-yaml
       - id: check-toml
