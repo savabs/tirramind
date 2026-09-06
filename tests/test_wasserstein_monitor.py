@@ -40,7 +40,7 @@ from agent.convergence.wasserstein_monitor import (
     WassersteinResult,
     _w1_1d_normalised,
 )
-from agent.models.gnn.trainer import Trainer, TrainerConfig, SyntheticGraphGenerator
+from agent.models.gnn.trainer import SyntheticGraphGenerator, Trainer, TrainerConfig
 from agent.pipeline.store import PipelineStore
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -65,9 +65,7 @@ def _add_obs(
     rng = np.random.default_rng(seed)
     times = rng.uniform(t_start, t_end, count)
     entity_id = f"e_{tool}"
-    store.register_entity(
-        entity_type="company", canonical_name=entity_id, entity_id=entity_id
-    )
+    store.register_entity(entity_type="company", canonical_name=entity_id, entity_id=entity_id)
     for t in times:
         store.store_entity_observation(
             entity_id=entity_id,
@@ -84,7 +82,6 @@ def _add_obs(
 
 
 class TestConstruction:
-
     def test_instantiates_defaults(self):
         m = WassersteinMonitor()
         assert m.short_days == 30
@@ -104,7 +101,6 @@ class TestConstruction:
 
 
 class TestDailyFeatures:
-
     def test_empty_obs_returns_zeros(self):
         c, v = WassersteinMonitor._daily_features([], 0.0, _DAY * 30, n_bins=30)
         assert c.shape == (30,)
@@ -144,7 +140,6 @@ class TestDailyFeatures:
 
 
 class TestW1Normalised:
-
     def test_identical_distributions_zero(self):
         a = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
         assert _w1_1d_normalised(a, a) == pytest.approx(0.0, abs=1e-9)
@@ -182,7 +177,6 @@ class TestW1Normalised:
 
 
 class TestRun:
-
     def test_empty_store_returns_empty_dict(self, tmp_path):
         store = _make_store(tmp_path)
         m = WassersteinMonitor()
@@ -258,7 +252,6 @@ class TestRun:
 
 
 class TestStoreResults:
-
     def test_persists_signals_with_correct_names(self, tmp_path):
         store = _make_store(tmp_path)
         as_of = time.time()
@@ -293,7 +286,6 @@ class TestStoreResults:
 
 
 class TestTrainerConfig:
-
     def test_use_wasserstein_defaults_false(self):
         from agent.models.gnn.trainer import TrainerConfig
 
@@ -316,7 +308,6 @@ class TestTrainerConfig:
 
 
 class TestBuildModelIntegration:
-
     def _make_trainer(self, tmp_path: Path, use_wasserstein: bool, tag: str) -> Trainer:
         store = _make_store(tmp_path, f"{tag}.db")
         gen = SyntheticGraphGenerator(

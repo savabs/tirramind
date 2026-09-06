@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
-import math
-import pytest
 import torch
+
 from agent.quant.options import (
-    BlackScholes,
-    implied_volatility,
     BaroneAdesiWhaley,
-    HestonCOS,
     BatesCOS,
+    BlackScholes,
+    HestonCOS,
     MertonCOS,
     VarianceGammaCOS,
+    implied_volatility,
 )
 
 
@@ -222,9 +221,7 @@ class TestFourierCOS:
 
     def test_bates_vs_heston(self):
         """Bates with zero jump intensity should equal Heston."""
-        bates = BatesCOS(
-            kappa=2.0, theta=0.04, xi=0.30, rho=-0.70, v0=0.04, lambda_j=0.0
-        )
+        bates = BatesCOS(kappa=2.0, theta=0.04, xi=0.30, rho=-0.70, v0=0.04, lambda_j=0.0)
         heston = HestonCOS(kappa=2.0, theta=0.04, xi=0.30, rho=-0.70, v0=0.04)
 
         S = torch.tensor([100.0], dtype=torch.float32)
@@ -255,9 +252,7 @@ class TestFourierCOS:
 
     def test_cos_differentiability(self):
         """Verify that Heston COS options pricing is fully differentiable w.r.t underlying Spot price and model parameters."""
-        heston = HestonCOS(
-            kappa=2.0, theta=0.04, xi=0.30, rho=-0.70, v0=0.04, learnable=True
-        )
+        heston = HestonCOS(kappa=2.0, theta=0.04, xi=0.30, rho=-0.70, v0=0.04, learnable=True)
 
         S = torch.tensor([100.0], dtype=torch.float32, requires_grad=True)
         K = torch.tensor([100.0], dtype=torch.float32)

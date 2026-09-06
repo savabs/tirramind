@@ -221,26 +221,30 @@ class WassersteinMonitor:
             if len(obs_list) < self.min_baseline_obs:
                 log.debug(
                     "WassersteinMonitor: skipping %r (%d obs < min=%d)",
-                    tool_name, len(obs_list), self.min_baseline_obs,
+                    tool_name,
+                    len(obs_list),
+                    self.min_baseline_obs,
                 )
                 continue
 
-            result = self._compute_for_tool(
-                tool_name, obs_list, t_short_start, t_long_start, as_of
-            )
+            result = self._compute_for_tool(tool_name, obs_list, t_short_start, t_long_start, as_of)
             if result is not None:
                 results[tool_name] = result
                 if result.is_alarm:
                     log.warning(
                         "WassersteinMonitor: ALARM for %r — drift_score=%.3f "
                         "(threshold=%.3f, short=%d obs, baseline=%d obs)",
-                        tool_name, result.drift_score, result.threshold,
-                        result.short_count, result.baseline_count,
+                        tool_name,
+                        result.drift_score,
+                        result.threshold,
+                        result.short_count,
+                        result.baseline_count,
                     )
                 else:
                     log.debug(
                         "WassersteinMonitor: %r drift_score=%.3f (ok)",
-                        tool_name, result.drift_score,
+                        tool_name,
+                        result.drift_score,
                     )
 
         log.info(
@@ -290,7 +294,8 @@ class WassersteinMonitor:
             except Exception:
                 log.warning(
                     "WassersteinMonitor: failed to store signal for %r",
-                    tool_name, exc_info=True,
+                    tool_name,
+                    exc_info=True,
                 )
         log.info("WassersteinMonitor: stored %d drift signals.", count)
         return count
@@ -316,17 +321,11 @@ class WassersteinMonitor:
             return None
 
         # Build daily feature arrays
-        long_count, long_value = self._daily_features(
-            long_obs, t_long_start, now, n_bins=self.long_days
-        )
-        short_count, short_value = self._daily_features(
-            short_obs, t_short_start, now, n_bins=self.short_days
-        )
+        long_count, long_value = self._daily_features(long_obs, t_long_start, now, n_bins=self.long_days)
+        short_count, short_value = self._daily_features(short_obs, t_short_start, now, n_bins=self.short_days)
 
         if self.use_sinkhorn:
-            drift_score, w1_count, w1_value = self._sinkhorn_score(
-                short_count, short_value, long_count, long_value
-            )
+            drift_score, w1_count, w1_value = self._sinkhorn_score(short_count, short_value, long_count, long_value)
         else:
             w1_count = _w1_1d_normalised(short_count, long_count)
             w1_value = _w1_1d_normalised(short_value, long_value)
@@ -385,9 +384,7 @@ class WassersteinMonitor:
                         break
 
         with np.errstate(invalid="ignore", divide="ignore"):
-            mean_values = np.where(
-                value_counts > 0, value_sums / value_counts, 0.0
-            )
+            mean_values = np.where(value_counts > 0, value_sums / value_counts, 0.0)
         value_arr = np.tanh(mean_values / (np.abs(mean_values) + 1.0))
 
         return count_arr, value_arr
@@ -423,10 +420,7 @@ class WassersteinMonitor:
             return score, w1_count, w1_value
 
         except ImportError:
-            log.debug(
-                "POT not available — falling back to 1D W1. "
-                "Install with: pip install POT"
-            )
+            log.debug("POT not available — falling back to 1D W1. Install with: pip install POT")
         except Exception as exc:
             log.warning("Sinkhorn computation failed: %s — falling back to W1", exc)
 

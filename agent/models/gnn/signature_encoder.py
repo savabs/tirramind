@@ -136,11 +136,7 @@ def compute_path_signature(
 
         if depth >= 2:
             # S2_new[i,j] = S2[i,j] + S1[i]*a[j] + a[i]*a[j]/2
-            S2 = (
-                S2
-                + torch.einsum("bi,bj->bij", S1, a)
-                + torch.einsum("bi,bj->bij", a, a) * 0.5
-            )
+            S2 = S2 + torch.einsum("bi,bj->bij", S1, a) + torch.einsum("bi,bj->bij", a, a) * 0.5
 
         S1 = S1 + a
 

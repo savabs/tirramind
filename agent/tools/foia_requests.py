@@ -36,7 +36,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import time
-from datetime import datetime, timedelta, timezone; UTC = timezone.utc
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import httpx

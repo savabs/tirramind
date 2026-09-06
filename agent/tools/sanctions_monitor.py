@@ -27,8 +27,6 @@ import io
 import logging
 import re
 from datetime import UTC, datetime, timedelta
-
-UTC = UTC
 from typing import TYPE_CHECKING, Any
 
 import defusedxml.ElementTree as ET

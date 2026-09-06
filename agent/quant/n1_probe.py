@@ -6,7 +6,6 @@ Standalone raw intelligence (no GNN). See [[n1_n4_playground_spec]] hero readout
 
 from __future__ import annotations
 
-import json
 import sqlite3
 from dataclasses import asdict, dataclass, field
 from typing import Any
@@ -15,7 +14,6 @@ from agent.quant.microstructure_signals import (
     InstrumentMicroPanel,
     MicroThresholds,
     build_instrument_panel,
-    classify_cftc_positioning,
     list_instruments_by_asset_class,
     load_cftc_ranks_by_ticker,
     normalize_cftc_rank,
@@ -184,10 +182,7 @@ def _build_chain_narrative(
         g = supply.get("avg_goldstein")
         top = supply.get("top_stress_country")
         top_s = f" ({top[0]} goldstein={top[1]:+.1f})" if top else ""
-        parts.append(
-            f"Producer-country event field stress={stress}"
-            f" (avg goldstein={g}{top_s})"
-        )
+        parts.append(f"Producer-country event field stress={stress} (avg goldstein={g}{top_s})")
 
     if positioning_label and positioning_label != "NEUTRAL":
         flags.append(f"POS_{positioning_label}")
@@ -263,18 +258,12 @@ def build_n1_combined_probe(
     if panel is None:
         return None
 
-    rank_pct = (
-        round(normalize_cftc_rank(cftc_rank) * 100.0, 1)
-        if cftc_rank is not None
-        else None
-    )
+    rank_pct = round(normalize_cftc_rank(cftc_rank) * 100.0, 1) if cftc_rank is not None else None
     pos_label = panel.cftc_positioning_label
 
     alert_dicts = [a.to_dict() for a in panel.alerts]
     flags, narrative = _build_chain_narrative(ticker, pos_label, supply_risk, alert_dicts)
-    priority = _composite_priority(
-        panel, pos_label, supply_risk, cftc_extras.get("direction_change", False)
-    )
+    priority = _composite_priority(panel, pos_label, supply_risk, cftc_extras.get("direction_change", False))
 
     positioning = {
         "cftc_mm_pct_52w_rank": cftc_rank,
@@ -338,16 +327,12 @@ def build_all_n1_probes(
                 geid = resolve_iso2_to_gdelt(iso2, gdelt_map)
                 if geid:
                     all_gdelt_ids.append(geid)
-        gdelt = load_gdelt_sentiment(
-            con, list(set(all_gdelt_ids)), lookback_days=gdelt_lookback_days
-        )
+        gdelt = load_gdelt_sentiment(con, list(set(all_gdelt_ids)), lookback_days=gdelt_lookback_days)
         gdelt_by_iso2 = load_gdelt_by_iso2(con, lookback_days=gdelt_lookback_days)
 
         probes: list[N1CombinedProbe] = []
         name_by_eid = {
-            e["entity_id"]: e.get("canonical_name", "")
-            for e in entities
-            if e.get("entity_type") == "instrument"
+            e["entity_id"]: e.get("canonical_name", "") for e in entities if e.get("entity_type") == "instrument"
         }
 
         for eid, ticker in instruments:
@@ -396,11 +381,7 @@ def thresholds_from_dict(d: dict[str, Any]) -> N1Thresholds:
     return N1Thresholds(
         micro=MicroThresholds(**micro_d) if micro_d else MicroThresholds(),
         gdelt_lookback_days=int(d.get("gdelt_lookback_days", 30)),
-        supply_stress_high_goldstein=float(
-            d.get("supply_stress_high_goldstein", -3.0)
-        ),
-        supply_stress_moderate_goldstein=float(
-            d.get("supply_stress_moderate_goldstein", -1.5)
-        ),
+        supply_stress_high_goldstein=float(d.get("supply_stress_high_goldstein", -3.0)),
+        supply_stress_moderate_goldstein=float(d.get("supply_stress_moderate_goldstein", -1.5)),
         priority_min_display=int(d.get("priority_min_display", 2)),
     )

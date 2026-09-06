@@ -393,7 +393,7 @@ class TestConstants:
         assert {"recent", "top", "agency", "search"} == VALID_MODES
 
     def test_contract_codes(self):
-        assert ["A", "B", "C", "D"] == _CONTRACT_CODES
+        assert _CONTRACT_CODES == ["A", "B", "C", "D"]
 
     def test_fields_nonempty(self):
         assert len(_FIELDS) >= 5

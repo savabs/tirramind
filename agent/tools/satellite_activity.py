@@ -519,9 +519,7 @@ class SatelliteActivityTool(Tool):
                 "source": source,
                 "days": days,
                 "hotspot_count": len(hotspots),
-                "frp_avg": (
-                    round(sum(frps_valid) / len(frps_valid), 2) if frps_valid else 0.0
-                ),
+                "frp_avg": (round(sum(frps_valid) / len(frps_valid), 2) if frps_valid else 0.0),
                 "frp_max": round(max(frps_valid), 2) if frps_valid else 0.0,
                 "frp_total": round(sum(frps_valid), 2) if frps_valid else 0.0,
                 "confidence_counts": confs,

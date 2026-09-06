@@ -18,8 +18,6 @@ integration of count assertions (32 tools, 21 arms).
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-
-UTC = UTC
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -829,9 +827,9 @@ class TestIntegration:
 
     def test_tool_count(self):
         registry = self._build_registry()
-        assert (
-            len(registry._tools) == 61
-        ), f"Expected 61 tools, got {len(registry._tools)}: {sorted(registry._tools.keys())}"
+        assert len(registry._tools) == 61, (
+            f"Expected 61 tools, got {len(registry._tools)}: {sorted(registry._tools.keys())}"
+        )
 
     def test_bandit_arm_count(self):
         from agent.learning.bandit import DEFAULT_ARMS

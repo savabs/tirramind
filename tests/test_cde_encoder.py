@@ -21,11 +21,10 @@ from pathlib import Path
 import pytest
 import torch
 
-from agent.models.gnn.cde_encoder import CDEFunc, CDEMemoryEncoder, _CDE_AVAILABLE
-from agent.models.gnn.het_tgn import HetTGN, HeteroMemory
+from agent.models.gnn.cde_encoder import _CDE_AVAILABLE, CDEFunc, CDEMemoryEncoder
 from agent.models.gnn.graph_builder import IDMap
+from agent.models.gnn.het_tgn import HeteroMemory, HetTGN
 from agent.models.gnn.trainer import (
-    InjectedPattern,
     SyntheticGraphGenerator,
     Trainer,
     TrainerConfig,
@@ -128,9 +127,7 @@ class TestCDEFunc:
 @pytest.mark.skipif(not _CDE_AVAILABLE, reason="torchcde not installed")
 class TestCDEMemoryEncoder:
     def _make_memory(self, num_nodes=10, memory_dim=16, message_dim=16):
-        mem = HeteroMemory(
-            num_nodes=num_nodes, memory_dim=memory_dim, message_dim=message_dim
-        )
+        mem = HeteroMemory(num_nodes=num_nodes, memory_dim=memory_dim, message_dim=message_dim)
         return mem
 
     def _make_id_map(self, entity_ids: list[str], entity_type: str = "company"):
@@ -173,9 +170,7 @@ class TestCDEMemoryEncoder:
     def test_single_event_nodes_use_gru_fallback(self):
         """Nodes with only 1 event fall back to GRU — memory is still updated."""
         memory_dim, message_dim = 16, 16
-        encoder = CDEMemoryEncoder(
-            memory_dim=memory_dim, message_dim=message_dim, min_events=2
-        )
+        encoder = CDEMemoryEncoder(memory_dim=memory_dim, message_dim=message_dim, min_events=2)
         memory = self._make_memory(memory_dim=memory_dim, message_dim=message_dim)
         id_map = self._make_id_map(["solo"])
 
@@ -190,9 +185,7 @@ class TestCDEMemoryEncoder:
             t_start=0.0,
             t_end=100.0,
         )
-        assert not torch.all(
-            memory.memory[0] == 0.0
-        ), "Single-event node should update via GRU"
+        assert not torch.all(memory.memory[0] == 0.0), "Single-event node should update via GRU"
 
     def test_empty_events_noop(self):
         """Empty event list does not crash and leaves memory unchanged."""
@@ -209,9 +202,7 @@ class TestCDEMemoryEncoder:
             t_start=0.0,
             t_end=100.0,
         )
-        assert torch.allclose(
-            memory.memory, before
-        ), "Empty events should not mutate memory"
+        assert torch.allclose(memory.memory, before), "Empty events should not mutate memory"
 
     def test_zero_span_window_noop(self):
         """t_start == t_end should not crash (divides by 1 in normalisation)."""
@@ -286,9 +277,7 @@ class TestHetTGNUseCDE:
         before_0 = cde_het_tgn.memory.memory[0].clone()
         before_1 = cde_het_tgn.memory.memory[1].clone()
 
-        cde_het_tgn.update_memory_from_events(
-            events, embeddings, id_map, t_start=0.0, t_end=100.0
-        )
+        cde_het_tgn.update_memory_from_events(events, embeddings, id_map, t_start=0.0, t_end=100.0)
         assert not torch.allclose(cde_het_tgn.memory.memory[0], before_0)
         assert not torch.allclose(cde_het_tgn.memory.memory[1], before_1)
 
@@ -305,9 +294,7 @@ class TestHetTGNUseCDE:
             {"entity_type": "company", "entity_id": "c0", "observed_at": 10.0},
             {"entity_type": "company", "entity_id": "c0", "observed_at": 90.0},
         ]
-        cde_het_tgn.update_memory_from_events(
-            events, embeddings, id_map, t_start=0.0, t_end=100.0
-        )
+        cde_het_tgn.update_memory_from_events(events, embeddings, id_map, t_start=0.0, t_end=100.0)
         assert torch.isfinite(cde_het_tgn.memory.memory).all()
 
 
@@ -417,7 +404,4 @@ class TestCDETrainingLoop:
         # (they use the same data but different memory encoders)
         assert math.isfinite(gru_total) and math.isfinite(cde_total)
         ratio = max(gru_total, cde_total) / (min(gru_total, cde_total) + 1e-8)
-        assert ratio < 100, (
-            f"CDE/GRU loss ratio too large ({ratio:.1f}×): "
-            f"gru={gru_total:.4f}, cde={cde_total:.4f}"
-        )
+        assert ratio < 100, f"CDE/GRU loss ratio too large ({ratio:.1f}×): gru={gru_total:.4f}, cde={cde_total:.4f}"

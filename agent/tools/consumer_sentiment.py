@@ -28,8 +28,6 @@ import logging
 import os
 import time
 from datetime import UTC
-
-UTC = UTC
 from typing import TYPE_CHECKING, Any
 
 import httpx
