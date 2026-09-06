@@ -30,26 +30,26 @@ behaviour or the test suite result.
 
 ## Steps
 
-- [ ] 1.1: Record the `ruff check --statistics` baseline
-  Verification: 211 errors, distribution captured in the research note
-- [ ] 1.2: Record the pytest baseline from a pristine worktree at branch HEAD
-  Verification: run reaches 100%, counts recorded
-- [ ] 2.1: Rewrite the 22 single-line `datetime.UTC` shims
+- [x] 1.1: Record the `ruff check --statistics` baseline
+  Verification: 211 errors; distribution captured in the research note
+- [x] 1.2: Record the pytest baseline from a pristine worktree at branch HEAD
+  Verification: 5 failed, 10938 passed, 15 skipped, 9 deselected (863s)
+- [x] 2.1: Rewrite the 22 single-line `datetime.UTC` shims
   Verification: `ruff check --select E702` reports 0
-- [ ] 3.1: Import `Any` in `cde_encoder.py` (F821)
+- [x] 3.1: Import `Any` in `cde_encoder.py` (F821)
   Verification: `ruff check --select F821` reports 0
-- [ ] 3.2: Drop the unused functional import in `heterogeneous_cde_func.py` (F811)
+- [x] 3.2: Drop the unused functional import in `heterogeneous_cde_func.py` (F811)
   Verification: `ruff check --select F811` reports 0
-- [ ] 4.1: Apply `ruff check --fix` (safe fixes only)
-  Verification: 0 errors remain
-- [ ] 2.3: Delete the 32 `UTC = UTC` self-assignments the fixer leaves behind
+- [x] 4.1: Apply `ruff check --fix` (safe fixes only)
+  Verification: 165 then 32 fixed across two passes; 0 remain
+- [x] 2.3: Delete the 32 `UTC = UTC` self-assignments the fixer leaves behind
   Verification: `grep -rn "UTC = UTC" agent/ tests/` is empty
-- [ ] 4.5: Import-smoke-test every changed `agent/` module
+- [x] 4.5: Import-smoke-test every changed `agent/` module
   Verification: 64/64 import cleanly
-- [ ] 5.1: Run `ruff format` as a separate commit
-  Verification: `ruff format --check` exits 0; that commit is whitespace-only
-- [ ] 6.2: Re-run the suite and diff against the baseline
-  Verification: identical counts and identical failing-test ids
+- [x] 5.1: Run `ruff format` as a separate commit
+  Verification: 92 files reformatted; AST identical for all 92
+- [x] 6.2: Re-run the suite and diff against the baseline
+  Verification: see Outcome below
 
 ## Completion Checklist
 
