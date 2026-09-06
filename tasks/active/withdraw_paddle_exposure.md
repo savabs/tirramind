@@ -113,6 +113,36 @@ files needing reformatting, none of them touched by this PR. Reformatting 111
 files onto a security change would bury a five-file diff, so that is tracked
 separately.
 
+### Second CI break, found once the tests could finally run
+
+With collection fixed, the suite executed for the first time and returned
+**208 failed, 10,716 passed** on both 3.11 and 3.12. Every failure was the same
+line:
+
+    RuntimeError: Numpy is not available
+
+Cause: `.github/workflows/ci.yml` pinned `torch==2.2.2+cpu`, which is built
+against the **numpy 1.x ABI**, while the preceding `pip install -e ".[dev,quant]"`
+resolves numpy to **2.5.2**. Every tensor<->numpy conversion therefore failed.
+
+Pinning numpy backwards is not available: `scipy 1.18.1` requires
+`numpy>=2.0.0,<2.8`, and scipy is in the `quant` extra. So torch had to move.
+
+Chose **torch 2.13.0**, because it is what this project's own `.venv` runs, and
+the suite passes there against the identical numpy 2.5.2. Verified before
+changing anything:
+
+- local `torch 2.13.0` + `numpy 2.5.2`: tensor->numpy conversion works
+- local full suite under simulated CI conditions: **3 failed, 10,922 passed**
+  (the 3 being 2 live-network tests hitting a real API, and 1 artifact of the
+  simulation blocking `mambapy`) — against 208 on torch 2.2.2
+- `data.pyg.org` publishes cpu wheels for torch 2.13.0
+- `download.pytorch.org` publishes cp311 and cp312 cpu wheels, which the matrix
+  requires
+
+Matching CI to the environment the tests are developed in removes the drift
+rather than papering over it.
+
 ## Completion Checklist
 
 - [ ] Research note exists and is current — N/A, remediation
