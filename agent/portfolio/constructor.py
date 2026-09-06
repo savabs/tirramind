@@ -111,8 +111,12 @@ _DAY: float = 86_400.0
 _EPS: float = 1e-8
 
 _VALUE_KEYS = (
-    "close", "usd_amount", "value", "estimated_value",
-    "log_return", "btc_amount",
+    "close",
+    "usd_amount",
+    "value",
+    "estimated_value",
+    "log_return",
+    "btc_amount",
 )
 
 
@@ -242,18 +246,17 @@ class PortfolioConstructor:
         # Build price/return history for each entity
         price_matrix = self._build_price_matrix(
             store, entity_ids, t_start, as_of
-        )   # dict[entity_id, np.ndarray (n_bins,)]
+        )  # dict[entity_id, np.ndarray (n_bins,)]
 
         # Filter entities with sufficient history
         valid_ids = [
-            eid for eid in entity_ids
-            if eid in price_matrix
-            and np.sum(~np.isnan(price_matrix[eid])) >= self.min_history
+            eid
+            for eid in entity_ids
+            if eid in price_matrix and np.sum(~np.isnan(price_matrix[eid])) >= self.min_history
         ]
         if len(valid_ids) < 2:
             log.info(
-                "PortfolioConstructor: only %d entities with sufficient history "
-                "(need ≥ 2).",
+                "PortfolioConstructor: only %d entities with sufficient history (need ≥ 2).",
                 len(valid_ids),
             )
             return None
@@ -264,11 +267,11 @@ class PortfolioConstructor:
         n_assets = len(valid_ids)
 
         # Sample covariance matrix (annualised by n_hist factor not needed here)
-        cov = _sample_covariance(ret_matrix)   # (n, n)
+        cov = _sample_covariance(ret_matrix)  # (n, n)
 
         # BL: equilibrium prior (equal weights)
         w_mkt = np.ones(n_assets) / n_assets
-        pi = self.delta * cov @ w_mkt            # equilibrium returns (n,)
+        pi = self.delta * cov @ w_mkt  # equilibrium returns (n,)
 
         # Views: GNN predicted returns for valid entities
         q = np.array([return_preds.get(eid, 0.0) for eid in valid_ids])
@@ -283,7 +286,7 @@ class PortfolioConstructor:
         mu_bl, cov_bl = _black_litterman(cov, pi, q, omega_diag, tau)
 
         # HRP weights from BL posterior covariance
-        hrp_w = _hrp_weights(cov_bl, valid_ids)   # dict[eid, float]
+        hrp_w = _hrp_weights(cov_bl, valid_ids)  # dict[eid, float]
 
         # BL tilt: skew HRP weights toward higher-return entities
         if self.tilt_factor > 0.0:
@@ -347,13 +350,12 @@ class PortfolioConstructor:
             store.store_portfolio_weights(date, pw.weights)
             log.info(
                 "PortfolioConstructor: stored %d weights for date %s.",
-                pw.n_assets, date,
+                pw.n_assets,
+                date,
             )
             return pw.n_assets
         except Exception:
-            log.warning(
-                "PortfolioConstructor: failed to store weights for %s", date, exc_info=True
-            )
+            log.warning("PortfolioConstructor: failed to store weights for %s", date, exc_info=True)
             return 0
 
     # ── Internal: price matrix ─────────────────────────────────────────────
@@ -372,9 +374,7 @@ class PortfolioConstructor:
         price_matrix: dict[str, np.ndarray] = {}
 
         for eid in entity_ids:
-            obs = store.query_entity_observations(
-                eid, since=t_start, until=t_end, limit=self.obs_limit
-            )
+            obs = store.query_entity_observations(eid, since=t_start, until=t_end, limit=self.obs_limit)
             if not obs:
                 continue
 
@@ -517,7 +517,7 @@ def _hrp_weights(
 
     # Step 2: hierarchical clustering (Ward linkage for minimum variance)
     try:
-        from scipy.cluster.hierarchy import linkage, leaves_list  # noqa: PLC0415
+        from scipy.cluster.hierarchy import leaves_list, linkage  # noqa: PLC0415
 
         condensed = _condensed_distance(dist)
         z = linkage(condensed, method="ward")
@@ -604,9 +604,7 @@ def _sample_covariance(ret: np.ndarray, shrinkage: float = 0.05) -> np.ndarray:
     """
     n = ret.shape[0]
     cov = np.cov(ret)
-    if cov.ndim == 0:
-        cov = np.array([[float(cov)]])
-    elif cov.shape == ():
+    if cov.ndim == 0 or cov.shape == ():
         cov = np.array([[float(cov)]])
 
     mu_var = np.trace(cov) / max(n, 1)

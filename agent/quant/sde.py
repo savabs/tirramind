@@ -8,7 +8,6 @@ Models: GBM, HestonSDE.  Solvers: euler, milstein via torchsde.sdeint.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -39,7 +38,7 @@ class _SDEBase(nn.Module):
         self,
         y0: torch.Tensor,
         ts: torch.Tensor,
-        config: Optional[SDEConfig] = None,
+        config: SDEConfig | None = None,
         n_samples: int = 1,
     ) -> torch.Tensor:
         cfg = config or SDEConfig()
@@ -109,9 +108,7 @@ class HestonSDE(_SDEBase):
 
     def f(self, t: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         S, V = y[:, 0:1], y[:, 1:2]
-        return torch.cat(
-            [self.mu * S, self.kappa * (self.theta - torch.clamp(V, min=0.0))], dim=1
-        )
+        return torch.cat([self.mu * S, self.kappa * (self.theta - torch.clamp(V, min=0.0))], dim=1)
 
     def g(self, t: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         S, V = y[:, 0:1], y[:, 1:2]
@@ -119,12 +116,8 @@ class HestonSDE(_SDEBase):
         vs, vv = sv * S, self.xi * sv
         rc = torch.clamp(self.rho, -0.999, 0.999)
         L22 = torch.sqrt(1.0 - rc**2)
-        return torch.cat([vs, vs * rc, torch.zeros_like(vv), vv * L22], dim=1).reshape(
-            -1, 2, 2
-        )
+        return torch.cat([vs, vs * rc, torch.zeros_like(vv), vv * L22], dim=1).reshape(-1, 2, 2)
 
 
-def make_time_grid(
-    T: float = 1.0, n_steps: int = 252, device: Optional[torch.device] = None
-) -> torch.Tensor:
+def make_time_grid(T: float = 1.0, n_steps: int = 252, device: torch.device | None = None) -> torch.Tensor:
     return torch.linspace(0.0, T, n_steps + 1, device=device)

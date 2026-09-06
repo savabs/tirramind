@@ -59,17 +59,29 @@ jobs:
       - name: Install base + quant deps
         run: pip install -e ".[dev,quant]"
 
-      # CPU-only torch (~270 MB) — avoids the 2+ GB CUDA wheel
-      # Pin to 2.2.2 which has PyG wheels for both 3.11 and 3.12
+      # CPU-only torch (~270 MB) — avoids the 2+ GB CUDA wheel.
+      #
+      # Was pinned to 2.2.2. That pin quietly broke 208 tests: torch 2.2.2 is
+      # built against the numpy 1.x ABI, while `.[quant]` resolves numpy to
+      # 2.5.2 on the line above, so every tensor<->numpy conversion raised
+      # "RuntimeError: Numpy is not available". Pinning numpy back is not an
+      # option — scipy 1.18.1 requires numpy>=2.0.0,<2.8 — so torch moves
+      # instead.
+      #
+      # 2.13.0 is chosen because it is what the project's own .venv runs, where
+      # the suite passes against this same numpy 2.5.2. Matching CI to the
+      # environment the tests are actually developed in removes the drift
+      # rather than papering over it. PyG publishes cpu wheels for it, and
+      # torch publishes cp311 and cp312 cpu wheels, which the matrix needs.
       - name: Install torch (CPU-only)
         run: |
-          pip install torch==2.2.2+cpu --index-url https://download.pytorch.org/whl/cpu
+          pip install torch==2.13.0+cpu --index-url https://download.pytorch.org/whl/cpu
 
       # PyG wheels keyed to torch version — must come after torch
       - name: Install torch-geometric (CPU-only)
         run: |
           pip install torch-geometric \
-            --find-links https://data.pyg.org/whl/torch-2.2.2+cpu.html
+            --find-links https://data.pyg.org/whl/torch-2.13.0+cpu.html
 
       - name: Run tests (exclude live/slow)
         run: pytest tests/ -v --tb=short -m "not live and not slow"

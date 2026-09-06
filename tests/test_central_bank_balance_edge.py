@@ -19,8 +19,6 @@ from __future__ import annotations
 
 import unittest
 from datetime import UTC, datetime, timedelta
-
-UTC = UTC
 from unittest.mock import MagicMock, patch
 
 import httpx

@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 # ISO-2 → ISO-3 for GDELT country entity bridge
@@ -46,15 +46,48 @@ _ISO2_NAME_FRAGMENTS: dict[str, list[str]] = {
 }
 
 _ISO2_TO_ISO3: dict[str, str] = {
-    "AE": "ARE", "AR": "ARG", "AU": "AUS", "BR": "BRA", "CA": "CAN",
-    "CI": "CIV", "CL": "CHL", "CM": "CMR", "CN": "CHN", "CO": "COL",
-    "DZ": "DZA", "EC": "ECU", "ET": "ETH", "FR": "FRA", "GH": "GHA",
-    "HN": "HND", "ID": "IDN", "IN": "IND", "IQ": "IRQ", "IR": "IRN",
-    "KW": "KWT", "KZ": "KAZ", "LY": "LBY", "MX": "MEX", "NG": "NGA",
-    "NO": "NOR", "PE": "PER", "PK": "PAK", "PL": "POL", "PY": "PRY",
-    "QA": "QAT", "RU": "RUS", "SA": "SAU", "TH": "THA", "UA": "UKR",
-    "US": "USA", "UZ": "UZB", "VE": "VEN", "VN": "VNM", "ZA": "ZAF",
-    "ZM": "ZMB", "ZW": "ZWE",
+    "AE": "ARE",
+    "AR": "ARG",
+    "AU": "AUS",
+    "BR": "BRA",
+    "CA": "CAN",
+    "CI": "CIV",
+    "CL": "CHL",
+    "CM": "CMR",
+    "CN": "CHN",
+    "CO": "COL",
+    "DZ": "DZA",
+    "EC": "ECU",
+    "ET": "ETH",
+    "FR": "FRA",
+    "GH": "GHA",
+    "HN": "HND",
+    "ID": "IDN",
+    "IN": "IND",
+    "IQ": "IRQ",
+    "IR": "IRN",
+    "KW": "KWT",
+    "KZ": "KAZ",
+    "LY": "LBY",
+    "MX": "MEX",
+    "NG": "NGA",
+    "NO": "NOR",
+    "PE": "PER",
+    "PK": "PAK",
+    "PL": "POL",
+    "PY": "PRY",
+    "QA": "QAT",
+    "RU": "RUS",
+    "SA": "SAU",
+    "TH": "THA",
+    "UA": "UKR",
+    "US": "USA",
+    "UZ": "UZB",
+    "VE": "VEN",
+    "VN": "VNM",
+    "ZA": "ZAF",
+    "ZM": "ZMB",
+    "ZW": "ZWE",
 }
 
 
@@ -147,12 +180,8 @@ def load_gdelt_sentiment(
     for eid, events in buckets.items():
         if events:
             result[eid] = {
-                "avg_goldstein": round(
-                    sum(e["goldstein"] for e in events) / len(events), 2
-                ),
-                "avg_quad_class": round(
-                    sum(e["quad_class"] for e in events) / len(events), 2
-                ),
+                "avg_goldstein": round(sum(e["goldstein"] for e in events) / len(events), 2),
+                "avg_quad_class": round(sum(e["quad_class"] for e in events) / len(events), 2),
                 "event_count": float(len(events)),
             }
     return result
@@ -161,14 +190,11 @@ def load_gdelt_sentiment(
 def _gdelt_cutoff_ts(con: sqlite3.Connection, lookback_days: int) -> float:
     """Cutoff using latest GDELT obs in DB (not wall clock) for backfilled pipelines."""
     row = con.execute(
-        "SELECT MAX(observed_at) FROM entity_observations "
-        "WHERE observation_type = 'geopolitical_event'"
+        "SELECT MAX(observed_at) FROM entity_observations WHERE observation_type = 'geopolitical_event'"
     ).fetchone()
     max_ts = float(row[0] or 0.0)
     if max_ts <= 0:
-        return (
-            datetime.now(timezone.utc) - timedelta(days=lookback_days)
-        ).timestamp()
+        return (datetime.now(UTC) - timedelta(days=lookback_days)).timestamp()
     return max_ts - lookback_days * 86400.0
 
 

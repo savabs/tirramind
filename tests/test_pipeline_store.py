@@ -6,8 +6,6 @@ import threading
 import time
 from datetime import UTC
 
-UTC = UTC
-
 import pytest
 
 from agent.pipeline.store import PipelineStore

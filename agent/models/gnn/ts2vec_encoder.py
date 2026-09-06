@@ -189,7 +189,9 @@ class TS2VecEncoder:
             if len(eids) < _MIN_ENTITIES:
                 log.debug(
                     "TS2Vec: skipping type %r (%d entities < min=%d)",
-                    etype, len(eids), _MIN_ENTITIES,
+                    etype,
+                    len(eids),
+                    _MIN_ENTITIES,
                 )
                 continue
 
@@ -198,7 +200,9 @@ class TS2VecEncoder:
                 result[etype] = type_embs
                 log.debug(
                     "TS2Vec: encoded %d %r entities → dim=%d",
-                    len(eids), etype, self.output_dims,
+                    len(eids),
+                    etype,
+                    self.output_dims,
                 )
 
         self._embeddings = result
@@ -245,9 +249,7 @@ class TS2VecEncoder:
         X = np.zeros((N, T, 2), dtype=np.float32)
 
         for i, eid in enumerate(eids):
-            X[i] = self._build_series(
-                obs_by_entity.get(eid, []), t_min, t_span, T
-            )
+            X[i] = self._build_series(obs_by_entity.get(eid, []), t_min, t_span, T)
 
         # ── 3. Train TS2Vec ───────────────────────────────────────────────
         try:
@@ -265,7 +267,8 @@ class TS2VecEncoder:
         except Exception as exc:
             log.warning(
                 "TS2Vec training failed for entity type %r: %s — using zero embeddings",
-                etype, exc,
+                etype,
+                exc,
             )
             return {eid: np.zeros(self.output_dims, dtype=np.float32) for eid in eids}
 
@@ -275,7 +278,8 @@ class TS2VecEncoder:
         except Exception as exc:
             log.warning(
                 "TS2Vec encoding failed for entity type %r: %s — using zero embeddings",
-                etype, exc,
+                etype,
+                exc,
             )
             return {eid: np.zeros(self.output_dims, dtype=np.float32) for eid in eids}
 

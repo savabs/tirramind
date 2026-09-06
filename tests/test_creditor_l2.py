@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import timezone; UTC = timezone.utc
+from datetime import UTC
 from unittest.mock import MagicMock
 
 from agent.tools.creditor_filings import CreditorFilingsTool
