@@ -143,6 +143,45 @@ changing anything:
 Matching CI to the environment the tests are developed in removes the drift
 rather than papering over it.
 
+### Third pass: 8 remaining failures, 4 fixed and 4 deliberately left
+
+With torch corrected the suite reported **8 failed, 10,916 passed**. Four assert
+facts about the *environment* rather than about behaviour, and are fixed:
+
+- `test_evidence.py::test_pdf_ingest_real` -- `pypdf` is in no extra at all, so
+  this raised `ModuleNotFoundError` on every run instead of testing ingest.
+- `test_mamba_encoder.py::test_has_mamba_true_when_mambapy_available` -- its own
+  docstring says "mambapy is installed in this environment"; `mambapy` is in the
+  `[ml]` extra which CI does not install, so it failed with a bare
+  `assert False is True`. It now establishes the fact before asserting it.
+- `test_power_grid_edge.py::TestLiveNetwork` (2 tests) -- marked
+  `@pytest.mark.live`, which CI's `-m "not live and not slow"` already
+  deselects. The decorator this replaced was dead code (`... if False else
+  lambda f: f` is the identity function, and its `# noqa: F821` was suppressing
+  a genuinely undefined name), and the autouse fixture only checks that the MIS
+  directory listing responds -- so on a CI runner, which has internet, it never
+  skipped and the tests then failed on the real data call.
+
+Verified under the simulated CI environment: **126 passed, 2 skipped, 4
+deselected**.
+
+**Four are NOT fixed here, on purpose.**
+
+- `test_pipeline_hardening.py::TestCooperativeCancellation::test_cancel_event_is_set_after_node_times_out`
+  asserts `"timed out" in error` and received
+  `'Cancelled after timeout: stopped early: cancel_event was set'`. That is a
+  race between the timeout message and the cancellation rewriting it. Loosening
+  a timing assertion without understanding it is how this codebase twice ended
+  up with a test that asserted the bug (LESSONS F-12), so it is left red.
+- `test_evidence.py::test_registry_seed_produces_rich_extraction` (`assert 7 >
+  100`) and `test_ghost_chains_edge.py` (2 tests: `assert None is not None`,
+  `assert 0 >= 2`) need seeded database rows that CI does not have. Making them
+  green without knowing what data they expect would be manufacturing a passing
+  tick, not a passing test.
+
+These four are pre-existing, unrelated to this PR's subject, and want their own
+investigation rather than being swept into a security change.
+
 ## Completion Checklist
 
 - [ ] Research note exists and is current — N/A, remediation
