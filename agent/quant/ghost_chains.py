@@ -18,6 +18,8 @@ from typing import Any
 import numpy as np
 import yaml
 
+from agent.pipeline.country_codes import resolve_country_key
+from agent.pipeline.entity import entity_id_from_key
 from agent.tools.instrument_universe import INSTRUMENTS, cftc_code_to_ticker
 
 _DEFAULT_DB = Path(".tirra_pipeline/pipeline.db")
@@ -316,8 +318,40 @@ def _load_ais_daily_counts(con: sqlite3.Connection) -> tuple[list[datetime], np.
 
 
 def _country_entity_ids(con: sqlite3.Connection, iso2_list: tuple[str, ...]) -> list[str]:
+    """Resolve ISO alpha-2 codes to country entity_ids.
+
+    Resolves through the deterministic entity key first. ``canonical_name`` is a
+    DISPLAY name, not an identity — the 2026-09-23 country merge rewrote these
+    records (``SAUDI`` -> ``Saudi Arabia``, ``US`` -> ``United States``) and every
+    name-matching lookup here began returning zero rows, which this function then
+    reported as "no countries found" rather than as an error. ``entity_id`` is
+    ``sha256("country:<ISO alpha-2>")`` and is stable across renames.
+
+    The name/metadata matching below is retained as a fallback for stores that
+    predate the merge.
+    """
     if not iso2_list:
         return []
+
+    resolved: list[str] = []
+    seen: set[str] = set()
+    for code in iso2_list:
+        key = resolve_country_key(code)
+        if key is None:
+            continue
+        eid = entity_id_from_key("country", key)
+        if eid in seen:
+            continue
+        row = con.execute(
+            "SELECT entity_id FROM entities WHERE entity_id=? AND entity_type='country'",
+            (eid,),
+        ).fetchone()
+        if row:
+            seen.add(eid)
+            resolved.append(row[0])
+    if resolved:
+        return resolved
+
     names: list[str] = []
     for code in iso2_list:
         names.append(code)
