@@ -71,19 +71,27 @@ written to catch.
       **94,441 country observations join the main component.**
       This clears the spec's >=90% acceptance bar (step 4.1).
 
-- [ ] **0.1-0.3** F-04 leakage patch — **BLOCKS everything downstream**
+- [x] **0.1-0.2** F-04 leakage patch — `until` now required, 13 call sites fixed,
+      integration test + AST guard added. LESSONS.md F-14. Full suite 10,997 passed
+      (2 pre-existing TestLiveNetwork env failures).
+- [ ] **0.3** Retrain after the patch — owner decision, see below
 - [ ] **2.1** Route `gdelt.py` through the resolver
 - [ ] **2.2** Delete the three partial private maps in `agent/tools/`
-- [ ] **3.1-3.3** `scripts/migrate_country_entities.py` + apply
+- [x] **3.1-3.3** `scripts/migrate_country_entities.py` written and **APPLIED to the
+      live DB** 2026-09-23. Backup: `.tirra_pipeline/pipeline.db.bak_20260923_premerge`.
+      entities 6172->6110, countries 279->217, observations 375,657 unchanged,
+      links 17,581 unchanged, 0 self-links, 0 duplicate collisions.
+      **Connectivity 0/215 -> 214/215 (100%) within 2 hops.**
+      Deviation from INV-3: the 16 CAMEO regional blocs were NOT retyped. A new
+      entity type would be the F-12 schema-drift class. They are left inert and
+      flagged for a separate decision. `EU` also left alone (not an ISO country).
 - [ ] **4.1** `tests/test_graph_connectivity.py` acceptance test
 - [ ] **5.x** Quarantine `repair_topic_links` (1,657 edges, conf 0.6)
 - [ ] **6.x** Fresh, leak-audited, BH-corrected IC measurement
 
 ## Decisions Needed From Owner
 
-1. **Apply the country merge to the live 150 MB `pipeline.db`?** The dry run is
-   clean and the script will back up first, but this mutates accumulated
-   collection state. Not done unattended.
+1. ~~Apply the country merge~~ — **DONE 2026-09-23**, verified, backup retained.
 2. **Retrain?** Per CLAUDE.md §13 this is ask-first. It is unavoidable if any IC
    number is to mean anything: current weights were learned with leaked topology
    AND with the GNN outside the return path. Re-scoring them cannot separate
