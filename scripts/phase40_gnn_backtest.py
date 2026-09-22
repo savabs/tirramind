@@ -38,7 +38,7 @@ from __future__ import annotations
 import bisect
 import logging
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -90,9 +90,7 @@ def _fold_forward_return_targets(
     if _FWD_LOOKUP is not None and _ENTITY_IDS is not None:
         from agent.quant.forward_returns import forward_return_vector_for_date
 
-        return forward_return_vector_for_date(
-            _FWD_LOOKUP, _ENTITY_IDS, dates[split]
-        )
+        return forward_return_vector_for_date(_FWD_LOOKUP, _ENTITY_IDS, dates[split])
     return returns[split : split + _WF_TEST_SIZE].mean(axis=0)
 
 
@@ -131,9 +129,7 @@ def _instrument_embedding_matrix(
     import torch
 
     N = len(instrument_names)
-    fold_ts = (
-        datetime.fromisoformat(fold_date).replace(tzinfo=timezone.utc).timestamp()
-    )
+    fold_ts = datetime.fromisoformat(fold_date).replace(tzinfo=UTC).timestamp()
     since_ts = fold_ts - GNN_LOOKBACK_DAYS * 86400
     end_idx = bisect.bisect_left(obs_ts, fold_ts)
     start_idx = bisect.bisect_left(obs_ts, since_ts)
@@ -141,9 +137,7 @@ def _instrument_embedding_matrix(
     if not obs_window:
         return np.full((N, 1), np.nan)
 
-    data, local_map, _ = trainer._graph_builder.build_from_cached(
-        id_map, links, observations=obs_window
-    )
+    data, local_map, _ = trainer._graph_builder.build_from_cached(id_map, links, until=fold_ts, observations=obs_window)
     model = trainer._model
     _align_graph_features_to_model(data, model)
     model.eval()
@@ -219,16 +213,12 @@ class GNNEmbeddingNormStrategy:
         w = self._cache[fold_date]
         return np.tile(w, (test_length, 1))
 
-    def _compute_weights(
-        self, fold_date: str, instrument_names: list[str]
-    ) -> np.ndarray:
+    def _compute_weights(self, fold_date: str, instrument_names: list[str]) -> np.ndarray:
         import torch
 
         N = len(instrument_names)
 
-        fold_ts = (
-            datetime.fromisoformat(fold_date).replace(tzinfo=timezone.utc).timestamp()
-        )
+        fold_ts = datetime.fromisoformat(fold_date).replace(tzinfo=UTC).timestamp()
 
         # Slice observations: [fold_ts - lookback, fold_ts)
         # Node features are recency-weighted so old obs add noise not signal.
@@ -242,7 +232,7 @@ class GNNEmbeddingNormStrategy:
             return np.ones(N) / N
 
         data, id_map, _ = self._trainer._graph_builder.build_from_cached(
-            self._id_map, self._links, observations=obs_window
+            self._id_map, self._links, until=fold_ts, observations=obs_window
         )
 
         model = self._trainer._model
@@ -253,9 +243,7 @@ class GNNEmbeddingNormStrategy:
 
         inst_emb = embeddings.get("instrument")
         if inst_emb is None or inst_emb.shape[0] == 0:
-            log.warning(
-                "No instrument embeddings at %s — using equal weights", fold_date
-            )
+            log.warning("No instrument embeddings at %s — using equal weights", fold_date)
             return np.ones(N) / N
 
         # Map entity_ids → embedding norms
@@ -351,16 +339,12 @@ class GNNReturnHeadStrategy:
         w = self._cache[fold_date]
         return np.tile(w, (test_length, 1))
 
-    def _compute_weights(
-        self, fold_date: str, instrument_names: list[str]
-    ) -> np.ndarray:
+    def _compute_weights(self, fold_date: str, instrument_names: list[str]) -> np.ndarray:
         import torch
 
         N = len(instrument_names)
 
-        fold_ts = (
-            datetime.fromisoformat(fold_date).replace(tzinfo=timezone.utc).timestamp()
-        )
+        fold_ts = datetime.fromisoformat(fold_date).replace(tzinfo=UTC).timestamp()
 
         since_ts = fold_ts - GNN_LOOKBACK_DAYS * 86400
         end_idx = bisect.bisect_left(self._obs_ts, fold_ts)
@@ -371,7 +355,7 @@ class GNNReturnHeadStrategy:
             return np.ones(N) / N
 
         data, id_map, _ = self._trainer._graph_builder.build_from_cached(
-            self._id_map, self._links, observations=obs_window
+            self._id_map, self._links, until=fold_ts, observations=obs_window
         )
 
         model = self._trainer._model
@@ -465,13 +449,9 @@ class GNNConcatReturnHeadStrategy:
         w = self._cache[fold_date]
         return np.tile(w, (test_length, 1))
 
-    def _compute_weights(
-        self, fold_date: str, instrument_names: list[str]
-    ) -> np.ndarray:
+    def _compute_weights(self, fold_date: str, instrument_names: list[str]) -> np.ndarray:
         n = len(instrument_names)
-        fold_ts = (
-            datetime.fromisoformat(fold_date).replace(tzinfo=timezone.utc).timestamp()
-        )
+        fold_ts = datetime.fromisoformat(fold_date).replace(tzinfo=UTC).timestamp()
         since_ts = fold_ts - GNN_LOOKBACK_DAYS * 86400
         end_idx = bisect.bisect_left(self._obs_ts, fold_ts)
         start_idx = bisect.bisect_left(self._obs_ts, since_ts)
@@ -480,14 +460,12 @@ class GNNConcatReturnHeadStrategy:
             return np.ones(n) / n
 
         data, id_map, _ = self._trainer._graph_builder.build_from_cached(
-            self._id_map, self._links, observations=obs_window
+            self._id_map, self._links, until=fold_ts, observations=obs_window
         )
         model = self._trainer._model
         _align_graph_features_to_model(data, model)
         model.eval()
-        scores = _instrument_return_scores(
-            model, data, id_map, instrument_names, use_concat=True
-        )
+        scores = _instrument_return_scores(model, data, id_map, instrument_names, use_concat=True)
         if scores.ndim == 1 and np.allclose(scores, 1.0 / max(n, 1)):
             return scores
         return _softmax(scores, self._temperature)
@@ -566,15 +544,11 @@ class GNNFoldPurgedRankerStrategy:
         train_len = len(train_returns)
         fold_date = self._dates[train_len]
         if fold_date not in self._cache:
-            self._cache[fold_date] = self._compute_weights(
-                train_len, fold_date, instrument_names
-            )
+            self._cache[fold_date] = self._compute_weights(train_len, fold_date, instrument_names)
         w = self._cache[fold_date]
         return np.tile(w, (test_length, 1))
 
-    def _compute_weights(
-        self, train_len: int, fold_date: str, instrument_names: list[str]
-    ) -> np.ndarray:
+    def _compute_weights(self, train_len: int, fold_date: str, instrument_names: list[str]) -> np.ndarray:
         from sklearn.linear_model import Ridge
         from sklearn.preprocessing import StandardScaler
 
@@ -625,9 +599,7 @@ class GNNFoldPurgedRankerStrategy:
         scores = np.zeros(N, dtype=np.float64)
         for i in range(N):
             if np.all(np.isfinite(test_emb[i])):
-                scores[i] = float(
-                    ridge.predict(scaler.transform(test_emb[i].reshape(1, -1)))[0]
-                )
+                scores[i] = float(ridge.predict(scaler.transform(test_emb[i].reshape(1, -1)))[0])
         if not np.any(np.isfinite(scores)):
             return np.ones(N) / N
 
@@ -712,16 +684,12 @@ class GNNValueHeadStrategy:
         w = self._cache[fold_date]
         return np.tile(w, (test_length, 1))
 
-    def _compute_weights(
-        self, fold_date: str, instrument_names: list[str]
-    ) -> np.ndarray:
+    def _compute_weights(self, fold_date: str, instrument_names: list[str]) -> np.ndarray:
         import torch
 
         N = len(instrument_names)
 
-        fold_ts = (
-            datetime.fromisoformat(fold_date).replace(tzinfo=timezone.utc).timestamp()
-        )
+        fold_ts = datetime.fromisoformat(fold_date).replace(tzinfo=UTC).timestamp()
 
         since_ts = fold_ts - GNN_LOOKBACK_DAYS * 86400
         end_idx = bisect.bisect_left(self._obs_ts, fold_ts)
@@ -732,7 +700,7 @@ class GNNValueHeadStrategy:
             return np.ones(N) / N
 
         data, id_map, _ = self._trainer._graph_builder.build_from_cached(
-            self._id_map, self._links, observations=obs_window
+            self._id_map, self._links, until=fold_ts, observations=obs_window
         )
 
         model = self._trainer._model
@@ -812,6 +780,7 @@ def _instrument_return_scores(
     Otherwise falls back to ``return_pred_head(embeddings)``.
     """
     import torch
+
     from agent.models.gnn.graph_builder import xsnorm_price_feats
 
     n = len(instrument_names)
@@ -825,9 +794,7 @@ def _instrument_return_scores(
 
         ret_preds: torch.Tensor | None = None
         use_concat_path = (
-            use_concat
-            and getattr(model, "return_concat_head", None) is not None
-            and hasattr(data, "instrument")
+            use_concat and getattr(model, "return_concat_head", None) is not None and hasattr(data, "instrument")
         )
         if use_concat_path:
             raw_x = data["instrument"].x
@@ -867,7 +834,7 @@ def _load_instrument_returns_fast(
     import json
     import sqlite3
     from collections import defaultdict
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     conn = sqlite3.connect(db_path)
     placeholders = ",".join("?" for _ in entity_ids)
@@ -887,7 +854,7 @@ def _load_instrument_returns_fast(
         lr = val.get("log_return")
         if lr is None:
             continue
-        dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+        dt = datetime.fromtimestamp(ts, tz=UTC)
         day = dt.strftime("%Y-%m-%d")
         data[day][eid] = float(lr)
 
@@ -946,9 +913,7 @@ def _compute_ic_diagnostic(
         # ICIR > 0.40 = has real signal; ICIR > 0.0 = directionally consistent.
         # Unlike t-stat, ICIR is fold-count-independent and comparable across runs.
         icir = mean_ic / (std_ic + 1e-8)
-        t_stat = (
-            (mean_ic / (std_ic / np.sqrt(n))) if (n > 0 and std_ic > 1e-10) else 0.0
-        )
+        t_stat = (mean_ic / (std_ic / np.sqrt(n))) if (n > 0 and std_ic > 1e-10) else 0.0
         results[strat.name] = {
             "fold_ics": ics.tolist(),
             "mean_ic": mean_ic,
@@ -969,7 +934,9 @@ def _print_ic_report(
     print("\n" + "=" * 60)
     print("IC DIAGNOSTIC  — Spearman(score_i, 21d_fwd_return_i) per fold")
     print("=" * 60)
-    hdr = f"  {'Strategy':<22} {'Mean IC':>9} {'Std IC':>8} {'ICIR':>7} {'t-stat':>8} {'p25':>7} {'p75':>7} {'Folds':>6}"
+    hdr = (
+        f"  {'Strategy':<22} {'Mean IC':>9} {'Std IC':>8} {'ICIR':>7} {'t-stat':>8} {'p25':>7} {'p75':>7} {'Folds':>6}"
+    )
     print(hdr)
     print("  " + "-" * (len(hdr) - 2))
     for name, r in ic_results.items():
@@ -986,13 +953,8 @@ def _print_ic_report(
     print("    ICIR > 0.40   →  real signal (Grinold & Kahn 2000)")
     print("    ICIR > 0.20   →  directional signal, worth investigating")
     print("    ICIR < 0.10   →  noise")
-    print(
-        f"    Phase 41b exit: mean IC > {IC_EXIT_MEAN} AND t > {IC_EXIT_TSTAT} "
-        f"(primary gate: {primary_strategy})"
-    )
-    print(
-        f"    SUSPECT if |mean IC| > {IC_SUSPECT_MEAN} without purged WF (LESSONS F-04)"
-    )
+    print(f"    Phase 41b exit: mean IC > {IC_EXIT_MEAN} AND t > {IC_EXIT_TSTAT} (primary gate: {primary_strategy})")
+    print(f"    SUSPECT if |mean IC| > {IC_SUSPECT_MEAN} without purged WF (LESSONS F-04)")
     for name, r in ic_results.items():
         mic, t = r["mean_ic"], r["t_stat"]
         if abs(mic) < 0.02 or abs(t) < 1.0:
@@ -1005,14 +967,9 @@ def _print_ic_report(
         print(f"\n  {name}: {verdict}")
         print(f"    IC={mic:+.4f} ({direction}), t={t:+.2f}, n={r['n_folds']} folds")
         if abs(mic) > IC_SUSPECT_MEAN and name != "GNN-PurgedRanker":
-            print(
-                f"    ⚠ |IC| > {IC_SUSPECT_MEAN}: likely in-sample head bias — "
-                "compare to GNN-PurgedRanker"
-            )
+            print(f"    ⚠ |IC| > {IC_SUSPECT_MEAN}: likely in-sample head bias — compare to GNN-PurgedRanker")
         if mic > IC_EXIT_MEAN and t > IC_EXIT_TSTAT:
-            print(
-                f"    ✓ Phase 41b gate: mean IC > {IC_EXIT_MEAN}, t > {IC_EXIT_TSTAT}"
-            )
+            print(f"    ✓ Phase 41b gate: mean IC > {IC_EXIT_MEAN}, t > {IC_EXIT_TSTAT}")
     if primary_strategy in ic_results:
         pr = ic_results[primary_strategy]
         mic, t = pr["mean_ic"], pr["t_stat"]
@@ -1029,10 +986,10 @@ def _print_result(name: str, m: dict, n_folds: int) -> None:
     print("-" * 50)
     print(f"  Folds:         {n_folds}")
     total_ret = m.get("total_return", 0)
-    print(f"  Total Return:  {total_ret:.4f}  ({total_ret*100:.2f}%)")
+    print(f"  Total Return:  {total_ret:.4f}  ({total_ret * 100:.2f}%)")
     print(f"  Sharpe Ratio:  {m.get('sharpe', float('nan')):.3f}")
     max_dd = m.get("max_drawdown", 0)
-    print(f"  Max Drawdown:  {max_dd:.4f}  ({max_dd*100:.2f}%)")
+    print(f"  Max Drawdown:  {max_dd:.4f}  ({max_dd * 100:.2f}%)")
     print(f"  Win Rate:      {m.get('win_rate', 0):.3f}")
     print(f"  Volatility:    {m.get('volatility', 0):.4f}")
     print(f"  Max Weight:    {m.get('max_weight', 0):.4f}")
@@ -1044,14 +1001,18 @@ def _print_result(name: str, m: dict, n_folds: int) -> None:
 def main() -> None:
     import argparse
     import json as _json_bt
-    import torch
+
     from agent.models.gnn.trainer import Trainer
     from agent.pipeline.store import PipelineStore
     from agent.quant.backtest import EqualWeightStrategy, MultiAssetWalkForward
 
     ap = argparse.ArgumentParser(description="Phase 40 GNN walk-forward backtest")
-    ap.add_argument("--model-path", type=Path, default=MODEL_PATH,
-                    help="Path to full GNN checkpoint (.pt from save_model — graph metadata)")
+    ap.add_argument(
+        "--model-path",
+        type=Path,
+        default=MODEL_PATH,
+        help="Path to full GNN checkpoint (.pt from save_model — graph metadata)",
+    )
     ap.add_argument(
         "--weights-from-epoch",
         type=Path,
@@ -1059,10 +1020,8 @@ def main() -> None:
         help="Optional per-epoch file (e.g. epoch_052.pt): load architecture from "
         "--model-path, then replace weights with this file (same run as the full ckpt).",
     )
-    ap.add_argument("--db-path", type=Path, default=DB_PATH,
-                    help="Path to pipeline.db")
-    ap.add_argument("--out", type=Path, default=None,
-                    help="Write IC summary JSON so auto_improve.py can read it")
+    ap.add_argument("--db-path", type=Path, default=DB_PATH, help="Path to pipeline.db")
+    ap.add_argument("--out", type=Path, default=None, help="Write IC summary JSON so auto_improve.py can read it")
     ap.add_argument(
         "--ridge-alpha",
         type=float,
@@ -1140,12 +1099,9 @@ def main() -> None:
             dates = dates[-400:]
             returns = returns[-400:]
             T = len(dates)
-        print(
-            f"  SMOKE MODE: last {T}d, min_train={_min_train}, "
-            f"test={_test_size}, step={_step_size}"
-        )
+        print(f"  SMOKE MODE: last {T}d, min_train={_min_train}, test={_test_size}, step={_step_size}")
 
-    if T < _min_train + _test_size:
+    if _min_train + _test_size > T:
         print(f"ERROR: Not enough data ({T} rows). Need ≥ {_min_train + _test_size}.")
         sys.exit(1)
 
@@ -1161,15 +1117,11 @@ def main() -> None:
             _model_path,
             _weights_epoch,
         )
-        trainer = Trainer.load_model_with_epoch_weights(
-            _model_path, _weights_epoch, store
-        )
+        trainer = Trainer.load_model_with_epoch_weights(_model_path, _weights_epoch, store)
     else:
         log.info("Loading GNN model from %s", _model_path)
         trainer = Trainer.load_model(_model_path, store)
-    log.info(
-        "Model loaded: %d params", sum(p.numel() for p in trainer.model.parameters())
-    )
+    log.info("Model loaded: %d params", sum(p.numel() for p in trainer.model.parameters()))
 
     # ── 5. Pre-fetch graph structure once (fast per-fold builds) ──────────────
     log.info("Pre-fetching graph structure (entities + links + all observations)…")
@@ -1208,23 +1160,13 @@ def main() -> None:
         )
     strategies.extend(
         [
-            GNNEmbeddingNormStrategy(
-                trainer, dates, prefetched_obs, full_id_map, full_links
-            ),
-            GNNValueHeadStrategy(
-                trainer, dates, prefetched_obs, full_id_map, full_links
-            ),
-            GNNReturnHeadStrategy(
-                trainer, dates, prefetched_obs, full_id_map, full_links
-            ),
+            GNNEmbeddingNormStrategy(trainer, dates, prefetched_obs, full_id_map, full_links),
+            GNNValueHeadStrategy(trainer, dates, prefetched_obs, full_id_map, full_links),
+            GNNReturnHeadStrategy(trainer, dates, prefetched_obs, full_id_map, full_links),
         ]
     )
     if getattr(trainer.model, "return_concat_head", None) is not None:
-        strategies.append(
-            GNNConcatReturnHeadStrategy(
-                trainer, dates, prefetched_obs, full_id_map, full_links
-            )
-        )
+        strategies.append(GNNConcatReturnHeadStrategy(trainer, dates, prefetched_obs, full_id_map, full_links))
 
     # ── 7. Walk-forward runner ────────────────────────────────────────────────
     runner = MultiAssetWalkForward(
@@ -1264,9 +1206,7 @@ def main() -> None:
     _gnn_desc = _model_path.name
     if _weights_epoch is not None:
         _gnn_desc = f"{_weights_epoch.name}  (metadata: {_model_path.name})"
-    print(
-        f"  GNN:         {_gnn_desc}  ({sum(p.numel() for p in trainer.model.parameters()):,} params)"
-    )
+    print(f"  GNN:         {_gnn_desc}  ({sum(p.numel() for p in trainer.model.parameters()):,} params)")
 
     for strat in strategies:
         r = results[strat.name]
@@ -1284,8 +1224,8 @@ def main() -> None:
         delta_dd = m.get("max_drawdown", 0) - baseline.get("max_drawdown", 0)
         print(f"\n  {strat.name} vs EqualWeight:")
         print(f"    ΔSharpe:      {delta_sharpe:+.3f}")
-        print(f"    ΔTotal Ret:   {delta_ret:+.4f}  ({delta_ret*100:+.2f}%)")
-        print(f"    ΔMax Drawdown:{delta_dd:+.4f}  ({delta_dd*100:+.2f}%)")
+        print(f"    ΔTotal Ret:   {delta_ret:+.4f}  ({delta_ret * 100:+.2f}%)")
+        print(f"    ΔMax Drawdown:{delta_dd:+.4f}  ({delta_dd * 100:+.2f}%)")
 
     print()
 
@@ -1323,15 +1263,11 @@ def main() -> None:
             "mean_ic": float(_pg["mean_ic"]),
             "t_stat": float(_pg["t_stat"]),
             "n_folds": int(_pg["n_folds"]),
-            "passed": bool(
-                _pg["mean_ic"] > IC_EXIT_MEAN and _pg["t_stat"] > IC_EXIT_TSTAT
-            ),
+            "passed": bool(_pg["mean_ic"] > IC_EXIT_MEAN and _pg["t_stat"] > IC_EXIT_TSTAT),
         }
     if _weights_epoch is not None:
         _ic_summary["weights_from_epoch"] = str(_weights_epoch)
-        _ic_summary["note"] = (
-            "IC used weights from weights_from_epoch; graph/config from model_path."
-        )
+        _ic_summary["note"] = "IC used weights from weights_from_epoch; graph/config from model_path."
     _best_strat = max(ic_results, key=lambda k: ic_results[k]["mean_ic"], default=None)
     if _best_strat:
         _ic_summary["best"] = {"strategy": _best_strat, **ic_results[_best_strat]}
@@ -1381,9 +1317,7 @@ def main() -> None:
 
         _ckpt_dir = _weights_epoch.parent if _weights_epoch else _model_path.parent
         _audit = audit_artifacts(_model_path, _weights_epoch, _ckpt_dir)
-        _emb = embedding_health(
-            trainer, dates, prefetched_obs, full_id_map, full_links
-        )
+        _emb = embedding_health(trainer, dates, prefetched_obs, full_id_map, full_links)
         print_audit(_audit)
         print_embedding_health(_emb)
         print_recommendations(_audit, _emb, None, args.smoke)

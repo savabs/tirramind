@@ -878,3 +878,141 @@ def test_reference_time_ignores_corrupt_future_timestamps():
     ref = _reference_time(obs)
     assert ref <= now + 86400
     assert abs(ref - (now - 3600)) < 5.0
+
+
+class TestBuildFromCachedIsTimeGated:
+    """F-04, the integration half: the leak was in the CALL, not the filter.
+
+    `_links_as_of` was correct and unit-tested from the day F-04 was recorded.
+    `build_from_cached()` wired it in correctly too. The leak survived anyway,
+    because `until` carried a default of `None` and all 13 production call sites
+    omitted it — so every historical snapshot back to 2023 silently received the
+    complete present-day link set, on the path the TRAINING loop uses.
+
+    Unit-testing the pure function could never have caught that. These tests
+    exercise the call.
+    """
+
+    @staticmethod
+    def _two_linked_companies(store: PipelineStore) -> tuple[str, str]:
+        a = _reg(store, "company", "aaa", "Company A")
+        b = _reg(store, "company", "bbb", "Company B")
+        _obs(store, a, "t", "instrument_daily", 1_000.0)
+        _obs(store, b, "t", "instrument_daily", 1_000.0)
+        return a, b
+
+    @staticmethod
+    def _link_at(store: PipelineStore, a: str, b: str, created_at: float) -> None:
+        """Insert a link with an explicit created_at (link_entities stamps now())."""
+        conn = store._get_conn()
+        conn.execute(
+            "INSERT OR IGNORE INTO entity_links "
+            "(entity_id_a, entity_id_b, link_type, confidence, source, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (a, b, "works_for", 1.0, "test", created_at),
+        )
+        conn.commit()
+
+    @staticmethod
+    def _edge_count(data) -> int:
+        return sum(int(data[et].edge_index.shape[1]) for et in data.edge_types if hasattr(data[et], "edge_index"))
+
+    def test_omitting_until_is_a_typeerror(self, store: PipelineStore) -> None:
+        """The whole bug in one assertion: silence is no longer possible.
+
+        `until` must stay required. If someone gives it a default again, this
+        test fails and tells them why.
+        """
+        a, b = self._two_linked_companies(store)
+        self._link_at(store, a, b, created_at=500.0)
+        builder = GraphBuilder(store)
+        id_map, _, links = builder.prepare_static()
+
+        with pytest.raises(TypeError, match="until"):
+            builder.build_from_cached(id_map, links)  # type: ignore[call-arg]
+
+    def test_future_link_is_absent_from_a_historical_snapshot(self, store: PipelineStore) -> None:
+        """A link created after the window end must not appear in the graph."""
+        a, b = self._two_linked_companies(store)
+        self._link_at(store, a, b, created_at=9_000.0)  # discovered later
+
+        builder = GraphBuilder(store)
+        id_map, _, links = builder.prepare_static()
+        obs = builder.prefetch_observations()
+
+        past, _, _ = builder.build_from_cached(id_map, links, until=2_000.0, observations=obs)
+        assert self._edge_count(past) == 0, (
+            "a link created at t=9000 leaked into a snapshot ending at t=2000 — "
+            "this is F-04 and it inflates every backtest that uses this path"
+        )
+
+    def test_same_link_is_present_once_the_window_reaches_it(self, store: PipelineStore) -> None:
+        """Guard the guard: time-gating must not simply drop every edge."""
+        a, b = self._two_linked_companies(store)
+        self._link_at(store, a, b, created_at=9_000.0)
+
+        builder = GraphBuilder(store)
+        id_map, _, links = builder.prepare_static()
+        obs = builder.prefetch_observations()
+
+        later, _, _ = builder.build_from_cached(id_map, links, until=10_000.0, observations=obs)
+        assert self._edge_count(later) > 0, "time-gating dropped a link it should keep"
+
+    def test_until_none_is_explicit_live_mode(self, store: PipelineStore) -> None:
+        """`until=None` still means live/current — but now it must be written out."""
+        a, b = self._two_linked_companies(store)
+        self._link_at(store, a, b, created_at=9_000.0)
+
+        builder = GraphBuilder(store)
+        id_map, _, links = builder.prepare_static()
+        obs = builder.prefetch_observations()
+
+        live, _, _ = builder.build_from_cached(id_map, links, until=None, observations=obs)
+        assert self._edge_count(live) > 0
+
+
+class TestEveryCallSitePassesUntil:
+    """Static guard: no production caller may omit `until` again.
+
+    The TypeError above protects runtime, but only on a path someone executes.
+    This walks the source so a newly-added leaking call site fails CI even if
+    no test happens to run it.
+    """
+
+    def test_no_production_call_site_omits_until(self) -> None:
+        import ast
+        import glob
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parents[1]
+        offenders: list[str] = []
+
+        for pattern in ("agent/**/*.py", "scripts/**/*.py"):
+            for path in glob.glob(str(root / pattern), recursive=True):
+                src = Path(path).read_text()
+                if "build_from_cached(" not in src:
+                    continue
+                try:
+                    tree = ast.parse(src)
+                except SyntaxError:  # pragma: no cover - not our concern here
+                    continue
+                for node in ast.walk(tree):
+                    if not isinstance(node, ast.Call):
+                        continue
+                    func = node.func
+                    name = getattr(func, "attr", None) or getattr(func, "id", None)
+                    if name != "build_from_cached":
+                        continue
+                    if any(kw.arg == "until" for kw in node.keywords):
+                        continue
+                    # **kwargs forwarding is opaque to us; treat as intentional
+                    if any(kw.arg is None for kw in node.keywords):
+                        continue
+                    rel = Path(path).relative_to(root)
+                    offenders.append(f"{rel}:{node.lineno}")
+
+        assert not offenders, (
+            "build_from_cached() called without an explicit `until` at: "
+            f"{offenders}. Pass the window/fold end timestamp, or an explicit "
+            "`until=None` for live/current. See LESSONS.md F-04."
+        )

@@ -21,7 +21,7 @@ import bisect
 import json
 import logging
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -31,18 +31,7 @@ _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT))
 sys.path.insert(0, str(_ROOT / "scripts"))
 
-from agent.models.gnn.graph_builder import (  # noqa: E402
-    BASE_FEAT_DIM,
-    GraphBuilder,
-    PRICE_FEAT_DIM,
-)
-from agent.pipeline.store import PipelineStore  # noqa: E402
-from agent.quant.forward_returns import (  # noqa: E402
-    build_forward_return_lookup,
-    forward_return_vector_for_date,
-)
 from phase40_gnn_backtest import (  # noqa: E402
-    GNNFoldPurgedRankerStrategy,
     GNN_LOOKBACK_DAYS,
     IC_EXIT_MEAN,
     IC_EXIT_TSTAT,
@@ -50,10 +39,22 @@ from phase40_gnn_backtest import (  # noqa: E402
     STEP_SIZE,
     TEMPERATURE,
     TEST_SIZE,
+    GNNFoldPurgedRankerStrategy,
     _align_graph_features_to_model,
     _load_instrument_returns_fast,
     _print_ic_report,
     _softmax,
+)
+
+from agent.models.gnn.graph_builder import (  # noqa: E402
+    BASE_FEAT_DIM,
+    PRICE_FEAT_DIM,
+    GraphBuilder,
+)
+from agent.pipeline.store import PipelineStore  # noqa: E402
+from agent.quant.forward_returns import (  # noqa: E402
+    build_forward_return_lookup,
+    forward_return_vector_for_date,
 )
 
 log = logging.getLogger("honest_baseline")
@@ -64,17 +65,13 @@ CKPT_DEFAULT = Path(".tirra_pipeline/gnn_model_phase50.pt")
 
 
 def _date_to_ts(iso_date: str) -> float:
-    return (
-        datetime.fromisoformat(iso_date).replace(tzinfo=timezone.utc).timestamp()
-    )
+    return datetime.fromisoformat(iso_date).replace(tzinfo=UTC).timestamp()
 
 
 # ── Label distribution audit ─────────────────────────────────────────────────
 
 
-def audit_label_distribution(
-    prefetched: list[dict], *, horizon_days: int = 21
-) -> dict[str, float]:
+def audit_label_distribution(prefetched: list[dict], *, horizon_days: int = 21) -> dict[str, float]:
     """Log forward-return and daily-return distributions (H1 diagnostic)."""
     fwd = build_forward_return_lookup(prefetched, horizon_days=horizon_days)
     fwd_vals = np.array(list(fwd.values()), dtype=np.float64)
@@ -154,9 +151,7 @@ def _instrument_price_feature_matrix(
         return _FEAT_CACHE[cache_key]
 
     N = len(instrument_names)
-    fold_ts = (
-        datetime.fromisoformat(fold_date).replace(tzinfo=timezone.utc).timestamp()
-    )
+    fold_ts = datetime.fromisoformat(fold_date).replace(tzinfo=UTC).timestamp()
     since_ts = fold_ts - GNN_LOOKBACK_DAYS * 86400
     end_idx = bisect.bisect_left(obs_ts, fold_ts)
     start_idx = bisect.bisect_left(obs_ts, since_ts)
@@ -164,9 +159,7 @@ def _instrument_price_feature_matrix(
     if not obs_window:
         return np.full((N, PRICE_FEAT_DIM), np.nan)
 
-    data, local_map, _ = graph_builder.build_from_cached(
-        id_map, links, observations=obs_window
-    )
+    data, local_map, _ = graph_builder.build_from_cached(id_map, links, until=fold_ts, observations=obs_window)
     if model is not None:
         _align_graph_features_to_model(data, model)
 
@@ -202,9 +195,7 @@ def _warm_ic_caches(
     while split + TEST_SIZE <= len(dates):
         train_returns = returns[:split]
         for strat in strategies:
-            strat.generate_weights(
-                train_returns, TEST_SIZE, instrument_names
-            )
+            strat.generate_weights(train_returns, TEST_SIZE, instrument_names)
         n_folds += 1
         if n_folds % 5 == 0:
             log.info("  IC cache warm: %d folds (%s)", n_folds, dates[split])
@@ -262,14 +253,10 @@ class RawPricePurgedRankerStrategy:
         train_len = len(train_returns)
         fold_date = self._dates[train_len]
         if fold_date not in self._cache:
-            self._cache[fold_date] = self._compute_weights(
-                train_len, fold_date, instrument_names
-            )
+            self._cache[fold_date] = self._compute_weights(train_len, fold_date, instrument_names)
         return np.tile(self._cache[fold_date], (test_length, 1))
 
-    def _compute_weights(
-        self, train_len: int, fold_date: str, instrument_names: list[str]
-    ) -> np.ndarray:
+    def _compute_weights(self, train_len: int, fold_date: str, instrument_names: list[str]) -> np.ndarray:
         from sklearn.linear_model import Ridge
         from sklearn.preprocessing import StandardScaler
 
@@ -288,9 +275,7 @@ class RawPricePurgedRankerStrategy:
                 self._obs,
                 self._obs_ts,
             )
-            y = forward_return_vector_for_date(
-                self._fwd_lookup, instrument_names, self._dates[split]
-            )
+            y = forward_return_vector_for_date(self._fwd_lookup, instrument_names, self._dates[split])
             for i in range(N):
                 if np.all(np.isfinite(feats[i])) and np.isfinite(y[i]):
                     X_rows.append(feats[i])
@@ -322,9 +307,7 @@ class RawPricePurgedRankerStrategy:
         scores = np.zeros(N, dtype=np.float64)
         for i in range(N):
             if np.all(np.isfinite(test_feats[i])):
-                scores[i] = float(
-                    ridge.predict(scaler.transform(test_feats[i].reshape(1, -1)))[0]
-                )
+                scores[i] = float(ridge.predict(scaler.transform(test_feats[i].reshape(1, -1)))[0])
         if not np.any(np.isfinite(scores)):
             return np.ones(N) / N
         s = scores.std()
@@ -348,9 +331,7 @@ class RawPricePurgedRankerStrategy:
                 continue
             w = self._cache[fold_date]
             if instrument_names and self._fwd_lookup:
-                fwd_ret = forward_return_vector_for_date(
-                    self._fwd_lookup, instrument_names, fold_date
-                )
+                fwd_ret = forward_return_vector_for_date(self._fwd_lookup, instrument_names, fold_date)
             else:
                 fwd_ret = returns[split : split + TEST_SIZE].mean(axis=0)
             valid = np.isfinite(w) & np.isfinite(fwd_ret)
@@ -411,9 +392,7 @@ class MomentumRankStrategy:
             self._cache[fold_date] = self._compute_weights(fold_date, instrument_names)
         return np.tile(self._cache[fold_date], (test_length, 1))
 
-    def _compute_weights(
-        self, fold_date: str, instrument_names: list[str]
-    ) -> np.ndarray:
+    def _compute_weights(self, fold_date: str, instrument_names: list[str]) -> np.ndarray:
         N = len(instrument_names)
         feats = _instrument_price_feature_matrix(
             self._gb,
@@ -451,9 +430,7 @@ class MomentumRankStrategy:
                 continue
             w = self._cache[fold_date]
             if instrument_names and self._fwd_lookup:
-                fwd_ret = forward_return_vector_for_date(
-                    self._fwd_lookup, instrument_names, fold_date
-                )
+                fwd_ret = forward_return_vector_for_date(self._fwd_lookup, instrument_names, fold_date)
             else:
                 fwd_ret = returns[split : split + TEST_SIZE].mean(axis=0)
             valid = np.isfinite(w) & np.isfinite(fwd_ret)
@@ -484,9 +461,7 @@ def _compute_ic_diagnostic_aligned(
         mean_ic = float(ics.mean()) if n > 0 else 0.0
         std_ic = float(ics.std(ddof=1)) if n > 1 else 0.0
         icir = mean_ic / (std_ic + 1e-8)
-        t_stat = (
-            (mean_ic / (std_ic / np.sqrt(n))) if (n > 0 and std_ic > 1e-10) else 0.0
-        )
+        t_stat = (mean_ic / (std_ic / np.sqrt(n))) if (n > 0 and std_ic > 1e-10) else 0.0
         results[strat.name] = {
             "fold_ics": ics.tolist(),
             "mean_ic": mean_ic,
@@ -602,7 +577,7 @@ def main() -> None:
             T = len(dates)
         print(f"  SMOKE MODE: last {T}d, min_train={min_train}")
 
-    if T < min_train + TEST_SIZE:
+    if min_train + TEST_SIZE > T:
         print(f"ERROR: Not enough data ({T} rows)")
         sys.exit(1)
 
@@ -649,9 +624,7 @@ def main() -> None:
                 args.checkpoint,
                 args.weights_from_epoch,
             )
-            trainer = Trainer.load_model_with_epoch_weights(
-                args.checkpoint, args.weights_from_epoch, store
-            )
+            trainer = Trainer.load_model_with_epoch_weights(args.checkpoint, args.weights_from_epoch, store)
         else:
             log.info("Loading GNN checkpoint: %s", args.checkpoint)
             trainer = Trainer.load_model(args.checkpoint, store)
@@ -672,9 +645,7 @@ def main() -> None:
     if args.ic_only:
         print("  IC-ONLY mode (skipping portfolio backtest; feature cache enabled)")
         log.info("Warming IC caches for %d strategies…", len(strategies))
-        _warm_ic_caches(
-            strategies, dates, returns, entity_ids, min_train=min_train
-        )
+        _warm_ic_caches(strategies, dates, returns, entity_ids, min_train=min_train)
     else:
         runner = MultiAssetWalkForward(
             min_train=min_train,
@@ -688,9 +659,7 @@ def main() -> None:
             log.info("Running full backtest: %s", strat.name)
             runner.run(strat, returns)
 
-    ic_results = _compute_ic_diagnostic_aligned(
-        strategies, dates, returns, entity_ids
-    )
+    ic_results = _compute_ic_diagnostic_aligned(strategies, dates, returns, entity_ids)
     _print_ic_report(ic_results, primary_strategy="RawPrice-PurgedRanker")
     print("  (IC targets: canonical 21d forward simple return — matches trainer)")
 
@@ -715,10 +684,7 @@ def main() -> None:
         "db_path": str(args.db_path),
         "smoke": args.smoke,
         "label_distribution": label_stats,
-        "ic_results": {
-            k: {kk: vv for kk, vv in v.items() if kk != "fold_ics"}
-            for k, v in ic_results.items()
-        },
+        "ic_results": {k: {kk: vv for kk, vv in v.items() if kk != "fold_ics"} for k, v in ic_results.items()},
         "fold_ics": {k: v["fold_ics"] for k, v in ic_results.items()},
         "recommendation": recommendation,
         "gate_threshold": {"mean_ic": IC_EXIT_MEAN, "t_stat": IC_EXIT_TSTAT},

@@ -1002,8 +1002,8 @@ class GraphBuilder:
         id_map: IDMap,
         links: list[dict[str, Any]],
         *,
+        until: float | None,
         since: float | None = None,
-        until: float | None = None,
         observations: list[dict[str, Any]] | None = None,
         enrichment: dict[str, dict[str, float]] | None = None,
         use_signatures: bool = False,
@@ -1017,6 +1017,17 @@ class GraphBuilder:
 
         If ``observations`` is provided, skips the DB observation query too
         (caller is responsible for time-filtering).
+
+        ``until`` is REQUIRED and has no default — pass the window/fold end
+        timestamp, or an explicit ``None`` to mean "live/current". It gates
+        link future-blindness (F-04).
+
+        It is required rather than defaulted because a default of ``None`` is
+        what caused the leak: ``_links_as_of`` was wired in correctly here, but
+        every one of the 13 call sites omitted the argument and silently got the
+        complete present-day link set inside 2023 windows. Omitting it is now a
+        ``TypeError`` instead of a silent contamination. Do not give this a
+        default again.
         """
         if observations is None:
             observations = self._store.query_all_observations(since=since, until=until)

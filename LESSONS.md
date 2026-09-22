@@ -665,3 +665,48 @@ job's real peak, measured — not assumed.
 - **Hurst Exponent Estimation:** The quadratic log-increment regression method (slope of $\log E[(\Delta\log\sigma)^2]$ vs $\log(\Delta t)$ equals $2H$) provides a robust, differentiable estimator suitable for feature engineering pipelines.
 
 **Test Results:** 3/3 pass. Cover rBergomi parameter clamping, Hurst exponent estimation on simulated rough paths, and ATM skew power-law signature validation.
+
+---
+
+### F-14 · A Correct Fix Nobody Called — `build_from_cached(until=None)`
+*Discovered: 2026-09-23, graph connectivity audit*
+
+**Symptom:** F-04 was recorded, fixed, and unit-tested. The test suite was green.
+Every historical training snapshot and every Phase-40 IC strategy was still
+receiving the **complete present-day link set** — including 2023 windows seeing
+2026 edges.
+
+**Root Cause:** The fix was real but unreachable. `_links_as_of()` was correct.
+`build()` passed `until` correctly. `build_from_cached()` — the path the
+*training loop* and *all IC strategies* actually use — also called
+`_links_as_of(links, until)` correctly. But `until` carried a default of `None`,
+which the function documents as "live/current, everything in scope", and **all
+13 production call sites omitted the argument.**
+
+The leak therefore lived in the *call*, not the filter. The existing regression
+tests (`TestLinkFutureBlindness`) exercised `_links_as_of` as a pure function,
+where it had always behaved correctly. No test asserted that any caller passed a
+real `until`. A green suite proved only that the unused half worked.
+
+**Fix:** `until` is now a **required keyword-only parameter** with no default —
+omitting it raises `TypeError` instead of silently leaking. All 13 call sites
+pass their window/fold end (`_t_end_snap`, `last_t_end`, `t_end`, `fold_ts`,
+`as_of_ts`). `until=None` remains legal but must now be written out explicitly.
+
+Two new test classes in `tests/test_graph_builder.py`:
+`TestBuildFromCachedIsTimeGated` (integration — a link created at t=9000 must be
+absent from a snapshot ending at t=2000, and present once the window reaches it)
+and `TestEveryCallSitePassesUntil` (an AST walk over `agent/` and `scripts/`
+that fails CI if any new call site omits `until`).
+
+**Prevention Rule:**
+- **A safety parameter must never have a permissive default.** If forgetting an
+  argument silently disables the guard, the guard is opt-in and will be off.
+  Make it required; let the `TypeError` do the enforcement.
+- **Unit-testing a guard function is not testing the guard.** For anything that
+  prevents leakage, at least one test must assert on the *integration* — the
+  real caller, the real build, the real absence of the future edge.
+- When a fuckup is recorded as fixed, verify a caller actually reaches the fix:
+  `grep` every call site before closing it out. F-04 sat "fixed" for four weeks
+  while fully open on the only path that mattered.
+- Never restore a default to `GraphBuilder.build_from_cached(until=...)`.

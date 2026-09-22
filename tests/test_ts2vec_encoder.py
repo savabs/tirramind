@@ -294,7 +294,9 @@ class TestGraphBuilderPassThrough:
         gb = GraphBuilder(populated_store)
         id_map, entities, links = gb.prepare_static()
         obs = populated_store.query_all_observations()
-        data, _, _ = gb.build_from_cached(id_map, links, observations=obs, ts2vec_embeddings=embs, ts2vec_dim=8)
+        data, _, _ = gb.build_from_cached(
+            id_map, links, until=None, observations=obs, ts2vec_embeddings=embs, ts2vec_dim=8
+        )
 
         for ntype in data.node_types:
             if ntype in embs and data[ntype].x.size(0) > 0:

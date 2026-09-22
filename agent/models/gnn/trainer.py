@@ -2182,6 +2182,7 @@ class Trainer:
             _snap_data, _, _ = self._graph_builder.build_from_cached(
                 cached_id_map,
                 cached_links,
+                until=_t_end_snap,
                 observations=all_prefetched_obs[:_cutoff_snap],
                 use_signatures=cfg.use_signatures,
                 ts2vec_embeddings=self._ts2vec_embeddings,
@@ -2977,6 +2978,7 @@ class Trainer:
             fisher_data, fisher_id_map, _ = self._graph_builder.build_from_cached(
                 cached_id_map,
                 cached_links,
+                until=last_t_end,
                 observations=fisher_window_obs,
                 use_signatures=cfg.use_signatures,
                 ts2vec_embeddings=self._ts2vec_embeddings,
@@ -4005,6 +4007,7 @@ def evaluate(
             data, id_map, events = graph_builder.build_from_cached(
                 cached_id_map,
                 cached_links,
+                until=t_end,
                 observations=window_obs,
                 ts2vec_embeddings=getattr(model, "_ts2vec_embeddings", None),
                 ts2vec_dim=cfg.ts2vec_dim if cfg.use_ts2vec else 0,
