@@ -120,3 +120,6 @@ tirramind_v1/
 # SQLite WAL sidecars — the .db files are ignored, these were not.
 *.db-shm
 *.db-wal
+
+# local agent worktrees (never commit)
+.claude/worktrees/
