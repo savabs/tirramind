@@ -123,3 +123,6 @@ tirramind_v1/
 
 # local agent worktrees (never commit)
 .claude/worktrees/
+
+# local WIP snapshots (never commit)
+.wip-snapshots/
