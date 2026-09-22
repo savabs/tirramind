@@ -710,3 +710,61 @@ that fails CI if any new call site omits `until`).
   `grep` every call site before closing it out. F-04 sat "fixed" for four weeks
   while fully open on the only path that mattered.
 - Never restore a default to `GraphBuilder.build_from_cached(until=...)`.
+
+---
+
+### F-15 · The Anti-Collapse Loss Was Causing the Collapse
+*Discovered: 2026-09-23, post-merge smoke run*
+
+**Symptom:** `[GRAD_FLOW]` reported `contrastive: 0.2291` **byte-identical across
+every epoch**, with `eff_rank=1.2` out of 64 embedding dimensions and
+`pred_std == raw_std` exactly — the GNN branch of the concat head contributing
+nothing. The F-01 diversity gate passed the whole time (`emb_std=1.86 > 0.1`).
+
+**Root Cause:** TWO defects in `_cross_sectional_ranking_contrastive` (CSRC) —
+the loss written specifically to PREVENT F-01 embedding collapse.
+
+1. **The deciles were not return deciles.**
+   ```python
+   sorted_tgt, _ = tgt.sort()          # permutation discarded into `_`
+   ...
+   decile_assignments[start:end] = d   # partitions the ORIGINAL row order
+   ```
+   `sorted_tgt` was computed and then never used anywhere in the function. The
+   deciles were assigned by *position in the observation list*, so "same return
+   decile" actually meant "arrived near each other in the batch". The loss was
+   training the backbone to cluster embeddings by arrival order — noise. This is
+   the F-01 condition (no true negatives) reintroduced by the very loss that
+   replaced the entity-identity contrastive to fix F-01.
+
+2. **The InfoNCE mask was applied before the exponential.**
+   ```python
+   pos_exp = (sim * pos_mask).exp()    # excluded cells -> exp(0) = 1
+   ```
+   Every excluded pair contributed a spurious `1.0` to both numerator and
+   denominator. Across a real cross-section (~89 instruments) that constant
+   dominated the genuine similarities, pinning the ratio — hence a loss that
+   never moved between epochs.
+
+**Fix:** scatter deciles through the sort permutation
+(`decile_assignments[sort_idx[start:end]] = d`), and mask after exponentiating
+(`(sim.exp() * mask).sum(...)`, with a row-max subtraction for stability that
+cancels in the ratio).
+
+**Prevention Rule:**
+- **A loss term whose value does not change between epochs is not converged, it
+  is disconnected.** Treat a constant loss as a P0 bug. Log every loss component
+  per epoch and diff them — identical to 4 decimal places is the tell.
+- **An unused sort result is a red flag.** `x, _ = t.sort()` followed by no use
+  of `x` means the ordering was computed and thrown away; whatever consumes the
+  "ranks" is almost certainly indexing the wrong axis. Lint for assigned-and-
+  never-read tensors in loss code.
+- **Mask after `exp`, never before.** `(x * mask).exp()` silently turns every
+  masked cell into 1. The correct form is `x.exp() * mask`.
+- **Judge collapse by effective rank, not by standard deviation.** `emb_std` is
+  a magnitude and passes happily at 6403 while `eff_rank` is 1.2 of 64. The
+  F-01 gate (`std > 0.1`) cannot detect directional collapse; it must be
+  replaced or supplemented with an `eff_rank` threshold.
+- **Every loss component needs a test that pins its semantics against an
+  independent reference implementation.** CSRC shipped with none, which is why
+  two defects survived in the one function most responsible for model quality.

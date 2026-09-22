@@ -1731,9 +1731,14 @@ class Trainer:
         tgt = return_targets[finite_mask]
         n_valid = emb.size(0)
 
-        # Assign deciles (1 = lowest return, n_deciles = highest)
-        # Use quantile-based binning for robustness to outliers
-        sorted_tgt, _ = tgt.sort()
+        # Assign deciles by RETURN RANK (0 = lowest return, n_deciles-1 = highest).
+        # `sort_idx` maps rank position -> original row, and MUST be used to
+        # scatter the assignments. Slicing `decile_assignments[start:end]`
+        # directly partitions the rows by ARRIVAL ORDER instead, which makes the
+        # "return decile" meaningless and leaves the contrastive loss with no
+        # true negatives — the exact F-01 condition this loss exists to prevent.
+        # See LESSONS.md F-15.
+        sort_idx = tgt.argsort()
         decile_size = max(2, n_valid // n_deciles)
         n_actual_deciles = min(n_deciles, n_valid // decile_size)
         if n_actual_deciles < 2:
@@ -1743,7 +1748,7 @@ class Trainer:
         for d in range(n_actual_deciles):
             start = d * decile_size
             end = start + decile_size if d < n_actual_deciles - 1 else n_valid
-            decile_assignments[start:end] = d
+            decile_assignments[sort_idx[start:end]] = d
 
         # L2-normalise embeddings for cosine similarity
         emb_n = F.normalize(emb, p=2, dim=-1)
@@ -1775,10 +1780,20 @@ class Trainer:
             return torch.tensor(0.0, device=self._device)
 
         # InfoNCE: -log( sum(exp(pos)) / (sum(exp(pos)) + sum(exp(neg))) )
-        pos_exp = (sim * pos_mask).exp()
-        neg_exp = (sim * neg_mask).exp()
-        pos_sum = pos_exp.sum(dim=1)
-        neg_sum = neg_exp.sum(dim=1)
+        #
+        # Mask AFTER the exponential. `(sim * mask).exp()` zeroes the excluded
+        # cells and then exponentiates, sending every one of them to
+        # exp(0) = 1 — so each excluded pair contributes a spurious unit to BOTH
+        # sums. Across a real cross-section (~89 instruments) that constant
+        # dominates the genuine similarities and pins the loss to a fixed value
+        # regardless of the embeddings. See LESSONS.md F-15.
+        #
+        # The row-max subtraction is for numerical stability only; it cancels in
+        # the pos/(pos+neg) ratio.
+        sim_max = sim.max(dim=1, keepdim=True).values.detach()
+        sim_exp = (sim - sim_max).exp()
+        pos_sum = (sim_exp * pos_mask).sum(dim=1)
+        neg_sum = (sim_exp * neg_mask).sum(dim=1)
 
         # Only compute loss for rows that have both positive and negative pairs
         valid_rows = (pos_sum > 0) & (neg_sum > 0)
