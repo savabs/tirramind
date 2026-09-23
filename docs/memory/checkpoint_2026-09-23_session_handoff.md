@@ -169,6 +169,11 @@ Workflow script: `~/.claude/projects/-Users-becmachlean-Projects-tirramind/ad1d8
 **Recommended:** land `collectors` + `het-tgn` (both accepted) alone first, then
 triage the four rejections one at a time. Do not try to land all seven.
 
+**No full-suite number exists for the post-fix tree.** The run reached 93% and was killed when the session restarted, before printing its summary — so the only
+evidence about the tree is each agent's own scoped run plus the reviewers'
+objections. **Re-run `.venv/bin/python -m pytest -q -p no:randomly` (~17 min) and
+get a real count before trusting anything here.**
+
 ---
 
 ## 7. 🚨 The audit's own P2.2 migration is WRONG and would destroy data
