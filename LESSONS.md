@@ -768,3 +768,62 @@ cancels in the ratio).
 - **Every loss component needs a test that pins its semantics against an
   independent reference implementation.** CSRC shipped with none, which is why
   two defects survived in the one function most responsible for model quality.
+
+---
+
+### F-16 · A Transient 5xx Was Silently Truncating 72% of Every EDGAR Window
+
+**Symptom.** `form144` had 4,350 observations across 950 entities — 4 per
+entity — and looked like a low-volume source. It is not. EDGAR publishes
+roughly 110 Form 144 filings *per day*.
+
+**Discovery.** Attempting a historical backfill, a 3-day window
+(2026-03-18..2026-03-20) returned 99 rows. Queried directly, EDGAR reported
+**360 filings** for exactly that window. The collector had reported
+`success=True`.
+
+**Root cause — two independent defects stacked.**
+
+1. **`end_dt` was hardcoded to `date.today()`.** EDGAR full-text search returns
+   newest-first, so a larger `days_back` re-read the same recent page instead
+   of reaching further back. Backfill was not merely unused, it was
+   *inexpressible*: there was no parameter that could move the window. A
+   `_backfill=True` hatch existed and removed the day-count clamp, which made
+   the API look backfillable while the ceiling stayed put.
+
+2. **A transient 5xx ended pagination and returned the partial page as
+   success:**
+   ```python
+   if hasattr(exc, "response") and exc.response.status_code >= 500:
+       log.warning("SEC server error at offset %d, returning %d hits", ...)
+       break                      # <-- returns 100 of 360, success=True
+   ```
+   EDGAR answers 5xx intermittently under load. Re-requesting the same offset
+   seconds later succeeds — verified directly: `from=200` on the same window
+   returned a full page on retry.
+
+**Why it survived.** A truncated window and a quiet window are identical from
+the row count alone. Nothing compared collected hits against the `total` EDGAR
+itself reports in every response — the ground truth was in the payload the
+whole time and was never read.
+
+**Fix.** One shared paginator (`agent/tools/_sec_window.py`) for both SEC
+collectors: retry transient 5xx/429 at the *same* offset with backoff, and
+raise `EdgarTruncated` when collected < reported total. `end_date` is now an
+`execute()` parameter, clamped to today (a future end date is F-04's shape).
+Verified: the same window went 99 → 360.
+
+**Prevention Rule:**
+- **If an API tells you how many results exist, compare against it and fail
+  loudly on a shortfall.** `hits.total.value` was in every response. An
+  unverified page count is not data, it is a guess.
+- **Never `break` out of a retry loop on a transient status.** A retryable
+  error handled by returning early converts a 2-second delay into permanent
+  silent data loss. If you cannot retry, raise — never return partial as whole.
+- **A "backfill" flag that relaxes a clamp but not the ceiling is worse than no
+  flag**, because it advertises a capability that does not exist. Test that a
+  backfill path actually reaches data older than what you already hold.
+- **Suspiciously low volume from a high-volume public source is a bug report.**
+  4 filings per entity from SEC EDGAR should have been disbelieved on sight.
+  Sanity-check observed volume against the publisher's actual rate before
+  concluding a source is thin.

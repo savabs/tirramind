@@ -29,6 +29,7 @@ import defusedxml.ElementTree as ET
 import httpx
 
 from agent.data.cache import DataCache
+from agent.tools._sec_window import fetch_edgar_hits, resolve_end_date
 from agent.tools.base import Tool, ToolResult
 
 if TYPE_CHECKING:
@@ -110,6 +111,7 @@ class Form144Tool(Tool):
         ticker: str = "",
         min_cluster_size: int = 2,
         _backfill: bool = False,
+        end_date: str = "",
         **_: Any,
     ) -> ToolResult:
         if not _backfill:
@@ -117,7 +119,10 @@ class Form144Tool(Tool):
         min_cluster_size = max(2, min_cluster_size)
         ticker = ticker.strip().upper()
 
-        end_dt = date.today()
+        # ``end_date`` lets a backfill walk the window backwards; without it
+        # EDGAR's newest-first ordering means a longer days_back just re-reads
+        # the same recent page. See agent/tools/_sec_window.py.
+        end_dt = resolve_end_date(end_date)
         start_dt = end_dt - timedelta(days=days_back)
 
         try:
@@ -217,51 +222,15 @@ class Form144Tool(Tool):
                 log.debug("Cache hit for Form 144 search")
                 return cached
 
-        all_hits: list[dict[str, Any]] = []
-        page_from = 0
-        page_size = 100
-
         with httpx.Client(timeout=20, headers={"User-Agent": _USER_AGENT}) as client:
-            while True:
-                time.sleep(_SEC_REQUEST_DELAY)
-
-                params = {
-                    "forms": "144",
-                    "dateRange": "custom",
-                    "startdt": str(start_dt),
-                    "enddt": str(end_dt),
-                    "from": str(page_from),
-                    "size": str(page_size),
-                }
-
-                try:
-                    resp = client.get(_EFTS_BASE, params=params)
-                    resp.raise_for_status()
-                    result = resp.json()
-                except (httpx.HTTPStatusError, httpx.RequestError) as exc:
-                    if hasattr(exc, "response") and exc.response.status_code == 429:
-                        log.warning("SEC rate limit hit, backing off 2s")
-                        time.sleep(2)
-                        continue
-                    if hasattr(exc, "response") and exc.response.status_code >= 500:
-                        log.warning(
-                            "SEC server error at offset %d, returning %d hits collected",
-                            page_from,
-                            len(all_hits),
-                        )
-                        break  # Return what we have instead of failing
-                    raise
-
-                hits = result.get("hits", {}).get("hits", [])
-                if not hits:
-                    break
-
-                all_hits.extend(hits)
-                total = result.get("hits", {}).get("total", {}).get("value", 0)
-
-                page_from += page_size
-                if page_from >= total or page_from >= 500:
-                    break
+            all_hits = fetch_edgar_hits(
+                client,
+                _EFTS_BASE,
+                forms="144",
+                start_dt=start_dt,
+                end_dt=end_dt,
+                delay=_SEC_REQUEST_DELAY,
+            )
 
         if self._cache and all_hits:
             self._cache.put("form144_search", cache_params, all_hits)

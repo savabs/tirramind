@@ -11,11 +11,13 @@ live network tests.
 
 from __future__ import annotations
 
+import os
 from datetime import date, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from agent.tools._sec_window import EdgarTruncated
 from agent.tools.form144 import (
     Form144Tool,
     _classify_acquisition,
@@ -288,8 +290,39 @@ class TestEFTSFetch:
             ctx.get.return_value = mock_resp
             mock_client.return_value = ctx
             with patch("agent.tools.form144.time.sleep"):
-                tool._fetch_recent_144s(date(2026, 3, 1), date(2026, 3, 25))
-        # No hits → cache not called for put (only stores when all_hits non-empty)
+                hits = tool._fetch_recent_144s(date(2026, 3, 1), date(2026, 3, 25))
+
+        # The guard is `if self._cache and all_hits`. An empty result must NOT
+        # be cached — otherwise a transient empty day is pinned for the whole
+        # TTL. The original test asserted nothing here, so it passed whether or
+        # not the empty list was written.
+        assert hits == []
+        mock_cache.put.assert_not_called()
+
+    def test_cache_stores_nonempty_results(self):
+        """Companion to the above: a non-empty result IS written to the cache."""
+        mock_cache = MagicMock()
+        mock_cache.get.return_value = None
+        tool = Form144Tool(cache=mock_cache)
+
+        hit = _make_efts_hit("TEST", "John Doe")
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"hits": {"hits": [hit], "total": {"value": 1}}}
+
+        with patch("agent.tools.form144.httpx.Client") as mock_client:
+            ctx = MagicMock()
+            ctx.__enter__ = MagicMock(return_value=ctx)
+            ctx.__exit__ = MagicMock(return_value=False)
+            ctx.get.return_value = mock_resp
+            mock_client.return_value = ctx
+            with patch("agent.tools.form144.time.sleep"):
+                hits = tool._fetch_recent_144s(date(2026, 3, 1), date(2026, 3, 25))
+
+        assert hits == [hit]
+        mock_cache.put.assert_called_once()
+        assert mock_cache.put.call_args.args[0] == "form144_search"
+        assert mock_cache.put.call_args.args[2] == [hit]
 
     def test_429_retry(self):
         tool = Form144Tool()
@@ -323,8 +356,15 @@ class TestEFTSFetch:
                 result = tool._fetch_recent_144s(date(2026, 3, 1), date(2026, 3, 5))
         assert call_count[0] >= 2
 
-    def test_500_returns_partial_results(self):
-        """EFTS 500 error mid-pagination returns what we have so far."""
+    def test_persistent_500_raises_rather_than_returning_partial(self):
+        """A 5xx that will not clear must RAISE, not hand back a partial page.
+
+        This test previously asserted the opposite — it was named
+        ``test_500_returns_partial_results`` and asserted ``len(result) == 1``
+        against an EFTS response declaring ``total: 200``. It certified the
+        data loss: on a live 3-day window in March 2026 that behaviour returned
+        99 of 360 filings with ``success=True``, and form144 looked like a
+        4-observations-per-entity source for months. See LESSONS.md F-16."""
         tool = Form144Tool()
         import httpx as httpx_mod
 
@@ -353,8 +393,9 @@ class TestEFTSFetch:
             ctx.get.side_effect = side_effect
             mock_client.return_value = ctx
             with patch("agent.tools.form144.time.sleep"):
-                result = tool._fetch_recent_144s(date(2026, 3, 1), date(2026, 3, 5))
-        assert len(result) == 1  # Got partial results
+                with pytest.raises(EdgarTruncated):
+                    tool._fetch_recent_144s(date(2026, 3, 1), date(2026, 3, 5))
+        assert call_count[0] >= 3, "must retry the failing offset before giving up"
 
 
 # ─── XML Parser ──────────────────────────────────────────────────────
@@ -916,9 +957,17 @@ class TestIntegration:
 # ─── Live Network Tests ──────────────────────────────────────────────
 
 
+@pytest.mark.live
 class TestLiveNetwork:
+    """Real SEC EFTS calls.
+
+    Doubly gated: the `live` marker is what CI and the quality gate filter on
+    (`-m "not live and not slow"`), and TIRRA_LIVE_TESTS=1 is still required so
+    that an explicit `pytest -m live` does not hit the SEC by accident.
+    """
+
     @pytest.mark.skipif(
-        not __import__("os").environ.get("TIRRA_LIVE_TESTS", ""),
+        not os.environ.get("TIRRA_LIVE_TESTS", ""),
         reason="Live tests disabled (set TIRRA_LIVE_TESTS=1)",
     )
     def test_live_efts_search(self):
@@ -935,7 +984,7 @@ class TestLiveNetwork:
         assert "file_date" in src
 
     @pytest.mark.skipif(
-        not __import__("os").environ.get("TIRRA_LIVE_TESTS", ""),
+        not os.environ.get("TIRRA_LIVE_TESTS", ""),
         reason="Live tests disabled (set TIRRA_LIVE_TESTS=1)",
     )
     def test_live_full_scan(self):
