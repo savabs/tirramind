@@ -6,6 +6,7 @@ feature vectors to instrument nodes.
 """
 
 import pytest
+from fixture_time import T
 
 from agent.models.gnn.graph_builder import (
     BASE_FEAT_DIM,
@@ -32,7 +33,7 @@ def test_graph_builder_microstructure_integration(tmp_path):
 
     # Store enough daily bars for M9 micro (min 30 days)
     for day in range(40):
-        ts = 86400.0 * day
+        ts = T(86400.0 * day)
         close = 150.0 + 0.1 * day
         store.store_entity_observation(
             entity_id="AAPL",
@@ -48,7 +49,7 @@ def test_graph_builder_microstructure_integration(tmp_path):
     store.store_entity_observation(
         entity_id="MSFT",
         source_tool="test",
-        observed_at=1000.0,
+        observed_at=T(1000.0),
         observation_type="instrument_daily",
         value={"close": 300.0, "log_return": 0.0, "volume": 5000.0},
     )
@@ -90,7 +91,7 @@ def test_graph_builder_with_enrichment():
         store.store_entity_observation(
             entity_id="TEST",
             source_tool="test",
-            observed_at=1000.0,
+            observed_at=T(1000.0),
             observation_type="instrument_daily",
             value={"close": 100.0},
         )

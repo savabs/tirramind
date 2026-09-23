@@ -15,6 +15,7 @@ import logging
 import time
 
 import pytest
+from fixture_time import T
 
 from agent.models.gnn.graph_builder import (
     _ENTITY_TYPE_TO_IDX,
@@ -236,8 +237,8 @@ class TestGraphBuildWithNewTypes:
     def test_build_with_domain_entities(self, store):
         d1 = _reg(store, "domain", "example.com", "example.com")
         d2 = _reg(store, "domain", "test.io", "test.io")
-        _obs(store, d1, "cert_transparency", "cert_issued", 1000.0, {"issuer": "LE"})
-        _obs(store, d2, "dns_monitor", "dns_change", 1001.0, {"ttl": 300})
+        _obs(store, d1, "cert_transparency", "cert_issued", T(1000.0), {"issuer": "LE"})
+        _obs(store, d2, "dns_monitor", "dns_change", T(1001.0), {"ttl": 300})
 
         builder = GraphBuilder(store)
         data, id_map, events = builder.build()
@@ -248,7 +249,7 @@ class TestGraphBuildWithNewTypes:
 
     def test_build_with_protocol_entities(self, store):
         p1 = _reg(store, "protocol", "aave", "Aave")
-        _obs(store, p1, "defi_flows", "tvl_change", 2000.0, {"tvl_usd": 5e9})
+        _obs(store, p1, "defi_flows", "tvl_change", T(2000.0), {"tvl_usd": 5e9})
 
         builder = GraphBuilder(store)
         data, id_map, events = builder.build()
@@ -263,7 +264,7 @@ class TestGraphBuildWithNewTypes:
             t1,
             "wikipedia_pageviews",
             "pageview_spike",
-            3000.0,
+            T(3000.0),
             {"z_score": 4.5, "latest_views": 50000},
         )
 

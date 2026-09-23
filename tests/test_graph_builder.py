@@ -12,6 +12,7 @@ from __future__ import annotations
 import time
 
 import pytest
+from fixture_time import T
 
 from agent.models.gnn.graph_builder import (
     BASE_FEAT_DIM,
@@ -103,7 +104,7 @@ def _seed_graph(store: PipelineStore) -> dict:
         exxon,
         "insider_filings",
         "insider_trade",
-        1000.0,
+        T(1000.0),
         {"value": 500000, "direction": "sell"},
     )
     _obs(
@@ -111,7 +112,7 @@ def _seed_graph(store: PipelineStore) -> dict:
         exxon,
         "insider_filings",
         "insider_trade",
-        2000.0,
+        T(2000.0),
         {"value": 200000, "direction": "buy"},
     )
     _obs(
@@ -119,16 +120,16 @@ def _seed_graph(store: PipelineStore) -> dict:
         us,
         "gdelt",
         "geopolitical_event",
-        1500.0,
+        T(1500.0),
         {"goldstein_scale": -5.0, "num_articles": 42},
     )
-    _obs(store, tanker, "ais_vessel", "port_call", 1800.0, {"port_name": "Novorossiysk"})
+    _obs(store, tanker, "ais_vessel", "port_call", T(1800.0), {"port_name": "Novorossiysk"})
     _obs(
         store,
         w1,
         "whale_alert",
         "btc_transfer",
-        900.0,
+        T(900.0),
         {"btc_amount": 100.0, "usd_amount": 5000000.0},
     )
 
@@ -231,25 +232,25 @@ class TestQueryAllObservations:
 
     def test_since_filter(self, store: PipelineStore):
         _seed_graph(store)
-        obs = store.query_all_observations(since=1500.0)
+        obs = store.query_all_observations(since=T(1500.0))
         assert len(obs) == 3  # t=1500, t=1800, t=2000
-        assert all(o["observed_at"] >= 1500.0 for o in obs)
+        assert all(o["observed_at"] >= T(1500.0) for o in obs)
 
     def test_until_filter(self, store: PipelineStore):
         _seed_graph(store)
-        obs = store.query_all_observations(until=1000.0)
+        obs = store.query_all_observations(until=T(1000.0))
         assert len(obs) == 2  # t=900, t=1000
-        assert all(o["observed_at"] <= 1000.0 for o in obs)
+        assert all(o["observed_at"] <= T(1000.0) for o in obs)
 
     def test_since_and_until(self, store: PipelineStore):
         _seed_graph(store)
-        obs = store.query_all_observations(since=1000.0, until=1800.0)
+        obs = store.query_all_observations(since=T(1000.0), until=T(1800.0))
         assert len(obs) == 3  # t=1000, t=1500, t=1800 (not 900 or 2000)
-        assert all(1000.0 <= o["observed_at"] <= 1800.0 for o in obs)
+        assert all(T(1000.0) <= o["observed_at"] <= T(1800.0) for o in obs)
 
     def test_value_deserialized(self, store: PipelineStore):
         _seed_graph(store)
-        obs = store.query_all_observations(since=900.0, until=900.0)
+        obs = store.query_all_observations(since=T(900.0), until=T(900.0))
         assert len(obs) == 1
         assert obs[0]["value"]["btc_amount"] == 100.0
 
@@ -766,7 +767,7 @@ class TestGraphBuilder:
     def test_since_filter(self, store: PipelineStore):
         _seed_graph(store)
         builder = GraphBuilder(store)
-        data, id_map, events = builder.build(since=1500.0)
+        data, id_map, events = builder.build(since=T(1500.0))
 
         # All entities still present (since only filters observations)
         assert id_map.num_nodes == 5
@@ -776,7 +777,7 @@ class TestGraphBuilder:
     def test_until_filter(self, store: PipelineStore):
         _seed_graph(store)
         builder = GraphBuilder(store)
-        data, id_map, events = builder.build(until=1000.0)
+        data, id_map, events = builder.build(until=T(1000.0))
         assert len(events) == 2
 
     def test_node_ids_attribute(self, store: PipelineStore):
@@ -897,8 +898,8 @@ class TestBuildFromCachedIsTimeGated:
     def _two_linked_companies(store: PipelineStore) -> tuple[str, str]:
         a = _reg(store, "company", "aaa", "Company A")
         b = _reg(store, "company", "bbb", "Company B")
-        _obs(store, a, "t", "instrument_daily", 1_000.0)
-        _obs(store, b, "t", "instrument_daily", 1_000.0)
+        _obs(store, a, "t", "instrument_daily", T(1_000.0))
+        _obs(store, b, "t", "instrument_daily", T(1_000.0))
         return a, b
 
     @staticmethod
@@ -924,7 +925,7 @@ class TestBuildFromCachedIsTimeGated:
         test fails and tells them why.
         """
         a, b = self._two_linked_companies(store)
-        self._link_at(store, a, b, created_at=500.0)
+        self._link_at(store, a, b, created_at=T(500.0))
         builder = GraphBuilder(store)
         id_map, _, links = builder.prepare_static()
 
@@ -934,13 +935,13 @@ class TestBuildFromCachedIsTimeGated:
     def test_future_link_is_absent_from_a_historical_snapshot(self, store: PipelineStore) -> None:
         """A link created after the window end must not appear in the graph."""
         a, b = self._two_linked_companies(store)
-        self._link_at(store, a, b, created_at=9_000.0)  # discovered later
+        self._link_at(store, a, b, created_at=T(9_000.0))  # discovered later
 
         builder = GraphBuilder(store)
         id_map, _, links = builder.prepare_static()
         obs = builder.prefetch_observations()
 
-        past, _, _ = builder.build_from_cached(id_map, links, until=2_000.0, observations=obs)
+        past, _, _ = builder.build_from_cached(id_map, links, until=T(2_000.0), observations=obs)
         assert self._edge_count(past) == 0, (
             "a link created at t=9000 leaked into a snapshot ending at t=2000 — "
             "this is F-04 and it inflates every backtest that uses this path"
@@ -949,19 +950,19 @@ class TestBuildFromCachedIsTimeGated:
     def test_same_link_is_present_once_the_window_reaches_it(self, store: PipelineStore) -> None:
         """Guard the guard: time-gating must not simply drop every edge."""
         a, b = self._two_linked_companies(store)
-        self._link_at(store, a, b, created_at=9_000.0)
+        self._link_at(store, a, b, created_at=T(9_000.0))
 
         builder = GraphBuilder(store)
         id_map, _, links = builder.prepare_static()
         obs = builder.prefetch_observations()
 
-        later, _, _ = builder.build_from_cached(id_map, links, until=10_000.0, observations=obs)
+        later, _, _ = builder.build_from_cached(id_map, links, until=T(10_000.0), observations=obs)
         assert self._edge_count(later) > 0, "time-gating dropped a link it should keep"
 
     def test_until_none_is_explicit_live_mode(self, store: PipelineStore) -> None:
         """`until=None` still means live/current — but now it must be written out."""
         a, b = self._two_linked_companies(store)
-        self._link_at(store, a, b, created_at=9_000.0)
+        self._link_at(store, a, b, created_at=T(9_000.0))
 
         builder = GraphBuilder(store)
         id_map, _, links = builder.prepare_static()
