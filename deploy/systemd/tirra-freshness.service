@@ -1,0 +1,125 @@
+[Unit]
+Description=TirraMind — collection freshness watchdog (fails when a source stops landing rows)
+After=local-fs.target
+
+[Service]
+Type=oneshot
+# Adjust User/WorkingDirectory to match your deployment.
+User=tirra
+WorkingDirectory=/opt/tirramind
+# /var/lib/tirramind, created and chowned to User= by systemd. It holds one
+# file: the row-count baseline this unit compares against (see ExecStopPost).
+StateDirectory=tirramind
+# No EnvironmentFile on purpose. scripts/check_freshness.py is stdlib-only,
+# needs no API key, and opens every database it inspects strictly read-only (a
+# file:...?mode=ro URI plus PRAGMA query_only). The one unit that runs
+# unattended every day and is *expected* to fail therefore holds no secret that
+# a failure report in the journal could leak.
+#
+# --db is passed explicitly because the script does not read TIRRA_PIPELINE_DB;
+# its default is a relative path that would resolve against WorkingDirectory.
+# For the unit whose whole job is noticing that something is wrong, the path it
+# inspects should not be inferred.
+#
+# --since-snapshot is what makes this a watchdog rather than a staleness clock.
+# check_freshness.py answers three different questions and only the third one
+# catches this project's signature bug on the day it happens:
+#   1. is the data stale?            now - MAX(observed_at)  vs CADENCE_DAYS
+#   2. has the collector written?    now - MAX(ingested_at)  vs COLLECTOR_SILENCE_DAYS
+#   3. did a run that reported success actually write anything?
+#      per-source COUNT(*) then vs now — and this one is gated behind
+#      --since-snapshot, so a unit that passes only --db never asks it.
+# Without question 3 the unit grades ages, and an age threshold is satisfied by
+# a single row: a collector that writes 1 row a day instead of thousands stays
+# green forever, which is exactly the partial-write failure this repo keeps
+# shipping. Questions 1 and 2 also need 3-4 days of silence before they fire;
+# question 3 fires the next morning.
+#
+# The baseline is yesterday's snapshot, so each run compares exactly one
+# collection cycle (18:00 run, 21:00 check).
+#
+# `find -mmin +180` is why the flag is conditional, and it guards two distinct
+# false alarms, both of which would produce an unclearable red:
+#   - no baseline at all (first run after install): find prints nothing, so the
+#     run is age-only and the baseline is written for tomorrow.
+#   - a baseline younger than 3 hours, i.e. `systemctl start tirra-freshness`
+#     run twice inside one collection cycle. Comparing the database against a
+#     copy of itself reports NO_NEW_ROWS for *every* source that has ever
+#     written a row. 180 minutes is short enough that the real 24h cadence
+#     always compares, and long enough that an operator poking the unit cannot
+#     manufacture an alarm.
+# Skipping the comparison degrades to the age-only check; it never reports green
+# on evidence it did not have.
+#
+# Note what question 3 does NOT flag: a collector that re-fetched an unchanged
+# record adds no row, but store_entity_observation refreshes ingested_at on a
+# duplicate, so it is not silent either. check_freshness.py only reports a
+# source when *both* clocks are flat — no new rows AND no write activity at all.
+# Measured read-only against the live DB on 2026-09-23: 31 of 34 sources wrote
+# on the most recent run; the 3 that did not (cert_transparency,
+# academic_preprints, cftc_derived) are genuinely dead collectors, already
+# 27-143 days silent. So this flag has no false-alarm population to draw on.
+ExecStart=/bin/sh -c 'find /var/lib/tirramind/freshness-snapshot.db -mmin +180 2>/dev/null | grep -q . && exec /opt/tirramind/.venv/bin/python scripts/check_freshness.py --db /opt/tirramind/.tirra_pipeline/pipeline.db --since-snapshot /var/lib/tirramind/freshness-snapshot.db; exec /opt/tirramind/.venv/bin/python scripts/check_freshness.py --db /opt/tirramind/.tirra_pipeline/pipeline.db'
+#
+# Tomorrow's baseline. ExecStopPost, not ExecStartPost, because systemd skips
+# ExecStartPost when ExecStart exited non-zero — and this unit is *designed* to
+# exit non-zero. With ExecStartPost the baseline would freeze on the first red
+# day and every later run would be graded against a stale copy.
+#
+# Reads through the same mode=ro + query_only pair the script uses, so the live
+# database is never opened writable by this unit; sqlite's backup API gives a
+# consistent copy without blocking the WAL writer. The copy is built at .tmp and
+# os.replace'd into position, so an interrupted run cannot leave a truncated
+# baseline that would read as "every source lost rows".
+#
+# The `-` prefix is load-bearing: without it a failed snapshot would mark the
+# unit `failed` and overwrite the check's own exit code, which is the alarm.
+# Costs one extra copy of pipeline.db (~165 MB at 2026-09-23) in /var/lib,
+# overwritten daily — budget for it alongside tirra-backup and the 85% disk
+# check.
+#
+# Unconditional: every run leaves a fresh baseline. The protection against a
+# too-young baseline lives on the reading side (`find -mmin +180` above), not
+# here — a baseline that is never refreshed would silently widen the comparison
+# window until NO_NEW_ROWS meant nothing.
+ExecStopPost=-/opt/tirramind/.venv/bin/python -c 'import os, sqlite3; snap = "/var/lib/tirramind/freshness-snapshot.db"; tmp = "/var/lib/tirramind/.freshness-snapshot.tmp"; src = sqlite3.connect("file:/opt/tirramind/.tirra_pipeline/pipeline.db?mode=ro", uri=True); src.execute("PRAGMA query_only = 1"); dst = sqlite3.connect(tmp); src.backup(dst); dst.close(); src.close(); os.replace(tmp, snap)'
+#
+# The exit code IS the alarm, and it is deliberately not swallowed:
+#   0  every source inside its threshold
+#   1  a BACKFILLABLE source is stale, silent, or wrote nothing — refill it
+#   2  a TIME-GATED source is stale, silent, or wrote nothing — UNRECOVERABLE
+#   3  the watchdog itself could not run (missing/unreadable DB)
+# 1, 2 and 3 all leave this unit in `failed`, so it shows up in
+# `systemctl list-units --failed` and in `systemctl status tirra-freshness`,
+# with the rendered per-source table sitting in `journalctl -u tirra-freshness`.
+# Do NOT add SuccessExitStatus=1 2 3 to "clean up" the status output: that turns
+# the alarm back into the exact silence this unit exists to break. Collection
+# stopped on 2026-08-27 and nobody noticed for 26 days because every signal
+# available was a green one.
+#
+# Not every finding pages. check_freshness.py's NON_PAGING_REASONS prints
+# FUTURE_DATED in the table and keeps it out of the exit code, because the live
+# DB holds 912 gov_contracts rows dated up to 2030-01-30 (verified read-only,
+# 2026-09-23) and a future timestamp never ages out — grading it would pin this
+# unit to `failed` forever regardless of collection health, and a unit that is
+# red every day is indistinguishable from one that is red for a reason. Those
+# rows are still a parsing bug worth repairing at the collector; the watchdog
+# reports them, it does not page on them.
+#
+# --allow-absent-sources is deliberately NOT passed. Against the live DB a
+# configured source with zero rows means a collector that has never landed
+# anything, which is a failure worth waking up to; all 34 configured sources
+# are present there, so the check costs nothing. The flag is for probe/fixture
+# databases, not production.
+#
+# If this box is unattended, wire a notifier with a drop-in rather than
+# softening the exit codes:
+#     OnFailure=tirra-freshness-alert.service
+# This repo ships no notifier unit; deploy/disk_space_check.sh does its own
+# optional SMTP and is the pattern to copy.
+#
+# Aggregates over the ~165MB pipeline.db: a handful of seconds on the small VM.
+# 300s is slack for a cold page cache and a contended disk, not a real budget.
+# The snapshot copy runs under TimeoutStopSec (90s default), which is ample for
+# a sequential ~165MB copy on local disk.
+TimeoutStartSec=300

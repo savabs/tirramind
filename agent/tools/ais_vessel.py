@@ -25,6 +25,25 @@ Ship types visible: ~5K tankers, ~9K cargo, ~660 passenger, ~850 fishing, ~1K tu
 
 API docs: https://www.digitraffic.fi/en/marine/
 Rate limits: None detected. Sub-second responses.
+
+What this tool measures vs. what it writes (2026-09-23)
+-------------------------------------------------------
+``mode="area_daily_snapshot"`` is the DAG's node, and it used to be able to
+report success while writing a fraction of what the feed published — the F-16
+shape.  Three separate leaks, all now closed and all now *counted*:
+
+  * the per-vessel positions were fetched and thrown away, then capped at 500
+    of ~1,185 (58% dropped, silently, on a feed that only ever serves "now");
+  * a single store failure aborted the rest of the batch while the tool still
+    returned ``success=True`` (9 rows of 500, green);
+  * ``observed_at`` was the fetch clock, not the AIS report time, so a third of
+    rows were mis-dated by up to 24h and every retry appended duplicates
+    instead of collapsing on ``OBSERVATION_UNIQUE_KEY``.
+
+The rule the fixes share: the returned ``data`` and the persisted row carry
+``vessels_persisted`` beside ``vessels_available``, and a shortfall returns
+``success=False``.  A count of what was seen upstream is not evidence that
+anything landed.
 """
 
 from __future__ import annotations
@@ -152,6 +171,24 @@ _TIMEOUT = 30  # bulk fetches are ~7MB
 _AREA_DAILY_OBS = "area_daily_activity"
 _AIS_PROXY_OBS = "baltic_activity_proxy"
 _DEFAULT_MP1_AREA = "full_baltic"
+# Runaway guard on per-vessel position rows written per snapshot run.  This is
+# NOT a sampling policy.  The whole Digitraffic locations feed carries ~1,200
+# live vessels (1,185 of them inside the full_baltic bbox on 2026-09-23), so at
+# one snapshot per day the real volume is ~440k rows/year and this ceiling never
+# bites; it exists only so an upstream shape change cannot write unbounded rows
+# in a single run.  The previous value (500) was borrowed from the *display*
+# limit of the old ``mode="area"`` wiring — whose own default was 50 — and it
+# silently dropped 58% of every run.  AIS is time-gated: those positions were
+# gone for good, which is F-16's shape (200 OK, green, partial rows).  If the
+# ceiling ever does bite, ``_rank_vessels_for_persist`` logs it and the snapshot
+# records ``vessels_available`` beside ``vessels_persisted``.
+_MAX_VESSEL_OBS_PER_RUN = 5000
+
+# The locations feed publishes its own ``dataUpdatedTime``.  Older than this and
+# the feed has stopped moving: the counts are then a replay of an earlier
+# snapshot rather than a measurement of today, and a zero from a frozen feed
+# must not enter the MP-1 series looking like a quiet Baltic.
+_MAX_FEED_AGE_SECONDS = 6 * 3600
 _MIN_LIVE_DAYS_FOR_PRIMARY_SERIES = 30
 
 # Cache TTLs (seconds)
@@ -259,6 +296,22 @@ def _ship_type_matches(code: int, filter_type: str) -> bool:
     return rng[0] <= code <= rng[1]
 
 
+def _report_timestamp(props: dict[str, Any]) -> float | None:
+    """The vessel's own AIS report time in epoch **seconds**, or None.
+
+    ``timestampExternal`` is epoch milliseconds — when the position was actually
+    reported.  ``timestamp`` in the same properties dict is the AIS
+    second-of-minute field (observed values 11, 49, 55…), *not* an epoch;
+    reading it as one would date every row to 1970 and the store's
+    ``[1990, now+1d]`` guard would reject the lot.  Returning None (rather than
+    a fabricated value) lets the caller fall back to fetch time explicitly.
+    """
+    raw = props.get("timestampExternal")
+    if not isinstance(raw, (int, float)) or isinstance(raw, bool) or raw <= 0:
+        return None
+    return float(raw) / 1000.0
+
+
 class AISVesselTool(Tool):
     name = "ais_vessel_tracking"
     description = (
@@ -342,6 +395,10 @@ class AISVesselTool(Tool):
     ) -> None:
         self._cache = cache
         self._store = pipeline_store
+        # ``dataUpdatedTime`` of the most recent locations payload this instance
+        # saw (cache hit included — a stale cache is a stale feed).  Read right
+        # after the fetch that sets it; see _count_area_vessels.
+        self._last_feed_updated_at: str | None = None
 
     # ------------------------------------------------------------------
     # Entity ID helper
@@ -397,22 +454,40 @@ class AISVesselTool(Tool):
     # ------------------------------------------------------------------
 
     def _fetch_locations(self) -> list[dict]:
-        """Fetch all vessel locations. Cached for 5 min."""
+        """Fetch all vessel locations. Cached for 5 min.
+
+        Side effect by design: records the feed's own ``dataUpdatedTime`` on the
+        instance, so a caller can tell "the Baltic is quiet" from "the feed
+        stopped publishing".  The whole payload is cached (not just
+        ``features``) precisely so a cache hit carries that timestamp too.
+        """
+        payload = self._fetch_locations_payload()
+        self._last_feed_updated_at = payload.get("dataUpdatedTime")
+        features = payload.get("features") or []
+        return features if isinstance(features, list) else []
+
+    def _fetch_locations_payload(self) -> dict:
+        """Raw locations response (``type``/``dataUpdatedTime``/``features``)."""
         cache_key = "ais_locations_bulk"
         if self._cache:
             cached = self._cache.get("ais_vessel", {"key": cache_key})
-            if cached is not None:
+            if isinstance(cached, dict):
                 return cached
+            if isinstance(cached, list):
+                # Entry written before the payload envelope was cached: usable
+                # as features, but it carries no dataUpdatedTime.
+                return {"features": cached}
 
         resp = self._get(f"{_BASE}/ais/v1/locations")
         resp.raise_for_status()
         data = resp.json()
-        features = data.get("features", [])
+        if not isinstance(data, dict):
+            data = {"features": data or []}
 
-        if self._cache and features:
-            self._cache.put("ais_vessel", {"key": cache_key}, features)
+        if self._cache and data.get("features"):
+            self._cache.put("ais_vessel", {"key": cache_key}, data)
 
-        return features
+        return data
 
     def _fetch_metadata(self) -> dict[int, dict]:
         """Fetch all vessel metadata, indexed by MMSI. Cached for 6hr."""
@@ -522,7 +597,29 @@ class AISVesselTool(Tool):
             label = _ship_type_label(st_code)
             if ship_type != "all" and not _ship_type_matches(st_code, ship_type):
                 continue
-            matched.append({"mmsi": mmsi, "ship_type": label, "ship_type_code": st_code})
+            props = f.get("properties", {})
+            matched.append(
+                {
+                    "mmsi": mmsi,
+                    "lat": lat,
+                    "lon": lon,
+                    # The AIS report time, not the fetch time: a third of the
+                    # feed's positions are over an hour old (p90 ~10h, max 24h),
+                    # so stamping them "now" mis-dates them by up to a day and
+                    # defeats OBSERVATION_UNIQUE_KEY, which includes observed_at
+                    # — a retry then appends duplicates instead of collapsing.
+                    "timestamp": _report_timestamp(props),
+                    "sog": props.get("sog"),
+                    "cog": props.get("cog"),
+                    "heading": props.get("heading"),
+                    "nav_status": _NAV_STATUS.get(props.get("navStat", 15), "unknown"),
+                    "name": vm.get("name", ""),
+                    "imo": vm.get("imo"),
+                    "destination": vm.get("destination", ""),
+                    "ship_type": label,
+                    "ship_type_code": st_code,
+                }
+            )
         type_counts: dict[str, int] = {}
         for m in matched:
             st = m.get("ship_type", "unknown")
@@ -534,6 +631,15 @@ class AISVesselTool(Tool):
             "vessel_count": len(matched),
             "tanker_count": tanker_count,
             "type_counts": type_counts,
+            # Evidence about the fetch itself, so a zero in this row can be read
+            # back as "no ships in the bbox" (feed_feature_count > 0) or "the
+            # fetch broke" (feed_feature_count == 0).
+            "feed_feature_count": len(features),
+            "feed_updated_at": self._last_feed_updated_at,
+            # Full per-vessel records, kept out of the persisted area row by
+            # the caller.  Discarding these is what starved the time-gated
+            # ``vessel_position`` series between 2026-06-09 and 2026-09-23.
+            "vessels": matched,
         }
 
     def _persist_area_observation(
@@ -630,6 +736,7 @@ class AISVesselTool(Tool):
                 "mmsi": mmsi,
                 "lat": lat,
                 "lon": lon,
+                "timestamp": _report_timestamp(props),  # AIS report time, not fetch time
                 "sog": props.get("sog"),  # speed over ground (knots)
                 "cog": props.get("cog"),  # course over ground (degrees)
                 "heading": props.get("heading"),
@@ -868,6 +975,48 @@ class AISVesselTool(Tool):
             },
         )
 
+    @staticmethod
+    def _rank_vessels_for_persist(
+        vessels: list[dict[str, Any]],
+        ship_type: str,
+    ) -> list[dict[str, Any]]:
+        """Order the requested ship type first, then cap at the per-run limit.
+
+        The cap is a runaway guard, not a sampling policy (see
+        ``_MAX_VESSEL_OBS_PER_RUN``); if it ever bites it is data loss on a
+        time-gated feed, so it is logged here and counted by the caller.  The
+        ordering keeps the signal ships (tankers for MP-1) ahead of the cut.
+        """
+        if ship_type and ship_type != "all":
+            preferred = [v for v in vessels if v.get("ship_type") == ship_type]
+            rest = [v for v in vessels if v.get("ship_type") != ship_type]
+            vessels = preferred + rest
+        if len(vessels) > _MAX_VESSEL_OBS_PER_RUN:
+            log.warning(
+                "AIS vessel persistence truncated: %d of %d vessels dropped by "
+                "_MAX_VESSEL_OBS_PER_RUN=%d (ship_type=%s). AIS is time-gated — "
+                "dropped positions cannot be refetched.",
+                len(vessels) - _MAX_VESSEL_OBS_PER_RUN,
+                len(vessels),
+                _MAX_VESSEL_OBS_PER_RUN,
+                ship_type,
+            )
+        return vessels[:_MAX_VESSEL_OBS_PER_RUN]
+
+    @staticmethod
+    def _feed_age_seconds(updated_at: Any) -> float | None:
+        """Seconds since the locations feed last published, None if unknown."""
+        if not updated_at:
+            return None
+        try:
+            ts = datetime.fromisoformat(str(updated_at).replace("Z", "+00:00"))
+        except ValueError:
+            log.warning("AIS locations feed: unparseable dataUpdatedTime %r", updated_at)
+            return None
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=UTC)
+        return datetime.now(UTC).timestamp() - ts.timestamp()
+
     def _mode_area_daily_snapshot(self, **kw: Any) -> ToolResult:
         """Store one daily Baltic area activity row for ghost-chain z-scores."""
         area_name = (kw.get("area_name") or kw.get("area") or _DEFAULT_MP1_AREA).strip().lower()
@@ -884,23 +1033,114 @@ class AISVesselTool(Tool):
         except ValueError as exc:
             return ToolResult(success=False, output=str(exc))
 
+        # Per-vessel records travel alongside the counts but must never land in
+        # the area row's JSON value — ``series_count`` and the counts the MP-1
+        # consumers read keep their pre-fix meaning.
+        vessels = counts.pop("vessels", [])
+        feed_features = counts.get("feed_feature_count", len(vessels))
+
+        # A zero that means "the fetch broke" must never be written as a zero
+        # that means "no ships": it would enter the ghost-chain z-score series
+        # as a real measurement.  An empty feature list from this endpoint is
+        # not a quiet Baltic — the feed always carries ~1,200 vessels.
+        if not feed_features:
+            return ToolResult(
+                success=False,
+                output=(
+                    f"AIS daily snapshot ABORTED: locations feed returned 0 features "
+                    f"({area_name}, {day}) — refusing to write a fabricated zero."
+                ),
+            )
+
+        feed_age = self._feed_age_seconds(counts.get("feed_updated_at"))
+        if counts.get("feed_updated_at") is None:
+            log.warning("AIS locations feed carried no dataUpdatedTime — staleness unchecked")
+
+        ranked = self._rank_vessels_for_persist(vessels, ship_type)
+
+        # The moat: AIS positions are time-gated — the API serves only "now", so
+        # a day not written here is a day gone for good.  Persist FIRST, then
+        # write the area row carrying the receipt, so the stored row records how
+        # many positions actually landed and not merely how many were seen.
+        receipt = {
+            "received": len(ranked),
+            "unique": 0,
+            "positions": 0,
+            "failed": len(ranked),
+            "skipped": 0,
+            "fetch_clock": 0,
+        }
+        persist_error: str | None = None
+        try:
+            receipt = self._persist_entities(ranked)
+        except Exception as exc:  # a store-level failure, not a per-vessel one
+            persist_error = f"{type(exc).__name__}: {exc}"
+            log.exception("Vessel entity persistence failed in daily snapshot")
+
         metric_count = counts["tanker_count"] if ship_type == "tanker" else counts["vessel_count"]
         value = {
             **counts,
             "metric": "baltic_area_live",
             "series_count": metric_count,
             "observed_day": day,
+            # Row-count evidence: collected-vs-available, in the row itself.
+            "vessels_available": len(vessels),
+            "vessels_persisted": receipt["positions"],
+            "vessels_truncated": len(vessels) - len(ranked),
+            "vessels_failed": receipt["failed"],
+            "vessels_without_report_time": receipt["fetch_clock"],
         }
         observed_at = datetime.fromisoformat(day + "T12:00:00+00:00").replace(tzinfo=UTC).timestamp()
+        area_error: str | None = None
         try:
             self._persist_area_observation(area_name, observed_at, value, _AREA_DAILY_OBS)
-        except Exception:
-            log.exception("Area daily snapshot persistence failed (non-fatal)")
+        except Exception as exc:
+            area_error = f"{type(exc).__name__}: {exc}"
+            log.exception("Area daily snapshot persistence failed")
 
         lines = [
             f"AIS daily snapshot: {area_name} | {counts['tanker_count']} tankers | "
             f"{counts['vessel_count']} total vessels ({day})",
+            f"vessel positions: {receipt['positions']} written / {len(vessels)} available"
+            + (f", {len(vessels) - len(ranked)} truncated" if len(vessels) > len(ranked) else "")
+            + (f", {receipt['skipped']} skipped" if receipt["skipped"] else ""),
         ]
+
+        # Anything below this line is the difference between a green node and an
+        # honest one.  Partial writes report success=False; the rows already
+        # written stay written, and the DAG's retry re-writes them into the same
+        # idempotency key (observed_at now comes from the AIS report time).
+        problems: list[str] = []
+        if area_error:
+            problems.append(f"area_daily_activity row NOT written: {area_error}")
+        if persist_error:
+            problems.append(f"vessel persistence aborted after {receipt['positions']}/{len(ranked)}: {persist_error}")
+        elif receipt["failed"]:
+            problems.append(f"{receipt['failed']} of {receipt['unique']} vessel writes failed")
+        if len(vessels) > len(ranked):
+            # The cap is a runaway guard set at ~4x live volume; if it fires,
+            # the feed changed shape and positions AIS can never serve again
+            # were dropped.  A warning in a log file is not a signal — the node
+            # itself has to go red.
+            problems.append(
+                f"{len(vessels) - len(ranked)} of {len(vessels)} positions dropped by "
+                f"_MAX_VESSEL_OBS_PER_RUN={_MAX_VESSEL_OBS_PER_RUN} — AIS is time-gated, "
+                "they cannot be refetched"
+            )
+        if feed_age is not None and feed_age > _MAX_FEED_AGE_SECONDS:
+            problems.append(
+                f"locations feed is stale: dataUpdatedTime={counts.get('feed_updated_at')} "
+                f"({feed_age / 3600:.1f}h old, limit {_MAX_FEED_AGE_SECONDS / 3600:.0f}h) — "
+                "counts are a replay, not today's measurement"
+            )
+
+        if problems:
+            return ToolResult(
+                success=False,
+                output="\n".join(lines + ["AIS daily snapshot DEGRADED:"] + [f"  - {p}" for p in problems]),
+                data=value,
+            )
+
         return ToolResult(
             success=True,
             output="\n".join(lines),
@@ -990,11 +1230,24 @@ class AISVesselTool(Tool):
     # L2 Entity Persistence
     # ------------------------------------------------------------------
 
-    def _persist_entities(self, vessels: list[dict[str, Any]]) -> None:
-        """Persist vessel entities from area/vessel mode (position observations)."""
+    def _persist_entities(self, vessels: list[dict[str, Any]]) -> dict[str, int]:
+        """Persist vessel entities from area/vessel mode (position observations).
+
+        Returns a write receipt — ``received`` / ``unique`` / ``positions`` /
+        ``failed`` / ``skipped``.  Callers must compare ``positions`` against
+        what the source published: a count of what was *seen upstream* is not
+        evidence that anything landed (LESSONS F-16).
+        """
         if self._store is None or entity_id_from_key is None:
-            return
-        self._persist_entities_inner(vessels)
+            return {
+                "received": len(vessels),
+                "unique": 0,
+                "positions": 0,
+                "failed": 0,
+                "skipped": len(vessels),
+                "fetch_clock": 0,
+            }
+        return self._persist_entities_inner(vessels)
 
     @staticmethod
     def _observed_at_ts(raw: Any) -> float:
@@ -1011,74 +1264,136 @@ class AISVesselTool(Tool):
                 return datetime.fromisoformat(s).timestamp()
         return datetime.now(UTC).timestamp()
 
-    def _persist_entities_inner(self, vessels: list[dict[str, Any]]) -> None:
+    def _persist_entities_inner(self, vessels: list[dict[str, Any]]) -> dict[str, int]:
+        """Write one vessel at a time, isolated: one bad vessel costs one vessel.
+
+        Before isolation, a single store failure aborted the rest of the batch
+        while the caller still returned success — 9 rows of 500 on a feed that
+        cannot be refetched.  Failures are counted and returned, never
+        swallowed: the caller decides whether the shortfall is fatal.
+        """
         seen: set[str] = set()
         now_ts = datetime.now(UTC).timestamp()
+        receipt = {
+            "received": len(vessels),
+            "unique": 0,
+            "positions": 0,
+            "failed": 0,
+            "skipped": 0,
+            # Positions stamped with the fetch clock because the feed carried no
+            # ``timestampExternal``.  Those rows are dated wrong by however long
+            # the report sat upstream, and — since observed_at is part of
+            # OBSERVATION_UNIQUE_KEY — a retry appends a copy instead of
+            # collapsing.  Counted so the degradation cannot arrive silently.
+            "fetch_clock": 0,
+        }
         for v in vessels:
             mmsi = v.get("mmsi")
             imo = v.get("imo")
             if not mmsi and not imo:
+                receipt["skipped"] += 1
                 continue
             eid = self._vessel_entity_id(mmsi, imo)
             if eid in seen:
+                receipt["skipped"] += 1
                 continue
             seen.add(eid)
+            receipt["unique"] += 1
 
-            name = v.get("name") or v.get("vessel_name") or str(mmsi or imo)
-            self._store.register_entity(
-                entity_type="vessel",
-                canonical_name=name,
-                entity_id=eid,
-                metadata={
-                    k: v.get(k)
-                    for k in ("ship_type", "ship_type_code", "destination", "draught")
-                    if v.get(k) is not None
-                },
+            try:
+                self._persist_one_vessel(v, eid, mmsi, imo, now_ts, receipt)
+            except Exception:
+                receipt["failed"] += 1
+                log.exception(
+                    "AIS vessel persistence failed for mmsi=%s imo=%s — continuing with the batch",
+                    mmsi,
+                    imo,
+                )
+
+        if receipt["failed"]:
+            log.warning(
+                "AIS vessel persistence: %d of %d vessels failed to write (%d positions stored)",
+                receipt["failed"],
+                receipt["unique"],
+                receipt["positions"],
             )
+        if receipt["fetch_clock"]:
+            log.warning(
+                "AIS vessel persistence: %d of %d positions carried no timestampExternal and "
+                "were stamped with the fetch clock — those rows are mis-dated and will not "
+                "collapse on retry.",
+                receipt["fetch_clock"],
+                receipt["positions"],
+            )
+        return receipt
 
-            if mmsi:
-                self._store.add_entity_alias(eid, "mmsi", str(mmsi))
-            if imo:
-                self._store.add_entity_alias(eid, "imo", str(imo))
+    def _persist_one_vessel(
+        self,
+        v: dict[str, Any],
+        eid: str,
+        mmsi: Any,
+        imo: Any,
+        now_ts: float,
+        receipt: dict[str, int],
+    ) -> None:
+        """Register one vessel, store its position, link its destination."""
+        name = v.get("name") or v.get("vessel_name") or str(mmsi or imo)
+        self._store.register_entity(
+            entity_type="vessel",
+            canonical_name=name,
+            entity_id=eid,
+            metadata={
+                k: v.get(k) for k in ("ship_type", "ship_type_code", "destination", "draught") if v.get(k) is not None
+            },
+        )
 
-            # Position observation
-            lat = v.get("lat")
-            lon = v.get("lon")
-            if lat is not None and lon is not None:
-                self._store.store_entity_observation(
-                    entity_id=eid,
-                    source_tool="ais_vessel",
-                    observed_at=self._observed_at_ts(v.get("timestamp") or now_ts),
-                    observation_type="vessel_position",
-                    value={
-                        "lat": lat,
-                        "lon": lon,
-                        "sog": v.get("sog"),
-                        "cog": v.get("cog"),
-                        "heading": v.get("heading"),
-                        "nav_status": v.get("nav_status"),
-                    },
-                    depth_level=2,
-                )
+        if mmsi:
+            self._store.add_entity_alias(eid, "mmsi", str(mmsi))
+        if imo:
+            self._store.add_entity_alias(eid, "imo", str(imo))
 
-            # ── Link vessel → destination country ──
-            dest = (v.get("destination") or "").strip().upper()
-            country_code = _DEST_COUNTRY.get(dest)
-            if country_code and eid:
-                country_eid = entity_id_from_key("country", country_code)
-                self._store.register_entity(
-                    entity_type="country",
-                    canonical_name=country_code,
-                    entity_id=country_eid,
-                )
-                self._store.link_entities(
-                    entity_id_a=eid,
-                    entity_id_b=country_eid,
-                    link_type="port_call_to",
-                    source="ais_vessel",
-                    confidence=0.8,
-                    metadata={"destination_raw": dest},
-                )
+        # Position observation
+        lat = v.get("lat")
+        lon = v.get("lon")
+        if lat is not None and lon is not None:
+            report_ts = v.get("timestamp")
+            if not report_ts:
+                receipt["fetch_clock"] += 1
+            self._store.store_entity_observation(
+                entity_id=eid,
+                source_tool="ais_vessel",
+                observed_at=self._observed_at_ts(report_ts or now_ts),
+                observation_type="vessel_position",
+                value={
+                    "lat": lat,
+                    "lon": lon,
+                    "sog": v.get("sog"),
+                    "cog": v.get("cog"),
+                    "heading": v.get("heading"),
+                    "nav_status": v.get("nav_status"),
+                },
+                depth_level=2,
+            )
+            receipt["positions"] += 1
+
+        # ── Link vessel → destination country ──
+        dest = (v.get("destination") or "").strip().upper()
+        country_code = _DEST_COUNTRY.get(dest)
+        if country_code and eid:
+            country_eid = entity_id_from_key("country", country_code)
+            self._store.register_entity(
+                entity_type="country",
+                canonical_name=country_code,
+                entity_id=country_eid,
+            )
+            self._store.link_entities(
+                entity_id_a=eid,
+                entity_id_b=country_eid,
+                link_type="port_call_to",
+                source="ais_vessel",
+                confidence=0.8,
+                metadata={"destination_raw": dest},
+            )
 
     def _persist_port_call_entities(self, calls: list[dict[str, Any]]) -> None:
         """Persist vessel entities from port_calls mode."""
@@ -1275,7 +1590,9 @@ def ingest_area_daily_snapshot(
         as_of=(as_of or datetime.now(UTC).date()).isoformat(),
     )
     if not result.success:
-        return {"stored": False, "error": result.output}
+        # Carry the receipt through the failure too: a degraded run may still
+        # have written most of its rows, and the caller should see how many.
+        return {"stored": False, "error": result.output, **(result.data or {})}
     return {"stored": True, **(result.data or {})}
 
 

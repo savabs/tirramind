@@ -126,3 +126,7 @@ tirramind_v1/
 
 # local WIP snapshots (never commit)
 .wip-snapshots/
+
+# Local DB backups taken before destructive operations — 296MB and growing.
+# Never commit: the pipeline DB is the project asset, not a repo artifact.
+.tirra_backups/

@@ -474,19 +474,49 @@ class TestHetTGNEdgeCases:
         for ntype in out_before:
             assert torch.allclose(out_before[ntype], out_after[ntype], atol=1e-6)
 
-    def test_event_missing_fields_skipped(self):
-        """Events with None entity_type or entity_id are skipped."""
+    def test_event_without_entity_type_is_consumed(self):
+        """A missing ``entity_type`` is resolved from the IDMap, not skipped.
+
+        This test previously asserted that ALL THREE events below left memory
+        byte-identical, i.e. that an event with ``entity_type=None`` was
+        skipped.  That was the defect, not the contract: store observation
+        rows have no ``entity_type`` column at all, so the old
+        ``ev["entity_type"]``-then-``continue`` path dropped all 384,285
+        events and every one of 21 checkpoints shipped an all-zero memory.
+        The type is now resolved from the IDMap, which is what the memory and
+        embedding rows are indexed by, so only an event with no usable
+        ``entity_id`` is genuinely malformed.
+        """
         data, id_map, metadata = _make_simple_graph()
         model = _make_model(metadata)
+        model.eval()
         out = model(data, id_map)
         events = [
+            # Resolvable: "c0" is in the IDMap, so the absent type is no
+            # obstacle.  Was asserted to be skipped; must now be applied.
             {"entity_type": None, "entity_id": "c0", "observed_at": 100.0},
+            # Genuinely malformed: no entity_id, so no memory row to write.
             {"entity_type": "company", "entity_id": None, "observed_at": 200.0},
             {"observed_at": 300.0},
         ]
         old_mem = model.memory.memory.clone()
-        model.update_memory_from_events(events, out, id_map)
-        assert torch.allclose(model.memory.memory, old_mem)
+        stats = model.update_memory_from_events(events, out, id_map)
+
+        gid_c0 = id_map.global_id("company", "c0")
+        assert stats["events_in"] == 3
+        assert stats["resolved"] == 1
+        assert stats["applied"] == 1
+        assert stats["missing_entity_id"] == 2
+
+        # The typeless-but-identifiable event actually reached the buffer.
+        assert not torch.allclose(model.memory.memory[gid_c0], old_mem[gid_c0])
+        assert model.memory.last_update[gid_c0].item() == 100.0
+        assert stats["memory_nonzero_rows"] == 1
+
+        # The two malformed events wrote nothing anywhere else.
+        other = [i for i in range(model.memory.num_nodes) if i != gid_c0]
+        assert torch.allclose(model.memory.memory[other], old_mem[other])
+        assert (model.memory.last_update[other] == 0).all()
 
     def test_num_layers_2(self):
         """Deeper model doesn't crash."""

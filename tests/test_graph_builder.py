@@ -18,7 +18,9 @@ from agent.models.gnn.graph_builder import (
     BASE_FEAT_DIM,
     ENRICHMENT_DIM,
     ENTITY_TYPES,
+    EVENT_RELATIONS,
     OBSERVATION_TYPES,
+    STRUCTURAL_RELATIONS,
     GraphBuilder,
     IDMap,
     SchemaDriftError,
@@ -26,6 +28,7 @@ from agent.models.gnn.graph_builder import (
     _build_node_features,
     _compute_obs_stats,
     _links_as_of,
+    scale_obs_value,
     validate_schema_against_store,
 )
 from agent.pipeline.entity import entity_id_from_key
@@ -383,15 +386,38 @@ class TestComputeObsStats:
         assert stats["mean_value"] == 0.0
 
     def test_with_observations(self):
+        # `observation_type` is now load-bearing. Values are extracted per type
+        # through OBS_VALUE_KEYS; the old generic probe tried six fixed keys
+        # ("value", "usd_amount", "amount", ...) against every payload and hit
+        # almost nothing in the live DB — mean_value was 0.0 for 6,102 of 6,110
+        # entities. petroleum_inventory is the type whose key IS "value".
         obs = [
-            {"entity_id": "e1", "observed_at": 1000.0, "value": {"value": 100}},
-            {"entity_id": "e1", "observed_at": 2000.0, "value": {"value": 300}},
-            {"entity_id": "e2", "observed_at": 1500.0, "value": {"value": 999}},
+            {
+                "entity_id": "e1",
+                "observed_at": 1000.0,
+                "observation_type": "petroleum_inventory",
+                "value": {"value": 100},
+            },
+            {
+                "entity_id": "e1",
+                "observed_at": 2000.0,
+                "observation_type": "petroleum_inventory",
+                "value": {"value": 300},
+            },
+            {
+                "entity_id": "e2",
+                "observed_at": 1500.0,
+                "observation_type": "petroleum_inventory",
+                "value": {"value": 999},
+            },
         ]
         stats = _compute_obs_stats(obs, "e1", 3000.0)
         assert stats["count"] == 2.0
         assert stats["recency"] == 1000.0  # 3000 - 2000
-        assert stats["mean_value"] == 200.0  # (100+300)/2
+        # was: 200.0, the raw mean of (100+300)/2. Each observation is now
+        # signed-log1p scaled BEFORE averaging, so a single tvl_usd ~1.5e9 row
+        # can no longer outweigh every price observation in the same window.
+        assert stats["mean_value"] == pytest.approx((scale_obs_value(100) + scale_obs_value(300)) / 2)
 
     def test_filters_by_entity_id(self):
         obs = [
@@ -402,31 +428,58 @@ class TestComputeObsStats:
         assert stats["count"] == 1.0
 
     def test_goldstein_value_extraction(self):
+        # was: {"goldstein_scale": ..., "num_articles": ...} with no
+        # observation_type. Neither key is what the GDELT collector actually
+        # writes — it writes "goldstein"/"num_mentions" under
+        # observation_type="geopolitical_event" — so the old probe matched a
+        # payload shape that does not exist in the DB and scored 0.0 on every
+        # real GDELT row while this test stayed green.
         obs = [
             {
                 "entity_id": "e1",
                 "observed_at": 100.0,
-                "value": {"goldstein_scale": -5.0, "num_articles": 10},
+                "observation_type": "geopolitical_event",
+                "value": {"goldstein": -5.0, "num_mentions": 10},
             },
         ]
         stats = _compute_obs_stats(obs, "e1", 100.0)
-        assert stats["mean_value"] == -5.0  # goldstein_scale is first match
+        # was: -5.0 raw. goldstein is still the first key tried, but the value
+        # is now signed-log1p scaled, which preserves its sign and its order.
+        assert stats["mean_value"] == pytest.approx(scale_obs_value(-5.0))
+        assert stats["mean_value"] < 0.0, "goldstein sign must survive scaling"
 
     def test_btc_amount_extraction(self):
+        # was: {"btc_amount": ..., "usd_amount": ...} with no observation_type.
+        # The real payload key is "value_btc" under
+        # observation_type="btc_transfer"; "btc_amount" was never written by
+        # any collector.
         obs = [
             {
                 "entity_id": "e1",
                 "observed_at": 100.0,
-                "value": {"btc_amount": 42.5, "usd_amount": 2000000},
+                "observation_type": "btc_transfer",
+                "value": {"value_btc": 42.5, "usd_amount": 2000000},
             },
         ]
         stats = _compute_obs_stats(obs, "e1", 100.0)
-        # usd_amount comes first in the priority list
-        assert stats["mean_value"] == 2000000.0
+        # was: 2000000.0, because a single global priority list put usd_amount
+        # ahead of the BTC amount for EVERY observation type. There is no
+        # global list now — btc_transfer declares value_btc and nothing else,
+        # so usd_amount is deliberately not a candidate here.
+        assert stats["mean_value"] == pytest.approx(scale_obs_value(42.5))
 
     def test_non_numeric_value_ignored(self):
+        # This used to pass for the wrong reason: with no observation_type the
+        # row was simply UNMAPPED, so it would have scored 0.0 whatever its
+        # payload held. Typed as whale_trade, it now genuinely exercises the
+        # "mapped keys are all absent → no value" branch.
         obs = [
-            {"entity_id": "e1", "observed_at": 100.0, "value": {"direction": "sell"}},
+            {
+                "entity_id": "e1",
+                "observed_at": 100.0,
+                "observation_type": "whale_trade",
+                "value": {"direction": "sell"},
+            },
         ]
         stats = _compute_obs_stats(obs, "e1", 100.0)
         assert stats["mean_value"] == 0.0
@@ -525,11 +578,22 @@ class TestLinkFutureBlindness:
             }
         ]
         edge_data = _build_edge_data(links, id_map, reference_time=window_now)
-        (attrs,) = (t["edge_attr"] for t in edge_data.values())
-        age_days = attrs[0, 1].item()
-        assert abs(age_days - 1.0) < 0.01, (
-            f"age_days={age_days} — should be 1.0 relative to the window, not a huge number relative to wall-clock now"
-        )
+        # was: `(attrs,) = (...)` — a single relation. _build_edge_data now also
+        # emits the rev_<rel> inverse, because HGT passes messages src→dst only
+        # and without the inverse 64% of live edges (all 9,487 GDELT country
+        # edges among them) could never reach the instrument nodes the loss is
+        # computed on. So there are two relations here, not one, and BOTH must
+        # carry the window-relative age.
+        assert set(edge_data) == {
+            ("company", "works_for", "company"),
+            ("company", "rev_works_for", "company"),
+        }
+        for triplet, tensors in edge_data.items():
+            age_days = tensors["edge_attr"][0, 1].item()
+            assert abs(age_days - 1.0) < 0.01, (
+                f"{triplet}: age_days={age_days} — should be 1.0 relative to the "
+                f"window, not a huge number relative to wall-clock now"
+            )
 
 
 class TestEnrichmentDimDerivation:
@@ -636,14 +700,22 @@ class TestBuildNodeFeatures:
                 assert ft[0, i].item() == 0.0
 
     def test_obs_stats_populated(self):
+        # observation_type added: the value probe is per-type now (see
+        # TestComputeObsStats). Untyped, this row contributes no value at all.
         obs = [
-            {"entity_id": "e1", "observed_at": 500.0, "value": {"value": 100.0}},
+            {
+                "entity_id": "e1",
+                "observed_at": 500.0,
+                "observation_type": "petroleum_inventory",
+                "value": {"value": 100.0},
+            },
         ]
         ft = _build_node_features("company", ["e1"], obs, 1000.0)
         type_dim = len(ENTITY_TYPES)
         assert ft[0, type_dim].item() == 1.0  # count
         assert ft[0, type_dim + 1].item() == 500.0  # recency = 1000 - 500
-        assert ft[0, type_dim + 2].item() == 100.0  # mean_value
+        # was: 100.0, the raw payload number. mean_value is signed-log1p scaled.
+        assert ft[0, type_dim + 2].item() == pytest.approx(scale_obs_value(100.0))
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -717,9 +789,16 @@ class TestBuildEdgeData:
             },
         ]
         result = _build_edge_data(links, m)
-        assert len(result) == 2
+        # was: 2 — one relation per link. Each relation now also gets its
+        # rev_<rel> inverse (src/dst flipped, same edge_attr), so 2 links
+        # produce 4 relations. The inverse is the fix, not an artifact: HGT
+        # only propagates src→dst, so before it these country-pointing edges
+        # delivered zero gradient to anything.
+        assert len(result) == 4
         assert ("company", "headquartered_in", "country") in result
         assert ("vessel", "port_call_to", "country") in result
+        assert ("country", "rev_headquartered_in", "company") in result
+        assert ("country", "rev_port_call_to", "vessel") in result
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -758,7 +837,19 @@ class TestGraphBuilder:
         assert data["country"].x.shape[1] == feat_dim
 
         # Edge types
-        assert len(data.edge_types) == 3  # hq_in, port_call_to, exchange_based_in
+        # was: 3 (hq_in, port_call_to, exchange_based_in). Each forward relation
+        # now carries a rev_<rel> inverse so messages can flow back out of the
+        # country nodes these all point at — without it those three relations
+        # were one-way dead ends for HGT message passing.
+        assert len(data.edge_types) == 6
+        assert {et[1] for et in data.edge_types} == {
+            "headquartered_in",
+            "port_call_to",
+            "exchange_based_in",
+            "rev_headquartered_in",
+            "rev_port_call_to",
+            "rev_exchange_based_in",
+        }
 
         # Events sorted by time
         assert len(events) == 5
@@ -833,9 +924,14 @@ class TestGraphBuilder:
         _link(store, ids["exxon"], ids["us"], "headquartered_in")
         builder = GraphBuilder(store)
         data, id_map, events = builder.build()
-        # Should still be 3 links total
+        # was: 3 — the 3 deduplicated links. Still 3 distinct links, but each
+        # is now mirrored by its rev_<rel> inverse, so 6 edges. What this test
+        # actually guards is the INSERT OR IGNORE dedup: the duplicate
+        # headquartered_in link added above must not add a 4th forward edge.
         total_edges = sum(data[et].edge_index.shape[1] for et in data.edge_types)
-        assert total_edges == 3
+        assert total_edges == 6
+        forward_edges = sum(data[et].edge_index.shape[1] for et in data.edge_types if not et[1].startswith("rev_"))
+        assert forward_edges == 3, "the duplicate link was inserted a second time"
 
     def test_events_time_ordering(self, store: PipelineStore):
         _seed_graph(store)
@@ -894,6 +990,23 @@ class TestBuildFromCachedIsTimeGated:
     exercise the call.
     """
 
+    # was: "works_for". Time-gating is per-relation now. STRUCTURAL relations
+    # (an instrument is produced in a country; a person works for a company)
+    # were true long before the row was inserted, so their created_at carries
+    # no information and gating on it deleted the graph instead of the leak:
+    # ~87-100% of training windows built with zero edges. works_for is
+    # STRUCTURAL, so it is correctly ungated and can no longer demonstrate
+    # F-04. Do NOT move works_for into EVENT_RELATIONS to make this pass —
+    # that reintroduces exactly the collapse the split was made to fix. Use a
+    # genuinely time-bound relation instead.
+    LINK_TYPE = "transacts_with"
+
+    def test_gating_relation_is_still_event_classified(self) -> None:
+        """Guard the guard: if LINK_TYPE were reclassified STRUCTURAL, every
+        time-gating test below would pass while testing nothing."""
+        assert self.LINK_TYPE in EVENT_RELATIONS
+        assert self.LINK_TYPE not in STRUCTURAL_RELATIONS
+
     @staticmethod
     def _two_linked_companies(store: PipelineStore) -> tuple[str, str]:
         a = _reg(store, "company", "aaa", "Company A")
@@ -902,15 +1015,15 @@ class TestBuildFromCachedIsTimeGated:
         _obs(store, b, "t", "instrument_daily", T(1_000.0))
         return a, b
 
-    @staticmethod
-    def _link_at(store: PipelineStore, a: str, b: str, created_at: float) -> None:
+    @classmethod
+    def _link_at(cls, store: PipelineStore, a: str, b: str, created_at: float) -> None:
         """Insert a link with an explicit created_at (link_entities stamps now())."""
         conn = store._get_conn()
         conn.execute(
             "INSERT OR IGNORE INTO entity_links "
             "(entity_id_a, entity_id_b, link_type, confidence, source, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?)",
-            (a, b, "works_for", 1.0, "test", created_at),
+            (a, b, cls.LINK_TYPE, 1.0, "test", created_at),
         )
         conn.commit()
 

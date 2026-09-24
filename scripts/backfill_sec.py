@@ -53,11 +53,19 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from agent.pipeline.store import PipelineStore  # noqa: E402
-from agent.tools._sec_window import EDGAR_PAGE_CAP, EdgarTruncated, walk_back  # noqa: E402
+from agent.tools._sec_window import (  # noqa: E402
+    EDGAR_PAGE_CAP,
+    EdgarTruncated,
+    walk_back,
+    window_is_truncated,
+)
 
 # Filings per day, measured against live EDGAR on 2026-09-23. Used only to
 # refuse an obviously-overflowing window before wasting hours on it.
-FILINGS_PER_DAY = {"form144": 110, "insider_filings": 700}
+# Measured 2026-09-23. form144 was first estimated at 110/day from a single
+# quiet Tuesday; three 3-day windows then came back at exactly 500 (the cap),
+# i.e. >=167/day. Estimate HIGH — an underestimate silently truncates.
+FILINGS_PER_DAY = {"form144": 200, "insider_filings": 700}
 
 TOOLS = {
     "form144": ("agent.tools.form144", "Form144Tool", "144"),
@@ -111,6 +119,12 @@ def main() -> int:
     ap.add_argument("--apply", action="store_true", help="Actually write. Requires --backup.")
     ap.add_argument("--backup", default="", help="Path to the backup you already took.")
     ap.add_argument("--skip-covered", action="store_true", default=True)
+    ap.add_argument(
+        "--no-skip-covered",
+        dest="skip_covered",
+        action="store_false",
+        help="Re-fetch days that already have rows. Needed after a truncated run: a day with SOME observations looks covered even when most of it was lost.",
+    )
     args = ap.parse_args()
 
     oldest = datetime.strptime(args.oldest, "%Y-%m-%d").date()
@@ -175,9 +189,16 @@ def main() -> int:
             print(f"[{i}/{len(todo)}] {start}..{end}  FAILED — {type(exc).__name__}: {exc}")
             continue
         total = _row_count(args.db_path, args.tool)
+        # A window that comes back at exactly the cap did NOT return everything —
+        # fetch_edgar_hits stops there deliberately, so it raises nothing. This is
+        # the F-16 shape one level up: a detector nobody calls detects nothing.
+        capped = window_is_truncated(n)
+        if capped:
+            truncated.append(f"{start}..{end}: returned {n} == cap, window too wide")
+        flag = "  *** TRUNCATED — narrow the window and re-run this range ***" if capped else ""
         print(
             f"[{i}/{len(todo)}] {start}..{end}  ok={ok} filings={n} "
-            f"rows={total:,} (+{total - before:,} total)  {time.time() - t0:.0f}s"
+            f"rows={total:,} (+{total - before:,} total)  {time.time() - t0:.0f}s{flag}"
         )
 
     after = _row_count(args.db_path, args.tool)

@@ -268,7 +268,7 @@ class TestPersistEntitiesInner:
         assert val["role"] == "target"
         assert val["counterpart_country"] == "US"
 
-    def test_name_fallback_to_country_code(self) -> None:
+    def test_missing_actor_name_uses_canonical_country_name(self) -> None:
         store = _make_store()
         tool = GDELTTool(pipeline_store=store)
         ev = _make_event(actor1_name=None, actor1_country="IR")
@@ -278,7 +278,14 @@ class TestPersistEntitiesInner:
         reg_calls = store.register_entity.call_args_list
         ir_call = [c for c in reg_calls if c.kwargs["entity_id"] == entity_id_from_key("country", "IR")]
         assert len(ir_call) == 1
-        assert ir_call[0].kwargs["canonical_name"] == "IR"
+        # Was "IR": with no Actor1Name the collector fell back to the raw FIPS
+        # code as the display name, so the same country entered the graph under
+        # several names and the country nodes never merged. canonical_name is
+        # now always country_name(resolve_country_key(raw)) -- independent of
+        # the actor name, which is why this is "Iran" and not "IR".
+        assert ir_call[0].kwargs["canonical_name"] == "Iran"
+        # The raw upstream code survives as metadata/alias, not as the name.
+        assert ir_call[0].kwargs["metadata"]["fips_code"] == "IR"
 
     def test_actor_type_in_metadata(self) -> None:
         store = _make_store()
