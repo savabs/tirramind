@@ -122,22 +122,378 @@ _ENTITY_TYPE_TO_IDX: dict[str, int] = {t: i for i, t in enumerate(ENTITY_TYPES)}
 _OBS_TYPE_TO_IDX: dict[str, int] = {t: i for i, t in enumerate(OBSERVATION_TYPES)}
 
 
-def _links_as_of(links: list[dict[str, Any]], until: float | None) -> list[dict[str, Any]]:
-    """Drop links that did not exist yet at `until` (future-blindness, F-04).
+# ── Observation value keys ─────────────────────────────────────
+#
+# Every node value feature (mean_value, and the variance/min/max/iqr
+# enrichment block) is derived from ONE numeric scalar per observation. Which
+# key holds that scalar is a property of the observation_type — there is no
+# universal name and never was.
+#
+# This map replaces a hardcoded six-name probe
+# ("usd_amount", "btc_amount", "value", "estimated_value", "goldstein_scale",
+# "num_articles") that matched 736 of 384,285 live rows — 0.19%. No collector
+# writes five of those six names; every one of them is a near-miss for a real
+# key ("goldstein_scale" vs the written "goldstein", "num_articles" vs
+# "num_mentions"). The consequence was not a small bias: five node feature
+# dimensions were identically 0.0 for 6,102 of 6,110 entities, and the value
+# head was trained to emit 0 on 99.8% of examples while seeing raw $1e9
+# magnitudes on the rest.
+#
+# Rules for this map:
+#   * Every entry in OBSERVATION_TYPES MUST appear here. A type whose payload
+#     carries no numeric magnitude (drug_approval, sanctions_listing, …) maps
+#     to an explicit empty tuple, which says "deliberately none" rather than
+#     leaving the absence to be discovered as a silent zero.
+#   * Keys are tried in order; the first one present, numeric and finite wins.
+#   * An observation_type that is NOT in this map is an error, not a zero:
+#     extract_obs_value() logs it once at ERROR and records it in
+#     unmapped_observation_types() so a test can fail on it.
+#
+# Verified against the live DB (2026-09-23, read-only) — see
+# tests/test_graph_builder_inputs.py::TestLiveDatabaseCoverage.
+OBS_VALUE_KEYS: dict[str, tuple[str, ...]] = {
+    "area_daily_activity": ("vessel_count", "tanker_count"),
+    "baltic_activity_proxy": ("vessel_count", "tanker_count"),
+    "bankruptcy_status": (),  # chapter/court/case_number — all strings
+    "border_throughput": ("record_count",),
+    "btc_transfer": ("value_btc",),
+    "campaign_finance": ("total_spent", "total_support", "total_oppose"),
+    "capital_flow": ("latest_value", "mom_change_pct"),
+    "cb_balance_sheet": ("usd_trillions", "native_trillions"),
+    "cb_policy_rate": ("current_rate",),
+    "cert_issued": (),  # common_name/issuer_name — strings; is_expired is a bool
+    "consumer_confidence": ("latest", "mom_change"),
+    "contract_award": ("amount_usd",),
+    "creditor_filing": (),  # cik/form/items — strings and lists
+    "cross_entity_pattern": ("score",),
+    "dividend": ("amount",),
+    "dns_change": ("record_count", "min_ttl"),
+    "drug_approval": (),  # application_number/submission_date — strings
+    "economic_activity": ("value", "momentum_6m"),
+    "food_security": ("latest_value", "yoy_change_pct"),
+    # form144_filing predates sell_intent and has no live producer; the payload
+    # shape is sell_intent's. Kept mapped so the registry stays fully covered.
+    "form144_filing": ("dollar_value", "shares_to_sell"),
+    "futures_positioning": ("open_interest", "mm_net"),
+    "futures_positioning_derived": ("cftc_mm_pct_52w_rank", "mm_net_pct_oi_raw"),
+    "geopolitical_event": ("goldstein", "num_mentions"),
+    "grid_demand": (),  # mode/region/region_name — strings only
+    "insider_trade": ("shares", "price"),
+    "instrument_daily": ("close", "log_return"),
+    "instrument_return": ("log_return", "close"),
+    "instrument_volatility": ("realized_vol_20d", "intraday_range"),
+    "instrument_volume": ("volume", "avg_volume_20d"),
+    "internet_disruption": ("anomaly_rate_pct", "disconnect_rate_pct", "confirmed_count"),
+    "investigation_signal": (),  # agency/jurisdiction/status — strings
+    "lobbying_spend": ("amount",),
+    "market_probability": ("yes_price",),
+    "migration_pressure": ("total_displaced", "latest_value", "acceptance_rate"),
+    "options_chain_eod": ("atm_call_iv", "atm_put_iv", "total_open_interest", "spot"),
+    "pageview_spike": ("z_score", "latest_views"),
+    "patent_filing": (),  # patent_number/title/cpc — strings
+    "pathogen_level": ("total_samples", "surge_count", "states_count"),
+    "petroleum_inventory": ("value",),
+    "port_call": (),  # port names are strings; arrival_with_cargo is a bool
+    "price_movement": ("latest_value", "num_periods"),
+    "project_status": ("nameplate_capacity_mw",),
+    "regulatory_velocity": ("doc_count", "significant_count"),
+    "research_velocity": (),  # paper_id/title/published — strings
+    "sanctions_listing": (),  # programs/nationality/aliases — strings and lists
+    "sell_intent": ("dollar_value", "shares_to_sell"),
+    "short_interest": ("short_ratio", "short_volume"),
+    "sovereign_yield": ("yield_pct", "curve_2s10s"),
+    "trade_flow": ("trade_value_usd", "record_count"),
+    "tvl_change": ("tvl_usd", "change_1d_pct"),
+    "vessel_position": ("sog",),  # lat/lon are coordinates, not magnitudes
+    "whale_trade": ("total_volume", "composite_score"),
+}
 
-    A link created after the window's end is information from the future. Left
-    unfiltered it produced the worst kind of leakage — silent, and flattering:
-    backtests improve, and the improvement is entirely spurious.
+# Types that deliberately carry no numeric magnitude. Derived, never hand-kept.
+OBS_TYPES_WITHOUT_VALUE: frozenset[str] = frozenset(t for t, keys in OBS_VALUE_KEYS.items() if not keys)
+
+# observation_types seen at runtime with no entry in OBS_VALUE_KEYS. Populated
+# by extract_obs_value(); read by tests and by callers that want to fail a run
+# rather than train on silent zeros.
+_UNMAPPED_OBS_TYPES: set[str] = set()
+
+
+def unmapped_observation_types() -> frozenset[str]:
+    """observation_types encountered so far that have no OBS_VALUE_KEYS entry."""
+    return frozenset(_UNMAPPED_OBS_TYPES)
+
+
+def scale_obs_value(x: float) -> float:
+    """Signed log1p — the per-observation magnitude compressor.
+
+    Raw values span ``tvl_usd`` ~1.5e9 down to ``log_return`` ~1e-3. Fed
+    unscaled into one shared feature column, a single tvl_change row moves
+    mean_value by more than every price observation in the window combined, and
+    the value head's loss is dominated by whichever type happens to be biggest.
+
+    ``sign(x) * log1p(|x|)`` is monotone, defined at 0, preserves sign, and maps
+    that 10-decade range onto roughly [-21, 21]. It is applied per observation,
+    before anything aggregates.
+    """
+    import math
+
+    return math.copysign(math.log1p(abs(float(x))), x)
+
+
+def extract_obs_value(obs: dict[str, Any]) -> float | None:
+    """Scaled numeric magnitude of one observation, or None when there is none.
+
+    Returns ``scale_obs_value`` of the first key in this observation_type's
+    OBS_VALUE_KEYS entry that is present, numeric and finite.
+
+    Returns None — never 0.0 — when the type carries no numeric payload, when
+    the mapped key is absent/null in this row, or when the type is unmapped.
+    None means "no value", which callers must treat as "omit", not "zero":
+    emitting 0.0 for a missing value is what taught the value head that 99.8%
+    of the world is exactly zero.
+
+    An unmapped observation_type is logged once at ERROR and recorded in
+    unmapped_observation_types(). It is non-fatal by the same reasoning as the
+    unknown-entity-type branch in _build_node_features — live collection of a
+    brand-new type must not crash the pipeline — but it is never silent, and
+    validate_value_keys_against_store() turns it into a hard failure before
+    anything trains.
+    """
+    import math
+
+    ot = obs.get("observation_type") or obs.get("obs_type") or ""
+    keys = OBS_VALUE_KEYS.get(ot)
+    if keys is None:
+        if ot not in _UNMAPPED_OBS_TYPES:
+            _UNMAPPED_OBS_TYPES.add(ot)
+            log.error(
+                "observation_type %r has no OBS_VALUE_KEYS entry — its node value "
+                "feature will be empty for every row of this type. Add the key(s) "
+                "its collector writes to OBS_VALUE_KEYS in "
+                "agent/models/gnn/graph_builder.py (an empty tuple if it genuinely "
+                "carries no numeric magnitude).",
+                ot,
+            )
+        return None
+
+    value = obs.get("value")
+    if not isinstance(value, dict):
+        return None
+
+    for key in keys:
+        if key not in value:
+            continue
+        raw = value[key]
+        if raw is None or isinstance(raw, bool):
+            continue
+        try:
+            num = float(raw)
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(num):
+            continue
+        return scale_obs_value(num)
+    return None
+
+
+def validate_value_keys_against_store(store, *, strict: bool = True) -> dict[str, list[str]]:
+    """Fail before training if the live DB holds types this map cannot value.
+
+    Sibling of validate_schema_against_store(): that one guards the one-hot
+    registries, this one guards the value extractor. Both exist because the
+    silent version of this failure — a feature column that is zero for every
+    row — trained for months without anyone being told.
+
+    Returns:
+        {"unmapped_observation_types": [...]} — DB types with no OBS_VALUE_KEYS
+        entry.
+
+    Raises:
+        SchemaDriftError: if strict and the list is non-empty.
+    """
+    conn = store._get_conn()  # noqa: SLF001 — store exposes no type-listing API
+    db_obs_types = {r[0] for r in conn.execute("SELECT DISTINCT observation_type FROM entity_observations")}
+    report = {"unmapped_observation_types": sorted(t for t in db_obs_types if t not in OBS_VALUE_KEYS)}
+    if strict and report["unmapped_observation_types"]:
+        raise SchemaDriftError(
+            "Store contains observation types with no value-key mapping:\n"
+            f"  {report['unmapped_observation_types']}\n"
+            "Every one of them contributes an empty value feature. Add them to "
+            "OBS_VALUE_KEYS in agent/models/gnn/graph_builder.py (empty tuple if "
+            "the payload genuinely carries no numeric magnitude)."
+        )
+    return report
+
+
+# ── Link time basis ────────────────────────────────────────────
+#
+# `entity_links.created_at` is an INSERT stamp, not an effective date: the
+# whole table was written between 2026-04-19 and 2026-08-27, while 86.9% of
+# observations predate the earliest of those. Gating every relation on it —
+# which is what the F-14 fix did, correctly, to close the F-04 leak — removes
+# the graph instead of the leak: ~87-100% of training windows build with zero
+# edges, and HetTGN.forward then skips the entire HGT loop because
+# edge_index_dict is empty (het_tgn.py:706). The leak was closed by deleting
+# the graph.
+#
+# The fix is not to loosen the gate; it is to stop pretending one timestamp
+# means the same thing for every relation:
+#
+#   STRUCTURAL — near-static facts about the world. An instrument is produced
+#   in a country, an exchange sits in a country, a CFTC contract tracks a
+#   ticker. These were true long before we happened to insert the row, so the
+#   insert stamp carries no information about when they became true, and
+#   gating on it cannot prevent a leak that is not there. In scope for every
+#   window.
+#
+#   EVENT — created by something that happened at a point in time: a GDELT
+#   event, a chain transaction, a market listing. These are genuinely
+#   time-bound and MUST stay gated. Until entity_links carries an
+#   `effective_from` column backfilled from the justifying evidence (audit
+#   P2.3), the best available basis is the event time in the link's metadata,
+#   falling back to created_at.
+#
+# This is a per-relation policy table on purpose, not a heuristic hidden in a
+# conditional: adding a relation forces a decision, and an unclassified
+# relation is gated (the safe side) and logged loudly.
+# Owner decision C1, taken 2026-09-24. Three relations moved out of
+# STRUCTURAL after a pre-flight showed edge counts IDENTICAL across the 1997,
+# 2004, 2012 and 2019 windows (26,444 every time): 43.9% of all links were
+# asserted true in every snapshot regardless of when we learned them.
+#
+#   works_for (12,426 links) — an employment relation IS durable, but we
+#   discovered these in 2026 and entity_links carries no effective_from. Calling
+#   it structural tells a 1997 backtest who works where 29 years before anyone
+#   knew, which is F-04 wearing a different hat. The owner chose the safe side:
+#   gate it. This costs ~12k edges in historical windows and it is the right
+#   trade — a leaked IC is worse than a smaller graph, because you cannot tell
+#   afterwards how much of the number was the leak.
+#
+#   awarded_by (154) and sanctioned_under (18) — a contract award and a
+#   sanctions designation happen ON A DATE. Before that date they were simply
+#   not true. They are events by definition and were misfiled.
+#
+# When entity_links gains effective_from (audit P2.3), works_for can move back
+# and be gated on the real date instead of the ingest stamp. Until then, do not
+# move it: the pre-flight above is the test, and it must stay non-uniform
+# across windows.
+STRUCTURAL_RELATIONS: frozenset[str] = frozenset(
+    {
+        "cftc_tracks",
+        "domain_owned_by",
+        "exchange_country",
+        "fx_base_country",
+        "fx_quote_country",
+        "located_in",
+        "market_authorized_in",
+        "operates_in",
+        "produced_in",
+        "tracks_issuer",
+        "tracks_protocol",
+    }
+)
+
+EVENT_RELATIONS: frozenset[str] = frozenset(
+    {
+        "awarded_by",
+        "event_involves",
+        "sanctioned_under",
+        "topic_relates_to_instrument",
+        "trades_instrument",
+        "transacts_with",
+        "works_for",
+    }
+)
+
+# Metadata keys that may carry the underlying event time for an EVENT relation.
+# None of the 17,581 live links carries one today (metadata holds event_id /
+# tx_hash / ticker only), so every event link currently falls back to
+# created_at — which is why P2.3 (backfill effective_from) still matters.
+_EVENT_TIME_METADATA_KEYS: tuple[str, ...] = (
+    "effective_from",
+    "event_time",
+    "event_date",
+    "occurred_at",
+    "observed_at",
+)
+
+_UNCLASSIFIED_RELATIONS: set[str] = set()
+
+
+def unclassified_link_relations() -> frozenset[str]:
+    """link_types seen so far that are in neither relation set."""
+    return frozenset(_UNCLASSIFIED_RELATIONS)
+
+
+def _link_effective_time(link: dict[str, Any]) -> float | None:
+    """When this link became true, or None for "always true in any window".
+
+    None is returned for STRUCTURAL relations (near-static facts) and for
+    event links that carry no usable timestamp at all — matching the
+    pre-existing, documented trade-off that a link with no `created_at` is kept
+    rather than silently dropped.
+    """
+    rel = link.get("link_type") or ""
+
+    if rel in STRUCTURAL_RELATIONS:
+        return None
+
+    if rel not in EVENT_RELATIONS and rel not in _UNCLASSIFIED_RELATIONS:
+        _UNCLASSIFIED_RELATIONS.add(rel)
+        log.warning(
+            "link_type %r is in neither STRUCTURAL_RELATIONS nor EVENT_RELATIONS — "
+            "gating it on its ingest timestamp, which is the safe side but will "
+            "drop it from windows that predate ingestion. Classify it in "
+            "agent/models/gnn/graph_builder.py.",
+            rel,
+        )
+
+    # Explicit effective date wins if the column/metadata ever carries one.
+    for source in (link, link.get("metadata"), link.get("metadata_json")):
+        if not isinstance(source, dict):
+            continue
+        for key in _EVENT_TIME_METADATA_KEYS:
+            raw = source.get(key)
+            if raw is None or isinstance(raw, bool):
+                continue
+            try:
+                return float(raw)
+            except (TypeError, ValueError):
+                continue
+
+    created = link.get("created_at")
+    if created is None:
+        return None
+    try:
+        return float(created)
+    except (TypeError, ValueError):
+        return None
+
+
+def _links_as_of(links: list[dict[str, Any]], until: float | None) -> list[dict[str, Any]]:
+    """Drop links that were not yet true at `until` (future-blindness, F-04).
+
+    A link describing something that had not happened yet is information from
+    the future. Left unfiltered it produced the worst kind of leakage — silent,
+    and flattering: backtests improve, and the improvement is entirely spurious.
 
     `until=None` means "live/current", so everything is in scope.
 
-    Links with no `created_at` are KEPT: some were written before the column
-    existed, and dropping them would silently shrink historical graphs. That is
-    a deliberate trade — note it if backtest results look suspicious.
+    The time basis is per relation, not per row — see the STRUCTURAL_RELATIONS /
+    EVENT_RELATIONS block above. Structural relations are in scope for every
+    window; event relations are gated on their effective time, falling back to
+    `created_at`. Links with no usable timestamp are KEPT: some were written
+    before the column existed, and dropping them would silently shrink
+    historical graphs. That is a deliberate trade — note it if backtest results
+    look suspicious.
     """
     if until is None:
         return links
-    return [lk for lk in links if lk.get("created_at") is None or float(lk["created_at"]) <= until]
+    kept: list[dict[str, Any]] = []
+    for lk in links:
+        eff = _link_effective_time(lk)
+        if eff is None or eff <= until:
+            kept.append(lk)
+    return kept
 
 
 class SchemaDriftError(ValueError):
@@ -246,6 +602,12 @@ def _compute_obs_stats(
     """Aggregate observation statistics for a single entity.
 
     Returns: count, recency (seconds since last obs), mean_value.
+
+    ``mean_value`` is the mean of ``extract_obs_value`` over the observations
+    that have one — per-observation_type keys, signed-log1p scaled. Rows with
+    no extractable value are EXCLUDED from the mean rather than counted as
+    zero; an entity whose every observation lacks a value keeps mean_value 0.0,
+    which is the only honest encoding available in a fixed-width feature.
     """
     ent_obs = [o for o in observations if o.get("entity_id") == entity_id]
     count = len(ent_obs)
@@ -257,23 +619,9 @@ def _compute_obs_stats(
 
     values: list[float] = []
     for o in ent_obs:
-        v = o.get("value", {})
-        if isinstance(v, dict):
-            # Try common value fields
-            for k in (
-                "usd_amount",
-                "btc_amount",
-                "value",
-                "estimated_value",
-                "goldstein_scale",
-                "num_articles",
-            ):
-                if k in v:
-                    try:
-                        values.append(float(v[k]))
-                    except (TypeError, ValueError):
-                        pass
-                    break
+        val = extract_obs_value(o)
+        if val is not None:
+            values.append(val)
     mean_val = sum(values) / len(values) if values else 0.0
 
     return {"count": float(count), "recency": recency, "mean_value": mean_val}
@@ -382,23 +730,12 @@ def _compute_distributional_features(
     obs_type_counts: dict[str, int] = {}
 
     for o in observations:
-        # Collect value
-        v = o.get("value", {})
-        if isinstance(v, dict):
-            for k in (
-                "usd_amount",
-                "btc_amount",
-                "value",
-                "estimated_value",
-                "goldstein_scale",
-                "num_articles",
-            ):
-                if k in v:
-                    try:
-                        values.append(float(v[k]))
-                    except (TypeError, ValueError):
-                        pass
-                    break
+        # Collect value — same per-observation_type extractor as _compute_obs_stats,
+        # so the variance/min/max/iqr block describes the same quantity the
+        # mean_value feature does. It probed the same six dead key names before.
+        val = extract_obs_value(o)
+        if val is not None:
+            values.append(val)
         # Collect source tool
         tool = o.get("source_tool", "")
         if tool:
@@ -770,10 +1107,20 @@ def _build_node_features(
 # ── Edge builder ───────────────────────────────────────────────
 
 
+REVERSE_RELATION_PREFIX = "rev_"
+
+
+def reverse_relation(link_type: str) -> str:
+    """PyG's heterogeneous convention for the inverse of a relation."""
+    return f"{REVERSE_RELATION_PREFIX}{link_type}"
+
+
 def _build_edge_data(
     links: list[dict[str, Any]],
     id_map: IDMap,
     reference_time: float | None = None,
+    *,
+    add_reverse_edges: bool = True,
 ) -> dict[tuple[str, str, str], dict[str, torch.Tensor]]:
     """Group entity_links by (src_type, link_type, dst_type) and build tensors.
 
@@ -787,6 +1134,21 @@ def _build_edge_data(
             2026 stamped every edge as ~1000 days old, a value the model could
             never have observed at that point in time. Defaults to wall-clock
             only for live (non-replay) callers that pass nothing.
+        add_reverse_edges: emit a `rev_<link_type>` relation for every relation
+            built, with src/dst flipped and the same edge_attr.
+
+            HGT message passing flows src → dst only. Without the inverse, 64%
+            of live edges — including all 9,487 GDELT country edges, which
+            point *out* of instruments — can never reach the instrument nodes
+            the objective is computed on, so every country, person, company,
+            protocol and domain node contributes zero gradient at any depth.
+            The country-code merge fixed a connectivity *metric*; this is what
+            makes the connectivity reachable by the model.
+
+            This ADDS edge types, which adds per-relation HGT parameters: a
+            checkpoint trained with it cannot be loaded without it, and vice
+            versa. The flag exists to make that switchable, not to make the
+            fix optional — default on.
     """
     import time as _time
 
@@ -841,6 +1203,25 @@ def _build_edge_data(
         )
         result[triplet] = {"edge_index": edge_index, "edge_attr": edge_attr}
 
+    if add_reverse_edges:
+        for (src_type, rel, dst_type), tensors in list(result.items()):
+            if rel.startswith(REVERSE_RELATION_PREFIX):
+                continue  # already an inverse — do not invert the inverse
+            rev_triplet = (dst_type, reverse_relation(rel), src_type)
+            if rev_triplet in result:
+                # A relation of that exact name already came from the DB; leave
+                # the real data alone rather than overwriting it.
+                log.warning(
+                    "Reverse relation %s already present in the link set — not overwriting it.",
+                    rev_triplet,
+                )
+                continue
+            fwd = tensors["edge_index"]
+            result[rev_triplet] = {
+                "edge_index": torch.stack([fwd[1], fwd[0]], dim=0),
+                "edge_attr": tensors["edge_attr"].clone(),
+            }
+
     return result
 
 
@@ -861,9 +1242,11 @@ class GraphBuilder:
         store: PipelineStore,
         *,
         zero_price_feats: bool = False,
+        add_reverse_edges: bool = True,
     ) -> None:
         self._store = store
         self._zero_price_feats = zero_price_feats
+        self._add_reverse_edges = add_reverse_edges
 
     def build(
         self,
@@ -945,7 +1328,12 @@ class GraphBuilder:
         # Edge data per (src_type, link_type, dst_type).
         # `current_time` is the window's reference clock, so edge age is
         # measured as of the snapshot rather than as of today (F-04).
-        edge_data = _build_edge_data(links, id_map, reference_time=current_time)
+        edge_data = _build_edge_data(
+            links,
+            id_map,
+            reference_time=current_time,
+            add_reverse_edges=self._add_reverse_edges,
+        )
         for triplet, tensors in edge_data.items():
             data[triplet].edge_index = tensors["edge_index"]
             data[triplet].edge_attr = tensors["edge_attr"]
@@ -1065,11 +1453,36 @@ class GraphBuilder:
             data[etype].x = features
             data[etype].node_ids = ordered_ids
 
-        edge_data = _build_edge_data(links, id_map, reference_time=current_time)
+        edge_data = _build_edge_data(
+            links,
+            id_map,
+            reference_time=current_time,
+            add_reverse_edges=self._add_reverse_edges,
+        )
         for triplet, tensors in edge_data.items():
             data[triplet].edge_index = tensors["edge_index"]
             data[triplet].edge_attr = tensors["edge_attr"]
 
         events = sorted(observations, key=lambda o: o.get("observed_at", 0.0))
+
+        # An edgeless window is not a quiet degradation — HetTGN skips the
+        # whole HGT loop when edge_index_dict is empty, so the "graph network"
+        # silently becomes a per-node MLP. Say so, per window (audit P0.1).
+        edge_ct = sum(int(t["edge_index"].size(1)) for t in edge_data.values())
+        if edge_ct == 0:
+            log.warning(
+                "build_from_cached(until=%s): 0 edges from %d in-scope links — "
+                "message passing will be skipped for this window",
+                until,
+                len(links),
+            )
+        else:
+            log.debug(
+                "build_from_cached(until=%s): %d links in scope, %d edge types, %d edges",
+                until,
+                len(links),
+                len(edge_data),
+                edge_ct,
+            )
 
         return data, id_map, events

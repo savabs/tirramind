@@ -827,3 +827,69 @@ Verified: the same window went 99 → 360.
   4 filings per entity from SEC EDGAR should have been disbelieved on sight.
   Sanity-check observed volume against the publisher's actual rate before
   concluding a source is thin.
+
+---
+
+### F-17 · A Loss With No Target Was 99.3% of the Objective and Starved Everything Else
+
+**Symptom.** A from-scratch retrain on the freshly repaired graph collapsed:
+`eff_rank` 2.6–3.5 of 64 for all twenty epochs, never improving, while the loss
+curve looked like it was converging. The trainer's own collapse detector fired
+every epoch: *"The CSRC loss is not differentiating instruments."*
+
+**The tell.** One loss column reproduced **bit-for-bit across non-adjacent
+epochs** — `2896.2482` at 12, 13, 14 and 18. Pulled at full precision from the
+checkpoints, its relative spread across those epochs was `2.65e-08`, against
+`1.15e-02` for `time_delta`. The weights were demonstrably moving; that term
+was **433,488× less sensitive to them.**
+
+**Root cause — three defects compounding.**
+
+1. **The target was identically zero for 100% of training samples.**
+   `_compute_targets` only extracts a magnitude when an observation carries one
+   of `usd_amount / btc_amount / value / estimated_value / goldstein_scale /
+   num_articles`. Of the **122,806** observations inside the calendar train
+   range, **zero** carry any of them. The only source with real magnitudes
+   (`petroleum_inventory`, 652 rows holding 99.99% of all value mass) is dated
+   *entirely inside the test split*. So `huber_loss(pred, 0.0)` was never a
+   prediction task — it reduced to an L1 penalty on the head's own output.
+
+2. **~88% of it was clamp-saturated, where the gradient is exactly zero.**
+   With `emb_std` at 1e5–1e7 the head's pre-clamp output saturated
+   `.clamp(-1e4, 1e4)`; each saturated sample contributed a fixed `9999.5` and
+   **no gradient**. The loss was therefore a quantised `k/N × 9999.5` where `k`
+   is an integer sample count — which is why it landed on identical plateaus.
+   **Not detached. Clamp-saturated. Observationally identical, and F-15's rule
+   fires on it in a form nobody had logged.**
+
+3. **It drowned the anti-collapse loss.** Loss decomposition at epoch 12:
+   value 99.308%, time_delta 0.338%, return 0.323%, **contrastive 0.022%**,
+   obs_type 0.008%. Per-task gradient norms into the shared backbone measured
+   50,820–96,577 for `value` against 0.37–0.59 for CSRC — roughly **63,000:1**.
+   `clip_grad_norm_(1.0)` then rescaled the summed gradient (norm ≈1.5e4) down
+   to 1.0, leaving CSRC an effective norm of **~1.6e-5**. CSRC was not broken —
+   F-15 had fixed it. It was **starved**.
+
+**Fix.** `value_weight = 0.0`, plus `DeadTargetError` raised when every target
+in a window is exactly zero.
+
+**Prevention Rule:**
+- **A constant target is not a hard task, it is an absent one.** Before training
+  any supervised head, assert its target actually varies *within the training
+  split* — not merely within the database. Coverage concentrated in the test
+  split is worse than no coverage, because it passes a naive whole-DB check.
+- **Log every loss term's share of the total, and its gradient-norm share,
+  every epoch.** A term at 99% of the objective is a bug report regardless of
+  whether it is falling. Convergence of the sum tells you nothing about which
+  term owns it.
+- **A `clamp` inside a loss is a gradient cliff.** Track the fraction of samples
+  sitting at a clamp boundary; anything above a few percent means that share of
+  the batch contributes no gradient at all, and the loss becomes a step
+  function of a sample count.
+- **Gradient clipping converts a dominant term into a silencer.** `clip_grad_norm_`
+  rescales the *summed* gradient, so one oversized term does not merely
+  out-vote the others — it shrinks them toward zero. Check per-task gradient
+  norms before clipping, not just the total.
+- **Extend F-15: a loss constant to ~1e-8 relative across epochs is
+  disconnected in effect** — whether by detach, by constant target, or by
+  saturation. Diff loss history at full precision, never from the rounded table.

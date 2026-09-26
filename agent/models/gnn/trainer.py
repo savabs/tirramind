@@ -82,6 +82,14 @@ log = logging.getLogger(__name__)
 # ═══════════════════════════════════════════════════════════════
 
 
+SYNTHETIC_BASE_TIME = 1_704_067_200.0
+"""Origin (2024-01-01 UTC) for SyntheticGraphGenerator timestamps.
+
+Fixed rather than wall-clock so generated data stays deterministic, and after
+1990-01-01 so PipelineStore's observed_at guard accepts it.
+"""
+
+
 @dataclass
 class InjectedPattern:
     """A known temporal pattern to inject for validation.
@@ -285,6 +293,7 @@ class SyntheticGraphGenerator:
         base_event_rate: float = 0.001,  # events per entity per second
         seed: int = 42,
         patterns: list[InjectedPattern] | None = None,
+        base_time: float = SYNTHETIC_BASE_TIME,
     ) -> None:
         self.num_entities = {
             k: v
@@ -305,6 +314,7 @@ class SyntheticGraphGenerator:
             if v > 0
         }
         self.time_span = time_span
+        self.base_time = float(base_time)
         self.base_event_rate = base_event_rate
         self.seed = seed
         self.patterns = patterns or []
@@ -494,9 +504,13 @@ class SyntheticGraphGenerator:
         stats["links"] = link_count
 
         # ── Generate base observations (Poisson-like) ────
+        # Timestamps are anchored at ``base_time``, not at epoch 0: the store's
+        # write guard rejects anything before 1990-01-01, so a generator that
+        # starts at t=0 cannot write a single row.  Only the origin moves —
+        # every lag, ordering and count is unchanged.
         all_obs: list[dict] = []
-        t_start = 0.0
-        t_end = self.time_span
+        t_start = self.base_time
+        t_end = self.base_time + self.time_span
 
         for etype, eids in entities.items():
             # Assign plausible obs types per entity type
@@ -655,6 +669,17 @@ class SyntheticGraphGenerator:
 # TrainerConfig
 # ═══════════════════════════════════════════════════════════════
 
+SPLIT_TRIM_QUANTILE_DEFAULT = 0.005
+"""Fraction of the oldest in-range timestamps excluded from the split range.
+
+The DB still contains a handful of impossible timestamps (1920-01-01) that no
+count-based split notices.  A *calendar* split divides the [min, max] interval,
+so one 1920 row would push the 70% train cut to ~1997 and leave the training
+set empty.  Trimming the bottom 0.5% of timestamps makes the range robust to
+those rows without needing them purged first (the purge is a separate,
+owner-approved phase).
+"""
+
 
 @dataclass
 class TrainerConfig:
@@ -677,7 +702,35 @@ class TrainerConfig:
     contrastive_weight: float = 0.5
     contrastive_margin: float = 1.0
     num_negative_samples: int = 5
-    value_weight: float = 0.3
+    value_weight: float = 0.0
+    """DISABLED 2026-09-25 — this term was 99.31% of the training objective and
+    carried no information at all.
+
+    `_compute_targets` only extracts a magnitude when an observation's value
+    carries one of usd_amount / btc_amount / value / estimated_value /
+    goldstein_scale / num_articles.  Measured against the live DB: of the
+    122,806 observations inside the calendar train range [2016-12-21 →
+    2023-10-20], **zero** carry any of them.  The only source with real
+    magnitudes (petroleum_inventory, 652 rows holding 99.99% of all value mass)
+    is dated entirely inside the TEST split.
+
+    So huber_loss(pred, 0.0) was not a prediction task — it reduced to an L1
+    penalty on the head's own output, and with emb_std in the 1e5..1e7 range
+    ~88% of it saturated the .clamp(-1e4, 1e4) below, where the gradient is
+    exactly zero.  That is why the value column reproduced bit-for-bit across
+    non-adjacent epochs (2896.2482 at 12/13/14/18): it is a quantised count of
+    saturated samples, not a converged loss.  Not detached — clamp-saturated,
+    which is observationally identical.  See LESSONS.md F-17.
+
+    The damage was to everything else.  Per-task gradient norms into the shared
+    backbone measured ~50,820-96,577 for value against 0.37-0.59 for the CSRC
+    anti-collapse loss — about 63,000:1.  clip_grad_norm_(1.0) then rescaled the
+    summed gradient (norm ~1.5e4) to 1.0, leaving CSRC an effective norm of
+    ~1.6e-5.  CSRC was not broken (F-15 fixed it); it was starved, which is why
+    eff_rank sat at 2.6-3.5 of 64 for twenty epochs while the loss "converged".
+
+    Do not re-enable without first asserting the target is not constant across
+    the training range — see the guard in _compute_targets."""
     return_weight: float = 1.0
     """Weight for the instrument log_return auxiliary loss (Phase 41).
     Higher than value_weight because this is the primary financial signal
@@ -694,12 +747,22 @@ class TrainerConfig:
     hard argmax ranking.  Has no effect when use_listnet_return_loss=False."""
     gdelt_subsample_frac: float = 1.0
     """Fraction of geopolitical_event observations to keep during training.
-    GDELT makes up ~92% of the DB (901K rows) and causes OOM during snapshot
-    pre-building. Set to e.g. 0.05 to keep 5% (~45K) while retaining all
-    other observation types. Applied once after prefetch_observations()."""
+
+    Measured on the live DB (2026-09-23, 384,285 observation rows), NOT the
+    ~901K figure this docstring used to claim: geopolitical_event is 92,211
+    rows (24%), and the largest modality is tvl_change at 162,251 rows (42%).
+    At the 0.05 that scripts/retrain_gnn.py passes, 87,600 GDELT rows are
+    dropped — a default chosen when those rows connected to nothing.  The
+    country merge has since connected them, so 0.05 is due a review; it is
+    left unchanged here because changing a default silently is how the
+    original mis-measurement survived.
+
+    Applied ONCE, before the split, so the supervision windows and the graph
+    feature stream see the same distribution (train and evaluate alike)."""
     defi_subsample_frac: float = 1.0
-    """Fraction of tvl_change (defi_flows) observations to keep. N1 POC:
-    0.05–0.10 so DeFi does not dominate prefetch after GDELT cap."""
+    """Fraction of tvl_change (defi_flows) observations to keep.  tvl_change is
+    the dominant modality (162,251 rows, 42%), yet the CLI default for this
+    flag is 1.0 while GDELT — the smaller source — is capped at 0.05."""
     zero_price_feats: bool = False
     """When True, zero the PRICE_FEAT block on instrument nodes (outcome≠input)."""
     embedding_only_return: bool = False
@@ -769,6 +832,25 @@ class TrainerConfig:
     """When set, exclude observations with observed_at < obs_since
     from training/val/test splits. Useful for skipping sparse early
     data (e.g. GDELT 1970-era timestamps)."""
+    split_time_floor: float | None = None
+    """Hard lower bound (unix seconds) for the calendar split range.
+    When None the floor is the ``split_trim_quantile`` quantile of the
+    in-range timestamps, which keeps the split robust to the impossible
+    1920-era rows still present in the DB."""
+    split_trim_quantile: float = SPLIT_TRIM_QUANTILE_DEFAULT
+    """Fraction of the oldest in-range observations excluded from the split
+    range when ``split_time_floor`` is None.  Only affects the *range
+    boundaries*; see split_observations_by_calendar()."""
+    split_purge_gap_seconds: float | None = None
+    """Gap held out between train/val and val/test so a label computed over the
+    forward-return horizon cannot straddle a split boundary.  None means
+    ``forward_return_horizon`` days.  Capped at 10% of the split range."""
+    apply_ewc_in_training: bool = True
+    """Add the EWC penalty to the per-window training loss whenever an EWC
+    state is loaded (λ > 0).  Before this existed, Fisher was computed,
+    checkpointed, resumed and logged as active while never entering the loss —
+    pure overhead.  Set False only to reproduce that historical behaviour, and
+    expect the log to say so."""
     ewc_lambda: float = 1000.0
     """EWC regularisation strength λ (Kirkpatrick et al. 2017).
     L_total = L_new + λ · Σ F_i (θ_i − θ_i*)²
@@ -1115,6 +1197,393 @@ def _build_forward_return_lookup(
     from agent.quant.forward_returns import build_forward_return_lookup
 
     return build_forward_return_lookup(observations, horizon_days=horizon_days)
+
+
+# ═══════════════════════════════════════════════════════════════
+# Calendar-time split  (audit P4.2)
+# ═══════════════════════════════════════════════════════════════
+
+SPLIT_OUTLIER_STRETCH_RATIO = 0.01
+"""How far the oldest rows may stretch the split range before they are trimmed.
+
+``(q - min) > ratio * (max - q)`` means the bottom tail is an outlier tail, not
+early data.  Below the threshold nothing is trimmed.
+"""
+
+
+class DeadTargetError(ValueError):
+    """Raised when a supervised head is asked to fit a target that never varies.
+
+    Added after 2026-09-25: the value head trained against a target that was
+    exactly 0.0 for all 122,806 observations in the calendar train range, while
+    being 99.31% of the total loss. It looked like a converging loss for twenty
+    epochs. A constant target is not a hard task, it is an absent one.
+    """
+
+
+class SplitRangeError(ValueError):
+    """The observation timestamp range cannot produce a valid walk-forward split."""
+
+
+def _quantile_of_sorted(sorted_ts: list[float], q: float) -> float:
+    """Lower-interpolation quantile of an ascending list (no numpy dependency)."""
+    if not sorted_ts:
+        raise ValueError("quantile of an empty timestamp list")
+    if q <= 0.0:
+        return sorted_ts[0]
+    if q >= 1.0:
+        return sorted_ts[-1]
+    return sorted_ts[int(q * (len(sorted_ts) - 1))]
+
+
+def _iso(ts: float) -> str:
+    try:
+        return datetime.fromtimestamp(ts, tz=UTC).date().isoformat()
+    except (OverflowError, OSError, ValueError):  # pragma: no cover - absurd timestamps
+        return f"<invalid:{ts}>"
+
+
+def split_observations_by_calendar(
+    observations: list[dict],
+    cfg: TrainerConfig,
+    *,
+    now: float | None = None,
+    label: str = "split",
+) -> tuple[list[dict], list[dict], list[dict]]:
+    """Walk-forward train/val/test split by **calendar time**, not by row count.
+
+    A count-based split (``obs[:int(n*0.70)]``) gives no temporal guarantee
+    worth the name: the cut lands wherever row density happens to put it, rows
+    sharing the cut timestamp straddle the boundary, and — the observed failure
+    — a future-dated row drags the test range to 2030 while the log calls it a
+    chronological split.
+
+    This function instead:
+
+    * bounds the range at ``t_hi = min(max(observed_at), now)`` — an
+      observation cannot have been observed in the future, so future-dated rows
+      are excluded from **every** split rather than becoming the test set;
+    * bounds it below at ``cfg.split_time_floor`` when set, else at the
+      ``cfg.split_trim_quantile`` quantile, so impossible old timestamps cannot
+      stretch the interval;
+    * cuts at calendar fractions of that range using strict inequalities, so a
+      timestamp shared by many rows cannot straddle a cut;
+    * inserts a purge gap (default: the forward-return horizon) between the
+      splits, so a train-set label computed over the horizon cannot overlap the
+      validation period.
+
+    Rows outside the bounded range are dropped from all three splits and the
+    count is logged at WARNING — they are never silently folded into a split.
+
+    Raises:
+        SplitRangeError: if there is nothing to split, if the bounded range is
+            degenerate, or if the train split comes out empty.
+    """
+    now_ts = time.time() if now is None else float(now)
+
+    obs = sorted(observations, key=lambda o: float(o.get("observed_at", 0.0)))
+    if cfg.obs_since is not None:
+        obs = [o for o in obs if float(o.get("observed_at", 0.0)) >= cfg.obs_since]
+    if not obs:
+        raise SplitRangeError(f"{label}: no observations to split (obs_since={cfg.obs_since!r})")
+
+    ts = [float(o.get("observed_at", 0.0)) for o in obs]
+
+    # ── Upper bound ───────────────────────────────────────────────────────
+    n_future = sum(1 for t in ts if t > now_ts)
+    if n_future:
+        log.warning(
+            "%s: %d/%d observations are dated after now (max=%s) — excluded from "
+            "train, val AND test.  These rows are a data defect, not a test set.",
+            label,
+            n_future,
+            len(ts),
+            _iso(ts[-1]),
+        )
+    in_range_hi = [t for t in ts if t <= now_ts]
+    if not in_range_hi:
+        raise SplitRangeError(
+            f"{label}: every one of {len(ts)} observations is future-dated "
+            f"(earliest={_iso(ts[0])}) — nothing can be split."
+        )
+    t_hi = in_range_hi[-1]
+
+    # ── Lower bound ───────────────────────────────────────────────────────
+    if cfg.split_time_floor is not None:
+        t_lo = max(in_range_hi[0], float(cfg.split_time_floor))
+    else:
+        t_min = in_range_hi[0]
+        t_q = _quantile_of_sorted(in_range_hi, float(cfg.split_trim_quantile))
+        # Trim only when the oldest rows actually stretch the range — one 1920
+        # row must not survive, but legitimate early data must not be thrown
+        # away just for being early.
+        t_lo = t_q if (t_q - t_min) > SPLIT_OUTLIER_STRETCH_RATIO * (t_hi - t_q) else t_min
+    n_below = sum(1 for t in ts if t < t_lo)
+    if n_below:
+        log.warning(
+            "%s: %d/%d observations fall below the split floor %s (earliest=%s) — "
+            "excluded: the oldest rows stretch the calendar range implausibly.",
+            label,
+            n_below,
+            len(ts),
+            _iso(t_lo),
+            _iso(ts[0]),
+        )
+
+    span = t_hi - t_lo
+    if span <= 0.0:
+        raise SplitRangeError(
+            f"{label}: degenerate split range [{_iso(t_lo)} → {_iso(t_hi)}] "
+            f"({span:.1f}s) — cannot build a walk-forward split."
+        )
+
+    # ── Purge gap between splits ──────────────────────────────────────────
+    gap_requested = (
+        float(cfg.split_purge_gap_seconds)
+        if cfg.split_purge_gap_seconds is not None
+        else float(cfg.forward_return_horizon) * 86400.0
+    )
+    gap_cap = 0.10 * span
+    gap = max(0.0, min(gap_requested, gap_cap))
+    if gap < gap_requested:
+        log.warning(
+            "%s: purge gap shrunk %.0fs → %.0fs (10%% of a %.1f-day range). "
+            "Labels over the %d-day forward horizon can still straddle the cut.",
+            label,
+            gap_requested,
+            gap,
+            span / 86400.0,
+            cfg.forward_return_horizon,
+        )
+
+    cut_train = t_lo + span * cfg.train_ratio
+    cut_val = t_lo + span * (cfg.train_ratio + cfg.val_ratio)
+    if not (t_lo < cut_train <= cut_val <= t_hi):
+        raise SplitRangeError(
+            f"{label}: invalid cuts train_ratio={cfg.train_ratio} val_ratio={cfg.val_ratio} "
+            f"over [{_iso(t_lo)} → {_iso(t_hi)}]"
+        )
+
+    train: list[dict] = []
+    val: list[dict] = []
+    test: list[dict] = []
+    for o, t in zip(obs, ts, strict=True):
+        if t < t_lo or t > t_hi:
+            continue
+        if t < cut_train:
+            train.append(o)
+        elif t >= cut_train + gap and t < cut_val:
+            val.append(o)
+        elif t >= cut_val + gap:
+            test.append(o)
+        # else: inside a purge gap — deliberately used by no split.
+
+    if not train:
+        raise SplitRangeError(
+            f"{label}: train split is empty over [{_iso(t_lo)} → {_iso(cut_train)}] from {len(obs)} observations."
+        )
+    for name, part in (("val", val), ("test", test)):
+        if not part:
+            log.error(
+                "%s: %s split is EMPTY over the calendar range — evaluation on this "
+                "split is meaningless, not merely quiet.",
+                label,
+                name,
+            )
+
+    # ── Post-conditions: the whole point of the fix ───────────────────────
+    if train and val:
+        assert max(float(o["observed_at"]) for o in train) < min(float(o["observed_at"]) for o in val)
+    if val and test:
+        assert max(float(o["observed_at"]) for o in val) < min(float(o["observed_at"]) for o in test)
+    for part in (train, val, test):
+        if part:
+            assert float(part[0]["observed_at"]) >= t_lo
+            assert float(part[-1]["observed_at"]) <= t_hi <= now_ts
+
+    n_dropped = len(observations) - (len(train) + len(val) + len(test))
+    log.info(
+        "TRAINING_AUDIT: calendar %.0f/%.0f/%.0f split over [%s → %s] "
+        "(purge gap %.1fd) — train %d [%s → %s]  val %d [%s → %s]  test %d [%s → %s]; "
+        "%d rows outside the range or inside a purge gap were dropped.",
+        100 * cfg.train_ratio,
+        100 * cfg.val_ratio,
+        100 * (1 - cfg.train_ratio - cfg.val_ratio),
+        _iso(t_lo),
+        _iso(t_hi),
+        gap / 86400.0,
+        len(train),
+        _iso(float(train[0]["observed_at"])) if train else "—",
+        _iso(float(train[-1]["observed_at"])) if train else "—",
+        len(val),
+        _iso(float(val[0]["observed_at"])) if val else "—",
+        _iso(float(val[-1]["observed_at"])) if val else "—",
+        len(test),
+        _iso(float(test[0]["observed_at"])) if test else "—",
+        _iso(float(test[-1]["observed_at"])) if test else "—",
+        n_dropped,
+    )
+    return train, val, test
+
+
+def adjacent_window_pairs(
+    windows: list[tuple[float, float, list[dict]]],
+    window_size: float,
+) -> list[int]:
+    """Indices ``i`` for which ``windows[i]`` and ``windows[i+1]`` are adjacent buckets.
+
+    ``_make_windows`` iterates only *non-empty* buckets, so a multi-year hole in
+    the data turns into a single "next window" supervision pair whose
+    ``time_delta`` target is ``log1p(1.6e9)`` — clamped to the ceiling and
+    trained on as though it were a real next event.  Supervision pairs that span
+    more than one window width are not next-window pairs and must be skipped.
+    """
+    tol = max(window_size * 1e-6, 1e-6)
+    return [i for i in range(len(windows) - 1) if abs((windows[i + 1][0] - windows[i][0]) - window_size) <= tol]
+
+
+def estimate_return_upscale(
+    windows: list[tuple[float, float, list[dict]]],
+    pair_indices: list[int],
+    forward_returns: dict[tuple[str, int], float] | None = None,
+    *,
+    use_forward_returns: bool = True,
+) -> tuple[float, dict[str, float]]:
+    """Ratio between the supervision batch and the return batch, per window.
+
+    The return head is upscaled because it sees fewer terms per gradient step
+    than obs_type/time_delta/value do.  The ratio that matters is therefore the
+    one *inside a window* — the gradient batch — not the ratio of registered
+    entities to return-labelled entities over all of history, which is what the
+    old code measured and which overstated it by ~38x.
+
+    Returns (median_ratio, stats).  When no window carries a return label the
+    ratio is 1.0 and the reason is logged at WARNING — never silently.
+    """
+    ratios: list[float] = []
+    sup_counts: list[int] = []
+    ret_counts: list[int] = []
+    for i in pair_indices:
+        next_obs = windows[i + 1][2]
+        sup_entities = {o.get("entity_id") for o in next_obs if o.get("entity_id")}
+        ret_entities = set()
+        for o in next_obs:
+            if o.get("observation_type") != "instrument_daily":
+                continue
+            eid = o.get("entity_id")
+            if not eid:
+                continue
+            if use_forward_returns and forward_returns:
+                if (eid, int(float(o.get("observed_at", 0.0)))) in forward_returns:
+                    ret_entities.add(eid)
+                    continue
+            v = o.get("value")
+            if isinstance(v, dict) and "log_return" in v:
+                ret_entities.add(eid)
+        if not ret_entities:
+            continue
+        sup_counts.append(len(sup_entities))
+        ret_counts.append(len(ret_entities))
+        ratios.append(len(sup_entities) / len(ret_entities))
+
+    if not ratios:
+        log.warning(
+            "Return upscale: no window pair carries a return label (%d pairs inspected) "
+            "— multiplier forced to 1.0.  The return head will train on nothing; check "
+            "instrument_daily coverage.",
+            len(pair_indices),
+        )
+        return 1.0, {"n_windows": 0.0, "median_sup": 0.0, "median_ret": 0.0}
+
+    ratios.sort()
+    sup_counts.sort()
+    ret_counts.sort()
+    mid = len(ratios) // 2
+    median = ratios[mid] if len(ratios) % 2 else 0.5 * (ratios[mid - 1] + ratios[mid])
+    stats = {
+        "n_windows": float(len(ratios)),
+        "median_sup": float(sup_counts[len(sup_counts) // 2]),
+        "median_ret": float(ret_counts[len(ret_counts) // 2]),
+    }
+    return median, stats
+
+
+# ═══════════════════════════════════════════════════════════════
+# Embedding collapse detection  (LESSONS.md F-01 / F-15, audit P0.6)
+# ═══════════════════════════════════════════════════════════════
+
+COLLAPSE_EFF_RANK_FRAC = 0.25
+COLLAPSE_COS_SIM_MAX = 0.9
+
+
+def embedding_collapse_report(
+    emb: torch.Tensor,
+    *,
+    eff_rank_frac_threshold: float = COLLAPSE_EFF_RANK_FRAC,
+    cos_sim_threshold: float = COLLAPSE_COS_SIM_MAX,
+) -> dict[str, float | bool]:
+    """Scale-free collapse diagnostic for an embedding matrix ``(n_rows, dim)``.
+
+    ``emb_std`` cannot detect collapse: it is a magnitude, every downstream loss
+    L2-normalises, so the scale is unobservable to the objective and free to
+    drift.  The live checkpoint scores ``emb_std = 6403`` — 128,000x above the
+    old ``< 0.05`` gate — while its effective rank is 3.2 of 64 dimensions.  The
+    gate could not fire during the collapse it was written to detect (F-15).
+
+    Gates instead on two scale-free quantities:
+      * ``eff_rank / dim`` — exp(entropy of normalised singular values);
+      * mean off-diagonal absolute cosine similarity of the normalised rows.
+
+    ``emb_std`` is kept as a diagnostic only.
+
+    Raises:
+        ValueError: on a non-2D tensor or fewer than 2 rows (the caller must not
+            paper over a degenerate batch by calling this and ignoring it).
+    """
+    if emb.ndim != 2:
+        raise ValueError(f"embedding_collapse_report expects a 2-D tensor, got shape {tuple(emb.shape)}")
+    if emb.size(0) < 2:
+        raise ValueError(f"embedding_collapse_report needs >= 2 rows, got {emb.size(0)}")
+
+    x = emb.detach().float()
+    n_rows, n_dim = x.shape
+    emb_dim = min(n_rows, n_dim)
+
+    sv = torch.linalg.svdvals(x)
+    p = sv / (sv.sum() + 1e-12)
+    eff_rank = float(torch.exp(-(p * (p + 1e-12).log()).sum()).item())
+    eff_rank_frac = eff_rank / max(emb_dim, 1)
+
+    xn = F.normalize(x, dim=-1)
+    cos = xn @ xn.t()
+    off_diag = ~torch.eye(n_rows, dtype=torch.bool, device=cos.device)
+    mean_abs_cos = float(cos[off_diag].abs().mean().item())
+
+    collapsed = bool(eff_rank_frac < eff_rank_frac_threshold or mean_abs_cos > cos_sim_threshold)
+    return {
+        "emb_std": float(x.std(dim=0).mean().item()),
+        "eff_rank": eff_rank,
+        "emb_dim": float(emb_dim),
+        "eff_rank_frac": eff_rank_frac,
+        "mean_abs_cos": mean_abs_cos,
+        "collapse_detected": collapsed,
+    }
+
+
+def collapse_detected(
+    emb: torch.Tensor,
+    *,
+    eff_rank_frac_threshold: float = COLLAPSE_EFF_RANK_FRAC,
+    cos_sim_threshold: float = COLLAPSE_COS_SIM_MAX,
+) -> bool:
+    """True when ``emb`` shows directional collapse (see embedding_collapse_report)."""
+    return bool(
+        embedding_collapse_report(
+            emb,
+            eff_rank_frac_threshold=eff_rank_frac_threshold,
+            cos_sim_threshold=cos_sim_threshold,
+        )["collapse_detected"]
+    )
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1550,17 +2019,18 @@ class Trainer:
 
     def _split_observations(
         self,
+        observations: list[dict] | None = None,
     ) -> tuple[list[dict], list[dict], list[dict]]:
-        """Chronological 70/15/15 split of all observations."""
-        all_obs = self.store.query_all_observations()
-        all_obs.sort(key=lambda o: o.get("observed_at", 0.0))
-        # Apply obs_since filter if configured
-        if self.config.obs_since is not None:
-            all_obs = [o for o in all_obs if o.get("observed_at", 0.0) >= self.config.obs_since]
-        n = len(all_obs)
-        n_train = int(n * self.config.train_ratio)
-        n_val = int(n * (self.config.train_ratio + self.config.val_ratio))
-        return all_obs[:n_train], all_obs[n_train:n_val], all_obs[n_val:]
+        """Calendar-time 70/15/15 walk-forward split.
+
+        Args:
+            observations: the exact observation list the model will be fed.
+                ``train()`` passes its subsampled stream so that supervision
+                windows and graph features come from one list (subsample
+                parity).  None falls back to querying the store.
+        """
+        all_obs = self.store.query_all_observations() if observations is None else observations
+        return split_observations_by_calendar(all_obs, self.config, label="split_observations")
 
     def _make_windows(
         self,
@@ -1855,6 +2325,7 @@ class Trainer:
             "contrastive": [],
             "value": [],
             "return": [],
+            "ewc": [],
         }
         if cfg.resume_from_epoch > 0 and cfg.checkpoint_dir:
             ckpt_path = os.path.join(cfg.checkpoint_dir, f"epoch_{cfg.resume_from_epoch:03d}.pt")
@@ -1963,6 +2434,7 @@ class Trainer:
                     "contrastive",
                     "value",
                     "return",
+                    "ewc",
                 ):
                     if _hk not in history:
                         history[_hk] = []
@@ -1973,7 +2445,7 @@ class Trainer:
                 # Without this, the loss-curve table renders return values
                 # shifted up by the gap size (observed: 10-row shift in V40).
                 _n_total = len(history.get("total", []))
-                for _hk in ("return", "value", "contrastive", "time_delta", "obs_type"):
+                for _hk in ("ewc", "return", "value", "contrastive", "time_delta", "obs_type"):
                     _h = history.get(_hk)
                     if _h is not None and len(_h) < _n_total:
                         _pad = _n_total - len(_h)
@@ -2002,10 +2474,15 @@ class Trainer:
                             obs_count_at_update=_ewc_ckpt.get("ewc_obs_count_at_update", 0),
                         )
                         log.info(
-                            "EWC sidecar loaded: %d Fisher params, lambda=%.1f "
-                            "(EWC regularisation active from epoch 1).",
+                            "EWC sidecar loaded: %d Fisher params, lambda=%.1f — "
+                            "penalty %s in the training loss from epoch 1.",
                             len(self._ewc_state.fisher),
                             self._ewc_state.lambda_,
+                            (
+                                "APPLIED"
+                                if cfg.apply_ewc_in_training
+                                else "LOADED BUT NOT APPLIED (apply_ewc_in_training=False)"
+                            ),
                         )
                     except Exception as _ewc_exc:
                         log.warning(
@@ -2022,7 +2499,47 @@ class Trainer:
                     "  Attach the tirramind-h-d-ckpt dataset containing epoch_018.pt"
                 )
 
-        train_obs, val_obs, test_obs = self._split_observations()
+        # ── Prefetch + subsample BEFORE the split (subsample parity) ─────────
+        # The supervision windows and the graph-feature stream must be derived
+        # from ONE list.  Previously the subsample was applied only to the
+        # feature stream, so at --gdelt-frac 0.05 the model was asked to predict
+        # ~87,600 GDELT events whose evidence had been deleted from its input.
+        # Per-window slicing via bisect eliminates the DB query per window.
+        all_prefetched_obs = self._graph_builder.prefetch_observations()
+
+        # ── Modal subsampling (Phase 41 + N1 doctrine) ───────────────────
+        from agent.models.gnn.obs_subsample import apply_training_obs_subsample
+
+        _n_before = len(all_prefetched_obs)
+        all_prefetched_obs, _sub_stats = apply_training_obs_subsample(
+            all_prefetched_obs,
+            gdelt_subsample_frac=cfg.gdelt_subsample_frac,
+            defi_subsample_frac=cfg.defi_subsample_frac,
+        )
+        if cfg.zero_price_feats or cfg.embedding_only_return:
+            log.info(
+                "N1 doctrine flags: zero_price_feats=%s embedding_only_return=%s",
+                cfg.zero_price_feats,
+                cfg.embedding_only_return,
+            )
+        if _sub_stats.get("dropped_total", 0) > 0:
+            log.info(
+                "Obs subsample gdelt_frac=%.3f defi_frac=%.3f: %d → %d "
+                "(gdelt kept/drop=%s/%s defi kept/drop=%s/%s floor=%s) — applied "
+                "ONCE, before the split: windows and graph features share this list.",
+                cfg.gdelt_subsample_frac,
+                cfg.defi_subsample_frac,
+                _n_before,
+                len(all_prefetched_obs),
+                _sub_stats.get("gdelt_kept", 0),
+                _sub_stats.get("gdelt_dropped", 0),
+                _sub_stats.get("defi_kept", 0),
+                _sub_stats.get("defi_dropped", 0),
+                _sub_stats.get("floor_kept", 0),
+            )
+        _obs_timestamps = [o.get("observed_at", 0.0) for o in all_prefetched_obs]
+
+        train_obs, val_obs, test_obs = self._split_observations(observations=all_prefetched_obs)
         windows = self._make_windows(train_obs)
         n_windows_full = len(windows)
 
@@ -2079,68 +2596,6 @@ class Trainer:
         # Pre-fetch static graph structure (entities + links) once
         cached_id_map, _, cached_links = self._graph_builder.prepare_static()
 
-        # Pre-fetch ALL observations once, sorted by time.
-        # Per-window slicing via bisect eliminates the DB query per window.
-        # NOTE: No since= filter here — graph features need full history
-        # (original code used build(since=None, until=t_end)).
-        all_prefetched_obs = self._graph_builder.prefetch_observations()
-
-        # ── Modal subsampling (Phase 41 + N1 doctrine) ───────────────────
-        from agent.models.gnn.obs_subsample import apply_training_obs_subsample
-
-        _n_before = len(all_prefetched_obs)
-        all_prefetched_obs, _sub_stats = apply_training_obs_subsample(
-            all_prefetched_obs,
-            gdelt_subsample_frac=cfg.gdelt_subsample_frac,
-            defi_subsample_frac=cfg.defi_subsample_frac,
-        )
-        if cfg.zero_price_feats or cfg.embedding_only_return:
-            log.info(
-                "N1 doctrine flags: zero_price_feats=%s embedding_only_return=%s",
-                cfg.zero_price_feats,
-                cfg.embedding_only_return,
-            )
-        if _sub_stats.get("dropped_total", 0) > 0:
-            log.info(
-                "Obs subsample gdelt_frac=%.3f defi_frac=%.3f: %d → %d "
-                "(gdelt kept/drop=%s/%s defi kept/drop=%s/%s floor=%s)",
-                cfg.gdelt_subsample_frac,
-                cfg.defi_subsample_frac,
-                _n_before,
-                len(all_prefetched_obs),
-                _sub_stats.get("gdelt_kept", 0),
-                _sub_stats.get("gdelt_dropped", 0),
-                _sub_stats.get("defi_kept", 0),
-                _sub_stats.get("defi_dropped", 0),
-                _sub_stats.get("floor_kept", 0),
-            )
-        _obs_timestamps = [o.get("observed_at", 0.0) for o in all_prefetched_obs]
-
-        # ── Fix: dynamic return upscaling ────────────────────────────────────
-        # The return head sees only instrument_daily obs with log_return (~53
-        # entities) while obs_type sees all ~2,145 entities.  Without upscaling,
-        # the return gradient is ~40× weaker than every other head, causing the
-        # return head to get drowned out and silenced by auto-tune.
-        # We compute the ratio once here and apply it as a multiplier to ret_loss
-        # every window.  Ratio = n_unique_entities / n_return_labeled_entities.
-        _return_entities = {
-            o["entity_id"]
-            for o in all_prefetched_obs
-            if o.get("observation_type") == "instrument_daily"
-            and isinstance(o.get("value"), dict)
-            and "log_return" in o["value"]
-            and o.get("entity_id") is not None
-        }
-        _n_return_entities = max(len(_return_entities), 1)
-        _n_total_entities = max(len(all_entities), 1)
-        _return_upscale = _n_total_entities / _n_return_entities
-        log.info(
-            "Return upscale: %d total entities / %d return-labeled = %.1f×",
-            _n_total_entities,
-            _n_return_entities,
-            _return_upscale,
-        )
-
         # ── A2: Precompute 21-day forward return lookup (Phase 47) ──────────
         # Replaces daily log_return (near-zero IC) with N-day forward return
         # (the correct oracle for cross-sectional IC at the backtest horizon).
@@ -2153,6 +2608,62 @@ class Trainer:
                 "A2: Precomputed %d forward-return labels (horizon=%dd)",
                 len(_forward_returns),
                 cfg.forward_return_horizon,
+            )
+
+        # ── Window-pair adjacency guard (audit P4.2) ─────────────────────────
+        # _make_windows iterates only non-empty buckets, so a gap in the data
+        # turns into a "next window" pair whose time_delta target is the gap
+        # length.  Such a pair is not a next-window pair; it is supervision on
+        # a hole.  Train only on calendar-adjacent pairs.
+        _pair_indices = adjacent_window_pairs(windows, cfg.window_size)
+        _pair_set = set(_pair_indices)
+        _n_pairs_total = max(len(windows) - 1, 0)
+        _n_skipped_pairs = _n_pairs_total - len(_pair_indices)
+        if _n_skipped_pairs > 0:
+            log.warning(
+                "TRAINING_AUDIT: %d/%d window pairs span more than one window width "
+                "(gaps in the observation timeline) and are EXCLUDED from supervision.",
+                _n_skipped_pairs,
+                _n_pairs_total,
+            )
+        if _n_pairs_total > 0 and not _pair_indices:
+            raise RuntimeError(
+                f"No calendar-adjacent window pairs among {_n_pairs_total} candidates "
+                f"(window_size={cfg.window_size:.0f}s) — every supervision pair would "
+                "span a gap.  Refusing to train on holes."
+            )
+
+        # ── Return-loss upscale, from the per-window gradient batch ──────────
+        # The return head sees fewer terms per window than obs_type/time_delta/
+        # value do, so its gradient is proportionally weaker.  The correction
+        # must therefore come from the per-window batch — the thing that is
+        # actually unbalanced — not from registered-entity counts over all of
+        # history, which produced a 68.65x multiplier for a ~1.8x imbalance and
+        # starved every other head through clip_grad_norm_.
+        _return_upscale = 1.0
+        _upscale_stats: dict[str, float] = {}
+        if cfg.return_weight > 0.0:
+            _return_upscale, _upscale_stats = estimate_return_upscale(
+                windows,
+                _pair_indices,
+                _forward_returns,
+                use_forward_returns=cfg.use_forward_returns,
+            )
+            log.info(
+                "Return upscale: median %.2f× (per-window medians: %.0f supervised "
+                "entities vs %.0f return-labelled, over %.0f windows)",
+                _return_upscale,
+                _upscale_stats.get("median_sup", 0.0),
+                _upscale_stats.get("median_ret", 0.0),
+                _upscale_stats.get("n_windows", 0.0),
+            )
+            log.info(
+                "Return multiplier resolved: return_weight=%.3f × upscale=%.2f "
+                "applied AFTER _scaled_task_loss (use_log_loss=%s), so the log "
+                "transform can no longer cancel the upscale on one path only.",
+                cfg.return_weight,
+                _return_upscale,
+                cfg.use_log_loss,
             )
 
         # ── Phase 49: Load GNN alignment weights ──────────────────────────
@@ -2192,6 +2703,11 @@ class Trainer:
                 leave=False,
             )
         for _snap_i in _snap_iter:
+            if _snap_i not in _pair_set:
+                # Pair (i, i+1) spans a gap — it will never be trained on, so
+                # do not spend a graph build on it.
+                _window_snapshots.append(None)
+                continue
             _t_end_snap = windows[_snap_i][1]
             _cutoff_snap = bisect.bisect_right(_obs_timestamps, _t_end_snap)
             _snap_data, _, _ = self._graph_builder.build_from_cached(
@@ -2265,6 +2781,7 @@ class Trainer:
                 "contrastive": 0.0,
                 "value": 0.0,
                 "return": 0.0,
+                "ewc": 0.0,
             }
             _epoch_ntype_obs: dict[str, list[float]] = {}
             _epoch_grad_diag: dict = {
@@ -2292,6 +2809,10 @@ class Trainer:
                 )
 
             for i in _window_iter:
+                if i not in _pair_set:
+                    # Window pair spans a gap in the timeline — not a
+                    # next-window pair.  See adjacent_window_pairs().
+                    continue
                 if not _HAS_TQDM and ((i + 1) % 50 == 0 or i == 0):
                     log.info(
                         "  Epoch %d/%d — window %d/%d",
@@ -2412,9 +2933,22 @@ class Trainer:
                 # and corrupt all other heads (observed: val_loss = 1,094,629
                 # at epoch 24 in H-G run).
                 val_loss = torch.tensor(0.0, device=self._device)
-                if target_embs:
+                if target_embs and cfg.value_weight > 0.0:
                     val_pred = model.value_pred_head(target_emb_tensor).squeeze(-1).clamp(-1e4, 1e4)
                     valid_val = val_targets[valid_indices]
+                    # A target that never varies cannot teach anything, and this
+                    # one did not merely fail to teach — it was 99.31% of the
+                    # objective and starved the anti-collapse loss by ~63,000:1
+                    # (see value_weight's docstring, LESSONS.md F-17).  Refuse
+                    # loudly rather than let a constant target dominate again.
+                    if float(valid_val.abs().max()) == 0.0:
+                        raise DeadTargetError(
+                            f"value head: all {valid_val.numel()} targets in this window are "
+                            f"exactly 0.0, so huber_loss(pred, 0) is an L1 penalty on the "
+                            f"model's own output, not a prediction task. Either set "
+                            f"value_weight=0.0 or fix OBS_VALUE_KEYS so collectors' magnitudes "
+                            f"are actually extracted."
+                        )
                     val_loss = F.huber_loss(val_pred, valid_val)
 
                 # ── contrastive loss (CSRC: return-decile-based) ──
@@ -2583,11 +3117,12 @@ class Trainer:
                         # In theory non-negative, but floating-point rounding
                         # in softmax can produce tiny negatives.  A negative
                         # loss rewards the model for being wrong — clamp it out.
-                        # Also apply return upscaling: the return head sees only
-                        # ~53 instruments while obs_type sees ~2,145 entities.
-                        # Without upscaling the return gradient is ~40× weaker
-                        # and auto-tune silences it within 10 epochs.
-                        ret_loss = ret_loss.clamp(min=0.0) * _return_upscale
+                        # The return upscale is NOT applied here: it is applied
+                        # after _scaled_task_loss in the combine below, so that
+                        # --use-log-loss cannot swallow it on the ListNet path
+                        # while preserving it on the Huber path.  history["return"]
+                        # therefore records the raw return loss.
+                        ret_loss = ret_loss.clamp(min=0.0)
 
                 # M1: CDE memory update — runs before loss combination so the
                 # KL term (Phase E only) is included in this window's backward pass.
@@ -2636,7 +3171,7 @@ class Trainer:
                     _dt_l = _scaled_task_loss(dt_loss, cfg)
                     _c_l = _scaled_task_loss(c_loss, cfg)
                     _val_l = _scaled_task_loss(val_loss, cfg)
-                    _ret_l = _scaled_task_loss(ret_loss, cfg)
+                    _ret_l = _return_upscale * _scaled_task_loss(ret_loss, cfg)
                     _task_losses = {
                         "obs_type": torch.exp(-clamped["obs_type"]) * _obs_l + clamped["obs_type"],
                         "time_delta": torch.exp(-clamped["time_delta"]) * _dt_l + clamped["time_delta"],
@@ -2654,12 +3189,23 @@ class Trainer:
                         "time_delta": cfg.time_delta_weight * _scaled_task_loss(dt_loss, cfg),
                         "contrastive": cfg.contrastive_weight * _scaled_task_loss(c_loss, cfg),
                         "value": cfg.value_weight * _scaled_task_loss(val_loss, cfg),
-                        "return": cfg.return_weight * _scaled_task_loss(ret_loss, cfg),
+                        "return": cfg.return_weight * _return_upscale * _scaled_task_loss(ret_loss, cfg),
                     }
                     total = sum(_task_losses.values())
                     if cfg.vicreg_weight > 0.0:
                         _task_losses["vicreg"] = cfg.vicreg_weight * vicreg_loss
                         total = total + _task_losses["vicreg"]
+
+                # ── EWC penalty (audit P4.3) ─────────────────────────────
+                # Fisher was computed, checkpointed, resumed and logged as
+                # "active" while never entering the training loss.  It enters
+                # here, as a term in _task_losses so that it also survives the
+                # PCGrad path (which does not use `total.backward()`).
+                _ewc_loss = torch.tensor(0.0, device=self._device)
+                if self._ewc_state is not None and cfg.apply_ewc_in_training and self._ewc_state.lambda_ > 0.0:
+                    _ewc_loss = ewc_penalty(model, self._ewc_state)
+                    _task_losses["ewc"] = _ewc_loss
+                    total = total + _ewc_loss
 
                 # M1 Phase E: anneal KL weight 0 → cwm_lambda_kl over warmup epochs
                 if self._cwm is not None and cfg.cwm_curriculum_phase.upper() == "E":
@@ -2714,6 +3260,7 @@ class Trainer:
                 epoch_losses["contrastive"] += c_loss.item()
                 epoch_losses["value"] += val_loss.item()
                 epoch_losses["return"] += ret_loss.item()
+                epoch_losses["ewc"] += float(_ewc_loss.item())
                 n_windows += 1
 
             # Average over windows
@@ -2746,51 +3293,77 @@ class Trainer:
                     _total_windows,
                 )
 
-            # ── Embedding diversity check (LESSONS.md F-01 prevention) ──
-            # Compute std of instrument embeddings on the last window snapshot.
-            # std < 0.05 → embeddings are collapsing → CSRC is not working.
-            # Runs in no_grad on the last snapshot only (cheap). Every epoch
-            # when grad-flow diagnostics are enabled (V64+ loop).
-            if _window_snapshots and "instrument" in (
-                _window_snapshots[-1].node_types if _window_snapshots[-1] is not None else []
-            ):
+            # ── Embedding collapse gate (LESSONS.md F-01/F-15, audit P0.6) ──
+            # The old gate thresholded an UNNORMALISED std (< 0.05).  std is a
+            # magnitude and every downstream loss L2-normalises, so the live
+            # checkpoint passed the gate at std=6403 while its effective rank
+            # was 3.2 of 64 dimensions: the gate could not fire during the
+            # collapse it exists to detect.  Gate on scale-free quantities
+            # instead (effective rank fraction + mean off-diagonal |cos|), and
+            # never swallow a failure of the check itself.
+            _diag_snap = next(
+                (_s for _s in reversed(_window_snapshots) if _s is not None and "instrument" in _s.node_types),
+                None,
+            )
+            if _diag_snap is not None:
+                _diag_embs: dict = {}
                 try:
                     with torch.no_grad():
-                        _last_snap = _window_snapshots[-1].to(self._device)
-                        _diag_embs = model(_last_snap, cached_id_map)
-                        if "instrument" in _diag_embs:
-                            _ie = _diag_embs["instrument"]
-                            _emb_std = _ie.std(dim=0).mean().item()
-                            _emb_rank = min(_ie.shape[0], _ie.shape[1])
-                            # Effective rank: exp(entropy of normalised singular values)
-                            _sv = torch.linalg.svdvals(_ie.float())
-                            _sv_norm = _sv / (_sv.sum() + 1e-8)
-                            _eff_rank = torch.exp(-(_sv_norm * (_sv_norm + 1e-8).log()).sum()).item()
-                            _epoch_emb_diag = {
-                                "emb_std": _emb_std,
-                                "eff_rank": _eff_rank,
-                                "emb_dim": _emb_rank,
-                                "collapse_risk": _emb_std < 0.05,
-                            }
-                            if _emb_std < 0.05:
-                                log.warning(
-                                    "[COLLAPSE] Instrument embedding std=%.4f < 0.05 "
-                                    "— embeddings are collapsing! "
-                                    "CSRC loss not differentiating instruments. "
-                                    "effective_rank=%.1f/%d",
-                                    _emb_std,
-                                    _eff_rank,
-                                    _emb_rank,
-                                )
-                            elif (epoch + 1) % 5 == 0:
-                                log.info(
-                                    "[EMB] Instrument embedding std=%.4f  effective_rank=%.1f/%d",
-                                    _emb_std,
-                                    _eff_rank,
-                                    _emb_rank,
-                                )
+                        _diag_embs = model(_diag_snap.to(self._device), cached_id_map)
                 except Exception as _diag_e:
-                    log.debug("Embedding diversity check skipped: %s", _diag_e)
+                    log.warning(
+                        "[COLLAPSE] diagnostic forward pass FAILED (%s) — the F-01 gate did not run for epoch %d.",
+                        _diag_e,
+                        epoch + 1,
+                        exc_info=True,
+                    )
+                _ie = _diag_embs.get("instrument")
+                if _ie is None:
+                    log.warning(
+                        "[COLLAPSE] snapshot carries instrument nodes but the model returned "
+                        "no instrument embeddings — the F-01 gate did not run for epoch %d.",
+                        epoch + 1,
+                    )
+                elif _ie.size(0) < 2:
+                    log.warning(
+                        "[COLLAPSE] only %d instrument embedding row(s) — the F-01 gate did not run for epoch %d.",
+                        _ie.size(0),
+                        epoch + 1,
+                    )
+                else:
+                    _rep = embedding_collapse_report(_ie)
+                    _epoch_emb_diag = {
+                        "emb_std": _rep["emb_std"],
+                        "eff_rank": _rep["eff_rank"],
+                        "emb_dim": _rep["emb_dim"],
+                        "eff_rank_frac": _rep["eff_rank_frac"],
+                        "mean_abs_cos": _rep["mean_abs_cos"],
+                        "collapse_risk": bool(_rep["collapse_detected"]),
+                    }
+                    if _rep["collapse_detected"]:
+                        log.error(
+                            "[COLLAPSE] epoch %d: instrument embeddings are collapsing — "
+                            "eff_rank=%.2f/%.0f (%.1f%% of dims, threshold %.0f%%), "
+                            "mean|cos|=%.3f (threshold %.2f), emb_std=%.4g (diagnostic only). "
+                            "The CSRC loss is not differentiating instruments.",
+                            epoch + 1,
+                            _rep["eff_rank"],
+                            _rep["emb_dim"],
+                            100.0 * float(_rep["eff_rank_frac"]),
+                            100.0 * COLLAPSE_EFF_RANK_FRAC,
+                            _rep["mean_abs_cos"],
+                            COLLAPSE_COS_SIM_MAX,
+                            _rep["emb_std"],
+                        )
+                    elif (epoch + 1) % 5 == 0:
+                        log.info(
+                            "[EMB] epoch %d: eff_rank=%.2f/%.0f  mean|cos|=%.3f  emb_std=%.4g",
+                            epoch + 1,
+                            _rep["eff_rank"],
+                            _rep["emb_dim"],
+                            _rep["mean_abs_cos"],
+                            _rep["emb_std"],
+                        )
 
             # ── Grad-flow diagnostic (V64+ autonomous loop) ───────────────
             _grad_flow: dict = {}
@@ -2983,11 +3556,15 @@ class Trainer:
         # of the posterior p(θ | data_old) that EWC uses to protect
         # parameters important to previously learned tasks.
         # Ref: Kirkpatrick et al. 2017, arXiv:1612.00796, Section 2.
-        if len(windows) >= 2 and all_prefetched_obs:
+        if _pair_indices and all_prefetched_obs:
             log.info("Computing Fisher Information diagonal for EWC (Phase 46) ...")
-            last_curr_obs = windows[-2][2]
-            last_next_obs = windows[-1][2]
-            last_t_end = windows[-2][1]
+            # Use the last CALENDAR-ADJACENT pair: windows[-2]/windows[-1] can
+            # straddle a gap, which would build the Fisher from supervision on
+            # a hole in the timeline.
+            _fisher_pair = _pair_indices[-1]
+            last_curr_obs = windows[_fisher_pair][2]
+            last_next_obs = windows[_fisher_pair + 1][2]
+            last_t_end = windows[_fisher_pair][1]
             fisher_cutoff = bisect.bisect_right(_obs_timestamps, last_t_end)
             fisher_window_obs = all_prefetched_obs[:fisher_cutoff]
             fisher_data, fisher_id_map, _ = self._graph_builder.build_from_cached(
@@ -3011,8 +3588,14 @@ class Trainer:
                     _fm=fisher_id_map,
                     _co=last_curr_obs,
                     _no=last_next_obs,
+                    _fr=_forward_returns,
+                    _up=_return_upscale,
                 ) -> torch.Tensor:
-                    return self._loss_from_window(_fd, _fm, _co, _no)
+                    # forward_returns/return_upscale are passed so the Fisher
+                    # closure includes the RETURN loss.  Without it every
+                    # return-head Fisher diagonal is 0 and EWC protects
+                    # everything except the ranking signal (audit P4.3).
+                    return self._loss_from_window(_fd, _fm, _co, _no, forward_returns=_fr, return_upscale=_up)
 
                 fisher_diag = compute_fisher(model, _fisher_loss_fn, n_samples=1)
                 self._ewc_state = EWCState(
@@ -3052,9 +3635,10 @@ class Trainer:
                 log.warning("Fisher computation skipped — last training window produced an empty graph (no nodes).")
         else:
             log.warning(
-                "Fisher computation skipped — need ≥ 2 training windows "
-                "(got %d). EWC will not be available until more data "
-                "accumulates.",
+                "Fisher computation skipped — need at least one calendar-adjacent "
+                "training window pair (got %d pairs from %d windows). EWC will not "
+                "be available until more data accumulates.",
+                len(_pair_indices),
                 len(windows),
             )
 
@@ -3342,25 +3926,152 @@ class Trainer:
 
     # ── Phase 46: continual learning helpers ─────────────────────────────
 
+    def _return_loss_terms(
+        self,
+        embeddings: dict[str, torch.Tensor],
+        data,
+        id_map: IDMap,
+        next_obs: list[dict],
+        forward_returns: dict[tuple[str, int], float] | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Return-head loss and CSRC loss for one window pair.
+
+        Mirrors the head-selection chain used by the training loop so that any
+        caller which needs the return heads in its computational graph — the
+        EWC Fisher closure, ``online_update`` — actually gets them.  Without
+        this, the Fisher diagonal for every ``return_*`` parameter is exactly
+        0 and EWC protects everything except the ranking signal.
+
+        Returns:
+            (ret_loss, csrc_loss), both zero tensors when the window carries no
+            usable instrument return label.
+        """
+        model = self.model
+        cfg = self.config
+        zero = torch.tensor(0.0, device=self._device)
+        if cfg.return_weight <= 0.0 or "instrument" not in embeddings:
+            return zero, zero
+
+        _inst_emb = embeddings["instrument"]
+        has_raw = (
+            getattr(model, "return_raw_head", None) is not None
+            and "instrument" in getattr(data, "node_types", [])
+            and hasattr(data["instrument"], "x")
+        )
+        embs: list[torch.Tensor] = []
+        raw_feats: list[torch.Tensor] = []
+        targets: list[float] = []
+        for o in next_obs:
+            if o.get("observation_type") != "instrument_daily":
+                continue
+            eid = o.get("entity_id")
+            if eid is None:
+                continue
+            lr: float | None = None
+            if cfg.use_forward_returns and forward_returns:
+                lr = forward_returns.get((eid, int(float(o.get("observed_at", 0.0)))))
+            if lr is None:
+                v = o.get("value", {})
+                if not isinstance(v, dict) or "log_return" not in v:
+                    continue
+                try:
+                    lr = float(v["log_return"])
+                except (TypeError, ValueError):
+                    continue
+            local_idx = id_map.local_id("instrument", eid)
+            if local_idx is None or local_idx >= _inst_emb.size(0):
+                continue
+            embs.append(_inst_emb[local_idx])
+            if has_raw:
+                raw_feats.append(data["instrument"].x[local_idx])
+            targets.append(lr)
+
+        if not embs:
+            return zero, zero
+
+        emb_t = torch.stack(embs)
+        tgt_t = torch.tensor(targets, dtype=torch.float32, device=emb_t.device)
+
+        csrc = zero
+        if cfg.use_csrc_loss:
+            csrc = self._cross_sectional_ranking_contrastive(
+                emb_t,
+                tgt_t,
+                temperature=cfg.csrc_temperature,
+                n_deciles=cfg.csrc_n_deciles,
+            )
+        if cfg.use_residual_returns:
+            tgt_t = tgt_t - tgt_t.mean()
+
+        finite = torch.isfinite(tgt_t)
+        n_valid = int(finite.sum().item())
+        min_required = 2 if cfg.use_listnet_return_loss else 1
+        if n_valid < min_required:
+            if n_valid < len(tgt_t):
+                log.warning(
+                    "_return_loss_terms: %d/%d return targets NaN/Inf (min_required=%d) "
+                    "— return loss is zero for this window.",
+                    len(tgt_t) - n_valid,
+                    len(tgt_t),
+                    min_required,
+                )
+            return zero, csrc
+
+        if cfg.embedding_only_return:
+            pred = model.return_pred_head(emb_t).squeeze(-1)
+        elif has_raw and raw_feats and getattr(model, "return_concat_head", None) is not None:
+            raw_t = xsnorm_price_feats(torch.stack(raw_feats))
+            concat_in = torch.cat([raw_t, emb_t], dim=-1)
+            if cfg.use_concat_batchnorm:
+                concat_in = F.layer_norm(concat_in, concat_in.shape[-1:])
+            pred = model.return_concat_head(concat_in).squeeze(-1)
+        elif has_raw and raw_feats:
+            pred = model.return_raw_head(xsnorm_price_feats(torch.stack(raw_feats))).squeeze(-1)
+        else:
+            pred = model.return_pred_head(emb_t).squeeze(-1)
+        if cfg.return_pred_clamp > 0:
+            pred = pred.clamp(-cfg.return_pred_clamp, cfg.return_pred_clamp)
+
+        if cfg.use_listnet_return_loss:
+            ret_loss = _listnet_loss(pred[finite], tgt_t[finite], tau=cfg.listnet_temperature)
+        else:
+            ret_loss = F.huber_loss(pred[finite], tgt_t[finite])
+        if cfg.use_direction_loss:
+            dir_tgt = (tgt_t[finite] > 0).float()
+            ret_loss = ret_loss + cfg.direction_loss_weight * F.binary_cross_entropy_with_logits(pred[finite], dir_tgt)
+        return ret_loss.clamp(min=0.0), csrc
+
     def _loss_from_window(
         self,
         data,
         id_map: IDMap,
         curr_obs: list[dict],
         next_obs: list[dict],
+        *,
+        forward_returns: dict[tuple[str, int], float] | None = None,
+        return_upscale: float = 1.0,
     ) -> torch.Tensor:
         """Compute the full multi-task self-supervised loss for one window pair.
 
-        Identical loss formulation to the training loop (obs_type CE,
-        time_delta MSE, value Huber, contrastive margin), with the same
-        auto-tuning branch when ``config.auto_tune_loss_weights`` is True.
+        Covers every head the training loop trains: obs_type CE, time_delta
+        Huber, value Huber, the CSRC contrastive term and the **return** loss,
+        with the same auto-tuning branch when ``config.auto_tune_loss_weights``
+        is True.
+
+        The return term used to be missing here, which mattered because this is
+        the Fisher closure: with no return term, ``compute_fisher`` produced a
+        0 diagonal for every ``return_*`` parameter and EWC protected everything
+        except the ranking signal, while the docstring claimed the formulation
+        was identical to the training loop's (audit P4.3).
+
+        It is still not byte-identical to the training loop: this path does not
+        apply the Phase-49 per-entity-type alignment weights, the obs_type CE
+        clamp or the per-epoch gradient diagnostics.  The heads and the terms
+        are the same.
 
         Used by:
           - ``train()`` — to build the Fisher loss closure after final epoch.
           - ``online_update()`` — as the L_new term in the EWC objective.
-
-        The training loop has its own identical inline copy and is left
-        unchanged for backward compatibility.
 
         Args:
             data:     HeteroData graph snapshot (already built by caller).
@@ -3368,6 +4079,10 @@ class Trainer:
             curr_obs: Observations in the current window (for contrastive
                       and memory update context).
             next_obs: Observations in the next window (supervision targets).
+            forward_returns: Forward-return lookup from ``train()``.  None
+                      falls back to the daily ``log_return`` in each obs value.
+            return_upscale: The resolved per-window return multiplier, applied
+                      after ``_scaled_task_loss`` exactly as in ``train()``.
 
         Returns:
             Scalar Tensor with requires_grad=True when the graph contains
@@ -3424,31 +4139,49 @@ class Trainer:
             valid_val = val_targets[valid_indices].to(val_pred.device)
             val_loss = F.huber_loss(val_pred, valid_val)
 
-        # ── contrastive loss ─────────────────────────────────────────────
+        # ── contrastive + return losses ──────────────────────────────────
         c_loss = self._contrastive_loss(embeddings, id_map)
+        ret_loss, csrc_loss = self._return_loss_terms(
+            embeddings,
+            data,
+            id_map,
+            next_obs,
+            forward_returns=forward_returns,
+        )
+        c_loss = c_loss + csrc_loss
 
         # ── combine (mirror the training loop's auto-tune branch) ────────
         if self._log_vars is not None:
             lv = self._log_vars
             lv_min = cfg.log_var_min
             lv_max = cfg.log_var_max
-            clamped = {k: torch.clamp(p, min=lv_min, max=lv_max) for k, p in lv.items()}
+            clamped = {
+                k: torch.clamp(
+                    p,
+                    min=(cfg.contrastive_log_var_min if k == "contrastive" else lv_min),
+                    max=(cfg.return_log_var_max if k == "return" else lv_max),
+                )
+                for k, p in lv.items()
+            }
             total = (
-                torch.exp(-clamped["obs_type"]) * obs_loss
+                torch.exp(-clamped["obs_type"]) * _scaled_task_loss(obs_loss, cfg)
                 + clamped["obs_type"]
-                + torch.exp(-clamped["time_delta"]) * dt_loss
+                + torch.exp(-clamped["time_delta"]) * _scaled_task_loss(dt_loss, cfg)
                 + clamped["time_delta"]
-                + torch.exp(-clamped["contrastive"]) * c_loss
+                + torch.exp(-clamped["contrastive"]) * _scaled_task_loss(c_loss, cfg)
                 + clamped["contrastive"]
-                + torch.exp(-clamped["value"]) * val_loss
+                + torch.exp(-clamped["value"]) * _scaled_task_loss(val_loss, cfg)
                 + clamped["value"]
+                + torch.exp(-clamped["return"]) * (return_upscale * _scaled_task_loss(ret_loss, cfg))
+                + clamped["return"]
             )
         else:
             total = (
-                cfg.obs_type_weight * obs_loss
-                + cfg.time_delta_weight * dt_loss
-                + cfg.contrastive_weight * c_loss
-                + cfg.value_weight * val_loss
+                cfg.obs_type_weight * _scaled_task_loss(obs_loss, cfg)
+                + cfg.time_delta_weight * _scaled_task_loss(dt_loss, cfg)
+                + cfg.contrastive_weight * _scaled_task_loss(c_loss, cfg)
+                + cfg.value_weight * _scaled_task_loss(val_loss, cfg)
+                + cfg.return_weight * return_upscale * _scaled_task_loss(ret_loss, cfg)
             )
 
         return total
@@ -3941,27 +4674,44 @@ def evaluate(
         time_delta_mae, num_predictions.
     """
     cfg = config or TrainerConfig()
+    if split not in ("val", "test"):
+        raise ValueError(f"split must be 'val' or 'test', got {split!r}")
     device = next(model.parameters()).device
     graph_builder = GraphBuilder(store)
     model.eval()
     model.reset_memory()
 
-    # Get split observations
-    all_obs = store.query_all_observations()
-    all_obs.sort(key=lambda o: o.get("observed_at", 0.0))
-    # Apply obs_since filter if configured
-    if cfg.obs_since is not None:
-        all_obs = [o for o in all_obs if o.get("observed_at", 0.0) >= cfg.obs_since]
-    n = len(all_obs)
-    n_train = int(n * cfg.train_ratio)
-    n_val = int(n * (cfg.train_ratio + cfg.val_ratio))
+    # ── Same stream, same subsample, same split rule as train() ──────────
+    # Evaluation used to build its snapshots from the UNSUBSAMPLED stream and
+    # split it by row count, so val/test inputs carried ~20x the GDELT density
+    # training saw — a covariate shift introduced by the harness and then
+    # measured as generalisation.
+    from agent.models.gnn.obs_subsample import apply_training_obs_subsample
 
-    if split == "val":
-        eval_obs = all_obs[n_train:n_val]
-    elif split == "test":
-        eval_obs = all_obs[n_val:]
-    else:
-        raise ValueError(f"split must be 'val' or 'test', got {split!r}")
+    all_prefetched_obs = graph_builder.prefetch_observations()
+    _n_before = len(all_prefetched_obs)
+    all_prefetched_obs, _sub_stats = apply_training_obs_subsample(
+        all_prefetched_obs,
+        gdelt_subsample_frac=cfg.gdelt_subsample_frac,
+        defi_subsample_frac=cfg.defi_subsample_frac,
+    )
+    if _sub_stats.get("dropped_total", 0) > 0:
+        log.info(
+            "evaluate(split=%s): obs subsample gdelt_frac=%.3f defi_frac=%.3f: %d → %d "
+            "(same config and seed as training — inputs must share one distribution).",
+            split,
+            cfg.gdelt_subsample_frac,
+            cfg.defi_subsample_frac,
+            _n_before,
+            len(all_prefetched_obs),
+        )
+
+    _train_obs, _val_obs, _test_obs = split_observations_by_calendar(
+        all_prefetched_obs,
+        cfg,
+        label=f"evaluate({split})",
+    )
+    eval_obs = _val_obs if split == "val" else _test_obs
 
     if not eval_obs:
         return {
@@ -4004,13 +4754,20 @@ def evaluate(
     # Pre-fetch static graph structure for cached builds
     cached_id_map, _, cached_links = graph_builder.prepare_static()
 
-    # Pre-fetch ALL observations sorted by time for bisect slicing
-    # No since= filter — graph features need full history.
-    all_prefetched_obs = graph_builder.prefetch_observations()
+    # Feature stream = the SAME subsampled list the split came from.
     _obs_timestamps = [o.get("observed_at", 0.0) for o in all_prefetched_obs]
 
+    _pair_indices = adjacent_window_pairs(windows, ws)
+    if len(windows) - 1 > len(_pair_indices):
+        log.warning(
+            "evaluate(split=%s): %d/%d window pairs span a gap in the timeline and are excluded.",
+            split,
+            (len(windows) - 1) - len(_pair_indices),
+            max(len(windows) - 1, 0),
+        )
+
     with torch.no_grad():
-        for i in range(len(windows) - 1):
+        for i in _pair_indices:
             t_start, t_end, curr_obs = windows[i]
             _, _, next_obs = windows[i + 1]
 
