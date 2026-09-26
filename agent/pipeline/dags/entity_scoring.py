@@ -197,7 +197,7 @@ def run_entity_scoring(params: dict, upstream: dict) -> dict:
         cleared = store.delete_entity_alerts(since=day_start, until=day_end)
         if cleared:
             log.info(
-                "Cleared %d entity_alerts row(s) already stored for this scoring day " "before rewrite (as_of=%.0f).",
+                "Cleared %d entity_alerts row(s) already stored for this scoring day before rewrite (as_of=%.0f).",
                 cleared,
                 as_of,
             )

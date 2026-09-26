@@ -262,8 +262,7 @@ class EvidenceGraphStore:
         return [
             r[0]
             for r in self.conn.execute(
-                "SELECT DISTINCT entity_a AS e FROM evidence_links "
-                "UNION SELECT DISTINCT entity_b FROM evidence_links"
+                "SELECT DISTINCT entity_a AS e FROM evidence_links UNION SELECT DISTINCT entity_b FROM evidence_links"
             ).fetchall()
         ]
 

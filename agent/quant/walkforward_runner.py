@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import datetime, timezone; UTC = timezone.utc
+from datetime import UTC, datetime
 from typing import Any
 
 import numpy as np

@@ -113,8 +113,14 @@ _EPS: float = 1e-9
 
 # Value extraction priority (mirrors other encoders)
 _VALUE_KEYS = (
-    "close", "usd_amount", "value", "estimated_value",
-    "goldstein_scale", "btc_amount", "log_return", "num_articles",
+    "close",
+    "usd_amount",
+    "value",
+    "estimated_value",
+    "goldstein_scale",
+    "btc_amount",
+    "log_return",
+    "num_articles",
 )
 
 
@@ -256,7 +262,8 @@ class VineCopulaEncoder:
 
         log.info(
             "VineCopulaEncoder: fitted copulas for %d / %d pairs.",
-            len(results), len(unique_pairs),
+            len(results),
+            len(unique_pairs),
         )
         return results
 
@@ -297,9 +304,7 @@ class VineCopulaEncoder:
                     store.store_signal(signal_name=name, value=value, metadata=meta)
                     count += 1
                 except Exception:
-                    log.warning(
-                        "VineCopulaEncoder: failed to store %r", name, exc_info=True
-                    )
+                    log.warning("VineCopulaEncoder: failed to store %r", name, exc_info=True)
 
         log.info("VineCopulaEncoder: stored %d signals.", count)
         return count
@@ -315,12 +320,8 @@ class VineCopulaEncoder:
         as_of: float,
     ) -> CopulaResult | None:
         """Query, align, and fit copula for one entity pair."""
-        obs_a = store.query_entity_observations(
-            eid_a, since=t_start, until=as_of, limit=self.obs_limit
-        )
-        obs_b = store.query_entity_observations(
-            eid_b, since=t_start, until=as_of, limit=self.obs_limit
-        )
+        obs_a = store.query_entity_observations(eid_a, since=t_start, until=as_of, limit=self.obs_limit)
+        obs_b = store.query_entity_observations(eid_b, since=t_start, until=as_of, limit=self.obs_limit)
 
         if not obs_a or not obs_b:
             return None
@@ -335,7 +336,10 @@ class VineCopulaEncoder:
         if n_joint < self.min_joint_obs:
             log.debug(
                 "VineCopulaEncoder: pair (%s, %s) only %d joint bins < %d — skip",
-                eid_a[:12], eid_b[:12], n_joint, self.min_joint_obs,
+                eid_a[:12],
+                eid_b[:12],
+                n_joint,
+                self.min_joint_obs,
             )
             return None
 

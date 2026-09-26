@@ -338,9 +338,9 @@ class WassersteinRobustPortfolio:
         """
         if returns.shape[0] < self.min_history:
             log.warning(
-                "WassersteinRobustPortfolio: only %d observations "
-                "(need ≥ %d).",
-                returns.shape[0], self.min_history,
+                "WassersteinRobustPortfolio: only %d observations (need ≥ %d).",
+                returns.shape[0],
+                self.min_history,
             )
             return None
 
@@ -363,9 +363,7 @@ class WassersteinRobustPortfolio:
 
         # Build weight vector
         if return_views and len(return_views) >= 2:
-            mean_vec = np.array(
-                [return_views.get(eid, 0.0) for eid in eids], dtype=float
-            )
+            mean_vec = np.array([return_views.get(eid, 0.0) for eid in eids], dtype=float)
             w = _blend_with_views(cov_robust, mean_vec, self.delta)
         else:
             w = _min_variance_weights(cov_robust)
@@ -404,8 +402,11 @@ class WassersteinRobustPortfolio:
         from agent.convergence.tda_regime import _load_returns  # noqa: PLC0415
 
         returns = _load_returns(
-            store, entity_ids, lookback_days,
-            self.max_instruments, as_of,
+            store,
+            entity_ids,
+            lookback_days,
+            self.max_instruments,
+            as_of,
         )
         if returns is None:
             log.warning("WassersteinRobust: no returns from store.")
@@ -434,10 +435,7 @@ class WassersteinRobustPortfolio:
         Returns number of signals written.
         """
         n = 0
-        ratio = (
-            result.robust_cov / result.standard_cov
-            if result.standard_cov > 1e-12 else 1.0
-        )
+        ratio = result.robust_cov / result.standard_cov if result.standard_cov > 1e-12 else 1.0
         # Per-asset weights
         for eid, w in result.weights.items():
             try:

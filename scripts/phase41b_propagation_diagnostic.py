@@ -55,7 +55,6 @@ import argparse
 import bisect
 import logging
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -85,7 +84,6 @@ SIG_LEVEL = 0.05  # Granger causality significance threshold
 
 def _mean_embedding_norm(embeddings: dict[str, Any], entity_type: str) -> float | None:
     """Mean L2 norm of all embeddings of entity_type.  None if missing."""
-    import torch
 
     emb = embeddings.get(entity_type)
     if emb is None or emb.shape[0] == 0:
@@ -171,7 +169,7 @@ def _build_norm_series(
         if obs_window:
             try:
                 data, id_map, _ = graph_builder.build_from_cached(
-                    full_id_map, full_links, observations=obs_window
+                    full_id_map, full_links, until=t_end, observations=obs_window
                 )
                 with torch.no_grad():
                     embeddings = model(data, id_map)
@@ -210,9 +208,7 @@ def _fill_na(series: list[float | None]) -> np.ndarray:
 
 def _print_table(rows: list[dict]) -> None:
     """Print ASCII results table."""
-    header = (
-        f"{'Entity Type':<22} {'Lag':>6} {'F-stat':>9} {'p-value':>9} {'Granger?':>10}"
-    )
+    header = f"{'Entity Type':<22} {'Lag':>6} {'F-stat':>9} {'p-value':>9} {'Granger?':>10}"
     sep = "─" * len(header)
     print(f"\n{sep}")
     print(header)
@@ -230,13 +226,9 @@ def _print_table(rows: list[dict]) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Phase 41b — GNN Propagation Diagnostic"
-    )
+    parser = argparse.ArgumentParser(description="Phase 41b — GNN Propagation Diagnostic")
     parser.add_argument("--db", default=str(DB_PATH), help="Path to pipeline DB")
-    parser.add_argument(
-        "--model", default=str(MODEL_PATH), help="Path to trained GNN model"
-    )
+    parser.add_argument("--model", default=str(MODEL_PATH), help="Path to trained GNN model")
     parser.add_argument(
         "--window-days",
         type=float,
@@ -284,12 +276,10 @@ def main() -> None:
     from agent.models.gnn.trainer import Trainer
     from agent.pipeline.store import PipelineStore
 
-    print(f"\nPhase 41b — GNN Information Propagation Diagnostic")
+    print("\nPhase 41b — GNN Information Propagation Diagnostic")
     print(f"DB:    {db_path}")
     print(f"Model: {model_path}")
-    print(
-        f"Window: {args.window_days}d | Lags: {args.lags} windows | Lookback: {args.lookback_days}d\n"
-    )
+    print(f"Window: {args.window_days}d | Lags: {args.lags} windows | Lookback: {args.lookback_days}d\n")
 
     # ── Load model ────────────────────────────────────────────────────────────
     store = PipelineStore(db_path=str(db_path))
@@ -304,9 +294,7 @@ def main() -> None:
     obs_all = trainer._graph_builder.prefetch_observations()
     obs_all.sort(key=lambda o: o.get("observed_at", 0.0))
     obs_ts = [o.get("observed_at", 0.0) for o in obs_all]
-    print(
-        f"  {full_id_map.num_nodes:,} entities | {len(full_links):,} links | {len(obs_all):,} observations"
-    )
+    print(f"  {full_id_map.num_nodes:,} entities | {len(full_links):,} links | {len(obs_all):,} observations")
 
     if not obs_all:
         print("ERROR: No observations in DB. Cannot run diagnostic.")
@@ -317,9 +305,7 @@ def main() -> None:
     start_ts = end_ts - args.lookback_days * 86400
     window_sec = args.window_days * 86400
 
-    print(
-        f"\nBuilding embedding norm time series ({args.lookback_days}d range, {args.window_days}d windows)…"
-    )
+    print(f"\nBuilding embedding norm time series ({args.lookback_days}d range, {args.window_days}d windows)…")
     entity_types = [
         "instrument",
         "company",
@@ -352,17 +338,13 @@ def main() -> None:
     y = _fill_na(y_raw)
 
     if y.std() < 1e-8:
-        print(
-            "\nWARNING: Instrument embedding norms are constant → no signal to detect."
-        )
+        print("\nWARNING: Instrument embedding norms are constant → no signal to detect.")
         print("This usually means no instrument entities in the graph yet.")
         sys.exit(0)
 
     upstream_types = [et for et in entity_types if et != "instrument"]
 
-    print(
-        f"\nRunning Granger causality tests ({len(upstream_types)} entity types × {len(args.lags)} lags)…\n"
-    )
+    print(f"\nRunning Granger causality tests ({len(upstream_types)} entity types × {len(args.lags)} lags)…\n")
 
     rows: list[dict] = []
     significant_count = 0
@@ -397,33 +379,19 @@ def main() -> None:
 
     sig_types = sorted({r["entity_type"] for r in rows if r["significant"]})
     if sig_types:
-        print(f"\nEntity types with confirmed Granger-causation:")
+        print("\nEntity types with confirmed Granger-causation:")
         for et in sig_types:
-            lags_sig = [
-                r["lag_weeks"]
-                for r in rows
-                if r["entity_type"] == et and r["significant"]
-            ]
+            lags_sig = [r["lag_weeks"] for r in rows if r["entity_type"] == et and r["significant"]]
             print(f"  {et:<22} at lags {lags_sig} (weeks)")
         print("\n✓ GNN perceptual layer IS encoding pre-emergence causal structure.")
         print("  If IC is still low, the return head training signal is insufficient.")
-        print(
-            "  Action: retrain with --auto-tune --listnet; ensure CFTC/insider data is dense."
-        )
+        print("  Action: retrain with --auto-tune --listnet; ensure CFTC/insider data is dense.")
     else:
-        print(
-            "\n✗ No Granger-causation detected from any entity type → instrument embeddings."
-        )
-        print(
-            "  The GNN is NOT propagating information across the heterogeneous graph."
-        )
+        print("\n✗ No Granger-causation detected from any entity type → instrument embeddings.")
+        print("  The GNN is NOT propagating information across the heterogeneous graph.")
         print("  Likely causes:")
-        print(
-            "  1. Instrument entities have insufficient cross-type links in the graph"
-        )
-        print(
-            "  2. CFTC/insider data too sparse (300 CFTC obs, 15/entity) — accumulate more"
-        )
+        print("  1. Instrument entities have insufficient cross-type links in the graph")
+        print("  2. CFTC/insider data too sparse (300 CFTC obs, 15/entity) — accumulate more")
         print("  3. GNN depth too shallow (2 HGT layers) for multi-hop propagation")
 
     print()

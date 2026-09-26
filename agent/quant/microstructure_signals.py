@@ -16,7 +16,7 @@ Tick-level OFI/VPIN require trade data — not computed here.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from typing import Any
 
 import numpy as np
@@ -133,9 +133,7 @@ def compute_micro_snapshot(
     # Match GNN path: Roll on log(close[t]/close[t-1]), not DB log_return field
     if len(closes) >= 2:
         roll_rets = np.log(closes[1:] / closes[:-1])
-        spread_roll = float(
-            spread_est.roll_measure(torch.tensor(roll_rets, dtype=torch.float32)).item()
-        )
+        spread_roll = float(spread_est.roll_measure(torch.tensor(roll_rets, dtype=torch.float32)).item())
     else:
         spread_roll = 0.0
 
@@ -151,15 +149,11 @@ def compute_micro_snapshot(
     trail = signed_flows[-60:]
     sf_mean = float(trail.mean())
     sf_std = float(trail.std())
-    signed_flow_z = (
-        (signed_flow - sf_mean) / sf_std if sf_std > 1e-8 else 0.0
-    )
+    signed_flow_z = (signed_flow - sf_mean) / sf_std if sf_std > 1e-8 else 0.0
 
     w = min(60, len(closes) - 1)
     if w >= 10:
-        lam_arr = KyleLambdaEstimator().estimate_lambda(
-            closes, signed_flows, window_hours=w
-        )
+        lam_arr = KyleLambdaEstimator().estimate_lambda(closes, signed_flows, window_hours=w)
         kyle_lambda = float(lam_arr[-1]) if len(lam_arr) > 0 else 0.0
     else:
         kyle_lambda = 0.0
@@ -209,11 +203,9 @@ def compute_gnn_micro_features(
       vpin_regime (3 one-hot), kyle_lambda, lambda_regime (3 one-hot)
 
     Daily bars only: synthetic per-day trades feed VPIN/OFI; signed_flow_z
-  is used when tick-style OFI z-scores are unavailable (short history).
+    is used when tick-style OFI z-scores are unavailable (short history).
     """
-    daily = extract_instrument_daily(
-        observations, entity_id, until_ts=current_time
-    )
+    daily = extract_instrument_daily(observations, entity_id, until_ts=current_time)
     if len(daily) < min_days:
         return [0.0] * GNN_MICRO_DIM
 
@@ -231,22 +223,16 @@ def compute_gnn_micro_features(
     trail = signed_flows[-60:]
     sf_std = float(trail.std())
     sf_mean = float(trail.mean())
-    signed_flow_z = (
-        (float(signed_flows[-1]) - sf_mean) / sf_std if sf_std > 1e-8 else 0.0
-    )
+    signed_flow_z = (float(signed_flows[-1]) - sf_mean) / sf_std if sf_std > 1e-8 else 0.0
 
     w = min(60, n - 1)
     lam_ts = torch.zeros(n, dtype=torch.float32)
     if w >= 10:
-        lam_arr = KyleLambdaEstimator().estimate_lambda(
-            closes, signed_flows, window_hours=w
-        )
+        lam_arr = KyleLambdaEstimator().estimate_lambda(closes, signed_flows, window_hours=w)
         if len(lam_arr) > 0:
             lam_ts[-len(lam_arr) :] = torch.tensor(lam_arr, dtype=torch.float32)
 
-    trades = [
-        (float(closes[i]), float(max(volumes[i], 1.0)), i) for i in range(n)
-    ]
+    trades = [(float(closes[i]), float(max(volumes[i], 1.0)), i) for i in range(n)]
     med_vol = float(np.median(volumes[volumes > 0])) if np.any(volumes > 0) else 1.0
 
     extractor = MicrostructureFeatureExtractor()
@@ -360,9 +346,7 @@ class InstrumentMicroPanel:
         }
         if self.cftc_mm_pct_52w_rank is not None:
             d["cftc_mm_pct_52w_rank"] = self.cftc_mm_pct_52w_rank
-            d["cftc_mm_pct_52w_rank_pct"] = round(
-                normalize_cftc_rank(self.cftc_mm_pct_52w_rank) * 100.0, 1
-            )
+            d["cftc_mm_pct_52w_rank_pct"] = round(normalize_cftc_rank(self.cftc_mm_pct_52w_rank) * 100.0, 1)
         if self.cftc_positioning_label is not None:
             d["cftc_positioning_label"] = self.cftc_positioning_label
         return d

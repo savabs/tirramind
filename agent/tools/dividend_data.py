@@ -8,10 +8,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
-
-UTC = timezone.utc
 
 from agent.tools.base import Tool, ToolResult
 from agent.tools.m15_universe import all_dividend_tickers, instrument_def_for_ticker

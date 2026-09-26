@@ -120,3 +120,16 @@ tirramind_v1/
 # SQLite WAL sidecars — the .db files are ignored, these were not.
 *.db-shm
 *.db-wal
+
+# local agent worktrees (never commit)
+.claude/worktrees/
+
+# local WIP snapshots (never commit)
+.wip-snapshots/
+
+# Local DB backups taken before destructive operations — 296MB and growing.
+# Never commit: the pipeline DB is the project asset, not a repo artifact.
+.tirra_backups/
+
+# macOS Finder metadata
+.DS_Store

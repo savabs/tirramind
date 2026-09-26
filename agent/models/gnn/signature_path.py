@@ -37,7 +37,6 @@ References
 from __future__ import annotations
 
 import logging
-import math
 from typing import TYPE_CHECKING
 
 import torch
@@ -222,8 +221,6 @@ class SignaturePathBuilder(nn.Module):
                 # Single point — log-sig is zero
                 ls = torch.zeros(self.sig_dim, device=proj.device)
             else:
-                import numpy as np
-
                 ls_np = _iisig.logsig(prefix, self._sig_s)  # type: ignore[union-attr]
                 ls = torch.tensor(ls_np, dtype=proj.dtype, device=proj.device)
             results.append(ls)
@@ -236,9 +233,7 @@ class SignaturePathBuilder(nn.Module):
             # Single event: level-1 = proj[0], Lévy area = 0
             d = proj.shape[1]
             n_pairs = d * (d - 1) // 2
-            return torch.cat(
-                [proj[0], torch.zeros(n_pairs, device=proj.device)]
-            ).unsqueeze(0)
+            return torch.cat([proj[0], torch.zeros(n_pairs, device=proj.device)]).unsqueeze(0)
 
         # Compute increments: dx[k] = proj[k] - proj[k-1], dx[0] = proj[0]
         increments = torch.zeros_like(proj)

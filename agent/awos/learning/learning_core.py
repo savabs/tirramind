@@ -45,9 +45,7 @@ class LearningCore:
         self.rewards = RewardStore(base / "reward_store.jsonl")
         self.gate = ReplayGate()
         self.evolver = PromptEvolver(store_path=str(base), cheap_call=cheap_call)
-        self.tool_synth = LiveToolSynthesizer(
-            tools_dir=str(base / "tools"), cheap_call=cheap_call
-        )
+        self.tool_synth = LiveToolSynthesizer(tools_dir=str(base / "tools"), cheap_call=cheap_call)
         self.router = LinUCBRouter(weights_path=base / "linucb_weights.pkl")
         self._extractor = OperationFeatureExtractor()
         self._cheap_call = cheap_call
@@ -125,9 +123,7 @@ class LearningCore:
         }
 
     # ── Failure reflection → helper synthesis ──────────────────────────────
-    def reflect_failure(
-        self, operation: str, error_type: str, error: str, attempt: int
-    ) -> SynthesizedTool | None:
+    def reflect_failure(self, operation: str, error_type: str, error: str, attempt: int) -> SynthesizedTool | None:
         return self.tool_synth.reflect(operation, error_type, error, attempt)
 
     def find_helper(self, operation: str) -> SynthesizedTool | None:

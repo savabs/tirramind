@@ -15,6 +15,7 @@ from __future__ import annotations
 import time
 
 import pytest
+from fixture_time import T
 
 from agent.pipeline.store import PipelineStore
 
@@ -282,8 +283,8 @@ class TestQueryCoOccurrences:
 
     def test_large_gap_excluded(self, store: PipelineStore) -> None:
         cid, kid, _ = _seed_entities(store)
-        _seed_obs(store, cid, "insider_filings", 1_000_000.0, "insider_trade")
-        _seed_obs(store, kid, "gdelt", 2_000_000.0, "geopolitical_event")
+        _seed_obs(store, cid, "insider_filings", T(1_000_000.0), "insider_trade")
+        _seed_obs(store, kid, "gdelt", T(2_000_000.0), "geopolitical_event")
 
         cooccs = store.query_co_occurrences(cid, kid, window_seconds=72 * 3600)
         assert len(cooccs) == 0

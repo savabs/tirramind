@@ -199,12 +199,8 @@ def compute_gnn_m15_features(
 ) -> list[float]:
     """Full M15 quant vector for one instrument (length M15_QUANT_DIM)."""
     opts = compute_options_quant_features(entity_id, observations, current_time)
-    rates = compute_rate_quant_features(
-        observations, current_time, country_eid=us_country_eid
-    )
-    divs = compute_dividend_quant_features(
-        entity_id, observations, current_time, spot=spot
-    )
+    rates = compute_rate_quant_features(observations, current_time, country_eid=us_country_eid)
+    divs = compute_dividend_quant_features(entity_id, observations, current_time, spot=spot)
     vec = opts + rates + divs
     if len(vec) != M15_QUANT_DIM:
         return [0.0] * M15_QUANT_DIM

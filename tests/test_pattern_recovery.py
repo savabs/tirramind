@@ -13,6 +13,7 @@ from __future__ import annotations
 import math
 
 import pytest
+from fixture_time import T
 
 from agent.models.gnn.pattern_extractor import (
     CrystallizedPattern,
@@ -326,14 +327,14 @@ class TestConditionedCrystallization:
         store.store_entity_observation(
             entity_id=c1,
             source_tool="test",
-            observed_at=100.0,
+            observed_at=T(100.0),
             observation_type="insider_trade",
             value={},
         )
         store.store_entity_observation(
             entity_id=co1,
             source_tool="test",
-            observed_at=200.0,
+            observed_at=T(200.0),
             observation_type="geopolitical_event",
             value={},
         )
@@ -341,7 +342,7 @@ class TestConditionedCrystallization:
         store.store_entity_observation(
             entity_id=c1,
             source_tool="test",
-            observed_at=50000.0,
+            observed_at=T(50000.0),
             observation_type="sec_filing",
             value={},
         )
@@ -413,14 +414,14 @@ class TestValidatePatterns:
             store.store_entity_observation(
                 entity_id=c1,
                 source_tool="test",
-                observed_at=base,
+                observed_at=T(base),
                 observation_type="insider_trade",
                 value={},
             )
             store.store_entity_observation(
                 entity_id=co1,
                 source_tool="test",
-                observed_at=base + 1800.0,
+                observed_at=T(base + 1800.0),
                 observation_type="geopolitical_event",
                 value={},
             )
@@ -430,7 +431,7 @@ class TestValidatePatterns:
             store.store_entity_observation(
                 entity_id=co1,
                 source_tool="test",
-                observed_at=i * 5000.0 + 500.0,
+                observed_at=T(i * 5000.0 + 500.0),
                 observation_type="macro_indicator",
                 value={},
             )
@@ -489,14 +490,14 @@ class TestValidatePatterns:
         store.store_entity_observation(
             entity_id=c1,
             source_tool="test",
-            observed_at=100.0,
+            observed_at=T(100.0),
             observation_type="insider_trade",
             value={},
         )
         store.store_entity_observation(
             entity_id=co1,
             source_tool="test",
-            observed_at=200.0,
+            observed_at=T(200.0),
             observation_type="geopolitical_event",
             value={},
         )

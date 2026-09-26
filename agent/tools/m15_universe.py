@@ -25,13 +25,7 @@ OPTIONS_DEFAULT: tuple[str, ...] = OPTIONS_MUST + OPTIONS_SHOULD
 # Dividends — equity ETFs + flagship index ETF (must SPY; should rest of US equity_etf)
 DIVIDEND_MUST: tuple[str, ...] = ("SPY",)
 DIVIDEND_SHOULD: tuple[str, ...] = tuple(
-    sorted(
-        {
-            i.ticker
-            for i in INSTRUMENTS
-            if i.asset_class == "equity_etf" and i.ticker != "SPY"
-        }
-    )
+    sorted({i.ticker for i in INSTRUMENTS if i.asset_class == "equity_etf" and i.ticker != "SPY"})
 )
 
 DIVIDEND_DEFAULT: tuple[str, ...] = DIVIDEND_MUST + DIVIDEND_SHOULD

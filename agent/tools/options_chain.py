@@ -13,10 +13,8 @@ from __future__ import annotations
 import logging
 import math
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
-
-UTC = timezone.utc
 
 from agent.tools.base import Tool, ToolResult
 from agent.tools.m15_universe import all_options_tickers, instrument_def_for_ticker
@@ -65,9 +63,7 @@ def summarize_chain(
     call_iv = _atm_iv(calls, "call")
     put_iv = _atm_iv(puts, "put")
 
-    call_oi = (
-        float(calls["openInterest"].fillna(0).sum()) if len(calls) else 0.0
-    )
+    call_oi = float(calls["openInterest"].fillna(0).sum()) if len(calls) else 0.0
     put_oi = float(puts["openInterest"].fillna(0).sum()) if len(puts) else 0.0
     pc_oi = (put_oi / call_oi) if call_oi > 1e-6 else None
 

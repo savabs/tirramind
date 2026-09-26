@@ -70,14 +70,14 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import torch
 import torch.nn as nn
 
 if TYPE_CHECKING:
-    from agent.models.gnn.het_tgn import HeteroMemory
     from agent.models.gnn.graph_builder import IDMap
+    from agent.models.gnn.het_tgn import HeteroMemory
 
 log = logging.getLogger(__name__)
 
@@ -166,16 +166,14 @@ class MambaMemoryEncoder(nn.Module):
             self.mamba: nn.Module = Mamba(cfg)
             self._has_mamba = True
             log.debug(
-                "MambaMemoryEncoder: using Mamba SSM "
-                "(d_model=%d, n_layers=%d, d_state=%d)",
+                "MambaMemoryEncoder: using Mamba SSM (d_model=%d, n_layers=%d, d_state=%d)",
                 memory_dim,
                 n_layers,
                 d_state,
             )
         except ImportError:
             log.warning(
-                "mambapy not available — MambaMemoryEncoder falling back to GRU. "
-                "Install with: pip install mambapy"
+                "mambapy not available — MambaMemoryEncoder falling back to GRU. Install with: pip install mambapy"
             )
             self.gru_cell = nn.GRUCell(memory_dim, memory_dim)
 
@@ -239,8 +237,8 @@ class MambaMemoryEncoder(nn.Module):
         self,
         events: list[dict[str, Any]],
         embeddings: dict[str, torch.Tensor],
-        id_map: "IDMap",
-        memory: "HeteroMemory",
+        id_map: IDMap,
+        memory: HeteroMemory,
     ) -> None:
         """Update HeteroMemory for every node that received events.
 
@@ -283,9 +281,7 @@ class MambaMemoryEncoder(nn.Module):
                     msg = torch.cat(
                         [
                             msg,
-                            torch.zeros(
-                                self.message_dim - msg.size(0), device=msg.device
-                            ),
+                            torch.zeros(self.message_dim - msg.size(0), device=msg.device),
                         ]
                     )
 
@@ -311,7 +307,7 @@ class MambaMemoryEncoder(nn.Module):
         gid: int,
         msgs: torch.Tensor,
         times: torch.Tensor,
-        memory: "HeteroMemory",
+        memory: HeteroMemory,
         device: torch.device,
     ) -> None:
         """Run Mamba (or GRU fallback) for one node and write new memory.
@@ -336,9 +332,7 @@ class MambaMemoryEncoder(nn.Module):
         time_feat = self.time_enc(dt)  # (K, time_dim)
 
         # Input tokens: project each (msg ‖ time_feat) → memory_dim
-        tokens = self.input_proj(
-            torch.cat([msgs, time_feat], dim=-1)
-        )  # (K, memory_dim)
+        tokens = self.input_proj(torch.cat([msgs, time_feat], dim=-1))  # (K, memory_dim)
 
         if self._has_mamba:
             # Prepend h_prev as context token → sequence of length K+1

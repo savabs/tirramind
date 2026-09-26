@@ -13,19 +13,29 @@ from agent.quant.contract_opportunity import (
 def test_expected_value_math():
     # EV = P(win) · (Bid − Cost) − Risk
     o = Opportunity(
-        award_id="A1", recipient="R", agency="VA",
-        description="", amount_usd=100000.0,
-        start_date=None, award_type=None,
-        bid_cost_usd=40000.0, risk_penalty=5000.0, own_win_rate=0.5,
+        award_id="A1",
+        recipient="R",
+        agency="VA",
+        description="",
+        amount_usd=100000.0,
+        start_date=None,
+        award_type=None,
+        bid_cost_usd=40000.0,
+        risk_penalty=5000.0,
+        own_win_rate=0.5,
     )
     assert o.expected_value == 0.5 * (100000 - 40000) - 5000
 
 
 def test_estimated_cost_defaults_to_capped_amount():
     o = Opportunity(
-        award_id="A1", recipient="R", agency="VA",
-        description="", amount_usd=5000.0,
-        start_date=None, award_type=None,
+        award_id="A1",
+        recipient="R",
+        agency="VA",
+        description="",
+        amount_usd=5000.0,
+        start_date=None,
+        award_type=None,
     )
     # bid_cost None → cost = min(amount, 10000) = 5000
     assert o.estimated_bid_cost_usd == 5000.0
@@ -33,9 +43,15 @@ def test_estimated_cost_defaults_to_capped_amount():
 
 def test_from_award_real_shape():
     o = Opportunity.from_award(
-        {"award_id": "X1", "recipient": "Acme LLC", "agency": "USDA",
-         "description": "janitorial", "amount_usd": 40000.0,
-         "start_date": "2026-01-01", "award_type": None}
+        {
+            "award_id": "X1",
+            "recipient": "Acme LLC",
+            "agency": "USDA",
+            "description": "janitorial",
+            "amount_usd": 40000.0,
+            "start_date": "2026-01-01",
+            "award_type": None,
+        }
     )
     assert o.recipient == "Acme LLC"
     assert o.amount_usd == 40000.0
@@ -44,10 +60,24 @@ def test_from_award_real_shape():
 
 def test_score_opportunities_ranks_by_ev():
     awards = [
-        {"award_id": "big", "recipient": "A", "agency": "VA", "description": "x",
-         "amount_usd": 200000.0, "start_date": None, "award_type": None},
-        {"award_id": "small", "recipient": "B", "agency": "USDA", "description": "y",
-         "amount_usd": 30000.0, "start_date": None, "award_type": None},
+        {
+            "award_id": "big",
+            "recipient": "A",
+            "agency": "VA",
+            "description": "x",
+            "amount_usd": 200000.0,
+            "start_date": None,
+            "award_type": None,
+        },
+        {
+            "award_id": "small",
+            "recipient": "B",
+            "agency": "USDA",
+            "description": "y",
+            "amount_usd": 30000.0,
+            "start_date": None,
+            "award_type": None,
+        },
     ]
     ranked = score_opportunities(awards)
     assert [o.award_id for o in ranked] == ["big", "small"]
@@ -55,9 +85,17 @@ def test_score_opportunities_ranks_by_ev():
 
 
 def test_to_json():
-    o = Opportunity.from_award({"award_id": "X", "recipient": "R", "agency": "A",
-                                "description": "d", "amount_usd": 1000.0,
-                                "start_date": None, "award_type": None})
+    o = Opportunity.from_award(
+        {
+            "award_id": "X",
+            "recipient": "R",
+            "agency": "A",
+            "description": "d",
+            "amount_usd": 1000.0,
+            "start_date": None,
+            "award_type": None,
+        }
+    )
     row = opportunity_to_json([o])[0]
     assert "expected_value_usd" in row
     assert "p_win" in row
@@ -77,6 +115,7 @@ from agent.quant.contract_opportunity import (
 def test_learner_cold_start_prior():
     import os
     import tempfile
+
     d = tempfile.mkdtemp()
     learner = WinProbabilityLearner(os.path.join(d, "w.jsonl"))
     # Prior Beta(0.5, 1.0) → mean 1/3, NOT the naive 0.5 coin-flip prior.
@@ -88,6 +127,7 @@ def test_learner_cold_start_prior():
 def test_learner_updates_with_evidence():
     import os
     import tempfile
+
     d = tempfile.mkdtemp()
     learner = WinProbabilityLearner(os.path.join(d, "w.jsonl"))
     for i in range(10):
@@ -107,6 +147,7 @@ def test_learner_updates_with_evidence():
 def test_learner_persists():
     import os
     import tempfile
+
     d = tempfile.mkdtemp()
     path = os.path.join(d, "w.jsonl")
     learner = WinProbabilityLearner(path)
@@ -120,6 +161,7 @@ def test_learner_persists():
 def test_apply_learned_probabilities_reranks():
     import os
     import tempfile
+
     d = tempfile.mkdtemp()
     learner = WinProbabilityLearner(os.path.join(d, "w.jsonl"))
     # learner: VA wins often, USDA loses
@@ -127,10 +169,24 @@ def test_apply_learned_probabilities_reranks():
         learner.record(f"a{i}", "VA", 50000.0, realized_success=(i < 5))
         learner.record(f"b{i}", "USDA", 50000.0, realized_success=False)
     awards = [
-        {"award_id": "VA1", "recipient": "R1", "agency": "VA", "description": "d",
-         "amount_usd": 50000.0, "start_date": None, "award_type": None},
-        {"award_id": "US1", "recipient": "R2", "agency": "USDA", "description": "d",
-         "amount_usd": 50000.0, "start_date": None, "award_type": None},
+        {
+            "award_id": "VA1",
+            "recipient": "R1",
+            "agency": "VA",
+            "description": "d",
+            "amount_usd": 50000.0,
+            "start_date": None,
+            "award_type": None,
+        },
+        {
+            "award_id": "US1",
+            "recipient": "R2",
+            "agency": "USDA",
+            "description": "d",
+            "amount_usd": 50000.0,
+            "start_date": None,
+            "award_type": None,
+        },
     ]
     opps = apply_learned_probabilities(score_opportunities(awards), learner)
     ranked_ids = [o.award_id for o in opps]

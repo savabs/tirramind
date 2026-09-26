@@ -178,14 +178,37 @@ a documented `## Boundaries` section.
 - Every dispatch MUST produce a triage block naming who was **DISPATCHED**, who
   was **EXCLUDED**, and why. The EXCLUDED line is what forces real triage — a
   block without it is incomplete.
-- **Default 1–3 agents.** 4–6 needs a stated reason. **7+ needs the owner's
-  explicit approval — ask first.**
-- Dispatching *nobody* is a valid outcome. If a `grep` settles it, do that.
-- Prefer sequential dispatch when later work depends on earlier findings —
-  running a specialist on a premise a cheaper agent could have falsified is waste.
+- **Parallelise by default. The gate is collision, not headcount.**
+  (Owner, 2026-09-23: *"I believe in parallel work, so always always do parallel
+  multi-agent work, if things don't collide with each other."*) Whenever there
+  are two or more genuinely independent items, fan out — do not ask permission
+  for 7, 15 or 30 agents whose scopes are disjoint, and do not serialise work
+  merely because it feels large. This supersedes the former "default 1–3,
+  7+ needs approval" cap.
+- **Disjointness is not assumed, it is enforced.** Name the files each agent
+  owns, state the split, and say *why* it cannot overlap. Two agents that can
+  touch the same file, table or process are not parallel work — they are a
+  race. If scopes cannot be cleanly separated, queue instead.
+- **Shared resources that force serialisation on this project:**
+  the live SQLite DB `.tirra_pipeline/pipeline.db` (**one writer, ever** —
+  agents get `mode=ro`, the orchestrator owns every write), and any
+  long-running collection or training process. A second concurrent writer
+  risks the one asset that cannot be rebuilt.
+- **Still name DISPATCHED and EXCLUDED.** Triage routes work to the right
+  owner; that stays useful at any scale. What is gone is the headcount ceiling,
+  not the thinking.
+- Dispatching *nobody* is still a valid outcome. If a `grep` settles it, do that.
+- Scout inline first to discover the work-list, then fan out over it. Prefer
+  `pipeline()` to `parallel()` — a barrier is only correct when a stage truly
+  needs every prior result at once.
+- Sequence only on a real dependency: running a specialist on a premise a
+  cheaper agent could have falsified is waste. A dependency is not the same as
+  a preference for tidiness.
 
-A full-roster fan-out once cost 1.6M tokens and 40 minutes to answer questions
-three agents owned. Breadth is not thoroughness.
+The earlier cap came from one full-roster fan-out that cost 1.6M tokens to
+answer questions three agents owned. The lesson there was **undirected** breadth
+is not thoroughness — not that breadth is bad. Directed, disjoint breadth is
+now the default.
 
 ### Cloning a busy specialist
 

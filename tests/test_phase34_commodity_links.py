@@ -75,9 +75,9 @@ class TestInstrumentDefExchangeCountry:
         """Non-commodity instruments should NOT have primary_exchange_country set."""
         non_commodities = [i for i in INSTRUMENTS if i.asset_class != "commodity_future"]
         for inst in non_commodities:
-            assert (
-                inst.primary_exchange_country is None
-            ), f"{inst.ticker} has unexpected primary_exchange_country={inst.primary_exchange_country}"
+            assert inst.primary_exchange_country is None, (
+                f"{inst.ticker} has unexpected primary_exchange_country={inst.primary_exchange_country}"
+            )
 
     def test_frozen_dataclass(self):
         inst = InstrumentDef(

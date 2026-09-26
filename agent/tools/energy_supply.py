@@ -50,7 +50,6 @@ try:
 except ImportError:  # pragma: no cover
     entity_id_from_key = None  # type: ignore[misc, assignment]
 
-UTC = UTC
 
 log = logging.getLogger(__name__)
 

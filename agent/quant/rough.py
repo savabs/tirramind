@@ -8,6 +8,7 @@ hybrid simulation scheme, and empirical Hurst exponent estimation.
 from __future__ import annotations
 
 import math
+
 import torch
 import torch.nn as nn
 
@@ -105,9 +106,7 @@ class RoughBergomiModel(nn.Module):
         zeros = torch.zeros(1, n_paths, device=device, dtype=torch.float32)
         return torch.cat([zeros, Y], dim=0)
 
-    def generate_paths(
-        self, n_paths: int, n_steps: int, T: float
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    def generate_paths(self, n_paths: int, n_steps: int, T: float) -> tuple[torch.Tensor, torch.Tensor]:
         """Generate spot price and variance paths under the rough Bergomi model.
 
         Args:
@@ -130,12 +129,8 @@ class RoughBergomiModel(nn.Module):
         Y = self._simulate_volterra_path(Z, T)
 
         # 2. Calculate variance paths V_t
-        t = torch.linspace(0.0, T, n_steps + 1, device=device).unsqueeze(
-            -1
-        )  # (n_steps+1, 1)
-        exponent = self.eta * torch.sqrt(2.0 * self.H) * Y - 0.5 * (self.eta**2) * (
-            t ** (2.0 * self.H)
-        )
+        t = torch.linspace(0.0, T, n_steps + 1, device=device).unsqueeze(-1)  # (n_steps+1, 1)
+        exponent = self.eta * torch.sqrt(2.0 * self.H) * Y - 0.5 * (self.eta**2) * (t ** (2.0 * self.H))
         V = self.xi_0 * torch.exp(exponent)
 
         # 3. Simulate spot price process S_t (Euler-Maruyama in log-space)
@@ -144,9 +139,7 @@ class RoughBergomiModel(nn.Module):
 
         for i in range(n_steps):
             V_prev = V[i]
-            dZ = (
-                self.rho * Z[i] + torch.sqrt(1.0 - self.rho**2) * Z_perp[i]
-            ) * math.sqrt(dt)
+            dZ = (self.rho * Z[i] + torch.sqrt(1.0 - self.rho**2) * Z_perp[i]) * math.sqrt(dt)
             x[i + 1] = x[i] + (-0.5 * V_prev) * dt + torch.sqrt(V_prev) * dZ
 
         S = torch.exp(x)

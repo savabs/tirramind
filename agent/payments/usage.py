@@ -63,7 +63,7 @@ class UsageStore:
         """Call counts grouped by endpoint, optionally since a timestamp."""
         if since is not None:
             rows = self._conn.execute(
-                "SELECT endpoint, COUNT(*) AS n FROM api_usage " "WHERE key_id=? AND requested_at>=? GROUP BY endpoint",
+                "SELECT endpoint, COUNT(*) AS n FROM api_usage WHERE key_id=? AND requested_at>=? GROUP BY endpoint",
                 (key_id, since),
             ).fetchall()
         else:

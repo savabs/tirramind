@@ -91,12 +91,18 @@ log = logging.getLogger(__name__)
 
 _DAY: float = 86_400.0
 _EPS: float = 1e-8
-_MIN_ENTITIES: int = 2   # need at least 2 entities for graph attention
-_MIN_OBS: int = 4        # minimum bins per entity to train
+_MIN_ENTITIES: int = 2  # need at least 2 entities for graph attention
+_MIN_OBS: int = 4  # minimum bins per entity to train
 
 _VALUE_KEYS = (
-    "close", "usd_amount", "value", "estimated_value",
-    "goldstein_scale", "btc_amount", "log_return", "num_articles",
+    "close",
+    "usd_amount",
+    "value",
+    "estimated_value",
+    "goldstein_scale",
+    "btc_amount",
+    "log_return",
+    "num_articles",
 )
 
 
@@ -191,18 +197,18 @@ class _GDNModel(nn.Module):
         Returns:
             adj: (n_nodes, n_nodes) bool mask, True = neighbor.
         """
-        embs = self.node_emb.weight          # (n, emb_dim)
+        embs = self.node_emb.weight  # (n, emb_dim)
         # Cosine similarity matrix
         norm = embs.norm(dim=-1, keepdim=True).clamp(min=_EPS)
         normed = embs / norm
-        sim = normed @ normed.T              # (n, n)
+        sim = normed @ normed.T  # (n, n)
         # Zero out diagonal (self-connections)
         sim = sim.fill_diagonal_(-1e9)
         # Top-K mask
         k = self.top_k
         topk_vals, _ = sim.topk(k, dim=-1)  # (n, k)
         threshold = topk_vals[:, -1].unsqueeze(-1)  # (n, 1)
-        adj = sim >= threshold               # (n, n) bool
+        adj = sim >= threshold  # (n, n) bool
         return adj
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -218,35 +224,35 @@ class _GDNModel(nn.Module):
         device = x.device
 
         node_ids = torch.arange(n, device=device)
-        embs = self.node_emb(node_ids)          # (n, emb_dim)
+        embs = self.node_emb(node_ids)  # (n, emb_dim)
 
-        adj = self._learned_graph(device)        # (n, n) bool
+        adj = self._learned_graph(device)  # (n, n) bool
 
         # Graph attention: for each node i, attend over neighbors j
         # Expand x to (n, n, window): row i = x_i broadcast, col j = x_j
-        x_i = x.unsqueeze(1).expand(n, n, self.window)     # (n, n, w)
-        x_j = x.unsqueeze(0).expand(n, n, self.window)     # (n, n, w)
-        e_i = embs.unsqueeze(1).expand(n, n, self.emb_dim) # (n, n, d)
-        e_j = embs.unsqueeze(0).expand(n, n, self.emb_dim) # (n, n, d)
+        x_i = x.unsqueeze(1).expand(n, n, self.window)  # (n, n, w)
+        x_j = x.unsqueeze(0).expand(n, n, self.window)  # (n, n, w)
+        e_i = embs.unsqueeze(1).expand(n, n, self.emb_dim)  # (n, n, d)
+        e_j = embs.unsqueeze(0).expand(n, n, self.emb_dim)  # (n, n, d)
 
         # Attention input: concat(x_i, x_j, e_i, e_j)
         attn_in = torch.cat([x_i, x_j, e_i, e_j], dim=-1)  # (n, n, w*2+d*2)
-        h = F.leaky_relu(self.attn_W(attn_in))               # (n, n, hidden)
-        scores = (h * self.attn_v).sum(dim=-1)                # (n, n)
+        h = F.leaky_relu(self.attn_W(attn_in))  # (n, n, hidden)
+        scores = (h * self.attn_v).sum(dim=-1)  # (n, n)
 
         # Mask out non-neighbors with -inf
         scores = scores.masked_fill(~adj, float("-inf"))
 
         # Softmax over neighbors (rows with all -inf → uniform via clamp)
-        alpha = torch.softmax(scores, dim=-1)                 # (n, n)
+        alpha = torch.softmax(scores, dim=-1)  # (n, n)
         alpha = torch.nan_to_num(alpha, nan=0.0)
 
         # Neighbor aggregation: z_i = sum_j alpha_ij * x_j
-        z = alpha @ x                                         # (n, window)
+        z = alpha @ x  # (n, window)
 
         # Prediction: concat(x_i, z_i) → hidden → scalar
         h_out = F.relu(self.out_proj(torch.cat([x, z], dim=-1)))  # (n, hidden)
-        x_hat = self.pred_head(h_out).squeeze(-1)                 # (n,)
+        x_hat = self.pred_head(h_out).squeeze(-1)  # (n,)
 
         return x_hat
 
@@ -305,13 +311,11 @@ class GDNMonitor:
         self.n_bins = n_bins
         self.window = window
         self.anomaly_threshold = anomaly_threshold
-        self.device = torch.device(
-            device if device else ("cuda" if torch.cuda.is_available() else "cpu")
-        )
+        self.device = torch.device(device if device else ("cuda" if torch.cuda.is_available() else "cpu"))
 
         self._model: _GDNModel | None = None
-        self._entity_index: list[tuple[str, str]] = []   # (entity_type, entity_id)
-        self._train_std: np.ndarray | None = None         # per-entity normalisation
+        self._entity_index: list[tuple[str, str]] = []  # (entity_type, entity_id)
+        self._train_std: np.ndarray | None = None  # per-entity normalisation
 
     # ── Public API ─────────────────────────────────────────────────────────
 
@@ -356,13 +360,13 @@ class GDNMonitor:
         valid = [
             (e.get("entity_type", "unknown"), e.get("entity_id", ""))
             for e in entities
-            if e.get("entity_id", "") in obs_by_entity
-            and len(obs_by_entity[e.get("entity_id", "")]) >= _MIN_OBS
+            if e.get("entity_id", "") in obs_by_entity and len(obs_by_entity[e.get("entity_id", "")]) >= _MIN_OBS
         ]
         if len(valid) < _MIN_ENTITIES:
             log.info(
                 "GDNMonitor: only %d entities with sufficient observations (need ≥ %d).",
-                len(valid), _MIN_ENTITIES,
+                len(valid),
+                _MIN_ENTITIES,
             )
             return {}
 
@@ -370,9 +374,7 @@ class GDNMonitor:
         n_nodes = len(valid)
 
         # Build feature matrix: (n_nodes, n_bins)
-        feat = self._build_feature_matrix(
-            valid, obs_by_entity, t_start, as_of
-        )   # (n_nodes, n_bins)
+        feat = self._build_feature_matrix(valid, obs_by_entity, t_start, as_of)  # (n_nodes, n_bins)
 
         # Train on first (n_bins - window - 1) steps, score on last window+1
         train_steps = self.n_bins - self.window - 1
@@ -505,11 +507,11 @@ class GDNMonitor:
             n_steps = 0
 
             for t in range(train_steps):
-                x = feat_t[:, t : t + window]          # (n, window)
-                y = feat_t[:, t + window]               # (n,) — next bin
+                x = feat_t[:, t : t + window]  # (n, window)
+                y = feat_t[:, t + window]  # (n,) — next bin
 
                 optimiser.zero_grad()
-                y_hat = self._model(x)                  # (n,)
+                y_hat = self._model(x)  # (n,)
                 loss = F.mse_loss(y_hat, y)
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(self._model.parameters(), 1.0)
@@ -521,7 +523,9 @@ class GDNMonitor:
             if n_steps > 0 and (iteration + 1) % 25 == 0:
                 log.debug(
                     "GDN iter %d/%d — avg_loss=%.4f",
-                    iteration + 1, self.n_iters, total_loss / n_steps,
+                    iteration + 1,
+                    self.n_iters,
+                    total_loss / n_steps,
                 )
 
         self._model.eval()
@@ -540,19 +544,19 @@ class GDNMonitor:
 
         window = self.window
         # Use the last `window` bins as input, next bin as ground truth
-        x_np = feat[:, -(window + 1) : -1]          # (n, window)
-        y_np = feat[:, -1]                           # (n,)
+        x_np = feat[:, -(window + 1) : -1]  # (n, window)
+        y_np = feat[:, -1]  # (n,)
 
         x_t = torch.tensor(x_np, dtype=torch.float32, device=self.device)
 
         with torch.no_grad():
-            y_hat = self._model(x_t).cpu().numpy()   # (n,)
+            y_hat = self._model(x_t).cpu().numpy()  # (n,)
 
         # Per-entity normalised deviation: (y - ŷ)² / (train_std² + ε)
         residuals = (y_np - y_hat) ** 2
         # Use training std for normalisation (from _build_feature_matrix)
         std = self._train_std.squeeze(-1) if self._train_std is not None else np.ones(len(valid))
-        dev_scores = residuals / (std ** 2 + _EPS)
+        dev_scores = residuals / (std**2 + _EPS)
 
         # Anomaly threshold in units of normalised deviation
         threshold = self.anomaly_threshold

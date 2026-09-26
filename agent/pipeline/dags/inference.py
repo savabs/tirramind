@@ -21,8 +21,6 @@ from __future__ import annotations
 import logging
 import math
 from datetime import UTC, date, timedelta
-
-UTC = UTC
 from pathlib import Path
 from typing import Any
 

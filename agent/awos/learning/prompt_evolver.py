@@ -63,9 +63,7 @@ class PromptEvolver:
         self._patterns_path = self._store / "error_patterns.jsonl"
         self._skills_path = self._store / "skills" / "index.json"
         self._cheap_call = cheap_call
-        self._evolve_every = int(
-            os.getenv("TIRRA_AWOS_PROMPT_EVOLVE_EVERY", str(_DEFAULT_EVOLVE_EVERY))
-        )
+        self._evolve_every = int(os.getenv("TIRRA_AWOS_PROMPT_EVOLVE_EVERY", str(_DEFAULT_EVOLVE_EVERY)))
 
     # ── Public API ──────────────────────────────────────────────────────────
     def should_evolve(self, session_count: int) -> bool:

@@ -11,13 +11,15 @@ from __future__ import annotations
 import json
 import sqlite3
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import yaml
 
+from agent.pipeline.country_codes import resolve_country_key
+from agent.pipeline.entity import entity_id_from_key
 from agent.tools.instrument_universe import INSTRUMENTS, cftc_code_to_ticker
 
 _DEFAULT_DB = Path(".tirra_pipeline/pipeline.db")
@@ -143,10 +145,10 @@ def rolling_zscore(series: np.ndarray, idx: int, window: int) -> float:
 
 def _parse_ts(ts: str | float | int) -> datetime:
     if isinstance(ts, (int, float)):
-        return datetime.fromtimestamp(float(ts), tz=timezone.utc)
+        return datetime.fromtimestamp(float(ts), tz=UTC)
     s = str(ts).strip()
     if s.replace(".", "", 1).isdigit():
-        return datetime.fromtimestamp(float(s), tz=timezone.utc)
+        return datetime.fromtimestamp(float(s), tz=UTC)
     s = s.replace("Z", "+00:00")
     if "T" not in s and len(s) >= 10 and s[4] == "-":
         s = s[:10] + "T00:00:00+00:00"
@@ -160,8 +162,7 @@ def _day_key(ts: str | float | int) -> str:
 def _cftc_contract_for_ticker(con: sqlite3.Connection, ticker: str) -> str | None:
     for hint in _CFTC_TICKER_ENTITY_HINTS.get(ticker, ()):
         row = con.execute(
-            "SELECT entity_id FROM entities WHERE entity_type='cftc_contract' "
-            "AND canonical_name LIKE ? LIMIT 1",
+            "SELECT entity_id FROM entities WHERE entity_type='cftc_contract' AND canonical_name LIKE ? LIMIT 1",
             (f"%{hint}%",),
         ).fetchone()
         if row:
@@ -177,8 +178,7 @@ def _cftc_contract_for_ticker(con: sqlite3.Connection, ticker: str) -> str | Non
     if not code:
         return None
     row = con.execute(
-        "SELECT entity_id FROM entities WHERE entity_type='cftc_contract' "
-        "AND metadata_json LIKE ? LIMIT 1",
+        "SELECT entity_id FROM entities WHERE entity_type='cftc_contract' AND metadata_json LIKE ? LIMIT 1",
         (f'%"cftc_code": "{code}"%',),
     ).fetchone()
     if row:
@@ -188,9 +188,7 @@ def _cftc_contract_for_ticker(con: sqlite3.Connection, ticker: str) -> str | Non
     return entity_id_from_key("cftc_contract", code)
 
 
-def _load_cftc_series(
-    con: sqlite3.Connection, ticker: str, metric: str
-) -> tuple[list[datetime], np.ndarray, str]:
+def _load_cftc_series(con: sqlite3.Connection, ticker: str, metric: str) -> tuple[list[datetime], np.ndarray, str]:
     eid = _cftc_contract_for_ticker(con, ticker)
     if not eid:
         return [], np.array([]), ticker
@@ -205,9 +203,7 @@ def _load_cftc_series(
     # CFTC ingest can duplicate the same report date — keep the last row per day.
     by_day: dict[str, tuple[datetime, float]] = {}
     name = ticker
-    name_row = con.execute(
-        "SELECT canonical_name FROM entities WHERE entity_id=? LIMIT 1", (eid,)
-    ).fetchone()
+    name_row = con.execute("SELECT canonical_name FROM entities WHERE entity_id=? LIMIT 1", (eid,)).fetchone()
     if name_row and name_row[0]:
         name = name_row[0].split(" - ")[0].strip()
     for ts, vj in rows:
@@ -228,9 +224,7 @@ def _load_cftc_series(
     return times, values, name
 
 
-def _load_eia_series(
-    con: sqlite3.Connection, series_key: str, metric: str
-) -> tuple[list[datetime], np.ndarray, str]:
+def _load_eia_series(con: sqlite3.Connection, series_key: str, metric: str) -> tuple[list[datetime], np.ndarray, str]:
     rows = con.execute(
         """
         SELECT observed_at, value_json FROM entity_observations
@@ -267,9 +261,7 @@ def _ais_metric_from_value(val: dict[str, Any]) -> float:
     return 0.0
 
 
-def _load_ais_obs_series(
-    con: sqlite3.Connection, observation_type: str
-) -> tuple[list[datetime], np.ndarray, str]:
+def _load_ais_obs_series(con: sqlite3.Connection, observation_type: str) -> tuple[list[datetime], np.ndarray, str]:
     rows = con.execute(
         """
         SELECT observed_at, value_json FROM entity_observations
@@ -289,10 +281,7 @@ def _load_ais_obs_series(
     if not day_values:
         return [], np.array([]), ""
     day_order = sorted(day_values.keys())
-    times = [
-        datetime.fromisoformat(d + "T12:00:00+00:00").replace(tzinfo=timezone.utc)
-        for d in day_order
-    ]
+    times = [datetime.fromisoformat(d + "T12:00:00+00:00").replace(tzinfo=UTC) for d in day_order]
     values = np.array([day_values[d] for d in day_order], dtype=float)
     return times, values, ""
 
@@ -323,17 +312,46 @@ def _load_ais_daily_counts(con: sqlite3.Connection) -> tuple[list[datetime], np.
         day = _day_key(ts)
         day_counts[day] = day_counts.get(day, 0) + 1
     day_order = sorted(day_counts.keys())
-    times = [
-        datetime.fromisoformat(d + "T12:00:00+00:00").replace(tzinfo=timezone.utc)
-        for d in day_order
-    ]
+    times = [datetime.fromisoformat(d + "T12:00:00+00:00").replace(tzinfo=UTC) for d in day_order]
     values = np.array([day_counts[d] for d in day_order], dtype=float)
     return times, values, "AIS tanker positions (Baltic)"
 
 
 def _country_entity_ids(con: sqlite3.Connection, iso2_list: tuple[str, ...]) -> list[str]:
+    """Resolve ISO alpha-2 codes to country entity_ids.
+
+    Resolves through the deterministic entity key first. ``canonical_name`` is a
+    DISPLAY name, not an identity — the 2026-09-23 country merge rewrote these
+    records (``SAUDI`` -> ``Saudi Arabia``, ``US`` -> ``United States``) and every
+    name-matching lookup here began returning zero rows, which this function then
+    reported as "no countries found" rather than as an error. ``entity_id`` is
+    ``sha256("country:<ISO alpha-2>")`` and is stable across renames.
+
+    The name/metadata matching below is retained as a fallback for stores that
+    predate the merge.
+    """
     if not iso2_list:
         return []
+
+    resolved: list[str] = []
+    seen: set[str] = set()
+    for code in iso2_list:
+        key = resolve_country_key(code)
+        if key is None:
+            continue
+        eid = entity_id_from_key("country", key)
+        if eid in seen:
+            continue
+        row = con.execute(
+            "SELECT entity_id FROM entities WHERE entity_id=? AND entity_type='country'",
+            (eid,),
+        ).fetchone()
+        if row:
+            seen.add(eid)
+            resolved.append(row[0])
+    if resolved:
+        return resolved
+
     names: list[str] = []
     for code in iso2_list:
         names.append(code)
@@ -399,9 +417,7 @@ def _load_gdelt_producer_stress(
     return times, values, "GDELT producer stress"
 
 
-def _series_for_node(
-    con: sqlite3.Connection, node: ChainNodeSpec
-) -> tuple[list[datetime], np.ndarray, str]:
+def _series_for_node(con: sqlite3.Connection, node: ChainNodeSpec) -> tuple[list[datetime], np.ndarray, str]:
     if node.source_tool == "cftc" and node.instrument_ticker:
         return _load_cftc_series(con, node.instrument_ticker, node.metric)
     if node.source_tool == "energy_supply":
@@ -454,14 +470,12 @@ def evaluate_node(
     as_of: datetime | None = None,
 ) -> NodeMatch | None:
     """Return the strongest anomaly for one template node, or None."""
-    as_of = as_of or datetime.now(timezone.utc)
+    as_of = as_of or datetime.now(UTC)
     times, values, entity_label = _series_for_node(con, node)
     if len(times) == 0:
         return None
     window = min(_Z_WINDOW, max(3, len(values) - 1))
-    hit = _best_anomaly_in_window(
-        times, values, as_of, node.lag_days, node.min_zscore, node.direction, window
-    )
+    hit = _best_anomaly_in_window(times, values, as_of, node.lag_days, node.min_zscore, node.direction, window)
     if hit is None:
         return None
     _score, z, obs_dt, idx = hit
@@ -483,7 +497,7 @@ def match_chain(
     as_of: datetime | None = None,
 ) -> ChainMatch | None:
     """Match all nodes in a template. Returns None if any node fails."""
-    as_of = as_of or datetime.now(timezone.utc)
+    as_of = as_of or datetime.now(UTC)
     matches: list[NodeMatch] = []
     for node in template.nodes:
         m = evaluate_node(con, node, as_of)

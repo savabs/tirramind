@@ -45,9 +45,7 @@ class SkillEntry:
     attempts: int
     success_count: int = 1
     total_count: int = 1
-    last_seen: str = field(
-        default_factory=lambda: datetime.now(UTC).strftime("%Y-%m-%d")
-    )
+    last_seen: str = field(default_factory=lambda: datetime.now(UTC).strftime("%Y-%m-%d"))
 
     @property
     def win_rate(self) -> float:
@@ -100,7 +98,7 @@ class SkillLibrary:
             )
             self._entries.append(entry)
             if len(self._entries) > self.MAX_ENTRIES:
-                self._entries = self._entries[-self.MAX_ENTRIES:]
+                self._entries = self._entries[-self.MAX_ENTRIES :]
 
         self._save()
         self._write_skill_file(approach)
@@ -179,9 +177,7 @@ class SkillLibrary:
     # ── Persistence ────────────────────────────────────────────────────────
     def _save(self) -> None:
         try:
-            self._index_path.write_text(
-                json.dumps([asdict(e) for e in self._entries], indent=2), encoding="utf-8"
-            )
+            self._index_path.write_text(json.dumps([asdict(e) for e in self._entries], indent=2), encoding="utf-8")
         except OSError as exc:
             logger.warning("[skill_library] save failed: %s", exc)
 
@@ -226,9 +222,30 @@ def _classify(text: str) -> str:
 
 _STOPWORDS = frozenset(
     {
-        "a", "an", "the", "to", "in", "for", "of", "and", "or", "is",
-        "it", "this", "that", "with", "add", "update", "fix", "make",
-        "into", "from", "using", "when", "should", "will",
+        "a",
+        "an",
+        "the",
+        "to",
+        "in",
+        "for",
+        "of",
+        "and",
+        "or",
+        "is",
+        "it",
+        "this",
+        "that",
+        "with",
+        "add",
+        "update",
+        "fix",
+        "make",
+        "into",
+        "from",
+        "using",
+        "when",
+        "should",
+        "will",
     }
 )
 

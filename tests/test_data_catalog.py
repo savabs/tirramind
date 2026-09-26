@@ -41,19 +41,19 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock
 
 import pytest
 
 from agent.data_catalog.catalog import (
+    _MANIFEST_BY_NAME,
+    _TOOL_MANIFEST,
     CatalogReport,
     DataCatalog,
     FreshnessStatus,
     ToolMeta,
-    _MANIFEST_BY_NAME,
-    _TOOL_MANIFEST,
 )
-from agent.models.gnn.trainer import Trainer, TrainerConfig, SyntheticGraphGenerator
+from agent.models.gnn.trainer import SyntheticGraphGenerator, Trainer, TrainerConfig
 from agent.pipeline.store import PipelineStore
 
 # ── Helpers ───────────────────────────────────────────────────────────────
@@ -63,9 +63,7 @@ def _make_store(tmp_path: Path, name: str = "cat.db") -> PipelineStore:
     return PipelineStore(str(tmp_path / name))
 
 
-def _add_observation(
-    store: PipelineStore, tool: str, entity_id: str, ts: float
-) -> None:
+def _add_observation(store: PipelineStore, tool: str, entity_id: str, ts: float) -> None:
     store.store_entity_observation(
         entity_id=entity_id,
         source_tool=tool,
@@ -103,7 +101,6 @@ def _make_trainer(tmp_path: Path, use_catalog: bool = False) -> Trainer:
 
 
 class TestToolMeta:
-
     def test_frozen(self):
         tm = ToolMeta("x", "cat", 24.0, 48.0)
         with pytest.raises((AttributeError, TypeError)):
@@ -127,9 +124,9 @@ class TestToolMeta:
 
     def test_all_sla_geq_frequency(self):
         for m in _TOOL_MANIFEST:
-            assert (
-                m.sla_hours >= m.frequency_hours
-            ), f"{m.name}: sla_hours {m.sla_hours} < frequency {m.frequency_hours}"
+            assert m.sla_hours >= m.frequency_hours, (
+                f"{m.name}: sla_hours {m.sla_hours} < frequency {m.frequency_hours}"
+            )
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -138,7 +135,6 @@ class TestToolMeta:
 
 
 class TestDataCatalog:
-
     def test_defaults(self):
         dc = DataCatalog()
         assert dc._max_tools == 200
@@ -196,7 +192,6 @@ class TestDataCatalog:
 
 
 class TestCheckFreshness:
-
     def test_freshness_breach_when_stale(self, tmp_path):
         store = _make_store(tmp_path, "stale.db")
         dc = DataCatalog()
@@ -230,9 +225,7 @@ class TestCheckFreshness:
         old_ts = now - (sla_hours + overdue_by) * 3600
         _add_observation(store, "cftc", "crude", old_ts)
         report = dc.check_freshness(store, now=now)
-        assert report.statuses["cftc"].hours_overdue == pytest.approx(
-            overdue_by, abs=0.1
-        )
+        assert report.statuses["cftc"].hours_overdue == pytest.approx(overdue_by, abs=0.1)
 
     def test_report_counts_match(self, tmp_path):
         store = _make_store(tmp_path, "cnt.db")
@@ -267,7 +260,6 @@ class TestCheckFreshness:
 
 
 class TestGetLineage:
-
     def test_returns_correct_tools(self, tmp_path):
         store = _make_store(tmp_path, "lin.db")
         now = time.time()
@@ -297,7 +289,6 @@ class TestGetLineage:
 
 
 class TestStoreFreshnessSignals:
-
     def _make_report(self, tool_name, freshness_h, sla_h) -> CatalogReport:
         is_breach = freshness_h > sla_h
         s = FreshnessStatus(
@@ -323,9 +314,7 @@ class TestStoreFreshnessSignals:
         dc = DataCatalog()
         report = self._make_report("cftc", freshness_h=400, sla_h=336)
         dc.store_freshness_signals(mock_store, report)
-        names = {
-            c.kwargs["signal_name"] for c in mock_store.store_signal.call_args_list
-        }
+        names = {c.kwargs["signal_name"] for c in mock_store.store_signal.call_args_list}
         assert "catalog.cftc.freshness_hours" in names
         assert "catalog.cftc.sla_breach" in names
 
@@ -379,7 +368,6 @@ class TestStoreFreshnessSignals:
 
 
 class TestTrainerConfigDefaults:
-
     def test_use_data_catalog_false(self):
         assert TrainerConfig().use_data_catalog is False
 
@@ -396,7 +384,6 @@ class TestTrainerConfigDefaults:
 
 
 class TestTrainerCheckDataFreshness:
-
     def test_returns_none_when_disabled(self, tmp_path):
         trainer = _make_trainer(tmp_path, use_catalog=False)
         assert trainer.check_data_freshness() is None
@@ -434,6 +421,4 @@ class TestTrainerCheckDataFreshness:
         for tool_name, status in report.statuses.items():
             base_meta = dc_base.get_meta(tool_name)
             if base_meta:
-                assert status.sla_hours == pytest.approx(
-                    base_meta.sla_hours * 2.0, abs=0.01
-                )
+                assert status.sla_hours == pytest.approx(base_meta.sla_hours * 2.0, abs=0.01)

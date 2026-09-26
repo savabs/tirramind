@@ -70,7 +70,7 @@ class TestConstants:
         assert DAG_NAME == "entity_scoring"
 
     def test_depends_on(self) -> None:
-        assert ["gnn_inference"] == DEPENDS_ON
+        assert DEPENDS_ON == ["gnn_inference"]
 
 
 # ═══════════════════════════════════════════════════════════════

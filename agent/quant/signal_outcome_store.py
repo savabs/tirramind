@@ -131,6 +131,7 @@ class SignalOutcomeStore:
 
 def _now_ts() -> float:
     import time
+
     return time.time()
 
 
