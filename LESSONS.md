@@ -893,3 +893,54 @@ in a window is exactly zero.
 - **Extend F-15: a loss constant to ~1e-8 relative across epochs is
   disconnected in effect** — whether by detach, by constant target, or by
   saturation. Diff loss history at full precision, never from the rounded table.
+
+---
+
+### F-18 · I Ranked a Frozen Model First For Having a Good Random Initialisation
+
+**Symptom.** A five-way parallel sweep to fix the eff_rank collapse. `E_combined`
+(vicreg + contranorm + log_loss) reported `eff_rank=10.6` against a control of
+`6.3` and was written up as the winner — *"+68% rank, 6× lower magnitude"* — and
+that recommendation reached a commit message.
+
+**It was not training.**
+
+```
+E_combined    in_sample_ic  -0.0149, -0.0149, -0.0149, -0.0149
+              eff_rank       10.6, 10.6, 10.6, 10.6
+              emb_std        206020.8750 × 4
+C_contranorm  in_sample_ic  -0.0601, -0.0308, -0.0583, -0.0482
+              eff_rank       11.4, 8.5, 11.5, 8.3
+```
+
+Identical to every decimal across all four epochs. The flag combination froze
+the gradient path; `10.6` was its random initialisation, not a result. The one
+config that genuinely helps is `C_contranorm` — and only to ~11.5 of 64, still
+far below the 25% threshold.
+
+**Root cause of the mistake, which is the point of this entry.** F-15 and F-17
+both already say it: *a value identical across epochs is not converged, it is
+disconnected.* F-17 was diagnosed **eight hours before this sweep**, by this same
+process, and recorded that rule. Then a favourable number appeared and nobody
+asked whether it had moved.
+
+The failure is not in the code. It is that **a good number ends the
+investigation and a bad number continues it.** Every instance in this log has
+the same shape — F-02 (GNN bypass), F-15 (constant contrastive loss), F-17
+(clamp-saturated value loss), and now this. Three of the four were caught only
+because something *else* looked wrong first.
+
+**Prevention Rule:**
+- **Before reporting any metric as an improvement, print its full per-epoch
+  series and confirm it varies.** A single favourable value is not a result. Two
+  identical values are a bug report. This costs one line and has now caught four
+  separate defects.
+- **A control arm is not optional.** Here the control was the only reason the
+  frozen arm was detectable at all — without `A_control` to compare epoch-wise
+  behaviour against, `10.6` would simply have looked good.
+- **Diff at full precision, never from a rounded table.** F-17's smoking gun was
+  `2.65e-08` relative movement that printed as an unchanging `2896.2482`.
+- **Suspicion must be symmetric.** Apply the same scrutiny to results that
+  confirm the hypothesis as to results that refute it. Every entry in this log
+  was found by doubting a *bad* number; the frozen arm survived because its
+  number was *good*.
