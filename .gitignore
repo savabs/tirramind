@@ -133,3 +133,15 @@ tirramind_v1/
 
 # macOS Finder metadata
 .DS_Store
+
+# Playwright screenshot/snapshot artifacts from browser checks
+.playwright-mcp/
+
+# Editor/agent backup files
+*.py.bak
+
+# Named prospect lists and outreach drafts — third-party firm and contact
+# details. This repo is PUBLIC; pushing these would publish information about
+# people who did not consent to it. Held back deliberately, per owner
+# instruction 2026-09-23 ("hold back docs/studio").
+docs/studio/

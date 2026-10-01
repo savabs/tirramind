@@ -7,7 +7,11 @@ from the ToolRegistry or invoking a pure Python function.
 ToolOperator:  Looks up a tool by name, calls tool.execute(**params), returns ToolResult.data
 FunctionOperator:  Calls a Python callable with (params, upstream_results), returns its output
 
-Both catch exceptions and return structured error info instead of crashing.
+Neither operator swallows exceptions: a failing tool or function raises out of
+``execute`` and the executor records a genuinely failed node. What operators
+*do* own is the reverse translation — turning a returned *payload* back into a
+node status (``classify_payload_status`` below), because a DAG function that
+reports "I did nothing" inside its return dict is not a success.
 """
 
 from __future__ import annotations
@@ -16,12 +20,90 @@ import inspect
 import logging
 import threading
 from abc import ABC, abstractmethod
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from agent.tools.base import ToolRegistry, ToolResult
 
 log = logging.getLogger(__name__)
+
+# ── reserved node-param keys ────────────────────────────────────────
+# Directives to the executor/operator layer, never arguments to the
+# underlying tool or DAG function. The executor injects ``__tool__`` and
+# strips every reserved key before calling anything, so a node can carry
+# executor metadata without every tool needing to accept it.
+TOOL_PARAM_KEY = "__tool__"
+
+#: Names of the domain tables a node claims to write. Read by
+#: ``DAGExecutor``'s zero-rows guard, which takes real row-count deltas on
+#: exactly these tables. ``pipeline_data`` is refused (see the executor):
+#: it holds the per-node result *envelope*, written on every successful
+#: node, which is precisely why the old guard could never fire —
+#: docs/publications/thirteen_ways_a_pipeline_lies.md, Way 2.
+DOMAIN_TABLES_PARAM_KEY = "__domain_tables__"
+
+RESERVED_PARAM_KEYS = frozenset({TOOL_PARAM_KEY, DOMAIN_TABLES_PARAM_KEY})
+
+# ── payload → node status ───────────────────────────────────────────
+# Every layer 3-6 node is a FunctionOperator returning a plain dict, and
+# the executor used to mark any non-raising operator "completed". So a
+# node whose whole output was {"status": "skipped", "reason":
+# "no_sac_model"} was recorded as a success. These are the literal status
+# strings the DAG functions in agent/pipeline/dags/ actually emit
+# (surveyed 2026-09-23: "skipped", "error", "completed", "ready",
+# "completed_fully", "insufficient_data").
+#
+# Deliberately a closed vocabulary rather than "anything that isn't
+# 'completed'": "ready" and "completed_fully" are success payloads, and
+# silently reclassifying an unknown word would be the same guess-in-the-
+# dark this whole class of bug is made of. An unrecognised status stays
+# "completed" and keeps whatever meaning its DAG gave it.
+_PAYLOAD_SKIP_STATUSES = frozenset({"skipped", "skip"})
+_PAYLOAD_FAILURE_STATUSES = frozenset({"failed", "failure", "error"})
+
+
+def classify_payload_status(payload: Any) -> str:
+    """Map an operator's returned payload to a node status.
+
+    Returns one of ``"completed"`` / ``"skipped"`` / ``"failed"``. Only a
+    payload that *says* it skipped or failed is reclassified; everything
+    else — including any non-mapping return value — stays ``"completed"``.
+    """
+    if not isinstance(payload, Mapping):
+        return "completed"
+
+    # ToolResult-shaped payloads.
+    if payload.get("success") is False:
+        return "failed"
+
+    # Several DAG helpers use a bare boolean flag instead of a status
+    # string (e.g. world_model_update's ``{"skipped": True, "reason": ...}``).
+    if payload.get("skipped") is True:
+        return "skipped"
+
+    raw = payload.get("status")
+    if isinstance(raw, str):
+        normalized = raw.strip().lower()
+        if normalized in _PAYLOAD_SKIP_STATUSES:
+            return "skipped"
+        if normalized in _PAYLOAD_FAILURE_STATUSES:
+            return "failed"
+    return "completed"
+
+
+def payload_reason(payload: Any) -> str:
+    """Best-effort human reason from a skipped/failed payload.
+
+    Never invents one: returns ``"<no reason given>"`` when the payload
+    carries none, so a node that skips without saying why is visibly
+    under-reporting rather than looking like it explained itself.
+    """
+    if isinstance(payload, Mapping):
+        for key in ("reason", "error", "message", "detail"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return "<no reason given>"
 
 
 class Operator(ABC):
@@ -68,16 +150,18 @@ class ToolOperator(Operator):
         # keeps the Operator interface uniform without forcing a change onto
         # every tool. Revisit only if a specific tool's own timeout becomes
         # the leak (that decision belongs to whoever owns that tool).
-        tool_name = params.get("__tool__")
+        tool_name = params.get(TOOL_PARAM_KEY)
         if tool_name is None:
-            raise ValueError("ToolOperator requires '__tool__' in params")
+            raise ValueError(f"ToolOperator requires {TOOL_PARAM_KEY!r} in params")
 
         tool = self._registry.get(tool_name)
         if tool is None:
             raise ValueError(f"Tool not found in registry: {tool_name!r}")
 
-        # Build execution params without __tool__
-        exec_params = {k: v for k, v in params.items() if k != "__tool__"}
+        # Build execution params without any executor directive. Tools take
+        # their own kwargs only — a reserved key reaching tool.execute()
+        # would be an unexpected-keyword TypeError.
+        exec_params = {k: v for k, v in params.items() if k not in RESERVED_PARAM_KEYS}
 
         # Resolve upstream references in params: "$upstream.node_id"
         resolved = self._resolve_upstream(exec_params, upstream_results or {})

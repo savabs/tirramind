@@ -21,11 +21,10 @@ No paid API paths — everything $0 with no key.
   - Bandit arm exists
 """
 
-import sys
 import unittest
 from unittest.mock import MagicMock, patch
 
-sys.path.insert(0, "/home/becmachlean/2024/projects/tirramind_v1")
+import pytest
 
 from agent.tools.whale_alert import WhaleAlertTool
 
@@ -565,7 +564,15 @@ class TestWhaleAlertEdgeCases(unittest.TestCase):
         self.assertIsNotNone(tool2._cache)
 
     # ── LIVE TESTS (real network calls) ──────────────────────────
+    #
+    # These hit blockchain.com for real. They were unmarked, so CI's
+    # `-m "not live and not slow"` did not deselect them and the pre-completion
+    # quality gate ran them too — both went red whenever the endpoint was slow,
+    # rate-limited, or simply had no >=50 BTC transaction in the latest block.
+    # They are kept (an assertion about the real environment is worth running
+    # deliberately: `pytest -m live`) but marked so they are opt-in.
 
+    @pytest.mark.live
     def test_live_mempool(self):
         """Real call to blockchain.com mempool."""
         tool = WhaleAlertTool()
@@ -580,6 +587,7 @@ class TestWhaleAlertEdgeCases(unittest.TestCase):
             self.assertIn("value_btc", tx)
             self.assertFalse(tx["confirmed"])
 
+    @pytest.mark.live
     def test_live_confirmed(self):
         """Real call to blockchain.com latest block."""
         tool = WhaleAlertTool()

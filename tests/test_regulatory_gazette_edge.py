@@ -1245,33 +1245,44 @@ class TestMultipleAgencies:
 # ── Live Network (optional) ─────────────────────────────────────────
 
 
+@pytest.mark.live
 class TestLiveNetwork:
-    """Live tests against the real Federal Register API."""
+    """Live tests against the real Federal Register API.
 
-    @pytest.mark.skipif(True, reason="Live network test — run manually")
+    Previously each method carried `@pytest.mark.skipif(True, ...)`, which is
+    unconditional: the tests could not be run at all, not even deliberately,
+    and they were invisible to `-m live`. They now carry the `live` marker, so
+    CI and the quality gate (`-m "not live and not slow"`) deselect them while
+    `pytest -m live tests/test_regulatory_gazette_edge.py` actually runs them.
+
+    `assert result.success` alone would pass on a tool that returned success
+    with nothing in it — the failure mode this repo keeps shipping — so each
+    case also asserts the payload it went to the network for.
+    """
+
     def test_live_recent_proposed_rules(self):
         tool = RegulatoryGazetteTool()
         result = tool.execute(mode="recent", doc_type="PRORULE", days_back=7, limit=3)
-        assert result.success
-        print(result.output)
+        assert result.success, result.output
+        assert result.output.strip()
+        assert result.data["documents"]
 
-    @pytest.mark.skipif(True, reason="Live network test — run manually")
     def test_live_search_semiconductor(self):
         tool = RegulatoryGazetteTool()
         result = tool.execute(mode="search", keyword="semiconductor", days_back=365, limit=5)
-        assert result.success
-        print(result.output)
+        assert result.success, result.output
+        assert result.output.strip()
+        assert result.data["documents"]
 
-    @pytest.mark.skipif(True, reason="Live network test — run manually")
     def test_live_agency_sec(self):
         tool = RegulatoryGazetteTool()
         result = tool.execute(mode="agency", agency="sec", days_back=30, limit=5)
-        assert result.success
-        print(result.output)
+        assert result.success, result.output
+        assert result.output.strip()
+        assert result.data["documents"]
 
-    @pytest.mark.skipif(True, reason="Live network test — run manually")
     def test_live_upcoming(self):
         tool = RegulatoryGazetteTool()
         result = tool.execute(mode="upcoming", limit=10)
-        assert result.success
-        print(result.output)
+        assert result.success, result.output
+        assert result.output.strip()

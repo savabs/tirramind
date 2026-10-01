@@ -29,6 +29,16 @@ from typing import TYPE_CHECKING, Any
 import httpx
 
 from agent.data.cache import DataCache
+
+# Country entity identity is owned by ``agent/pipeline/country_codes.py`` and
+# nothing else. GDELT emits CAMEO alpha-3 actor codes ("USA"); the instrument
+# universe writes ISO alpha-2 ("US"). Keying a country entity on the raw CAMEO
+# code makes those two the same country under two entity ids, which is what
+# disconnected the world-events graph from every tradeable instrument
+# (docs/research/graph_connectivity_failure.md). This import is deliberately
+# unguarded: a GDELT run that cannot resolve country codes must fail loudly
+# rather than quietly re-split the graph.
+from agent.pipeline.country_codes import country_name, resolve_country_key
 from agent.tools.base import Tool, ToolResult
 
 if TYPE_CHECKING:
@@ -468,12 +478,13 @@ class GDELTTool(Tool):
         # L2: entity_ids in actor sub-dicts
         if entity_id_from_key is not None:
             for e in events:
-                a1c = e["actor1"]["country"]
-                a2c = e["actor2"]["country"]
-                if a1c:
-                    e["actor1"]["entity_id"] = entity_id_from_key("country", a1c)
-                if a2c:
-                    e["actor2"]["entity_id"] = entity_id_from_key("country", a2c)
+                # Must agree with _persist_entities_inner: same resolver, same
+                # key, same id. A regional bloc (EUR/MEA/SEA) resolves to None
+                # and gets no entity_id, because no country entity exists.
+                for actor_key in ("actor1", "actor2"):
+                    country_key = resolve_country_key(e[actor_key]["country"])
+                    if country_key:
+                        e[actor_key]["entity_id"] = entity_id_from_key("country", country_key)
 
         return ToolResult(
             success=True,
@@ -709,6 +720,10 @@ class GDELTTool(Tool):
 
     def _persist_entities_inner(self, events: list[dict[str, Any]]) -> None:
         seen: set[str] = set()
+        # Actor codes that are not countries (CAMEO regional blocs such as EUR,
+        # MEA, AFR, and unknown codes). Counted and reported, never written as
+        # a `country` entity and never silently dropped.
+        unresolved: Counter[str] = Counter()
         now_ts = datetime.now(UTC).timestamp()
         for ev in events:
             # Skip low-tension events — only persist genuine conflict signal.
@@ -743,25 +758,44 @@ class GDELTTool(Tool):
             ]:
                 actor = ev.get(actor_key, {})
                 counterpart = ev.get(counterpart_key, {})
-                country = actor.get("country", "").strip()
-                if not country:
+                raw_code = actor.get("country", "").strip()
+                if not raw_code:
                     continue
 
-                eid = entity_id_from_key("country", country)
+                # Canonical alpha-2 key, or None for a regional bloc / unknown
+                # code. None means "this is not a country" — do not invent one.
+                country_key = resolve_country_key(raw_code)
+                if country_key is None:
+                    unresolved[raw_code] += 1
+                    continue
+
+                eid = entity_id_from_key("country", country_key)
 
                 if eid not in seen:
                     seen.add(eid)
-                    name = actor.get("name") or country
+                    # NEVER the upstream actor name: Actor1Name put ALASKA,
+                    # SASKATCHEWAN and TOYOTA in the graph as country names.
+                    name = country_name(country_key)
+                    if name is None:  # pragma: no cover — resolver is total
+                        log.error(
+                            "gdelt: resolve_country_key(%r) -> %r has no display name; "
+                            "country_codes.ISO_ALPHA2_NAMES is incomplete. Skipping.",
+                            raw_code,
+                            country_key,
+                        )
+                        seen.discard(eid)
+                        continue
                     self._store.register_entity(
                         entity_type="country",
                         canonical_name=name,
                         entity_id=eid,
                         metadata={
-                            "fips_code": country,
+                            "fips_code": raw_code,
+                            "iso_alpha2": country_key,
                             "actor_type": actor.get("type", ""),
                         },
                     )
-                    self._store.add_entity_alias(eid, "fips", country)
+                    self._store.add_entity_alias(eid, "fips", raw_code)
 
                 self._store.store_entity_observation(
                     entity_id=eid,
@@ -783,12 +817,14 @@ class GDELTTool(Tool):
                 )
 
             # ── Link actor1 ↔ actor2 countries ──
-            c1 = ev.get("actor1", {}).get("country", "").strip()
-            c2 = ev.get("actor2", {}).get("country", "").strip()
-            if c1 and c2 and c1 != c2:
+            # Same resolver as the entity write above: a link keyed on the raw
+            # CAMEO code would point at entity ids that no longer exist.
+            country_key_a = resolve_country_key(ev.get("actor1", {}).get("country", ""))
+            country_key_b = resolve_country_key(ev.get("actor2", {}).get("country", ""))
+            if country_key_a and country_key_b and country_key_a != country_key_b:
                 self._store.link_entities(
-                    entity_id_a=entity_id_from_key("country", c1),
-                    entity_id_b=entity_id_from_key("country", c2),
+                    entity_id_a=entity_id_from_key("country", country_key_a),
+                    entity_id_b=entity_id_from_key("country", country_key_b),
                     link_type="event_involves",
                     source="gdelt",
                     confidence=0.9,
@@ -797,6 +833,14 @@ class GDELTTool(Tool):
                         "event_root": ev.get("event_root", ""),
                     },
                 )
+
+        if unresolved:
+            log.warning(
+                "gdelt: %d actor observations across %d distinct codes were not country entities and were skipped: %s",
+                sum(unresolved.values()),
+                len(unresolved),
+                ", ".join(f"{code}={n}" for code, n in unresolved.most_common(15)),
+            )
 
 
 # ------------------------------------------------------------------

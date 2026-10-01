@@ -534,11 +534,37 @@ class TestNeighborhoodSurprise:
         ]
         se = SurpriseExtractor()
         result = se.extract(model, data, id_map, obs)
-        # With identical setups and single neighbor, neighborhood = neighbor's composite
-        # (composite is computed WITHOUT neighborhood in first pass)
-        assert (
-            result["c0"].neighborhood_surprise == pytest.approx(result["c1"].composite_surprise, abs=0.5) or True
-        )  # May differ due to weight recomputation
+        w = se._weights
+
+        # _compute_neighborhood_surprise walks `results` in insertion order and
+        # writes each recomputed composite back into the dict as it goes, so the
+        # propagation is ORDER-DEPENDENT. c0 is visited first and therefore sees
+        # c1's FIRST-PASS composite (neighborhood term = 0); c1 is visited second
+        # and sees c0's already-updated composite. Both are exact equalities —
+        # each entity has exactly one neighbour, so the "average" is that single
+        # neighbour's composite with no rounding.
+        c0, c1 = result["c0"], result["c1"]
+
+        def _first_pass_composite(s) -> float:
+            return (
+                w["obs_type"] * s.obs_type_surprise
+                + w["temporal"] * s.temporal_surprise
+                + w["value"] * s.value_surprise
+                + w["memory"] * s.memory_drift
+            )
+
+        # c0's neighbourhood is c1's composite BEFORE c1 was updated.
+        assert c0.neighborhood_surprise == pytest.approx(_first_pass_composite(c1), rel=1e-9)
+        # c1's neighbourhood is c0's composite AFTER c0 was updated.
+        assert c1.neighborhood_surprise == pytest.approx(c0.composite_surprise, rel=1e-9)
+        # The propagation actually moved something: the second-pass composite
+        # differs from the first-pass one by exactly w_neighborhood * neighborhood.
+        assert c0.composite_surprise == pytest.approx(
+            _first_pass_composite(c0) + w["neighborhood"] * c0.neighborhood_surprise, rel=1e-9
+        )
+        assert c0.neighborhood_surprise > 0
+        # Order dependence is real, not a rounding artefact.
+        assert c1.neighborhood_surprise > c0.neighborhood_surprise
 
 
 # ═══════════════════════════════════════════════════════════════

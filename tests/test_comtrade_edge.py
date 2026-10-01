@@ -153,10 +153,12 @@ class TestCountryResolution:
         assert _resolve_country("  USA  ") == 842
 
     def test_partial_match(self):
-        # "US" is contained in "USA"
-        result = _resolve_country("US")
-        # Might match USA (contains "US")
-        assert result is not None or result is None  # Just exercises code path
+        # "US" is a prefix of "USA", and the resolver's substring fallback picks
+        # it up: the real behaviour is a match on 842, not "maybe something".
+        assert _resolve_country("US") == 842
+        # And the fallback is genuinely a substring match, not a silent default:
+        # a string that matches no ISO code at all still resolves to None.
+        assert _resolve_country("ZZ") is None
 
     def test_m49_map_completeness(self):
         assert len(M49_CODES) >= 30  # We have 34
