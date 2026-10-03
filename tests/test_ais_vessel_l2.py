@@ -7,6 +7,9 @@ Mirrors the test pattern from test_whale_alert_l2.py.
 
 from __future__ import annotations
 
+import logging
+import sqlite3
+import time
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -14,7 +17,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from agent.pipeline.entity import entity_id_from_key
-from agent.tools.ais_vessel import AISVesselTool
+from agent.tools import ais_vessel as ais_vessel_mod
+from agent.tools.ais_vessel import _MAX_FEED_AGE_SECONDS, _MAX_VESSEL_OBS_PER_RUN, AISVesselTool
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -212,17 +216,38 @@ class TestPersistGuard:
             tool._persist_entities([_make_vessel()])
         store.register_entity.assert_not_called()
 
-    def test_persist_error_caught(self) -> None:
-        """Errors in persistence are caught; method doesn't raise."""
+    def test_persist_error_is_isolated_and_counted(self) -> None:
+        """A failing vessel costs one vessel, and the failure is *reported*.
+
+        This used to assert that ``_persist_entities_inner`` raises, i.e. that
+        one bad vessel aborts the rest of the batch.  The caller then swallowed
+        that exception and returned success — 9 rows of 500, green.  The
+        contract now: keep going, count the failure, hand the count back.
+        """
         store = _make_store()
-        store.register_entity.side_effect = RuntimeError("DB locked")
-        tool = AISVesselTool(pipeline_store=store)
-        # _persist_entities calls _persist_entities_inner which will raise,
-        # but guard catches it implicitly (our implementation doesn't have inner try/except
-        # — the caller wraps in try/except). Let's test the outer level.
-        # Our guard doesn't catch — the caller does. So test the inner directly:
-        with pytest.raises(RuntimeError):
-            tool._persist_entities_inner([_make_vessel()])
+        good = _make_vessel(mmsi=230000001, imo=9000001, name="GOOD SHIP")
+        bad = _make_vessel(mmsi=230000002, imo=9000002, name="BAD SHIP")
+        other = _make_vessel(mmsi=230000003, imo=9000003, name="OTHER SHIP")
+
+        def flaky(**kwargs: Any) -> str:
+            if kwargs.get("entity_type") == "vessel" and kwargs.get("canonical_name") == "BAD SHIP":
+                raise RuntimeError("DB locked")
+            return "eid"
+
+        store.register_entity.side_effect = flaky
+
+        receipt = AISVesselTool(pipeline_store=store)._persist_entities([good, bad, other])
+
+        assert receipt["unique"] == 3
+        assert receipt["failed"] == 1
+        # The two healthy vessels still landed — the batch was not aborted.
+        assert receipt["positions"] == 2
+
+    def test_persist_receipt_without_store(self) -> None:
+        """No store: nothing is claimed as written."""
+        receipt = AISVesselTool()._persist_entities([_make_vessel()])
+        assert receipt["positions"] == 0
+        assert receipt["received"] == 1
 
     def test_port_call_no_store_noop(self) -> None:
         tool = AISVesselTool()
@@ -818,3 +843,405 @@ class TestMIMeasurement:
         # L2 provides structured entity-resolved observations
         val = obs[0]["value"]
         assert "lat" in val and "lon" in val
+
+
+# ===========================================================================
+# Class: TestDagSnapshotWritesVesselRows
+# ===========================================================================
+
+# Copied verbatim from agent/pipeline/dags/daily_collection.py (the
+# "fetch_ais_vessel" node).  If that node's params change, this literal must be
+# updated deliberately — the regression below is only meaningful when it runs
+# the exact wiring production runs.
+DAG_PARAMS = {"mode": "area_daily_snapshot", "area_name": "full_baltic", "ship_type": "tanker"}
+
+
+def _baltic_feature(
+    mmsi: int,
+    lat: float,
+    lon: float,
+    sog: float,
+    *,
+    reported_at_ms: int | None = None,
+) -> dict[str, Any]:
+    """A location feature inside the full_baltic bbox (54-66N, 9-31E).
+
+    ``timestampExternal`` is epoch **milliseconds** and ``timestamp`` is the AIS
+    second-of-minute field, exactly as the live endpoint serves them (sampled
+    2026-09-23: ``{"timestamp": 49, "timestampExternal": 1790176129011}``).
+    """
+    return {
+        "mmsi": mmsi,
+        "type": "Feature",
+        "geometry": {"type": "Point", "coordinates": [lon, lat]},
+        "properties": {
+            "mmsi": mmsi,
+            "sog": sog,
+            "cog": 90.0,
+            "heading": 91,
+            "navStat": 0,
+            "timestamp": 49,
+            "timestampExternal": reported_at_ms if reported_at_ms is not None else int(time.time() * 1000),
+        },
+    }
+
+
+class TestDagSnapshotWritesVesselRows:
+    """Regression: the DAG's snapshot mode must write per-vessel rows.
+
+    Between commit 48cb217 (2026-08-25) and 2026-09-23 the DAG node ran
+    ``mode="area_daily_snapshot"``, which fetched every live position and then
+    threw the positions away — one ``area_daily_activity`` row per run, zero
+    ``vessel_position`` rows, and ``result.success`` True throughout.  AIS is
+    time-gated: the API serves only "now", so each silent run was a day of moat
+    data that cannot be refetched at any price.
+
+    These assertions are on **row counts**, not on ``result.success``, because
+    ``result.success`` never noticed.
+    """
+
+    def _run_dag_node(
+        self,
+        tmp_path: Path,
+        *,
+        features: list[dict[str, Any]] | None = None,
+        meta: dict[int, dict[str, Any]] | None = None,
+        store: Any = None,
+        feed_updated_at: str | None = None,
+        db_name: str = "t.db",
+    ) -> tuple[Any, Any]:
+        from agent.pipeline.store import PipelineStore
+
+        ps = store or PipelineStore(db_path=tmp_path / db_name)
+        tool = AISVesselTool(pipeline_store=ps)
+
+        if features is None:
+            features = [
+                _baltic_feature(230000001, 60.1, 25.0, 12.0),  # tanker
+                _baltic_feature(230000002, 59.0, 22.0, 0.2),  # tanker
+                _baltic_feature(230000003, 58.0, 20.0, 8.0),  # cargo
+            ]
+        if meta is None:
+            meta = {
+                230000001: {"name": "NORDIC STAR", "imo": 9000001, "shipType": 80, "destination": "TALLINN"},
+                230000002: {"name": "BALTIC SUN", "imo": 9000002, "shipType": 84, "destination": "ROTTERDAM"},
+                230000003: {"name": "GOTLAND", "imo": 9000003, "shipType": 70, "destination": "GDANSK"},
+            }
+
+        # Patching _fetch_locations bypasses the payload envelope, so the feed's
+        # publish time is injected here the way a real fetch would record it.
+        tool._last_feed_updated_at = feed_updated_at
+
+        with (
+            patch.object(tool, "_fetch_locations", return_value=features),
+            patch.object(tool, "_fetch_metadata", return_value=meta),
+        ):
+            result = tool.execute(**DAG_PARAMS)
+
+        return ps, result
+
+    @staticmethod
+    def _row_counts(db: Path) -> dict[str, int]:
+        with sqlite3.connect(f"file:{db}?mode=ro", uri=True) as con:
+            return dict(
+                con.execute(
+                    "SELECT observation_type, count(*) FROM entity_observations "
+                    "WHERE source_tool='ais_vessel' GROUP BY 1"
+                ).fetchall()
+            )
+
+    def test_snapshot_writes_vessel_position_rows(self, tmp_path: Path) -> None:
+        """The node writes per-vessel rows AND keeps the single area row."""
+        ps, result = self._run_dag_node(tmp_path)
+        assert result.success
+
+        with sqlite3.connect(f"file:{tmp_path / 't.db'}?mode=ro", uri=True) as con:
+            counts = dict(
+                con.execute(
+                    "SELECT observation_type, count(*) FROM entity_observations "
+                    "WHERE source_tool='ais_vessel' GROUP BY 1"
+                ).fetchall()
+            )
+
+        # The whole point: > 0, where the unfixed code wrote exactly 0.
+        assert counts.get("vessel_position", 0) > 0
+        assert counts.get("vessel_position") == 3
+        # ...without losing the MP-1 daily series.
+        assert counts.get("area_daily_activity") == 1
+
+    def test_snapshot_preserves_mp1_series_shape(self, tmp_path: Path) -> None:
+        """``series_count`` and ``data`` stay as ghost_chains/mp1_data_health read them."""
+        _, result = self._run_dag_node(tmp_path)
+
+        assert result.data["series_count"] == 2  # two tankers
+        assert result.data["tanker_count"] == 2
+        assert result.data["vessel_count"] == 3
+        # Per-vessel records must not bloat the persisted area row.
+        assert "vessels" not in result.data
+
+    def test_requested_ship_type_survives_the_cap(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Every tanker survives the cut — asserted by identity, not by length.
+
+        The previous version of this test asserted
+        ``len(ranked) == _MAX_VESSEL_OBS_PER_RUN``, whose only content is that
+        truncation happened and that this is fine.  That is the shape of
+        ``test_500_returns_partial_results`` asserting ``len(result) == 1``
+        against ``total=200``: a test certifying the data loss.
+        """
+        monkeypatch.setattr(ais_vessel_mod, "_MAX_VESSEL_OBS_PER_RUN", 3)
+        vessels = [{"mmsi": i, "ship_type": "cargo"} for i in range(10)]
+        vessels += [{"mmsi": 901, "ship_type": "tanker"}, {"mmsi": 902, "ship_type": "tanker"}]
+
+        ranked = AISVesselTool._rank_vessels_for_persist(vessels, "tanker")
+
+        kept = {v["mmsi"] for v in ranked}
+        assert {901, 902} <= kept, "the signal ships must never be the ones cut"
+
+    def test_cap_is_above_live_feed_volume(self) -> None:
+        """Tripwire: the ceiling must not bite on a normal day.
+
+        The Digitraffic locations feed carried 1,187 vessels on 2026-09-23,
+        1,185 of them inside the full_baltic bbox.  A cap below that silently
+        discards positions that AIS can never serve again — which is what the
+        old value of 500 did, on 58% of every run.
+        """
+        assert _MAX_VESSEL_OBS_PER_RUN > 1185 * 2
+
+    def test_truncation_is_visible_when_it_bites(
+        self,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """If the ceiling ever fires, it must show up in the log AND in the row."""
+        monkeypatch.setattr(ais_vessel_mod, "_MAX_VESSEL_OBS_PER_RUN", 2)
+        caplog.set_level(logging.WARNING, logger="agent.tools.ais_vessel")
+
+        _, result = self._run_dag_node(tmp_path)
+
+        assert "truncated" in caplog.text.lower()
+        assert result.data["vessels_available"] == 3
+        assert result.data["vessels_persisted"] == 2
+        assert result.data["vessels_truncated"] == 1
+        # The dropped vessel is the cargo one, not a tanker.
+        assert self._row_counts(tmp_path / "t.db")["vessel_position"] == 2
+        # ...and the node goes RED.  A warning in a log file nobody greps is
+        # how 58% of every run disappeared for four months: the only signal
+        # the DAG reads is result.success (agent/pipeline/operators.py).
+        assert result.success is False
+        assert "dropped by" in result.output
+
+    def test_result_data_carries_the_write_receipt(self, tmp_path: Path) -> None:
+        """Downstream must be able to see rows-written, not only things-seen."""
+        _, result = self._run_dag_node(tmp_path)
+
+        assert result.data["vessels_available"] == 3
+        assert result.data["vessels_persisted"] == 3
+        assert result.data["vessels_failed"] == 0
+        assert result.data["feed_feature_count"] == 3
+        assert "3 written / 3 available" in result.output
+
+    def test_one_failing_write_does_not_abort_the_batch_and_is_reported(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Fault injection: the exact shape that wrote 9 rows of 500 and went green.
+
+        A store failure on one vessel must (a) cost that one vessel only and
+        (b) turn the node red — ``agent/pipeline/operators.py`` raises only when
+        ``result.success`` is False, so success=True here is a silent loss.
+        """
+        from agent.pipeline.store import PipelineStore
+
+        ps = PipelineStore(db_path=tmp_path / "fault.db")
+        real = ps.store_entity_observation
+        seen = {"n": 0}
+
+        def flaky(**kwargs: Any) -> int:
+            if kwargs.get("observation_type") == "vessel_position":
+                seen["n"] += 1
+                if seen["n"] == 2:
+                    raise RuntimeError("DB locked")
+            return real(**kwargs)
+
+        ps.store_entity_observation = flaky  # type: ignore[method-assign]
+
+        _, result = self._run_dag_node(tmp_path, store=ps, db_name="fault.db")
+
+        counts = self._row_counts(tmp_path / "fault.db")
+        # Isolation: the third vessel was written even though the second blew up.
+        assert counts["vessel_position"] == 2
+        # ...and the MP-1 area row still landed.
+        assert counts["area_daily_activity"] == 1
+        # Honesty: a partial write is not a success.
+        assert result.success is False
+        assert result.data["vessels_failed"] == 1
+        assert result.data["vessels_persisted"] == 2
+
+    def test_empty_feed_is_a_failure_not_a_zero(self, tmp_path: Path) -> None:
+        """An empty upstream must not enter the z-score series as 'no ships'."""
+        _, result = self._run_dag_node(tmp_path, features=[], meta={})
+
+        assert result.success is False
+        assert "0 features" in result.output
+        # Nothing at all was written — no fabricated zero row.
+        assert self._row_counts(tmp_path / "t.db") == {}
+
+    def test_stale_feed_reports_degraded(self, tmp_path: Path) -> None:
+        """A frozen feed is a replay, not a measurement — the node must say so."""
+        _, result = self._run_dag_node(tmp_path, feed_updated_at="2026-09-01T00:00:00Z")
+
+        assert result.success is False
+        assert "stale" in result.output.lower()
+        # The rows are still written (they are real positions); only the claim
+        # that this is today's measurement is withdrawn.
+        assert self._row_counts(tmp_path / "t.db")["vessel_position"] == 3
+
+    def test_observed_at_is_the_ais_report_time(self, tmp_path: Path) -> None:
+        """observed_at comes from timestampExternal, not from the fetch clock."""
+        reported_ms = int((time.time() - 6 * 3600) * 1000)
+        features = [_baltic_feature(230000001, 60.1, 25.0, 12.0, reported_at_ms=reported_ms)]
+        meta = {230000001: {"name": "NORDIC STAR", "imo": 9000001, "shipType": 80}}
+
+        self._run_dag_node(tmp_path, features=features, meta=meta)
+
+        with sqlite3.connect(f"file:{tmp_path / 't.db'}?mode=ro", uri=True) as con:
+            (observed_at,) = con.execute(
+                "SELECT observed_at FROM entity_observations WHERE observation_type='vessel_position'"
+            ).fetchone()
+
+        assert abs(observed_at - reported_ms / 1000) < 1.0
+        # And decisively not the fetch clock: the report is 6h old.
+        assert time.time() - observed_at > 5 * 3600
+
+    def test_rerun_collapses_instead_of_duplicating(self, tmp_path: Path) -> None:
+        """A retry serves byte-identical positions; they must not double the rows.
+
+        OBSERVATION_UNIQUE_KEY includes observed_at, so a fetch-clock timestamp
+        made every retry append a fresh copy — 1,000 of the live table's 1,550
+        vessel_position rows are that artifact.
+        """
+        from agent.pipeline.store import PipelineStore
+
+        ps = PipelineStore(db_path=tmp_path / "t.db")
+        features = [
+            _baltic_feature(230000001, 60.1, 25.0, 12.0, reported_at_ms=1790176129011),
+            _baltic_feature(230000002, 59.0, 22.0, 0.2, reported_at_ms=1790176130000),
+        ]
+        meta = {
+            230000001: {"name": "NORDIC STAR", "imo": 9000001, "shipType": 80},
+            230000002: {"name": "BALTIC SUN", "imo": 9000002, "shipType": 84},
+        }
+
+        for _ in range(2):
+            self._run_dag_node(tmp_path, features=features, meta=meta, store=ps)
+
+        assert self._row_counts(tmp_path / "t.db")["vessel_position"] == 2
+
+    def test_missing_report_time_is_counted_not_hidden(self, tmp_path: Path) -> None:
+        """A feed that stops publishing timestampExternal must not degrade quietly.
+
+        The fetch clock is a legitimate fallback — the row is real and it lands
+        — but it is dated by when we asked rather than by when the vessel
+        reported, and observed_at is part of OBSERVATION_UNIQUE_KEY, so those
+        rows stop collapsing on retry.  That is a slow-motion version of the
+        duplicate footprint already in the live table, so it is counted.
+        """
+        clean = _baltic_feature(230000001, 60.1, 25.0, 12.0)
+        naked = _baltic_feature(230000002, 59.0, 22.0, 0.2)
+        del naked["properties"]["timestampExternal"]
+        meta = {
+            230000001: {"name": "NORDIC STAR", "imo": 9000001, "shipType": 80},
+            230000002: {"name": "BALTIC SUN", "imo": 9000002, "shipType": 84},
+        }
+
+        _, result = self._run_dag_node(tmp_path, features=[clean, naked], meta=meta)
+
+        # The row still lands — the fallback is not a drop.
+        assert self._row_counts(tmp_path / "t.db")["vessel_position"] == 2
+        assert result.data["vessels_persisted"] == 2
+        assert result.data["vessels_without_report_time"] == 1
+
+
+class TestFeedPublishTimeIsActuallyWired:
+    """The staleness guard is only as good as the value feeding it.
+
+    Every snapshot test injects ``_last_feed_updated_at`` onto the instance
+    because it patches ``_fetch_locations``.  That leaves the guard's input
+    untested: if the real fetch never recorded ``dataUpdatedTime``, the
+    staleness check would silently never fire and the whole suite would stay
+    green — the right mechanism on the wrong wiring.
+    """
+
+    class _Resp:
+        def __init__(self, payload: dict[str, Any]) -> None:
+            self._payload = payload
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, Any]:
+            return self._payload
+
+    class _Cache:
+        def __init__(self, seeded: Any = None) -> None:
+            self.seeded = seeded
+            self.put_calls: list[Any] = []
+
+        def get(self, namespace: str, key: dict[str, Any]) -> Any:
+            return self.seeded
+
+        def put(self, namespace: str, key: dict[str, Any], value: Any) -> None:
+            self.put_calls.append(value)
+
+    def test_real_fetch_records_the_feeds_publish_time(self) -> None:
+        """``_fetch_locations`` must set what ``_feed_age_seconds`` reads."""
+        tool = AISVesselTool()
+        payload = {
+            "type": "FeatureCollection",
+            "dataUpdatedTime": "2026-09-23T16:12:20Z",
+            "features": [_baltic_feature(230000001, 60.1, 25.0, 12.0)],
+        }
+
+        with patch.object(tool, "_get", return_value=self._Resp(payload)):
+            features = tool._fetch_locations()
+
+        assert len(features) == 1
+        assert tool._last_feed_updated_at == "2026-09-23T16:12:20Z"
+
+        # And the snapshot mode reads it back off the counts, not off a
+        # test-injected attribute.
+        with (
+            patch.object(tool, "_get", return_value=self._Resp(payload)),
+            patch.object(tool, "_fetch_metadata", return_value={230000001: {"shipType": 80}}),
+        ):
+            counts = tool._count_area_vessels("full_baltic", ship_type="all")
+        assert counts["feed_updated_at"] == "2026-09-23T16:12:20Z"
+        assert tool._feed_age_seconds(counts["feed_updated_at"]) is not None
+
+    def test_cached_payload_keeps_the_publish_time(self) -> None:
+        """A cache hit is not a fresh feed — it must carry its own timestamp."""
+        cache = self._Cache(
+            seeded={
+                "dataUpdatedTime": "2026-09-01T00:00:00Z",
+                "features": [_baltic_feature(230000001, 60.1, 25.0, 12.0)],
+            }
+        )
+        tool = AISVesselTool(cache=cache)
+
+        tool._fetch_locations()
+
+        assert tool._last_feed_updated_at == "2026-09-01T00:00:00Z"
+        age = tool._feed_age_seconds(tool._last_feed_updated_at)
+        assert age is not None and age > _MAX_FEED_AGE_SECONDS
+
+    def test_legacy_list_cache_entry_reports_unknown_not_fresh(self) -> None:
+        """A pre-envelope cache entry has no publish time; it must not fake one."""
+        cache = self._Cache(seeded=[_baltic_feature(230000001, 60.1, 25.0, 12.0)])
+        tool = AISVesselTool(cache=cache)
+
+        features = tool._fetch_locations()
+
+        assert len(features) == 1
+        assert tool._last_feed_updated_at is None
+        assert tool._feed_age_seconds(None) is None

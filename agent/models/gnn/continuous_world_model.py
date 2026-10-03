@@ -56,7 +56,6 @@ References
 from __future__ import annotations
 
 import logging
-import math
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any
 
@@ -68,8 +67,8 @@ from agent.models.gnn.heterogeneous_cde_func import HeterogeneousCDEFunc
 from agent.models.gnn.signature_path import SignaturePathBuilder, compute_d_z
 
 if TYPE_CHECKING:
-    from agent.models.gnn.het_tgn import HeteroMemory
     from agent.models.gnn.graph_builder import IDMap
+    from agent.models.gnn.het_tgn import HeteroMemory
     from agent.models.gnn.mamba_encoder import MambaMemoryEncoder
 
 log = logging.getLogger(__name__)
@@ -137,7 +136,7 @@ class ContinuousWorldModel(nn.Module):
         use_signatures: bool = False,
         use_mamba_ctx: bool = False,
         use_diffusion: bool = False,
-        mamba_encoder: "MambaMemoryEncoder | None" = None,
+        mamba_encoder: MambaMemoryEncoder | None = None,
         sig_builder: SignaturePathBuilder | None = None,
         hawkes_encoder: Any | None = None,
     ) -> None:
@@ -172,7 +171,7 @@ class ContinuousWorldModel(nn.Module):
         if use_signatures and sig_builder is not None:
             self.sig_builder = sig_builder
 
-        self.mamba_encoder: "MambaMemoryEncoder | None" = None
+        self.mamba_encoder: MambaMemoryEncoder | None = None
         if use_mamba_ctx and mamba_encoder is not None:
             self.mamba_encoder = mamba_encoder
 
@@ -183,8 +182,7 @@ class ContinuousWorldModel(nn.Module):
         self.hawkes_encoder = hawkes_encoder
 
         log.info(
-            "ContinuousWorldModel: d_z=%d n_euler_steps=%d "
-            "use_signatures=%s use_mamba=%s use_diffusion=%s",
+            "ContinuousWorldModel: d_z=%d n_euler_steps=%d use_signatures=%s use_mamba=%s use_diffusion=%s",
             self.d_z,
             n_euler_steps,
             use_signatures,
@@ -199,8 +197,8 @@ class ContinuousWorldModel(nn.Module):
     def update_memories(
         self,
         events: list[dict[str, Any]],
-        memory: "HeteroMemory",
-        id_map: "IDMap",
+        memory: HeteroMemory,
+        id_map: IDMap,
         embeddings: dict[str, torch.Tensor],
         training: bool = True,
     ) -> dict[str, torch.Tensor]:
@@ -267,9 +265,7 @@ class ContinuousWorldModel(nn.Module):
             knots = self._build_knots(msgs, times, t_prev)
 
             # Pre-compute graph message and Mamba context
-            graph_msg, mamba_ctx = self._compute_context(
-                gid, evts, msgs, times, t_prev, memory, id_map
-            )
+            graph_msg, mamba_ctx = self._compute_context(gid, evts, msgs, times, t_prev, memory, id_map)
 
             # Set context on CDE func
             self.cde_func.set_context(
@@ -304,8 +300,8 @@ class ContinuousWorldModel(nn.Module):
 
     def _build_knots(
         self,
-        msgs: torch.Tensor,        # (n, hidden_dim)
-        times: torch.Tensor,       # (n,)
+        msgs: torch.Tensor,  # (n, hidden_dim)
+        times: torch.Tensor,  # (n,)
         t_prev: float,
     ) -> torch.Tensor:
         """Build control path knot values Z_k at each event time.
@@ -324,10 +320,10 @@ class ContinuousWorldModel(nn.Module):
 
         # Time deltas relative to previous window end
         dt = (times - t_prev).clamp(min=0.0)  # (n,)
-        time_feats = self.time_enc(dt)         # (n, ctrl_time_dim)
+        time_feats = self.time_enc(dt)  # (n, ctrl_time_dim)
 
         # Projected messages
-        msg_feats = self.msg_proj(msgs)         # (n, ctrl_msg_dim)
+        msg_feats = self.msg_proj(msgs)  # (n, ctrl_msg_dim)
 
         parts = [time_feats, msg_feats]
 
@@ -336,7 +332,7 @@ class ContinuousWorldModel(nn.Module):
             sigs = self.sig_builder(msg_feats)  # (n, sig_dim)
             parts.append(sigs)
 
-        return torch.cat(parts, dim=-1)         # (n, d_z)
+        return torch.cat(parts, dim=-1)  # (n, d_z)
 
     # ──────────────────────────────────────────────────────────────────────
     # Context computation
@@ -349,8 +345,8 @@ class ContinuousWorldModel(nn.Module):
         msgs: torch.Tensor,
         times: torch.Tensor,
         t_prev: float,
-        memory: "HeteroMemory",
-        id_map: "IDMap",
+        memory: HeteroMemory,
+        id_map: IDMap,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Compute graph message m_i and Mamba context for a single entity.
 
@@ -383,7 +379,7 @@ class ContinuousWorldModel(nn.Module):
         msgs: torch.Tensor,
         times: torch.Tensor,
         t_prev: float,
-        memory: "HeteroMemory",
+        memory: HeteroMemory,
         gid: int,
     ) -> torch.Tensor:
         """Build Mamba input token sequence for an entity.
@@ -409,9 +405,9 @@ class ContinuousWorldModel(nn.Module):
 
     def _euler_maruyama(
         self,
-        z0: torch.Tensor,      # (1, hidden_dim)
-        knots: torch.Tensor,   # (n, d_z)
-        times: torch.Tensor,   # (n,)
+        z0: torch.Tensor,  # (1, hidden_dim)
+        knots: torch.Tensor,  # (n, d_z)
+        times: torch.Tensor,  # (n,)
         t_prev: float,
         training: bool,
     ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -426,7 +422,7 @@ class ContinuousWorldModel(nn.Module):
         Returns:
             (z_T, kl_scalar) where z_T: (1, hidden_dim), kl_scalar: Tensor(0-d).
         """
-        z = z0   # (1, hidden_dim)
+        z = z0  # (1, hidden_dim)
         kl_acc = torch.tensor(0.0, device=z.device)
         n = knots.shape[0]
 
@@ -443,14 +439,14 @@ class ContinuousWorldModel(nn.Module):
             dt = max(dt, 1.0)  # floor at 1 second to avoid zero steps
 
             # Control path increment dZ
-            cur_knot = knots[k].unsqueeze(0)          # (1, d_z)
-            dZ = cur_knot - prev_knot                  # (1, d_z)
+            cur_knot = knots[k].unsqueeze(0)  # (1, d_z)
+            dZ = cur_knot - prev_knot  # (1, d_z)
             prev_knot = cur_knot
 
             # Drift step: dz = F(z) @ dZ
             t_tensor = torch.tensor([t_k], device=z.device)
-            F = self.cde_func(t_tensor, z)            # (1, hidden_dim, d_z)
-            z = z + torch.einsum("bid,bd->bi", F, dZ) # (1, hidden_dim)
+            F = self.cde_func(t_tensor, z)  # (1, hidden_dim, d_z)
+            z = z + torch.einsum("bid,bd->bi", F, dZ)  # (1, hidden_dim)
 
             # Diffusion step (Phase E only)
             if self.use_diffusion and self.diffusion_head is not None:
@@ -469,7 +465,7 @@ class ContinuousWorldModel(nn.Module):
         self,
         evts: list[dict[str, Any]],
         embeddings: dict[str, torch.Tensor],
-        id_map: "IDMap",
+        id_map: IDMap,
         z0: torch.Tensor,
     ) -> torch.Tensor:
         """Gather entity embedding messages for each event.
@@ -496,9 +492,7 @@ class ContinuousWorldModel(nn.Module):
                     if msg.shape[0] > self.hidden_dim:
                         msg = msg[: self.hidden_dim]
                     elif msg.shape[0] < self.hidden_dim:
-                        pad = torch.zeros(
-                            self.hidden_dim - msg.shape[0], device=device
-                        )
+                        pad = torch.zeros(self.hidden_dim - msg.shape[0], device=device)
                         msg = torch.cat([msg, pad])
 
             if msg is None:

@@ -59,6 +59,9 @@ def test_same_sentence_link_high_confidence(store, ingestor):
 
 def test_pdf_ingest_real(tmp_path, store):
     """Write a tiny PDF and confirm ingest extracts entities from its text."""
+    # pypdf is not in any extra CI installs, so this raised ModuleNotFoundError
+    # on every run rather than reporting anything about ingest.
+    pytest.importorskip("pypdf", reason="pypdf not installed")
     from pypdf import PdfWriter
 
     path = tmp_path / "doc.pdf"

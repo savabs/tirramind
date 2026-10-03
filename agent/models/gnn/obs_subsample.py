@@ -104,7 +104,4 @@ def training_mix_summary(
     counts: Counter[str] = Counter()
     for o in observations:
         counts[o.get("observation_type") or "unknown"] += 1
-    return [
-        (k, v, 100.0 * v / n)
-        for k, v in counts.most_common()
-    ]
+    return [(k, v, 100.0 * v / n) for k, v in counts.most_common()]

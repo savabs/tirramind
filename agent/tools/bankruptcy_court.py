@@ -30,8 +30,6 @@ import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime, timedelta
-
-UTC = UTC
 from typing import TYPE_CHECKING, Any
 
 import defusedxml.ElementTree as ET

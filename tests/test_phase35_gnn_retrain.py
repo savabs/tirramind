@@ -396,9 +396,9 @@ class TestExpandedTraining:
         # time_delta MSE on raw seconds is naturally large;
         # just verify it's finite and decreasing
         dt_losses = history["time_delta"]
-        assert (
-            dt_losses[-1] <= dt_losses[0] * 2
-        ), f"time_delta loss grew excessively: {dt_losses[0]:.0f} → {dt_losses[-1]:.0f}"
+        assert dt_losses[-1] <= dt_losses[0] * 2, (
+            f"time_delta loss grew excessively: {dt_losses[0]:.0f} → {dt_losses[-1]:.0f}"
+        )
 
     def test_model_embeddings_shape(self, trained):
         trainer, _ = trained

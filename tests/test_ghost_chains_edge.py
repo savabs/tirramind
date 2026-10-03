@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -121,9 +120,7 @@ class TestCftcMapping:
         con.close()
         assert eid is not None
         con = sqlite3.connect(str(db))
-        row = con.execute(
-            "SELECT canonical_name FROM entities WHERE entity_id=?", (eid,)
-        ).fetchone()
+        row = con.execute("SELECT canonical_name FROM entities WHERE entity_id=?", (eid,)).fetchone()
         con.close()
         assert row is not None
         assert "WTI-PHYSICAL" in row[0]

@@ -4,6 +4,33 @@ Description=Run tirra-collect.service weekdays at 18:00 UTC
 [Timer]
 # Matches the cadence documented in agent/pipeline/dags/daily_collection.py:
 # "weekdays at 18:00 UTC (after US market close, CFTC/FINRA publish windows)".
+#
+# WEEKDAY HALF OF A 7-DAY SPLIT. This cadence is correct for the market-hours
+# sources that dominate the DAG (CFTC's Friday COT release, FINRA short volume,
+# instrument_universe closes, options_chain) — they do not publish at weekends.
+# It is wrong for the continuous, TIME-GATED sources in the same DAG
+# (ais_vessel, whale_alert, dns_monitor, cert_transparency, ... — the TIME_GATED
+# set in scripts/check_freshness.py), whose APIs serve a rolling recent window:
+# every uncollected day is data that cannot be recovered at any price, and
+# weekday-only was discarding two days in seven of exactly that data.
+#
+# The weekend half is tirra-collect-continuous.timer, which starts this same
+# service on Sat/Sun 18:00 UTC. Between them the DAG runs once on every calendar
+# day. Do NOT widen this line to Mon..Sun: with that timer also enabled it would
+# mean two collection runs on the same day, i.e. two concurrent writers against
+# .tirra_pipeline/pipeline.db.
+#
+# That protection is calendar-shaped, not enforced. Two timers pointing at the
+# SAME unit are safe — systemd coalesces the jobs, which is why this timer and
+# the weekend one can both target tirra-collect.service. Two timers pointing at
+# DIFFERENT units are not: tirra-chain.timer carries Persistent=true for
+# tirra-chain.service, and its boot-time catch-up can land next to a weekend
+# run. Nothing in scripts/run_scheduled.sh, scripts/run_collection.py or these
+# units takes a lock (grep flock/LOCK_EX/Conflicts=: no matches), and
+# PipelineStore's write guard is a threading.RLock — in-process only
+# (agent/pipeline/store.py:486, and see the comment at :1481-1486). Until a
+# `flock` wraps the collect/chain branches of run_scheduled.sh, read "one run
+# per calendar day" as a steady-state property, not a guarantee.
 OnCalendar=Mon..Fri 18:00 UTC
 Persistent=true
 

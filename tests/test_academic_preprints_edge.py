@@ -9,11 +9,15 @@ constants, registry + bandit.
 
 from __future__ import annotations
 
+import urllib.error
+import urllib.request
+from email.message import Message
 from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
 
+from agent.pipeline.store import PipelineStore
 from agent.tools.academic_preprints import (
     _ARXIV_URL,
     _CT_URL,
@@ -197,7 +201,7 @@ class TestInputValidation:
 
     def test_extra_kwargs_ignored(self):
         with patch.object(AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML):
-            r = _tool().execute(mode="papers", query="quantum", bogus="thing")
+            r = _tool().execute(mode="papers", query="quantum", limit=2, bogus="thing")
             assert r.success
 
 
@@ -207,7 +211,7 @@ class TestInputValidation:
 class TestPapersMode:
     def test_basic_papers(self):
         with patch.object(AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML):
-            r = _tool().execute(mode="papers", query="quantum")
+            r = _tool().execute(mode="papers", query="quantum", limit=2)
             assert r.success
             assert "papers" in r.data
             assert r.data["count"] == 2
@@ -215,7 +219,7 @@ class TestPapersMode:
 
     def test_papers_fields(self):
         with patch.object(AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML):
-            r = _tool().execute(mode="papers", query="quantum")
+            r = _tool().execute(mode="papers", query="quantum", limit=2)
             p = r.data["papers"][0]
             assert p["id"] == "http://arxiv.org/abs/2401.00001v1"
             assert "Quantum" in p["title"]
@@ -226,23 +230,23 @@ class TestPapersMode:
 
     def test_papers_total(self):
         with patch.object(AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML):
-            r = _tool().execute(mode="papers", query="quantum")
+            r = _tool().execute(mode="papers", query="quantum", limit=2)
             assert r.data["total"] == 42
 
     def test_papers_with_category(self):
         with patch.object(AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML) as mock:
-            r = _tool().execute(mode="papers", query="quantum", category="cs.AI")
+            r = _tool().execute(mode="papers", query="quantum", category="cs.AI", limit=2)
             assert r.success
             # Check search_query includes category
             call_params = mock.call_args[0][1]
-            assert "cat:cs.AI" in call_params["search_query"]
+            assert call_params["search_query"] == "cat:cs.AI AND all:quantum"
+            assert "+AND+" not in call_params["search_query"]
 
     def test_papers_without_category(self):
         with patch.object(AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML) as mock:
-            r = _tool().execute(mode="papers", query="quantum")
+            r = _tool().execute(mode="papers", query="quantum", limit=2)
             call_params = mock.call_args[0][1]
-            assert "all:quantum" in call_params["search_query"]
-            assert "cat:" not in call_params["search_query"]
+            assert call_params["search_query"] == "all:quantum"
 
     def test_papers_limit(self):
         with patch.object(AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML) as mock:
@@ -258,14 +262,14 @@ class TestPapersMode:
 
     def test_papers_summary_truncated(self):
         with patch.object(AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML):
-            r = _tool().execute(mode="papers", query="quantum")
+            r = _tool().execute(mode="papers", query="quantum", limit=2)
             for p in r.data["papers"]:
                 if p["summary"]:
                     assert len(p["summary"]) <= 300
 
     def test_papers_authors_capped(self):
         with patch.object(AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML):
-            r = _tool().execute(mode="papers", query="quantum")
+            r = _tool().execute(mode="papers", query="quantum", limit=2)
             for p in r.data["papers"]:
                 assert len(p["authors"]) <= 5
 
@@ -276,19 +280,19 @@ class TestPapersMode:
 class TestTrendingMode:
     def test_basic_trending(self):
         with patch.object(AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML):
-            r = _tool().execute(mode="trending")
+            r = _tool().execute(mode="trending", limit=2)
             assert r.success
             assert r.data["source"] == "arxiv"
 
     def test_trending_with_category(self):
         with patch.object(AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML) as mock:
-            r = _tool().execute(mode="trending", category="cs.AI")
+            r = _tool().execute(mode="trending", category="cs.AI", limit=2)
             call_params = mock.call_args[0][1]
-            assert "cat:cs.AI" in call_params["search_query"]
+            assert call_params["search_query"] == "cat:cs.AI"
 
     def test_trending_no_category_uses_market(self):
         with patch.object(AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML) as mock:
-            r = _tool().execute(mode="trending")
+            r = _tool().execute(mode="trending", limit=2)
             call_params = mock.call_args[0][1]
             # Should include market categories
             assert "q-fin" in call_params["search_query"]
@@ -296,7 +300,7 @@ class TestTrendingMode:
 
     def test_trending_fetch_failure(self):
         with patch.object(AcademicPreprintsTool, "_fetch_text", return_value=None):
-            r = _tool().execute(mode="trending")
+            r = _tool().execute(mode="trending", limit=2)
             assert not r.success
 
 
@@ -512,7 +516,7 @@ class TestLimitClamping:
 
     def test_limit_string_coerced(self):
         with patch.object(AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML):
-            r = _tool().execute(mode="papers", query="test", limit="10")
+            r = _tool().execute(mode="papers", query="test", limit="2")
             assert r.success
 
 
@@ -522,13 +526,13 @@ class TestLimitClamping:
 class TestOutputFormatting:
     def test_papers_output(self):
         with patch.object(AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML):
-            r = _tool().execute(mode="papers", query="quantum")
+            r = _tool().execute(mode="papers", query="quantum", limit=2)
             assert "quantum" in r.output
             assert "arXiv" in r.output
 
     def test_trending_output(self):
         with patch.object(AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML):
-            r = _tool().execute(mode="trending")
+            r = _tool().execute(mode="trending", limit=2)
             assert "Trending" in r.output or "trending" in r.output.lower()
 
     def test_trials_output(self):
@@ -630,7 +634,9 @@ class TestL2PersistenceNoStore(unittest.TestCase):
         tool = AcademicPreprintsTool()
         tool._store = None
         counts = tool._persist_entities({"papers": [{"categories": ["cs.AI"], "title": "test"}]}, "papers")
-        assert counts == {"research_velocity_obs": 0}
+        assert counts["research_velocity_obs"] == 0
+        # "not configured" is not "failed": execute() must not flip success here.
+        assert counts["failed"] == 0
 
     def test_no_entity_id_fn_returns_zeros(self):
         import agent.tools.academic_preprints as ap_mod
@@ -641,7 +647,8 @@ class TestL2PersistenceNoStore(unittest.TestCase):
         try:
             ap_mod._entity_id_from_key = None
             counts = tool._persist_entities({"papers": [{"categories": ["cs.AI"]}]}, "papers")
-            assert counts == {"research_velocity_obs": 0}
+            assert counts["research_velocity_obs"] == 0
+            assert counts["failed"] == 0
         finally:
             ap_mod._entity_id_from_key = original
 
@@ -837,9 +844,9 @@ class TestL2PersistencePapers(unittest.TestCase):
         tool._store = store
         data = {
             "papers": [
-                {"categories": ["cs.AI"], "id": "1"},
-                {"categories": ["q-fin"], "id": "2"},
-                {"categories": ["cs.LG"], "id": "3"},
+                {"categories": ["cs.AI"], "id": "1", "published": "2026-05-01T00:00:00Z"},
+                {"categories": ["q-fin"], "id": "2", "published": "2026-05-02T00:00:00Z"},
+                {"categories": ["cs.LG"], "id": "3", "published": "2026-05-03T00:00:00Z"},
             ]
         }
         counts = tool._persist_entities(data, "papers")
@@ -855,8 +862,8 @@ class TestL2PersistenceTrending(unittest.TestCase):
         tool._store = store
         data = {
             "papers": [
-                {"categories": ["cs.CR"], "id": "trend-1", "title": "Zero-Day"},
-                {"categories": ["econ"], "id": "trend-2", "title": "Macro Model"},
+                {"categories": ["cs.CR"], "id": "trend-1", "title": "Zero-Day", "published": "2026-05-04T00:00:00Z"},
+                {"categories": ["econ"], "id": "trend-2", "title": "Macro Model", "published": "2026-05-05T00:00:00Z"},
             ]
         }
         counts = tool._persist_entities(data, "trending")
@@ -865,15 +872,22 @@ class TestL2PersistenceTrending(unittest.TestCase):
 
 
 class TestL2PersistenceExceptionHandling(unittest.TestCase):
-    """Exceptions in persistence are non-fatal."""
+    """A store exception is non-fatal to the run, but it is never silent.
 
-    def test_exception_in_inner_returns_zeros(self):
+    The previous version of these tests asserted ``counts == {"research_
+    velocity_obs": 0}`` — i.e. they certified that a DB failure collapses to a
+    clean zero, which is precisely the partial-write-reported-green bug.  What
+    must hold is: the run does not crash, AND the failure is counted.
+    """
+
+    def test_exception_in_inner_is_counted_not_swallowed(self):
         tool = AcademicPreprintsTool()
         store = _make_store_mock()
         store.register_entity.side_effect = RuntimeError("DB failure")
         tool._store = store
         counts = tool._persist_entities({"trials": [{"sponsor": "TestCo", "nct_id": "X"}]}, "trials")
-        assert counts == {"research_velocity_obs": 0}
+        assert counts["research_velocity_obs"] == 0
+        assert counts["failed"] == 1
 
     def test_exception_does_not_propagate(self):
         tool = AcademicPreprintsTool()
@@ -881,8 +895,42 @@ class TestL2PersistenceExceptionHandling(unittest.TestCase):
         store.store_entity_observation.side_effect = ValueError("bad value")
         tool._store = store
         # Should not raise
-        counts = tool._persist_entities({"papers": [{"categories": ["cs.AI"], "id": "err"}]}, "papers")
-        assert counts == {"research_velocity_obs": 0}
+        counts = tool._persist_entities(
+            {"papers": [{"categories": ["cs.AI"], "id": "err", "published": "2026-05-06T00:00:00Z"}]},
+            "papers",
+        )
+        assert counts["research_velocity_obs"] == 0
+        assert counts["failed"] == 1
+
+    def test_partial_write_is_counted(self):
+        """7 of 15 written is a failure, not a success with a reset counter."""
+        tool = AcademicPreprintsTool()
+        store = _make_store_mock()
+        calls = {"n": 0}
+
+        def _flaky(**kw):
+            calls["n"] += 1
+            if calls["n"] > 1:
+                raise RuntimeError("DB went away")
+            return 1
+
+        store.store_entity_observation.side_effect = _flaky
+        tool._store = store
+        data = {
+            "papers": [{"categories": ["cs.AI"], "id": f"p{i}", "published": "2026-05-07T00:00:00Z"} for i in range(3)]
+        }
+        counts = tool._persist_entities(data, "papers")
+        assert counts["research_velocity_obs"] == 1
+        assert counts["failed"] == 2
+
+    def test_paper_without_published_is_a_failure_not_a_skip(self):
+        tool = AcademicPreprintsTool()
+        store = _make_store_mock()
+        tool._store = store
+        counts = tool._persist_entities({"papers": [{"categories": ["cs.AI"], "id": "no-ts"}]}, "papers")
+        assert counts["research_velocity_obs"] == 0
+        assert counts["failed"] == 1
+        store.store_entity_observation.assert_not_called()
 
 
 class TestL2PersistenceEmptyData(unittest.TestCase):
@@ -914,9 +962,9 @@ class TestL2PersistenceEmptyData(unittest.TestCase):
 
 
 class TestL2PersistenceIdempotent(unittest.TestCase):
-    """Same data persisted twice produces correct cumulative counts."""
+    """Same data persisted twice must not produce twice the observations."""
 
-    def test_double_persist_doubles_count(self):
+    def test_double_persist_does_not_double_count(self):
         tool = AcademicPreprintsTool()
         tool._store = _make_store_mock()
         data = {"trials": [{"sponsor": "Pfizer", "nct_id": "NCT1"}]}
@@ -924,3 +972,397 @@ class TestL2PersistenceIdempotent(unittest.TestCase):
         c2 = tool._persist_entities(data, "trials")
         assert c1["research_velocity_obs"] == 1
         assert c2["research_velocity_obs"] == 1
+
+    def test_paper_observed_at_is_the_publication_time(self):
+        """observed_at must be the paper's own timestamp, not the fetch clock.
+
+        observed_at is part of OBSERVATION_UNIQUE_KEY, so a wall-clock value
+        made every re-run write a fresh duplicate of every row.
+        """
+        tool = AcademicPreprintsTool()
+        store = _make_store_mock()
+        tool._store = store
+        data = {"papers": [{"categories": ["cs.AI"], "id": "x", "published": "2024-01-15T12:00:00Z"}]}
+        tool._persist_entities(data, "papers")
+        observed_at = store.store_entity_observation.call_args.kwargs["observed_at"]
+        assert observed_at == 1705320000.0  # 2024-01-15T12:00:00Z
+
+    def test_trial_observed_at_is_floored_to_the_utc_day(self):
+        """Trials carry a current status, so the day is the observation unit.
+
+        Flooring keeps two runs on the same day collapsing to one row without
+        inventing a timestamp the registry never published.
+        """
+        import time as _time
+
+        tool = AcademicPreprintsTool()
+        store = _make_store_mock()
+        tool._store = store
+        tool._persist_entities({"trials": [{"sponsor": "Pfizer", "nct_id": "NCT1"}]}, "trials")
+        observed_at = store.store_entity_observation.call_args.kwargs["observed_at"]
+        assert observed_at % 86400 == 0
+        assert 0 <= _time.time() - observed_at < 86400 + 1
+
+
+# ── Offline transport guard (F: arXiv 406-to-httpx, 2026-09-23) ───────────
+#
+# The fix this file exists to protect is the transport: arXiv's Fastly edge
+# answers *any* httpx HTTPS request with an empty 406, and only httpx, which
+# is why collection silently produced nothing from 2026-08-27 to 2026-09-23
+# while the suite stayed green.
+#
+# These tests are deliberately UNMARKED, so they run under the default gate
+# (`-m "not live and not slow"`, see .github/workflows/ci.yml and
+# scripts/quality_gate.py).  A `live`-marked test is deselected by both and
+# would have guarded nothing.  They are also deterministic: they stub the
+# stdlib transport and assert the *behavioural difference* (no httpx client is
+# ever constructed) rather than hoping a live request lands on a cache MISS.
+# A randomised `max_results` is NOT a cache-buster here: it spans 40 URLs,
+# the test itself warms them, and production warms max_results=15 daily, so a
+# warm Fastly entry serves even the broken httpx transport a 200.
+
+_NO_HTTPX = "arXiv must not be fetched over httpx — its edge answers httpx with an empty 406"
+
+
+class _FakeHTTPResponse:
+    def __init__(self, body: bytes) -> None:
+        self._body = body
+
+    def read(self) -> bytes:
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def _urlopen_returning(body, captured=None):
+    payload = body.encode("utf-8") if isinstance(body, str) else body
+
+    def _fake(req, timeout=None):
+        if captured is not None:
+            captured.append(req.full_url)
+        return _FakeHTTPResponse(payload)
+
+    return _fake
+
+
+def _http_error(code, retry_after=None):
+    headers = Message()
+    if retry_after is not None:
+        headers["Retry-After"] = str(retry_after)
+    return urllib.error.HTTPError(_ARXIV_URL, code, "err", headers, None)
+
+
+def test_fetch_text_uses_stdlib_transport_not_httpx(monkeypatch):
+    """_fetch_text must not construct an httpx client. Fails on the pre-fix code."""
+    captured: list[str] = []
+    monkeypatch.setattr(urllib.request, "urlopen", _urlopen_returning(SAMPLE_ARXIV_XML, captured))
+
+    with patch("httpx.Client", side_effect=AssertionError(_NO_HTTPX)):
+        text = _tool()._fetch_text(_ARXIV_URL, {"search_query": "cat:cs.AI", "max_results": "2"})
+
+    assert text == SAMPLE_ARXIV_XML
+    assert captured and captured[0].startswith(_ARXIV_URL + "?")
+
+
+def test_trending_writes_rows_without_touching_httpx(tmp_path, monkeypatch):
+    """End to end into a real (throwaway) store: rows land, and none via httpx.
+
+    Row counts, not ``success``, are the evidence — and an exact count, not
+    ``> 0``: ``> 0`` passes when the collector writes 1 row of the 2 the feed
+    carried, which is the partial-loss shape this suite exists to catch.
+    """
+    store = PipelineStore(db_path=str(tmp_path / "probe.db"))
+    tool = AcademicPreprintsTool(pipeline_store=store)
+    monkeypatch.setattr(urllib.request, "urlopen", _urlopen_returning(SAMPLE_ARXIV_XML))
+
+    with patch("httpx.Client", side_effect=AssertionError(_NO_HTTPX)):
+        result = tool.execute(mode="trending", limit=2)
+
+    assert result.success, result.output
+    assert result.data["count"] == 2
+    assert result.data["rows_failed"] == 0
+    assert result.data["rows_written"] == 2
+
+    conn = store._get_conn()
+    (rows,) = conn.execute(
+        "SELECT COUNT(*) FROM entity_observations WHERE source_tool = 'academic_preprints'"
+    ).fetchone()
+    assert rows == 2, "collector reported success but did not write one row per paper"
+
+    # Re-running the identical collection must not duplicate anything:
+    # observed_at is the paper's publication time, so OBSERVATION_UNIQUE_KEY
+    # collapses the second write.
+    with patch("httpx.Client", side_effect=AssertionError(_NO_HTTPX)):
+        tool.execute(mode="trending", limit=2)
+    (rows_after,) = conn.execute(
+        "SELECT COUNT(*) FROM entity_observations WHERE source_tool = 'academic_preprints'"
+    ).fetchone()
+    assert rows_after == 2, "re-run duplicated rows: observed_at is not stable"
+
+
+# ── F-16: a 200 that carries no usable feed is not a success ──────────────
+
+
+# Entries that parse cleanly but carry no <category> — the shape a namespace
+# or schema regression produces. Every paper is skipped, so nothing is stored.
+SAMPLE_ARXIV_NO_CATEGORIES = """<?xml version='1.0' encoding='UTF-8'?>
+<feed xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/"
+      xmlns="http://www.w3.org/2005/Atom">
+  <opensearch:totalResults>535658</opensearch:totalResults>
+  <entry><id>a</id><title>A</title><published>2024-01-15T12:00:00Z</published></entry>
+  <entry><id>b</id><title>B</title><published>2024-01-15T13:00:00Z</published></entry>
+</feed>"""
+
+# One entry categorised, one not: a genuine partial skip, which must stay green.
+SAMPLE_ARXIV_ONE_CATEGORY_MISSING = """<?xml version='1.0' encoding='UTF-8'?>
+<feed xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/"
+      xmlns="http://www.w3.org/2005/Atom">
+  <opensearch:totalResults>535658</opensearch:totalResults>
+  <entry><id>a</id><title>A</title><published>2024-01-15T12:00:00Z</published>
+    <category term="cs.AI"/></entry>
+  <entry><id>b</id><title>B</title><published>2024-01-15T13:00:00Z</published></entry>
+</feed>"""
+
+SAMPLE_ARXIV_TOTAL_NO_ENTRIES = """<?xml version='1.0' encoding='UTF-8'?>
+<feed xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/"
+      xmlns="http://www.w3.org/2005/Atom">
+  <opensearch:totalResults>535658</opensearch:totalResults>
+</feed>"""
+
+
+class TestF16FeedIntegrity:
+    def test_empty_body_is_a_failure(self):
+        with patch.object(AcademicPreprintsTool, "_fetch_text", return_value=""):
+            r = _tool().execute(mode="trending", limit=15)
+        assert not r.success
+        assert "not parse" in r.output
+
+    def test_html_error_page_is_a_failure(self):
+        """An HTML error page is well-formed XML, so the root tag is checked."""
+        with patch.object(
+            AcademicPreprintsTool,
+            "_fetch_text",
+            return_value="<html><body>Access denied</body></html>",
+        ):
+            r = _tool().execute(mode="trending", limit=15)
+        assert not r.success
+        assert "not an Atom feed" in r.output
+
+    def test_total_without_entries_is_a_failure(self):
+        """'535658 total, showing 0' used to be reported as a success."""
+        with patch.object(
+            AcademicPreprintsTool,
+            "_fetch_text",
+            return_value=SAMPLE_ARXIV_TOTAL_NO_ENTRIES,
+        ):
+            r = _tool().execute(mode="trending", limit=15)
+        assert not r.success
+        assert "535658" in r.output
+        # Pin the *specific* branch, not just "something failed": the generic
+        # truncation check also rejects this body, so a substring both messages
+        # share would leave the total-vs-entries guard untested and free to be
+        # removed silently. (Verified by mutation: negating that branch alone
+        # left the whole file green before this assertion existed.)
+        assert "Source says it published rows" in r.output
+
+    def test_truncated_feed_is_a_failure(self):
+        """2 entries against totalResults=42 for max_results=15 is data loss."""
+        with patch.object(AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML):
+            r = _tool().execute(mode="papers", query="quantum", limit=15)
+        assert not r.success
+        assert "Truncated" in r.output
+
+    def test_trending_empty_feed_is_a_failure(self):
+        """A standing category query over live arXiv is never legitimately empty."""
+        with patch.object(AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_EMPTY):
+            r = _tool().execute(mode="trending", limit=15)
+        assert not r.success
+
+    def test_search_with_no_matches_is_still_a_success(self):
+        """A keyword search CAN legitimately match nothing; that is not a failure."""
+        with patch.object(AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_EMPTY):
+            r = _tool().execute(mode="papers", query="zzzznotathing", limit=15)
+        assert r.success
+        assert r.data["count"] == 0
+
+    def test_all_entries_skipped_is_a_failure(self, tmp_path):
+        """Entries parsed, zero rows written: green with nothing stored.
+
+        A skip is individually legitimate, but every entry skipped means the
+        field we key the entity on stopped arriving — a parse or schema break.
+        The collector used to report success=True with 0 rows in the DB.
+        Proven against a real (throwaway) store, so the assertion is on rows,
+        not on a mock's call count.
+        """
+        store = PipelineStore(db_path=str(tmp_path / "skip.db"))
+        tool = AcademicPreprintsTool(pipeline_store=store)
+        with patch.object(AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_NO_CATEGORIES):
+            r = tool.execute(mode="trending", limit=2)
+
+        (rows,) = (
+            store._get_conn()
+            .execute("SELECT COUNT(*) FROM entity_observations WHERE source_tool = 'academic_preprints'")
+            .fetchone()
+        )
+        assert rows == 0
+        assert not r.success, "2 entries returned and 0 rows written was reported as success"
+        assert "ZERO ROWS" in r.output
+        assert r.data["rows_skipped"] == 2
+
+    def test_trials_all_missing_sponsor_is_a_failure(self):
+        """Same hole on the trials path: no lead sponsor anywhere, no rows."""
+        store = _make_store_mock()
+        tool = AcademicPreprintsTool(pipeline_store=store)
+        payload = {
+            "totalCount": 2,
+            "studies": [
+                {"protocolSection": {"identificationModule": {"nctId": "NCT1", "briefTitle": "T1"}}},
+                {"protocolSection": {"identificationModule": {"nctId": "NCT2", "briefTitle": "T2"}}},
+            ],
+        }
+        with patch.object(AcademicPreprintsTool, "_fetch_json", return_value=payload):
+            r = tool.execute(mode="trials", query="cancer", limit=2)
+        assert not r.success
+        assert "ZERO ROWS" in r.output
+        store.store_entity_observation.assert_not_called()
+
+    def test_some_skipped_but_rows_written_is_still_a_success(self, tmp_path):
+        """A partial skip is not the break; only an all-skip is. No over-firing."""
+        store = PipelineStore(db_path=str(tmp_path / "mixed.db"))
+        tool = AcademicPreprintsTool(pipeline_store=store)
+        with patch.object(AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_ONE_CATEGORY_MISSING):
+            r = tool.execute(mode="trending", limit=2)
+        assert r.success, r.output
+        assert r.data["rows_written"] == 1
+        assert r.data["rows_skipped"] == 1
+
+    def test_zero_row_guard_is_inert_without_a_store(self):
+        """No PipelineStore is 'persistence not configured', not data loss."""
+        with patch.object(AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML):
+            r = _tool().execute(mode="trending", limit=2)
+        assert r.success, r.output
+
+    def test_partial_persist_flips_success(self):
+        """7 of 15 rows written is reported as a failure, not as green."""
+        store = _make_store_mock()
+        store.store_entity_observation.side_effect = RuntimeError("DB went away")
+        tool = AcademicPreprintsTool(pipeline_store=store)
+        with patch.object(AcademicPreprintsTool, "_fetch_text", return_value=SAMPLE_ARXIV_XML):
+            r = tool.execute(mode="trending", limit=2)
+        assert not r.success
+        assert "PARTIAL WRITE" in r.output
+        assert r.data["rows_written"] == 0
+        assert r.data["rows_failed"] == 2
+
+
+# ── Rate-limit backoff (arXiv 429s a burst of ~10 requests) ───────────────
+
+
+class TestFetchTextRetry:
+    def test_429_then_success(self, monkeypatch):
+        responses = [_http_error(429), None]
+
+        def _fake(req, timeout=None):
+            nxt = responses.pop(0)
+            if nxt is not None:
+                raise nxt
+            return _FakeHTTPResponse(SAMPLE_ARXIV_XML.encode())
+
+        monkeypatch.setattr(urllib.request, "urlopen", _fake)
+        slept: list[float] = []
+        monkeypatch.setattr("agent.tools.academic_preprints.time.sleep", slept.append)
+
+        text = _tool()._fetch_text(_ARXIV_URL, {"max_results": "2"})
+        assert text == SAMPLE_ARXIV_XML
+        assert slept == [5.0]
+
+    def test_persistent_429_still_fails(self, monkeypatch):
+        """Retries exhausted must raise, never return an empty body as data."""
+
+        def _fake(req, timeout=None):
+            raise _http_error(429)
+
+        monkeypatch.setattr(urllib.request, "urlopen", _fake)
+        slept: list[float] = []
+        monkeypatch.setattr("agent.tools.academic_preprints.time.sleep", slept.append)
+
+        with pytest.raises(httpx.HTTPStatusError):
+            _tool()._fetch_text(_ARXIV_URL, {"max_results": "2"})
+        assert slept == [5.0, 15.0, 45.0]
+
+    def test_retry_after_header_is_honoured(self, monkeypatch):
+        responses = [_http_error(503, retry_after=7), None]
+
+        def _fake(req, timeout=None):
+            nxt = responses.pop(0)
+            if nxt is not None:
+                raise nxt
+            return _FakeHTTPResponse(SAMPLE_ARXIV_XML.encode())
+
+        monkeypatch.setattr(urllib.request, "urlopen", _fake)
+        slept: list[float] = []
+        monkeypatch.setattr("agent.tools.academic_preprints.time.sleep", slept.append)
+
+        _tool()._fetch_text(_ARXIV_URL, {"max_results": "2"})
+        assert slept == [7.0]
+
+    def test_404_is_not_retried(self, monkeypatch):
+        calls = {"n": 0}
+
+        def _fake(req, timeout=None):
+            calls["n"] += 1
+            raise _http_error(404)
+
+        monkeypatch.setattr(urllib.request, "urlopen", _fake)
+        slept: list[float] = []
+        monkeypatch.setattr("agent.tools.academic_preprints.time.sleep", slept.append)
+
+        with pytest.raises(httpx.HTTPStatusError):
+            _tool()._fetch_text(_ARXIV_URL, {"max_results": "2"})
+        assert calls["n"] == 1
+        assert slept == []
+
+
+# ── Live transport regression (opt-in) ────────────────────────────────────
+#
+# This is an EXTRA confirmation against the real endpoint, not the guard: it
+# carries the `live` marker, which both CI and scripts/quality_gate.py
+# deselect, so it does not run in the default gate.  The guard that does run
+# is test_fetch_text_uses_stdlib_transport_not_httpx above.
+
+
+@pytest.mark.live
+@pytest.mark.integration
+def test_trending_writes_rows_over_real_transport(tmp_path):
+    """execute(mode='trending') persists observations against the real API.
+
+    Skips rather than fails when arXiv is throttling, so a red here means
+    "transport broken" and not "arXiv rate-limited the runner".  _fetch_text
+    already backs off on 429/5xx; this only covers the case where the limiter
+    is still engaged after those retries.
+    """
+    limit = 15
+    store = PipelineStore(db_path=str(tmp_path / "probe.db"))
+    tool = AcademicPreprintsTool(pipeline_store=store)
+
+    result = tool.execute(mode="trending", limit=limit)
+    if not result.success and (
+        "429" in result.output or "unreachable" in result.output or "timed out" in result.output
+    ):
+        pytest.skip(f"arXiv throttled or unreachable, not a transport regression: {result.output}")
+
+    assert result.success, f"arXiv fetch failed: {result.output}"
+    assert result.data["count"] == limit, f"asked for {limit}, got {result.data['count']}"
+
+    conn = store._get_conn()
+    (rows,) = conn.execute(
+        "SELECT COUNT(*) FROM entity_observations WHERE source_tool = 'academic_preprints'"
+    ).fetchone()
+    assert result.data["rows_failed"] == 0
+    assert rows == limit - result.data["rows_skipped"], (
+        f"expected {limit - result.data['rows_skipped']} rows, found {rows}"
+    )

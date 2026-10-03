@@ -55,9 +55,9 @@ _HOURS = 3600.0
 
 
 class FailureReason(str, Enum):
-    OK             = "OK"
+    OK = "OK"
     MISSING_CONFIG = "MISSING_CONFIG"
-    NO_DATA        = "NO_DATA"
+    NO_DATA = "NO_DATA"
     MODEL_NOT_READY = "MODEL_NOT_READY"
 
 
@@ -86,28 +86,34 @@ class PreflightResult:
 
     # Convenience factory
     @staticmethod
-    def passed() -> "PreflightResult":
+    def passed() -> PreflightResult:
         return PreflightResult(ok=True, reason=FailureReason.OK, detail="")
 
     @staticmethod
-    def missing_config(detail: str, fix: str = "") -> "PreflightResult":
+    def missing_config(detail: str, fix: str = "") -> PreflightResult:
         return PreflightResult(
-            ok=False, reason=FailureReason.MISSING_CONFIG,
-            detail=detail, fix=fix,
+            ok=False,
+            reason=FailureReason.MISSING_CONFIG,
+            detail=detail,
+            fix=fix,
         )
 
     @staticmethod
-    def no_data(detail: str, fix: str = "") -> "PreflightResult":
+    def no_data(detail: str, fix: str = "") -> PreflightResult:
         return PreflightResult(
-            ok=False, reason=FailureReason.NO_DATA,
-            detail=detail, fix=fix,
+            ok=False,
+            reason=FailureReason.NO_DATA,
+            detail=detail,
+            fix=fix,
         )
 
     @staticmethod
-    def model_not_ready(detail: str, fix: str = "") -> "PreflightResult":
+    def model_not_ready(detail: str, fix: str = "") -> PreflightResult:
         return PreflightResult(
-            ok=False, reason=FailureReason.MODEL_NOT_READY,
-            detail=detail, fix=fix,
+            ok=False,
+            reason=FailureReason.MODEL_NOT_READY,
+            detail=detail,
+            fix=fix,
         )
 
 
@@ -146,13 +152,14 @@ class FeaturePreflight:
             if not key:
                 return False, PreflightResult.missing_config(
                     detail="FIRMS_API_KEY is not set — nightlight mode requires a NASA FIRMS key",
-                    fix="Export FIRMS_API_KEY=<your-key> "
-                        "(free at https://firms.modaps.eosdis.nasa.gov/api/map_key/)",
+                    fix="Export FIRMS_API_KEY=<your-key> (free at https://firms.modaps.eosdis.nasa.gov/api/map_key/)",
                 )
 
         if store is not None:
             result = FeaturePreflight._check_data_staleness(
-                store, "nightlight_activity", max_stale_hours,
+                store,
+                "nightlight_activity",
+                max_stale_hours,
                 fix="Run NightlightActivityTool.execute(mode='both') to ingest data.",
             )
             if not result.ok:
@@ -187,10 +194,8 @@ class FeaturePreflight:
             n_instr = len(id_map.type_local.get("instrument", {}))
             if n_instr < min_instrument_nodes:
                 return False, PreflightResult.no_data(
-                    detail=f"Graph has {n_instr} instrument nodes "
-                           f"(need ≥ {min_instrument_nodes})",
-                    fix="Ingest instrument data via instrument_universe tool "
-                        "or run SyntheticGraphGenerator.",
+                    detail=f"Graph has {n_instr} instrument nodes (need ≥ {min_instrument_nodes})",
+                    fix="Ingest instrument data via instrument_universe tool or run SyntheticGraphGenerator.",
                 )
 
         return True, PreflightResult.passed()
@@ -214,14 +219,15 @@ class FeaturePreflight:
         """
         if return_preds is not None and len(return_preds) < min_assets:
             return False, PreflightResult.no_data(
-                detail=f"Only {len(return_preds)} return predictions "
-                       f"(need ≥ {min_assets} for covariance estimation)",
+                detail=f"Only {len(return_preds)} return predictions (need ≥ {min_assets} for covariance estimation)",
                 fix="Ensure at least 2 instruments are present in the graph.",
             )
 
         if store is not None:
             result = FeaturePreflight._check_min_observations(
-                store, "price", min_price_rows,
+                store,
+                "price",
+                min_price_rows,
                 fix="Ingest price data via macro_data or instrument_universe tool.",
             )
             if not result.ok:
@@ -277,7 +283,8 @@ class FeaturePreflight:
 
         if store is not None:
             result = FeaturePreflight._check_store_has_entities(
-                store, min_entity_types,
+                store,
+                min_entity_types,
             )
             if not result.ok:
                 return False, result
@@ -337,8 +344,7 @@ class FeaturePreflight:
             age_hours = (time.time() - float(val)) / _HOURS
             if age_hours > max_stale_hours:
                 return PreflightResult.no_data(
-                    detail=f"Last '{source_tool}' data is {age_hours:.1f}h old "
-                           f"(limit: {max_stale_hours}h)",
+                    detail=f"Last '{source_tool}' data is {age_hours:.1f}h old (limit: {max_stale_hours}h)",
                     fix=fix,
                 )
             return PreflightResult.passed()
@@ -363,8 +369,7 @@ class FeaturePreflight:
             count = rows[0][0] if rows else 0
             if count < min_rows:
                 return PreflightResult.no_data(
-                    detail=f"Only {count} '{observation_type}' observations "
-                           f"(need ≥ {min_rows})",
+                    detail=f"Only {count} '{observation_type}' observations (need ≥ {min_rows})",
                     fix=fix,
                 )
             return PreflightResult.passed()
@@ -380,14 +385,11 @@ class FeaturePreflight:
         """Return NO_DATA if the store has fewer than min_entity_types distinct types."""
         try:
             conn = store._get_conn()
-            rows = conn.execute(
-                "SELECT COUNT(DISTINCT source_tool) FROM entity_observations"
-            ).fetchall()
+            rows = conn.execute("SELECT COUNT(DISTINCT source_tool) FROM entity_observations").fetchall()
             count = rows[0][0] if rows else 0
             if count < min_entity_types:
                 return PreflightResult.no_data(
-                    detail=f"Store has {count} distinct entity sources "
-                           f"(need ≥ {min_entity_types})",
+                    detail=f"Store has {count} distinct entity sources (need ≥ {min_entity_types})",
                     fix="Run data ingestion tools or SyntheticGraphGenerator.",
                 )
             return PreflightResult.passed()

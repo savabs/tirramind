@@ -11,13 +11,24 @@ def _sample_brief() -> dict:
     return {
         "brief_type": "intelligence",
         "contract_opportunities": [
-            {"award_id": "X1", "recipient": "Co", "agency": "VA",
-             "amount_usd": 40000.0, "expected_value_usd": 20000.0,
-             "p_win": 0.75, "is_long_tail": True}
+            {
+                "award_id": "X1",
+                "recipient": "Co",
+                "agency": "VA",
+                "amount_usd": 40000.0,
+                "expected_value_usd": 20000.0,
+                "p_win": 0.75,
+                "is_long_tail": True,
+            }
         ],
         "live_anomalies": [
-            {"source": "cftc", "observation_type": "futures_positioning",
-             "field": "mm_net", "zscore": -3.0, "changepoint": True}
+            {
+                "source": "cftc",
+                "observation_type": "futures_positioning",
+                "field": "mm_net",
+                "zscore": -3.0,
+                "changepoint": True,
+            }
         ],
     }
 
@@ -74,6 +85,7 @@ def test_deliver_without_renderer_still_writes_json(tmp_path):
 def test_latest_returns_newest_not_oldest(tmp_path, render_md):
     """Regression: latest() must return the most recent delivery, not the oldest (newest-first list)."""
     import time as _time
+
     d = BriefDeliverer(out_dir=str(tmp_path / "del"), render_md=render_md)
     first = d.deliver(_sample_brief())
     _time.sleep(0.01)  # ensure distinct timestamps

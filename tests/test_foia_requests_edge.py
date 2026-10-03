@@ -22,8 +22,6 @@ count assertions (37 tools, 25 arms).
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-
-UTC = UTC
 from typing import Any
 from unittest.mock import MagicMock, patch
 

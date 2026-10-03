@@ -1,0 +1,1642 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Portfolio Audit — TirraMind</title>
+<meta name="description" content="Paste what you hold. Get arithmetic about it: where the variance sat against where the money sat, which line items moved as one, and what the book did against its index. No advice, and every number carries its window and its sample size.">
+<style>
+  /* Tokens mirror products/brief_subscription/index.html so the two pages read
+     as one product. Kept as a local copy on purpose: this file must open from
+     file:// with no network and no build step. */
+  :root {
+    --ink: #111;
+    --mut: #666;
+    --faint: #8a8a8a;
+    --acc: #3730a3;
+    --acc-soft: #eef2ff;
+    --bg: #fafafa;
+    --surface: #fff;
+    --sunken: #f4f4f5;
+    --line: #e5e5e5;
+    --line-strong: #d4d4d4;
+    --shadow-sm: 0 1px 3px rgba(0,0,0,0.06);
+    --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #f5f5f5;
+      --mut: #a0a0a0;
+      --faint: #808080;
+      --acc: #8b5cf6;
+      --acc-soft: #2e2465;
+      --bg: #0f0f0f;
+      --surface: #1a1a1a;
+      --sunken: #141414;
+      --line: #2a2a2a;
+      --line-strong: #3a3a3a;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.5);
+      --shadow-md: 0 4px 12px rgba(0,0,0,0.6);
+    }
+  }
+
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 0 16px; }
+  @media (min-width: 640px) { .wrap { padding: 0 32px; } }
+
+  header {
+    border-bottom: 1px solid var(--line);
+    padding: 20px 0 18px;
+  }
+  .brand { font-weight: 700; font-size: 15px; letter-spacing: -0.015em; }
+  .brand em { font-style: normal; color: var(--acc); }
+  .brand span { color: var(--mut); font-weight: 500; }
+
+  main { padding: 32px 0 72px; }
+  @media (min-width: 640px) { main { padding: 48px 0 96px; } }
+
+  h1 {
+    font-size: 30px;
+    line-height: 1.15;
+    letter-spacing: -0.025em;
+    font-weight: 750;
+    max-width: 18em;
+  }
+  @media (min-width: 640px) { h1 { font-size: 42px; } }
+  .lede {
+    color: var(--mut);
+    font-size: 16px;
+    margin-top: 16px;
+    max-width: 40em;
+  }
+  @media (min-width: 640px) { .lede { font-size: 17.5px; } }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+  .chip {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    color: var(--acc);
+    background: var(--acc-soft);
+    border-radius: 999px;
+    padding: 5px 12px;
+  }
+
+  section.card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 20px;
+    margin-top: 28px;
+    box-shadow: var(--shadow-sm);
+  }
+  @media (min-width: 640px) { section.card { padding: 28px; } }
+
+  h2 {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    font-weight: 700;
+    color: var(--mut);
+  }
+  h3 {
+    font-size: 17px;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+    margin-top: 4px;
+  }
+
+  label.field { display: block; font-size: 14px; font-weight: 650; margin-bottom: 8px; }
+  textarea {
+    width: 100%;
+    min-height: 170px;
+    font-family: var(--mono);
+    font-size: 15px;
+    line-height: 1.7;
+    color: var(--ink);
+    background: var(--sunken);
+    border: 1.5px solid var(--line-strong);
+    border-radius: 10px;
+    padding: 14px;
+    resize: vertical;
+    -webkit-appearance: none;
+  }
+  textarea:focus-visible { outline: 2px solid var(--acc); outline-offset: 1px; border-color: var(--acc); }
+  textarea::placeholder { color: var(--faint); }
+
+  .hint { font-size: 13px; color: var(--mut); margin-top: 10px; }
+  .hint b { color: var(--ink); font-weight: 650; }
+
+  .row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+  button {
+    font-family: inherit;
+    font-size: 14.5px;
+    font-weight: 650;
+    border-radius: 9px;
+    padding: 12px 22px;
+    border: 1.5px solid transparent;
+    background: var(--acc);
+    color: #fff;
+    cursor: pointer;
+    transition: filter .15s, transform .15s, border-color .15s;
+    min-height: 46px;
+  }
+  button:hover:not(:disabled) { filter: brightness(1.08); transform: translateY(-1px); }
+  button:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+  button:disabled { opacity: .55; cursor: default; transform: none; }
+  button.ghost { background: transparent; color: var(--acc); border-color: var(--line-strong); }
+  button.ghost:hover:not(:disabled) { border-color: var(--acc); background: var(--acc-soft); }
+  button.tiny { font-size: 12.5px; padding: 7px 12px; min-height: 0; border-radius: 7px; }
+
+  .example {
+    margin-top: 18px;
+    border: 1px dashed var(--line-strong);
+    border-radius: 11px;
+    padding: 14px;
+    background: var(--sunken);
+  }
+  .example .cap { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--mut); }
+  .example pre {
+    font-family: var(--mono);
+    font-size: 13.5px;
+    line-height: 1.75;
+    margin: 8px 0 12px;
+    white-space: pre-wrap;
+    color: var(--ink);
+  }
+
+  .privacy {
+    margin-top: 14px;
+    font-size: 13px;
+    color: var(--mut);
+    border-left: 3px solid var(--line-strong);
+    padding-left: 12px;
+  }
+
+  /* ---- states ---- */
+  .state { margin-top: 28px; }
+  .msg {
+    border-radius: 12px;
+    padding: 18px 20px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    box-shadow: var(--shadow-sm);
+  }
+  .msg .t { font-weight: 700; font-size: 15.5px; }
+  .msg .b { color: var(--mut); font-size: 14px; margin-top: 6px; }
+  .msg.warn { border-color: var(--acc); }
+  .msg ul { margin: 8px 0 0 18px; padding: 0; color: var(--mut); font-size: 14px; }
+
+  .bar { height: 3px; background: var(--line); border-radius: 3px; overflow: hidden; margin-top: 14px; }
+  .bar i { display: block; height: 100%; width: 35%; background: var(--acc); border-radius: 3px; animation: slide 1.25s ease-in-out infinite; }
+  @keyframes slide { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
+  @media (prefers-reduced-motion: reduce) { .bar i { animation: none; width: 100%; } }
+
+  .endpoint { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+  .endpoint input {
+    flex: 1 1 220px;
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1.5px solid var(--line-strong);
+    background: var(--sunken);
+    color: var(--ink);
+    min-width: 0;
+  }
+  .endpoint input:focus-visible { outline: 2px solid var(--acc); outline-offset: 1px; }
+
+  /* ---- the screenshot frame ---- */
+  .hero {
+    border: 1.5px solid var(--line-strong);
+    border-radius: 16px;
+    background: var(--surface);
+    padding: 22px;
+    margin-top: 28px;
+    box-shadow: var(--shadow-md);
+  }
+  @media (min-width: 640px) { .hero { padding: 30px; } }
+  .hero .eyebrow {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--mut);
+    letter-spacing: -0.01em;
+    overflow-wrap: anywhere;
+  }
+  .hero .big {
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 46px;
+    line-height: 1.05;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    margin-top: 12px;
+  }
+  @media (min-width: 640px) { .hero .big { font-size: 60px; } }
+  .hero .big.small { font-size: 30px; }
+  @media (min-width: 640px) { .hero .big.small { font-size: 38px; } }
+  .hero .what { font-size: 15px; margin-top: 8px; max-width: 30em; }
+  .hero .record {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+    font-size: 14.5px;
+  }
+  .hero .record .n { font-family: var(--mono); font-variant-numeric: tabular-nums; font-weight: 650; }
+  .hero .caveat {
+    margin-top: 16px;
+    background: var(--acc-soft);
+    color: var(--ink);
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 13.5px;
+    line-height: 1.55;
+  }
+  .hero .caveat b { font-weight: 700; }
+
+  /* ---- tables ---- */
+  .scroll { overflow-x: auto; margin-top: 14px; -webkit-overflow-scrolling: touch; }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+  th, td { padding: 8px 10px; text-align: right; white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  thead th {
+    font-size: 11.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--mut);
+    font-weight: 700;
+    border-bottom: 1px solid var(--line-strong);
+  }
+  tbody tr + tr td { border-top: 1px solid var(--line); }
+  td.num, th.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  td.sym { font-family: var(--mono); font-weight: 650; }
+
+  .note { font-size: 13px; color: var(--mut); margin-top: 12px; }
+  .lines {
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.7;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    margin-top: 12px;
+    color: var(--ink);
+  }
+  .lines .l { display: block; }
+  .lines .l.dim { color: var(--mut); }
+
+  ol.honesty { margin: 14px 0 0; padding-left: 20px; font-size: 14.5px; }
+  ol.honesty li { margin-top: 10px; }
+  ol.honesty li b { font-weight: 700; }
+
+  ul.plain { margin: 12px 0 0; padding-left: 20px; font-size: 14px; color: var(--mut); }
+  ul.plain li { margin-top: 7px; }
+
+  .uncomputed {
+    font-size: 14px;
+    color: var(--mut);
+    background: var(--sunken);
+    border-radius: 9px;
+    padding: 12px 14px;
+    margin-top: 12px;
+  }
+
+  details { margin-top: 16px; }
+  details > summary {
+    cursor: pointer;
+    font-size: 13.5px;
+    font-weight: 650;
+    color: var(--acc);
+    padding: 6px 0;
+  }
+  details > summary:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+  pre.raw {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    line-height: 1.55;
+    background: var(--sunken);
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    padding: 12px;
+    margin-top: 10px;
+    overflow-x: auto;
+    max-height: 60vh;
+    overflow-y: auto;
+  }
+
+  footer {
+    border-top: 1px solid var(--line);
+    padding: 22px 0 40px;
+    font-size: 12.5px;
+    color: var(--faint);
+  }
+  footer p + p { margin-top: 8px; }
+  .sr {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="brand"><em>Tirra</em>Mind &nbsp;<span>Portfolio Audit</span></div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <h1>Your book, as arithmetic.</h1>
+  <p class="lede">
+    Paste what you hold. In about ten seconds you get three things your broker app does not
+    show: how much of the movement each line item accounted for against how much of the money
+    it held, which line items moved as one, and what the book did over the same window as its
+    index.
+  </p>
+
+  <div class="chips">
+    <span class="chip">No advice — arithmetic only</span>
+    <span class="chip">Holdings are never stored</span>
+    <span class="chip">Every number carries its window and its n</span>
+  </div>
+
+  <section class="card">
+    <form id="form" novalidate>
+      <label class="field" for="holdings">Your holdings</label>
+      <textarea id="holdings" name="holdings" spellcheck="false" autocapitalize="characters"
+        placeholder="RELIANCE 40&#10;TCS 12&#10;INFY 120"></textarea>
+      <p class="hint">
+        One line each: <b>symbol then quantity</b>. Indian symbols need no suffix — <b>RELIANCE 40</b>
+        resolves to RELIANCE.NS. A pasted broker CSV works too. Share counts
+        <em>or</em> percentages, not both in one paste — mixing them is genuinely ambiguous and
+        gets rejected rather than guessed at.
+      </p>
+
+      <div class="row">
+        <button type="submit" id="run">Run the audit</button>
+        <button type="button" class="ghost" id="clear">Clear</button>
+      </div>
+
+      <div class="example">
+        <div class="cap">Or see the output on a book that is not yours</div>
+        <pre id="exampleText"></pre>
+        <button type="button" class="ghost tiny" id="useExample">Run this example book</button>
+      </div>
+
+      <p class="privacy">
+        Nothing you paste is written to disk, logged, or sent anywhere other than this audit
+        request. It is held in memory for the length of one request and then gone. There is no
+        account and no cookie. If you would rather paste nothing at all, the example book above
+        produces a full result without a single holding of your own.
+      </p>
+    </form>
+  </section>
+
+  <div class="state" id="state" aria-live="polite"></div>
+
+</main>
+
+<footer class="wrap">
+  <p>
+    TirraMind Portfolio Audit. Arithmetic about a stated basket over a stated window. Not
+    investment advice, not a forecast, and not a statement of what you earned. We are not a
+    SEBI-registered Investment Adviser. Nothing here is a recommendation: not to buy, not to
+    hold, not to sell any security.
+  </p>
+  <p id="apiLine"></p>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ------------------------------------------------------------------ *
+   * The example book.
+   *
+   * Seven real NSE line items, deliberately mixed: three large caps, a
+   * bank, a broad-index ETF, a gold ETF, and one high-volatility small
+   * position. Every NUMBER a visitor sees comes back from the engine —
+   * nothing about this book's risk, correlation or record is hardcoded
+   * here, because a hardcoded number is a fabricated one.
+   * ------------------------------------------------------------------ */
+  var EXAMPLE = [
+    "RELIANCE 40",
+    "TCS 12",
+    "INFY 120",
+    "HDFCBANK 60",
+    "NIFTYBEES 200",
+    "GOLDBEES 300",
+    "IDEA 2000"
+  ].join("\n");
+
+  var $ = function (id) { return document.getElementById(id); };
+  var form = $("form"), ta = $("holdings"), runBtn = $("run"), state = $("state");
+
+  $("exampleText").textContent = EXAMPLE;
+
+  /* ------------------------------------------------------------------ *
+   * Where the API lives.
+   *
+   * Served over http(s) -> same origin, which is the deployed case.
+   * Opened from file:// -> a local port, overridable with ?api=... and
+   * remembered. Only the endpoint is remembered; holdings never are.
+   * ------------------------------------------------------------------ */
+  // 8800 first because that is the port the server actually defaults to
+  // (`--port` defaults to TIRRA_AUDIT_PORT or 8800). It was missing from
+  // this list, so a visitor who ran the documented command and opened this
+  // file got "No audit server answered" while a healthy server sat on
+  // 8800 untried. The rest stay as fallbacks for a hand-moved port.
+  var CANDIDATES = [
+    "http://127.0.0.1:8800", "http://localhost:8800",
+    "http://127.0.0.1:8781", "http://127.0.0.1:8777",
+    "http://127.0.0.1:8000", "http://localhost:8781"
+  ];
+  var LS_KEY = "tirra.audit.api";
+
+  function remembered() {
+    try { return window.localStorage.getItem(LS_KEY) || ""; } catch (e) { return ""; }
+  }
+  function remember(v) {
+    try { window.localStorage.setItem(LS_KEY, v); } catch (e) { /* private window: fine */ }
+  }
+
+  var qs = new URLSearchParams(window.location.search);
+  var apiBase = (qs.get("api") || "").replace(/\/+$/, "");
+  if (!apiBase) apiBase = remembered();
+  if (!apiBase) {
+    apiBase = (window.location.protocol === "http:" || window.location.protocol === "https:")
+      ? window.location.origin
+      : CANDIDATES[0];
+  }
+  function auditUrl(base) { return String(base).replace(/\/+$/, "") + "/api/audit"; }
+  function showApiLine() {
+    $("apiLine").textContent = "Audit endpoint: " + auditUrl(apiBase);
+  }
+  showApiLine();
+
+  /* ------------------------------------------------------------------ *
+   * Formatting. Numbers are monospace and tabular everywhere, so the
+   * decimal points line up in a column and in a screenshot.
+   * ------------------------------------------------------------------ */
+
+  // The API speaks in fractions, always: 0.045 is 4.5%, 6.0 is 600%.
+  // `_num` on the server passes floats through untouched and the sibling
+  // modules are fractional throughout, so there is one unit on the wire
+  // and nothing to sniff.
+  //
+  // An earlier version of this function guessed: any magnitude above 5.0
+  // was read as "percentage points already" and divided by 100. That is
+  // wrong on real input and dangerously so. A five-year book holding a
+  // ten-bagger reports total_return 9.0 — a true +900% — and the guess
+  // rendered it as "9.0%", understating the number by 100x while looking
+  // entirely plausible. A unit heuristic cannot distinguish a 600% return
+  // from a 6% one; only the contract can, and the contract is fractions.
+  function frac(x) {
+    if (x === null || x === undefined || x === "") return null;
+    var v = Number(x);
+    if (!isFinite(v)) return null;
+    return v;
+  }
+  function pct(x, places) {
+    var v = frac(x);
+    if (v === null) return "—";
+    return (v * 100).toFixed(places === undefined ? 1 : places) + "%";
+  }
+  // Signed, for a gap or a return. Sign is a direction, not a verdict, so
+  // it is never colour-coded.
+  function spct(x, places) {
+    var v = frac(x);
+    if (v === null) return "—";
+    var p = places === undefined ? 1 : places;
+    return (v >= 0 ? "+" : "−") + Math.abs(v * 100).toFixed(p) + "%";
+  }
+  // An ABSENT number is not zero. Number(null) === 0 and isFinite(0) is true,
+  // so without this guard a field the server did not send renders as a
+  // confident "0" — which is a fabricated figure, and fabricating one is the
+  // single failure this page exists to avoid. Caught against real engine
+  // output that omitted beat_count: the headline read "0 of 26 windows".
+  function absent(x) {
+    return x === null || x === undefined || x === "" ||
+      (typeof x === "number" && !isFinite(x)) ||
+      (typeof x !== "number" && isNaN(Number(x)));
+  }
+  function num(x, places) {
+    if (absent(x)) return "—";
+    return Number(x).toFixed(places === undefined ? 2 : places);
+  }
+  function snum(x, places) {
+    if (absent(x)) return "—";
+    var v = Number(x), p = places === undefined ? 2 : places;
+    return (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(p);
+  }
+  function int(x) {
+    if (absent(x)) return "—";
+    return String(Math.round(Number(x)));
+  }
+  function windowText(w) {
+    if (w === null || w === undefined) return "";
+    if (typeof w === "string") return w;
+    if (typeof w === "object") {
+      var s = w.start || w.from || "", e = w.end || w.to || "";
+      if (s || e) return String(s) + "…" + String(e);
+    }
+    return String(w);
+  }
+
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined && text !== null) n.textContent = String(text);
+    return n;
+  }
+
+  /* Read the first path that is actually present. The sibling module owns
+     the response shape; this page reads several plausible spellings of
+     each field and then SAYS what it could not find, rather than
+     rendering a confident blank. */
+  function get(obj) {
+    for (var i = 1; i < arguments.length; i++) {
+      var cur = obj, parts = arguments[i].split("."), ok = true;
+      for (var j = 0; j < parts.length; j++) {
+        if (cur === null || cur === undefined || typeof cur !== "object" || !(parts[j] in cur)) { ok = false; break; }
+        cur = cur[parts[j]];
+      }
+      if (ok && cur !== null && cur !== undefined && cur !== "") return cur;
+    }
+    return null;
+  }
+  function arr(v) { return Array.isArray(v) ? v : []; }
+
+  /* ------------------------------------------------------------------ *
+   * States. Each one says what happened and what to do next.
+   * ------------------------------------------------------------------ */
+
+  function clearState() { state.textContent = ""; }
+
+  function msg(title, body, extras) {
+    clearState();
+    var box = el("div", "msg warn");
+    box.appendChild(el("div", "t", title));
+    if (body) box.appendChild(el("div", "b", body));
+    if (extras) extras(box);
+    state.appendChild(box);
+    return box;
+  }
+
+  function loadingState(nLines) {
+    clearState();
+    var box = el("div", "msg");
+    box.appendChild(el("div", "t", "Reading the book…"));
+    var b = el("div", "b",
+      "Resolving " + nLines + (nLines === 1 ? " line" : " lines") +
+      ", fetching daily closes, and intersecting trading calendars so every holding is " +
+      "measured over the same days. Usually under ten seconds; a symbol seen for the first " +
+      "time takes longer because nothing is cached for it yet.");
+    box.appendChild(b);
+    var bar = el("div", "bar"); bar.appendChild(el("i")); box.appendChild(bar);
+    var t = el("div", "note", "0.0s elapsed");
+    box.appendChild(t);
+    state.appendChild(box);
+    var t0 = Date.now();
+    var timer = setInterval(function () {
+      t.textContent = ((Date.now() - t0) / 1000).toFixed(1) + "s elapsed";
+    }, 100);
+    return function stop() { clearInterval(timer); };
+  }
+
+  function endpointEditor(box) {
+    var wrapEl = el("div", "endpoint");
+    var input = document.createElement("input");
+    input.type = "text";
+    input.value = apiBase;
+    input.setAttribute("aria-label", "Audit API base URL");
+    input.spellcheck = false;
+    var save = el("button", "tiny", "Use this endpoint");
+    save.type = "button";
+    save.addEventListener("click", function () {
+      var v = input.value.trim().replace(/\/+$/, "");
+      if (!v) return;
+      apiBase = v; remember(v); showApiLine();
+      submit(ta.value);
+    });
+    wrapEl.appendChild(input);
+    wrapEl.appendChild(save);
+    box.appendChild(wrapEl);
+  }
+
+  /* ------------------------------------------------------------------ *
+   * Submit
+   * ------------------------------------------------------------------ */
+
+  var inFlight = false;
+
+  function countLines(text) {
+    return text.split(/\r?\n/).filter(function (l) { return l.trim() !== ""; }).length;
+  }
+
+  function submit(text) {
+    if (inFlight) return;
+    var body = String(text || "");
+    if (!body.trim()) {
+      msg("Nothing to read yet.",
+        "Paste at least one line — a symbol and a quantity, like RELIANCE 40 — or run the " +
+        "example book, which needs nothing from you.");
+      ta.focus();
+      return;
+    }
+
+    inFlight = true;
+    runBtn.disabled = true;
+    var stop = loadingState(countLines(body));
+
+    var ctrl = null, timeoutId = null;
+    if (typeof AbortController === "function") {
+      ctrl = new AbortController();
+      timeoutId = setTimeout(function () { ctrl.abort(); }, 90000);
+    }
+
+    // The field name the sibling module reads is its choice, so the same
+    // text is sent under each plausible spelling. Sending one extra key
+    // costs nothing; a 400 because of a key name costs the whole visit.
+    var payload = JSON.stringify({ holdings: body, holdings_text: body, text: body });
+
+    var tried = [];
+    // Endpoints whose fetch REJECTED — nothing listening, or a read the
+    // browser blocked. Kept apart from `tried` because only these are
+    // worth diagnosing: an endpoint that answered is a known quantity,
+    // and probing it again would credit some unrelated server that
+    // happens to hold the port with being the audit API.
+    var rejected = [];
+
+    function attempt(base) {
+      tried.push(base);
+      var opts = { method: "POST", headers: { "Content-Type": "application/json", "Accept": "application/json" }, body: payload };
+      if (ctrl) opts.signal = ctrl.signal;
+      return fetch(auditUrl(base), opts);
+    }
+
+    function finish() {
+      inFlight = false;
+      runBtn.disabled = false;
+      if (timeoutId) clearTimeout(timeoutId);
+      stop();
+    }
+
+    // Is the thing on the other end our API at all? Every response this
+    // server sends — success or refusal — is JSON carrying a boolean `ok`,
+    // and a refusal also carries `error`. A static file server, a stray
+    // dev server or a router answering on the same port carries neither.
+    //
+    // This distinction has to exist, because "something answered" is not
+    // "the right thing answered". Without it a 501 from an unrelated
+    // server on the same origin ended the attempt and printed its raw
+    // HTML error page into the result area, which is both the useless
+    // failure state the brief rules out and the wrong conclusion: the
+    // audit server may well be listening on another port, untried.
+    function looksLikeApi(res, data) {
+      if (!data || typeof data !== "object" || Array.isArray(data)) return false;
+      return typeof data.ok === "boolean" || typeof data.error === "string";
+    }
+
+    // onNotApi, when given, means "there are more ports to try": keep
+    // walking instead of reporting. base, when given, is adopted as the
+    // endpoint only once the answer proves it is the API.
+    function onResponse(res, onNotApi, base) {
+      return res.text().then(function (raw) {
+        var data = null;
+        try { data = JSON.parse(raw); } catch (e) { data = null; }
+
+        if (!looksLikeApi(res, data)) {
+          if (onNotApi) { onNotApi(); return; }
+          finish();
+          msg("That address answered, but it is not the audit API.",
+            "Something is listening at " + auditUrl(base || apiBase) + " and it replied HTTP " +
+            res.status + ", but the reply is not an audit. Usually this is a different server on " +
+            "the port — a static file server, or another app. Start the audit server, or point " +
+            "this page at the port it is on.",
+            function (box) {
+              box.appendChild(rawBlock(raw.slice(0, 300)));
+              endpointEditor(box);
+            });
+          return;
+        }
+        if (base) { apiBase = base; remember(base); showApiLine(); }
+
+        if (res.status === 429) {
+          finish();
+          var wait = res.headers.get("Retry-After") || get(data, "retry_after", "retry_after_seconds");
+          rateLimited(wait, body);
+          return;
+        }
+        if (!res.ok) {
+          finish();
+          serverError(res.status, data, raw);
+          return;
+        }
+        finish();
+        var err = get(data, "error", "detail", "message");
+        if (err && get(data, "ok") === false) { serverError(res.status, data, raw); return; }
+        render(data);
+      });
+    }
+
+    // Walk the remaining candidate ports. Reached either because fetch()
+    // rejected (nothing listening) or because what answered was not this
+    // API. Both mean "keep looking" rather than "tell the user off".
+    function walk() {
+      var rest = CANDIDATES.filter(function (c) { return tried.indexOf(c) === -1; });
+      function next() {
+        if (!rest.length) {
+          finish();
+          noServer(tried, rejected);
+          return;
+        }
+        var base = rest.shift();
+        // Two-argument then(), not .catch(): a rejection thrown by
+        // onResponse — a bug in rendering — must surface, not quietly
+        // send the holdings to the next port and swallow the stack.
+        attempt(base).then(
+          function (res) { return onResponse(res, next, base); },
+          function () { rejected.push(base); next(); }
+        );
+      }
+      next();
+    }
+
+    attempt(apiBase).then(function (res) { return onResponse(res, walk, null); }, function (e1) {
+      if (e1 && e1.name === "AbortError") {
+        finish();
+        msg("The request ran past 90 seconds and was stopped.",
+          "Nothing was saved. A book with many first-time symbols can genuinely take this long " +
+          "while closes are fetched one by one. Running it again is usually faster, because what " +
+          "did arrive is now cached on the server.",
+          function (box) { retryButton(box, body); });
+        return;
+      }
+      // fetch() rejected without reaching a server: wrong port, nothing
+      // listening, or a reply the browser would not let us read. Try the
+      // other local ports before blaming the user.
+      rejected.push(apiBase);
+      walk();
+    });
+  }
+
+  function retryButton(box, body) {
+    var b = el("button", "tiny", "Run it again");
+    b.type = "button";
+    b.style.marginTop = "12px";
+    b.addEventListener("click", function () { submit(body); });
+    box.appendChild(b);
+  }
+
+  function rawBlock(text) {
+    var p = el("pre", "raw", text);
+    return p;
+  }
+
+  /* ------------------------------------------------------------------ *
+   * Telling "nothing is listening" apart from "listening, but this page
+   * is not allowed to read it".
+   *
+   * A cross-origin fetch that the browser blocks on CORS rejects with the
+   * same TypeError as a refused connection, so the failure alone cannot
+   * say which happened — and the two need opposite actions. A `no-cors`
+   * probe settles it: the reply is opaque and unreadable, but the promise
+   * RESOLVES when something served it and rejects when nothing did. That
+   * is all the signal needed.
+   *
+   * This matters because it is the live case, not a hypothetical. The
+   * audit server sets its CORS headers on the OPTIONS preflight but not
+   * on the POST reply itself, so a page opened from a file:// path —
+   * origin "null", therefore cross-origin — gets a blocked read even
+   * though the audit ran and answered 200 on the server. Reporting
+   * "nothing is listening" there is simply false, and it sends the
+   * visitor off to restart a server that is already up.
+   * ------------------------------------------------------------------ */
+  function probe(base) {
+    var url = String(base).replace(/\/+$/, "") + "/api/health";
+    return fetch(url, { mode: "no-cors", cache: "no-store" })
+      .then(function () { return base; }, function () { return null; });
+  }
+
+  function diagnose(bases, done) {
+    var i = 0;
+    function step() {
+      if (i >= bases.length) { done(null); return; }
+      probe(bases[i++]).then(function (hit) {
+        if (hit) { done(hit); } else { step(); }
+      }, step);
+    }
+    step();
+  }
+
+  function noServer(tried, rejected) {
+    diagnose((rejected || tried).slice(), function (live) {
+      if (live) { blockedByOrigin(live, tried); return; }
+      msg("No audit server answered.",
+        "The page loaded, but nothing is listening for the audit request. This page is only the " +
+        "front of the product; the arithmetic runs in a local Python process that has to be " +
+        "started separately.",
+        function (box) {
+          var ul = el("ul");
+          ul.appendChild(el("li", null, "Tried: " + tried.join(", ")));
+          ul.appendChild(el("li", null, "Start the server, then set the endpoint here and run again."));
+          box.appendChild(ul);
+          endpointEditor(box);
+        });
+    });
+  }
+
+  // The server is up; this page just cannot read it from where it was
+  // opened. One action fixes it, so the state is that action.
+  function blockedByOrigin(live, tried) {
+    var fromFile = window.location.protocol === "file:";
+    msg("The audit server is running — this page is not allowed to read it.",
+      "A server answered at " + live + ", so the arithmetic is available. The browser blocked " +
+      "this page from reading the reply because the page and the server are different origins" +
+      (fromFile ? ", which is always true for a page opened from a file on disk." : ".") +
+      " Nothing is wrong with what you pasted, and nothing was saved.",
+      function (box) {
+        var ul = el("ul");
+        var fix = el("li");
+        fix.appendChild(document.createTextNode("Open "));
+        var a = el("a", null, live + "/");
+        a.href = live + "/";
+        fix.appendChild(a);
+        fix.appendChild(document.createTextNode(
+          " directly. That same server serves this same page, so the page and the API share an " +
+          "origin and the reply comes through."));
+        ul.appendChild(fix);
+        ul.appendChild(el("li", null, "Tried: " + tried.join(", ")));
+        box.appendChild(ul);
+        endpointEditor(box);
+      });
+  }
+
+  function rateLimited(wait, body) {
+    var secs = parseInt(wait, 10);
+    if (!isFinite(secs) || secs < 0) secs = 60;
+    var box = msg("The server is limiting requests.",
+      "Each audit fetches real daily closes for every symbol, so the endpoint caps how often it " +
+      "will do that. Nothing you pasted was lost — it is still in the box above.");
+    var line = el("div", "note", "");
+    box.appendChild(line);
+    var b = el("button", "tiny", "Run it again");
+    b.type = "button";
+    b.style.marginTop = "12px";
+    b.disabled = secs > 0;
+    b.addEventListener("click", function () { submit(body); });
+    box.appendChild(b);
+    function tick() {
+      if (secs <= 0) {
+        line.textContent = "The wait is over.";
+        b.disabled = false;
+        return;
+      }
+      line.textContent = secs + "s until the next request is accepted.";
+      secs -= 1;
+      setTimeout(tick, 1000);
+    }
+    tick();
+  }
+
+  function serverError(status, data, raw) {
+    var detail = get(data, "error", "detail", "message", "reason");
+    var title, help;
+    if (status === 400 || status === 422) {
+      title = "The server could not read that as a list of holdings.";
+      help = "This is about the text, not about you — the parser refuses to guess. One line per " +
+             "holding, symbol then quantity. Share counts or percentages, never both in one paste.";
+    } else if (status === 404) {
+      title = "The endpoint answered 404.";
+      help = "Something is listening, but not the audit route. The endpoint below can be corrected " +
+             "in place.";
+    } else if (status >= 500) {
+      title = "The server failed while computing (HTTP " + status + ").";
+      help = "This is a fault on our side, not in what you pasted. Nothing was saved.";
+    } else {
+      title = "The request was refused (HTTP " + status + ").";
+      help = "Nothing was saved.";
+    }
+    msg(title, help, function (box) {
+      if (detail) {
+        box.appendChild(el("div", "note", "The server said: " + String(detail)));
+      } else if (raw) {
+        box.appendChild(rawBlock(String(raw).slice(0, 400)));
+      }
+      if (status === 404) endpointEditor(box);
+      var probs = arr(get(data, "problems", "unreadable", "holdings.unreadable"));
+      if (probs.length) {
+        var ul = el("ul");
+        probs.slice(0, 12).forEach(function (p) {
+          ul.appendChild(el("li", null, typeof p === "string" ? p : (get(p, "raw", "line") || "") + " — " + (get(p, "reason", "why") || "unreadable")));
+        });
+        box.appendChild(ul);
+      }
+    });
+  }
+
+  /* ------------------------------------------------------------------ *
+   * Render
+   * ------------------------------------------------------------------ */
+
+  // The three notes that qualify every number on this page. They are
+  // rendered ON the result, in the same visual frame as the numbers they
+  // qualify, and never behind a link.
+  var HONESTY = [
+    ["Today's weights, applied backwards.",
+     "Every window is measured on the shape the book has today, held unchanged throughout. " +
+     "It is a fixed-allocation counterfactual, not what you earned. We do not have your " +
+     "transaction history — no purchase dates, no prices paid, no additions — and cannot " +
+     "compute what you actually made."],
+    ["Only what you still hold is visible.",
+     "Anything already sold is absent from the paste, so it is absent from the arithmetic. " +
+     "Positions that were exited are exactly the ones most often exited at a loss, so their " +
+     "absence flatters the book against the index. The direction of that distortion is known; " +
+     "its size is not, because the data to measure it was never here."],
+    ["Every number carries its window and its sample size.",
+     "A figure without its n and its dates is not a finding. Where the sample is too small for " +
+     "the statistic, the block says so instead of printing a number anyway. Overlapping rolling " +
+     "windows share days, so they are not independent observations, and counting them as though " +
+     "they were overstates the sample."]
+  ];
+
+  function render(d) {
+    clearState();
+    var missing = [];
+
+    var usable = get(d, "usable", "panel.usable");
+    if (usable === false) {
+      renderUnusable(d);
+      return;
+    }
+
+    var bench = get(d, "benchmark.ticker", "benchmark_ticker", "benchmark") || "";
+    if (typeof bench !== "string") bench = String(get(bench, "ticker") || "");
+    var benchWhy = get(d, "benchmark.why", "benchmark_why") || "";
+
+    state.appendChild(heroCard(d, bench, benchWhy, missing));
+    state.appendChild(honestyCard(d));
+    structureCards(d, missing).forEach(function (c) { state.appendChild(c); });
+    var bc = basisCard(d);
+    if (bc) state.appendChild(bc);
+    var rec = recordCard(d);
+    if (rec) state.appendChild(rec);
+    var hold = holdingsCard(d);
+    if (hold) state.appendChild(hold);
+    state.appendChild(limitsCard(d, bench, benchWhy, missing));
+    var raw = rawCard(d);
+    if (raw) state.appendChild(raw);
+
+    state.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function renderUnusable(d) {
+    var reason = get(d, "unusable_reason", "panel.unusable_reason", "reason") || "the price panel could not be built";
+    msg("The book could not be measured.", "Reason given: " + reason, function (box) {
+      var ex = arr(get(d, "excluded", "panel.excluded", "exclusions", "panel.exclusions"));
+      var pr = arr(get(d, "problems", "holdings.unreadable", "unreadable"));
+      if (pr.length) {
+        box.appendChild(el("div", "note", "Lines that could not be read:"));
+        var u1 = el("ul");
+        pr.slice(0, 20).forEach(function (p) {
+          u1.appendChild(el("li", null, typeof p === "string" ? p : ((get(p, "raw", "line") || "?") + " — " + (get(p, "reason", "why") || "unreadable"))));
+        });
+        box.appendChild(u1);
+      }
+      if (ex.length) {
+        box.appendChild(el("div", "note", "Holdings left out of the panel:"));
+        var u2 = el("ul");
+        ex.slice(0, 20).forEach(function (e) {
+          u2.appendChild(el("li", null, typeof e === "string" ? e : ((get(e, "symbol", "ticker") || "?") + " — " + (get(e, "reason", "why") || "excluded"))));
+        });
+        box.appendChild(u2);
+      }
+      box.appendChild(el("div", "note",
+        "Nothing was stored. What you pasted is still in the box above, so a symbol can be " +
+        "corrected without retyping the rest."));
+    });
+  }
+
+  /* --- the frame a person would screenshot ------------------------- */
+  function heroCard(d, bench, benchWhy, missing) {
+    var card = el("div", "hero");
+
+    var hl = get(d, "headline", "full_window", "picking.full_window");
+    var gap = hl ? get(hl, "gap_total", "gap", "gap_points") : null;
+    var bookTotal = hl ? get(hl, "book.total_return", "book_total", "port_total", "portfolio_total") : null;
+    var benchTotal = hl ? get(hl, "benchmark.total_return", "bench_total", "benchmark_total", "mark_total") : null;
+    var win = windowText(hl ? get(hl, "window.label", "window.text", "window", "window_text", "dates") : null) ||
+      windowText(get(d, "window.text", "window.label"));
+    var nObs = hl ? get(hl, "n_observations", "n_obs", "n") : null;
+    if (nObs === null) nObs = get(d, "window.n_daily_returns", "window.n_trading_days");
+
+    var nTickers = bookSize(d);
+    var eyebrowBits = [];
+    if (nTickers) eyebrowBits.push(nTickers + (nTickers === 1 ? " holding" : " holdings") + " measured");
+    if (win) eyebrowBits.push(win);
+    if (nObs) eyebrowBits.push("n=" + int(nObs) + " daily returns");
+    if (bench) eyebrowBits.push("vs " + bench);
+    card.appendChild(el("div", "eyebrow", eyebrowBits.join("  ·  ")));
+
+    var records = usableRecords(d);
+    // Records that actually carry a beat count. A record whose count the
+    // server omitted can still be listed, but it can never be a headline.
+    var counted = records.filter(function (r) {
+      return !absent(get(r, "beat_count", "n_beat", "n_above", "n_wins")) && !absent(get(r, "n_windows", "n"));
+    });
+    var publishable = get(d, "headline.published", "headline_publishable", "headline.publishable");
+    if (publishable === null) publishable = counted.length > 0;
+    if (publishable === false && counted.length === 0) publishable = false;
+
+    var shareLines = [];
+
+    if (gap !== null && publishable) {
+      card.appendChild(el("div", "big", spct(gap, 1)));
+      var what = el("div", "what");
+      what.textContent = "the gap between this book and " + (bench || "its index") +
+        " over " + (win || "the window measured") +
+        (bookTotal !== null && benchTotal !== null
+          ? " — the book " + spct(bookTotal, 1) + ", " + (bench || "the index") + " " + spct(benchTotal, 1)
+          : "");
+      card.appendChild(what);
+      shareLines.push(spct(gap, 1) + " against " + (bench || "index") + " over " + (win || "the window"));
+    } else if (counted.length) {
+      // A single window is a selected window. With no multi-window record
+      // to travel with it, the headline is withheld rather than footnoted.
+      var r0 = counted[0];
+      card.appendChild(el("div", "big small", int(get(r0, "beat_count", "n_beat", "n_above", "n_wins")) + " of " + int(get(r0, "n_windows", "n"))));
+      card.appendChild(el("div", "what",
+        "rolling " + (get(r0, "length_label", "length", "window_length", "label") || "windows") +
+        " in which this book came out above " + (bench || "its index") +
+        ". A single-window figure is withheld here: one window is a selected window."));
+      shareLines.push(int(get(r0, "beat_count", "n_beat", "n_above", "n_wins")) + " of " + int(get(r0, "n_windows", "n")) + " rolling windows above " + (bench || "index"));
+    } else {
+      var why = get(d, "headline.withheld_reason", "rolling_record_reason", "picking_reason",
+        "headline_reason", "reason") ||
+        "no multi-window record was computed, and a single window on its own is a selected window";
+      card.appendChild(el("div", "big small", "withheld"));
+      card.appendChild(el("div", "what", "No headline figure is shown. " + why + "."));
+    }
+
+    // The rolling record sits beside the headline, always, because that is
+    // what stops one window becoming the whole story.
+    if (counted.length) {
+      var rec = el("div", "record");
+      counted.slice(0, 3).forEach(function (r) {
+        var nb = get(r, "beat_count", "n_beat", "n_above", "n_wins");
+        var nw = get(r, "n_windows", "n");
+        var share = get(r, "beat_fraction", "share_beat", "beat_share", "fraction_beat", "share_above");
+        if (share === null && nb !== null && nw) share = Number(nb) / Number(nw);
+        var med = get(r, "median_gap", "gap_median");
+        var line = el("div");
+        var txt = "Rolling " + (get(r, "length_label", "length", "window_length", "label") || "window") + ": above " +
+          (bench || "index") + " in ";
+        line.appendChild(document.createTextNode(txt));
+        line.appendChild(el("span", "n", int(nb) + " of " + int(nw)));
+        line.appendChild(document.createTextNode(" windows" + (share !== null ? " (" + pct(share, 0) + ")" : "") + (med !== null ? ", median gap " + spct(med, 1) : "") + "."));
+        rec.appendChild(line);
+        shareLines.push("Rolling " + (get(r, "length_label", "length", "window_length", "label") || "window") + ": " + int(nb) + " of " + int(nw) + (share !== null ? " (" + pct(share, 0) + ")" : "") + (med !== null ? ", median " + spct(med, 1) : ""));
+      });
+      var ind = get(counted[0], "n_independent_windows", "n_independent");
+      rec.appendChild(el("div", "note",
+        "Rolling windows overlap and share days, so these are not independent observations" +
+        (absent(ind) ? "." : " \u2014 the honest denominator here is about " + num(ind, 1) + ".")));
+      card.appendChild(rec);
+    } else {
+      missing.push(records.length
+        ? "the beat counts for the rolling record (the windows came back, the counts did not)"
+        : "the rolling multi-window record");
+    }
+
+    // The caveat travels in the same frame as the number. A screenshot that
+    // crops it out is us overstating by proxy, so it cannot be a footer.
+    var cav = el("div", "caveat");
+    var b = el("b", null, "Read this with the number above: ");
+    cav.appendChild(b);
+    cav.appendChild(document.createTextNode(
+      "these are today's weights applied backwards — a fixed-allocation counterfactual, not what " +
+      "you earned. Holdings you have already sold are invisible here, which flatters the book. " +
+      (bench ? "Measured against " + bench + (benchWhy ? " (" + benchWhy + ")" : "") + "." : "")));
+    card.appendChild(cav);
+
+    if (shareLines.length) {
+      var copy = el("button", "ghost tiny", "Copy the headline with its caveat");
+      copy.type = "button";
+      copy.style.marginTop = "14px";
+      copy.addEventListener("click", function () {
+        var text = shareLines.join("\n") +
+          "\n\nToday's weights applied backwards: a fixed-allocation counterfactual, not what was " +
+          "earned. Sold holdings are invisible. TirraMind Portfolio Audit — arithmetic, not advice.";
+        var done = function () { copy.textContent = "Copied with the caveat"; };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(done, function () { copy.textContent = "Copy blocked by the browser"; });
+        } else {
+          copy.textContent = "Copy is unavailable in this browser";
+        }
+      });
+      card.appendChild(copy);
+    }
+
+    return card;
+  }
+
+  // How many holdings were actually measured, from whichever field carries it.
+  function bookSize(d) {
+    var n = get(d, "input.positions_priced");
+    if (!absent(n)) return Number(n);
+    var wts = get(d, "weights");
+    if (wts && typeof wts === "object") return Object.keys(wts).length;
+    var res = arr(get(d, "input.resolutions", "resolutions", "panel.resolutions"));
+    if (res.length) return res.length;
+    return arr(get(d, "tickers", "panel.tickers", "holdings.symbols")).length;
+  }
+
+  function usableRecords(d) {
+    var rows = arr(get(d, "rolling_record", "records", "rolling", "rolling_gap", "picking.records"));
+    return rows.filter(function (r) {
+      if (get(r, "usable") === false) return false;
+      var nw = Number(get(r, "n_windows", "n"));
+      return isFinite(nw) && nw > 0;
+    });
+  }
+
+  function honestyCard(d) {
+    var card = el("section", "card");
+    card.appendChild(el("h2", null, "Before the detail"));
+
+    // The server states its own limits (agent/portfolio/server.py ships a
+    // `disclosures` list). Its wording is the one the engine stands behind, so
+    // it wins; HONESTY below is the fallback for a server that sends none.
+    var disc = arr(get(d, "disclosures"));
+    var ol = el("ol", "honesty");
+    if (disc.length) {
+      card.appendChild(el("h3", null, disc.length === 3
+        ? "Three things this result is not"
+        : "What this result is not"));
+      disc.forEach(function (x) {
+        var li = el("li");
+        li.appendChild(el("b", null, (get(x, "title") || "") + " "));
+        li.appendChild(document.createTextNode(get(x, "body") || ""));
+        ol.appendChild(li);
+      });
+    } else {
+      card.appendChild(el("h3", null, "Three things this result is not"));
+      HONESTY.forEach(function (pair) {
+        var li = el("li");
+        li.appendChild(el("b", null, pair[0] + " "));
+        li.appendChild(document.createTextNode(pair[1]));
+        ol.appendChild(li);
+      });
+    }
+    card.appendChild(ol);
+    return card;
+  }
+
+  /* --- structural findings ----------------------------------------- */
+  function structureCards(d, missing) {
+    var raw = get(d, "structure", "sections");
+    // agent/portfolio/server.py returns structure as an OBJECT keyed by
+    // section name; audit.Audit.structure is a tuple. Both are accepted, and
+    // the object form is put back into the engine's own render order.
+    var sections;
+    if (Array.isArray(raw)) {
+      sections = raw;
+    } else if (raw && typeof raw === "object") {
+      var order = ["concentration", "overlap", "worst_days"];
+      var keys = Object.keys(raw).sort(function (a, b) {
+        var ia = order.indexOf(a), ib = order.indexOf(b);
+        return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+      });
+      sections = keys.map(function (k) {
+        var sec = raw[k];
+        if (sec && typeof sec === "object" && !("key" in sec)) sec = Object.assign({ key: k }, sec);
+        return sec;
+      });
+    } else {
+      sections = [];
+    }
+    if (!sections.length) {
+      missing.push("the structural blocks (risk shares, correlated groups, worst days)");
+      return [];
+    }
+    return sections.map(function (s) {
+      var card = el("section", "card");
+      card.appendChild(el("h2", null, prettyKey(get(s, "key") || "")));
+      card.appendChild(el("h3", null, get(s, "title") || prettyKey(get(s, "key") || "")));
+
+      if (get(s, "computed") === false) {
+        card.appendChild(el("div", "uncomputed",
+          "Not computed. " + (get(s, "reason") || "no reason was given, which is itself a defect.")));
+        return card;
+      }
+
+      var key = String(get(s, "key") || "");
+      var data = get(s, "data") || {};
+      var rendered = false;
+
+      if (key === "concentration") {
+        rendered = renderConcentration(card, data);
+      } else if (key === "worst_days") {
+        rendered = renderWorstDays(card, data);
+      }
+
+      if (!rendered) {
+        card.appendChild(linesBlock(arr(get(s, "lines"))));
+      }
+      return card;
+    });
+  }
+
+  function prettyKey(k) {
+    if (k === "concentration") return "Risk against weight";
+    if (k === "overlap") return "The same bet, twice";
+    if (k === "worst_days") return "On the worst days";
+    return k.replace(/_/g, " ");
+  }
+
+  function renderConcentration(card, data) {
+    var rows = arr(get(data, "contributions", "rows"));
+    if (!rows.length) return false;
+
+    // The single sentence worth a screenshot: the line item whose share of
+    // the variance is furthest from its share of the money. Selecting the
+    // largest row is arithmetic, not a judgment about it.
+    var best = get(data, "largest_amplifier");
+    if (!best || absent(get(best, "weight")) || absent(get(best, "risk_share"))) {
+      best = null;
+      var bestGap = 0;
+      rows.forEach(function (r) {
+        var w = frac(get(r, "weight")), s = frac(get(r, "risk_share"));
+        if (w === null || s === null) return;
+        var g = Math.abs(s - w);
+        if (g > bestGap) { bestGap = g; best = r; }
+      });
+    }
+    if (best) {
+      var w = frac(get(best, "weight")), s = frac(get(best, "risk_share"));
+      var lead = el("p", "what");
+      lead.style.fontSize = "15.5px";
+      lead.style.marginTop = "12px";
+      lead.textContent = get(best, "ticker", "symbol") + " holds " + pct(w, 1) +
+        " of the money and accounted for " + pct(s, 1) + " of the variance over this window" +
+        " — the widest distance between the two in this book.";
+      card.appendChild(lead);
+    }
+
+    var scroll = el("div", "scroll");
+    var t = el("table");
+    var thead = el("thead"), tr = el("tr");
+    ["Holding", "Money", "Variance", "Own vol / yr", "Corr with rest"].forEach(function (h, i) {
+      var th = el("th", i === 0 ? null : "num", h);
+      tr.appendChild(th);
+    });
+    thead.appendChild(tr); t.appendChild(thead);
+    var tb = el("tbody");
+    rows.forEach(function (r) {
+      var row = el("tr");
+      row.appendChild(el("td", "sym", get(r, "ticker", "symbol") || "?"));
+      row.appendChild(el("td", "num", pct(get(r, "weight"), 1)));
+      var rs = get(r, "risk_share");
+      row.appendChild(el("td", "num", (frac(rs) !== null && frac(rs) < 0 ? "−" : "") + pct(Math.abs(frac(rs) === null ? NaN : frac(rs)), 1)));
+      row.appendChild(el("td", "num", pct(get(r, "standalone_vol_annualised", "standalone_vol", "vol"), 1)));
+      row.appendChild(el("td", "num", snum(get(r, "correlation_with_portfolio", "correlation"), 2)));
+      tb.appendChild(row);
+    });
+    t.appendChild(tb);
+    scroll.appendChild(t);
+    card.appendChild(scroll);
+
+    var nObs = get(data, "n_observations", "n_obs");
+    var nAssets = get(data, "n_assets", "p");
+    var win = windowText(get(data, "window"));
+    var bits = [];
+    if (nObs) bits.push("n=" + int(nObs) + " daily returns");
+    if (win) bits.push(win);
+    if (nAssets) bits.push("p=" + int(nAssets) + " holdings");
+    var nop = get(data, "n_over_p");
+    if (nop !== null) bits.push("n/p=" + num(nop, 1));
+    if (bits.length) card.appendChild(el("div", "note", bits.join("  ·  ")));
+
+    if (get(data, "reliable") === false) {
+      card.appendChild(el("div", "uncomputed",
+        "Not reliable at this sample size. " + (get(data, "reliability_reason") || "")));
+    }
+    if (get(data, "has_negative_contributions") === true) {
+      card.appendChild(el("div", "note",
+        "A negative share of the variance means that holding moved against the rest of the book " +
+        "over this window. That is arithmetic, not an error."));
+    }
+    return true;
+  }
+
+  function renderWorstDays(card, data) {
+    var rows = arr(get(data, "holdings"));
+    if (!rows.length) return false;
+    var nWorst = get(data, "n_worst_days"), nDays = get(data, "n_days");
+    var win = windowText(get(data, "window"));
+    var headline = get(data, "headline");
+    if (headline) {
+      var lead = el("p", "what");
+      lead.style.fontSize = "15.5px";
+      lead.style.marginTop = "12px";
+      lead.textContent = String(headline);
+      card.appendChild(lead);
+    }
+    card.appendChild(el("p", "note",
+      "The worst " + int(nWorst) + " of " + int(nDays) + " days" + (win ? " in " + win : "") + ":"));
+
+    var scroll = el("div", "scroll");
+    var t = el("table");
+    var thead = el("thead"), tr = el("tr");
+    ["Holding", "Fell on", "Falls on any day", "Mean on those days", "Mean otherwise"].forEach(function (h, i) {
+      tr.appendChild(el("th", i === 0 ? null : "num", h));
+    });
+    thead.appendChild(tr); t.appendChild(thead);
+    var tb = el("tbody");
+    rows.forEach(function (h) {
+      var row = el("tr");
+      row.appendChild(el("td", "sym", get(h, "ticker", "symbol") || "?"));
+      row.appendChild(el("td", "num", int(get(h, "n_fell")) + " of " + int(get(h, "n_worst_days_with_data") !== null ? get(h, "n_worst_days_with_data") : nWorst)));
+      row.appendChild(el("td", "num", pct(get(h, "fell_frequency_all_days"), 0)));
+      row.appendChild(el("td", "num", spct(get(h, "mean_return_on_worst_days"), 2)));
+      row.appendChild(el("td", "num", spct(get(h, "mean_return_on_other_days"), 2)));
+      tb.appendChild(row);
+    });
+    t.appendChild(tb);
+    scroll.appendChild(t);
+    card.appendChild(scroll);
+
+    var clus = get(data, "worst_day_clustering");
+    var note = clus ? get(clus, "note") : null;
+    if (note) card.appendChild(el("div", "note", String(note)));
+    arr(get(data, "caveats")).forEach(function (c) {
+      card.appendChild(el("div", "note", String(c)));
+    });
+    return true;
+  }
+
+  function linesBlock(lines) {
+    var box = el("div", "lines");
+    lines.forEach(function (l) {
+      var s = String(l).replace(/^\s{1,4}/, "");
+      var dim = /^(left out|Joined no group|n=|NOT RELIABLE)/.test(s);
+      box.appendChild(el("span", "l" + (dim ? " dim" : ""), s));
+    });
+    return box;
+  }
+
+  /* --- two counterfactuals, both printed -------------------------- */
+  function basisCard(d) {
+    var bc = get(d, "basis_check");
+    if (!bc) return null;
+    var card = el("section", "card");
+    card.appendChild(el("h2", null, "Two readings of the same paste"));
+    card.appendChild(el("h3", null, "The weights can be read two ways, and they do not always agree"));
+    card.appendChild(el("p", "note",
+      "Today's weights can be read as the allocation the book started each window with, or as " +
+      "the share counts those weights imply, held throughout. Both are defensible. On a book " +
+      "with one large winner they differ by a lot, so both are printed."));
+
+    var scroll = el("div", "scroll");
+    var t = el("table");
+    var thead = el("thead"), tr = el("tr");
+    ["Reading", "Book total", "Gap", "Window"].forEach(function (h, i) { tr.appendChild(el("th", i === 0 ? null : "num", h)); });
+    thead.appendChild(tr); t.appendChild(thead);
+    var tb = el("tbody");
+    [["Allocation held constant", "allocation_book_total", "allocation_gap", "allocation_window"],
+     ["Share counts held constant", "shares_book_total", "shares_gap", "shares_window"]].forEach(function (r) {
+      var row = el("tr");
+      row.appendChild(el("td", null, r[0]));
+      row.appendChild(el("td", "num", spct(get(bc, r[1]), 1)));
+      row.appendChild(el("td", "num", spct(get(bc, r[2]), 1)));
+      var wcell = el("td", "num", windowText(get(bc, r[3])) || "—");
+      wcell.style.whiteSpace = "normal";
+      row.appendChild(wcell);
+      tb.appendChild(row);
+    });
+    t.appendChild(tb); scroll.appendChild(t); card.appendChild(scroll);
+
+    if (get(bc, "signs_agree") === false) {
+      card.appendChild(el("div", "uncomputed",
+        "The two readings carry opposite signs on this book. Printing either one alone would be " +
+        "a selection, so neither is presented as the answer."));
+    }
+    return card;
+  }
+
+  /* --- the full rolling record ------------------------------------ */
+  function recordCard(d) {
+    var rows = arr(get(d, "rolling_record", "records", "rolling", "rolling_gap", "picking.records"));
+    if (!rows.length) return null;
+    var card = el("section", "card");
+    card.appendChild(el("h2", null, "The record, not one window"));
+    card.appendChild(el("h3", null, "Every rolling window of each length, counted"));
+
+    var scroll = el("div", "scroll");
+    var t = el("table");
+    var thead = el("thead"), tr = el("tr");
+    ["Length", "Windows", "Independent", "Above index", "Share", "Median gap"].forEach(function (h, i) { tr.appendChild(el("th", i === 0 ? null : "num", h)); });
+    thead.appendChild(tr); t.appendChild(thead);
+    var tb = el("tbody");
+    rows.forEach(function (r) {
+      var row = el("tr");
+      row.appendChild(el("td", "sym", get(r, "length_label", "length", "window_length", "label") || "?"));
+      if (get(r, "usable") === false || !Number(get(r, "n_windows", "n"))) {
+        var td = el("td", "num", get(r, "unusable_reason", "reason", "why") || "not covered by the history");
+        td.colSpan = 5;
+        td.style.whiteSpace = "normal";
+        td.style.color = "var(--mut)";
+        row.appendChild(td);
+        tb.appendChild(row);
+        return;
+      }
+      var nb = get(r, "beat_count", "n_beat", "n_above", "n_wins"), nw = get(r, "n_windows", "n");
+      var share = get(r, "beat_fraction", "share_beat", "beat_share", "fraction_beat", "share_above");
+      if (share === null && nb !== null && nw) share = Number(nb) / Number(nw);
+      row.appendChild(el("td", "num", int(nw)));
+      row.appendChild(el("td", "num", num(get(r, "n_independent_windows", "n_independent"), 1)));
+      row.appendChild(el("td", "num", int(nb)));
+      row.appendChild(el("td", "num", share === null ? "—" : pct(share, 0)));
+      row.appendChild(el("td", "num", spct(get(r, "median_gap", "gap_median"), 1)));
+      tb.appendChild(row);
+    });
+    t.appendChild(tb); scroll.appendChild(t); card.appendChild(scroll);
+    card.appendChild(el("div", "note",
+      "Consecutive windows share almost all of their days. The count is a description of this " +
+      "history, not a sample of independent trials, and a share near one half is what a book " +
+      "tracking its index looks like."));
+    return card;
+  }
+
+  /* --- what was read, and what was dropped ------------------------ */
+  function holdingsCard(d) {
+    var entries = arr(get(d, "holdings.entries", "entries", "weights_rows"));
+    var tickers = arr(get(d, "tickers", "panel.tickers", "holdings.symbols"));
+    var probs = arr(get(d, "problems", "holdings.unreadable", "unreadable"));
+    var excl = arr(get(d, "excluded", "panel.excluded", "exclusions", "panel.exclusions"));
+    var cov = get(d, "coverage", "panel.coverage");
+    if (!entries.length && !tickers.length && !probs.length && !excl.length &&
+        !arr(get(d, "resolutions", "panel.resolutions")).length) return null;
+
+    var card = el("section", "card");
+    card.appendChild(el("h2", null, "What was read"));
+    card.appendChild(el("h3", null, "Every line accounted for, including the ones that were dropped"));
+
+    var resolutions = arr(get(d, "resolutions", "panel.resolutions"));
+    if (resolutions.length) {
+      card.appendChild(el("div", "note", "What each typed symbol was resolved to:"));
+      var rl = el("div", "lines");
+      resolutions.forEach(function (r) {
+        var line = (get(r, "typed") || "?") + "  \u2192  " + (get(r, "resolved") || "?") +
+          "  " + (get(r, "currency") || "") + (get(r, "note") ? "  \u2014 " + get(r, "note") : "");
+        rl.appendChild(el("span", "l", line));
+      });
+      card.appendChild(rl);
+    } else if (tickers.length) {
+      card.appendChild(el("div", "lines", tickers.join("  ")));
+    }
+    if (probs.length) {
+      card.appendChild(el("div", "note", "Could not be read:"));
+      var u1 = el("ul", "plain");
+      probs.forEach(function (p) {
+        u1.appendChild(el("li", null, typeof p === "string" ? p : ((get(p, "raw", "line") || "?") + " — " + (get(p, "reason", "why") || "unreadable"))));
+      });
+      card.appendChild(u1);
+    }
+    if (excl.length) {
+      card.appendChild(el("div", "note", "Read, then left out of the panel:"));
+      var u2 = el("ul", "plain");
+      excl.forEach(function (e) {
+        u2.appendChild(el("li", null, typeof e === "string" ? e : ((get(e, "symbol", "ticker") || "?") + " — " + (get(e, "reason", "why") || "excluded"))));
+      });
+      card.appendChild(u2);
+      card.appendChild(el("div", "note",
+        excl.length + (excl.length === 1 ? " holding was" : " holdings were") +
+        " left out, and a holding left out is a holding absent from every number above \u2014 " +
+        "including the headline."));
+    }
+    var assumptions = arr(get(d, "assumptions", "panel.assumptions"));
+    if (assumptions.length) {
+      card.appendChild(el("div", "note", "Assumptions made while reading this paste:"));
+      var ua = el("ul", "plain");
+      assumptions.forEach(function (a) { ua.appendChild(el("li", null, String(a))); });
+      card.appendChild(ua);
+    }
+    if (cov && typeof cov === "object") {
+      var keys = Object.keys(cov);
+      if (keys.length) {
+        var lost = keys.filter(function (k) { return Number(get(cov[k], "days_lost", "lost")) > 0; });
+        if (lost.length) {
+          card.appendChild(el("div", "note",
+            "Calendars were intersected, so some holdings lost days: " +
+            lost.map(function (k) { return k + " (" + int(get(cov[k], "days_lost", "lost")) + ")"; }).join(", ") + "."));
+        }
+      }
+    }
+    return card;
+  }
+
+  /* --- limits, in full, on the page ------------------------------- */
+  function limitsCard(d, bench, benchWhy, missing) {
+    var card = el("section", "card");
+    card.appendChild(el("h2", null, "Limits"));
+    card.appendChild(el("h3", null, "What this measurement cannot see"));
+
+    var lims = arr(get(d, "limitations"));
+    var surv = get(d, "survivorship");
+    var notes = arr(get(d, "notes"));
+
+    if (surv) card.appendChild(el("p", "note", String(surv)));
+
+    if (lims.length) {
+      var ul = el("ul", "plain");
+      lims.forEach(function (l) { ul.appendChild(el("li", null, String(l))); });
+      card.appendChild(ul);
+    }
+
+    if (bench) {
+      card.appendChild(el("p", "note",
+        "Benchmark: " + bench + (benchWhy ? " — " + benchWhy : "") +
+        ". The benchmark was chosen by the engine from the currencies in your own book and is not " +
+        "overridden here. A price-return index and a total-return one are not interchangeable: " +
+        "comparing a total-return book against a price-return index manufactures outperformance " +
+        "that no one received."));
+    }
+    var others = arr(get(d, "other_benchmarks"));
+    if (others.length) {
+      card.appendChild(el("p", "note",
+        "Other defensible benchmarks for this book: " +
+        others.map(function (o) { return Array.isArray(o) ? o[0] : (get(o, "ticker") || String(o)); }).join(", ") +
+        ". The choice can change the sign of the gap."));
+    }
+
+    if (notes.length) {
+      var u2 = el("ul", "plain");
+      notes.forEach(function (n) { u2.appendChild(el("li", null, String(n))); });
+      card.appendChild(u2);
+    }
+
+    if (missing.length) {
+      card.appendChild(el("div", "uncomputed",
+        "This page asked for, and did not receive, " + missing.join("; ") +
+        ". What is above is everything that did come back — the gaps are named rather than " +
+        "quietly left blank."));
+    }
+
+    card.appendChild(el("p", "note",
+      "Arithmetic about a stated basket over a stated window. Not advice, not a forecast, and " +
+      "not a statement of what you earned. Your holdings were not stored."));
+    return card;
+  }
+
+  function rawCard(d) {
+    var text = get(d, "text", "render", "report", "rendered", "report_text");
+    if (!text) return null;
+    var card = el("section", "card");
+    card.appendChild(el("h2", null, "The long form"));
+    card.appendChild(el("h3", null, "The full report, exactly as the engine wrote it"));
+    card.appendChild(el("p", "note",
+      "Nothing above is left out of this, and nothing here is left out above. It is the same " +
+      "computation, printed in full, for anyone who would rather read all of it."));
+    var det = el("details");
+    det.appendChild(el("summary", null, "Open the full report (" + String(text).length.toLocaleString() + " characters)"));
+    det.appendChild(rawBlock(String(text)));
+    card.appendChild(det);
+    return card;
+  }
+
+  /* ------------------------------------------------------------------ *
+   * Wiring
+   * ------------------------------------------------------------------ */
+  form.addEventListener("submit", function (e) {
+    e.preventDefault();
+    submit(ta.value);
+  });
+  $("useExample").addEventListener("click", function () {
+    ta.value = EXAMPLE;
+    submit(EXAMPLE);
+  });
+  $("clear").addEventListener("click", function () {
+    ta.value = "";
+    clearState();
+    ta.focus();
+  });
+  // Cmd/Ctrl+Enter from inside the textarea, which is where hands already are.
+  ta.addEventListener("keydown", function (e) {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); submit(ta.value); }
+  });
+})();
+</script>
+</body>
+</html>

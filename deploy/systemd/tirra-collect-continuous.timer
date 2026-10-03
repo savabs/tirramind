@@ -1,0 +1,144 @@
+[Unit]
+Description=Run tirra-collect.service at weekends (Sat/Sun 18:00 UTC) — the weekend half of 7-day collection
+
+[Timer]
+# WEEKEND HALF OF A 7-DAY SPLIT. tirra-collect.timer / tirra-chain.timer run
+# Mon..Fri 18:00 UTC, which is the right cadence for the market-hours sources
+# that dominate daily_collection — CFTC (COT, Friday release), FINRA short
+# volume, instrument_universe closes, options_chain. None of them publish at
+# the weekend.
+#
+# It is the wrong cadence for the *continuous, time-gated* sources sitting in
+# the same DAG: ais_vessel, whale_alert, dns_monitor, cert_transparency,
+# finra_short_volume, form144, political_risk, academic_preprints,
+# regulatory_gazette, bankruptcy_court, options_chain, global_pmi — the twelve
+# entries in scripts/check_freshness.py's TIME_GATED set. Their upstream APIs
+# serve a rolling recent window only: a live AIS position, a CT log tail, a DNS
+# answer, a daily short-volume file that ages out. A day not collected is a day
+# that cannot be bought back at any price. Weekday-only collection was silently
+# discarding two of every seven days — ~28% — of the only data in this project
+# that is not re-buyable. That data is the moat.
+#
+# Why this starts the WHOLE DAG instead of just the time-gated nodes:
+# daily_collection cannot be invoked for a subset of its nodes. DAGExecutor.execute()
+# (agent/pipeline/executor.py) takes only (dag, trigger); scripts/run_collection.py
+# exposes --db-path/--workers/--dag and nothing finer; scripts/run_chain.py's
+# --only selects whole DAGs, not nodes. The one node-level lever that exists,
+# DAGNode.enabled (agent/pipeline/dag.py:39), is set programmatically by the
+# ToolRoutingBandit inside build_daily_collection_dag() and no CLI reaches it.
+# So the choice was "run the whole DAG at the weekend" or "pass a flag that does
+# not exist". This runs the whole DAG.
+#
+# WHAT THE EXTRA WEEKEND RUN COSTS, measured rather than assumed. An earlier
+# version of this comment claimed the weekday sources would dedup away and cost
+# "network time, not rows and not DB growth". That is false for two of them:
+#
+#   - instrument_universe stamps observed_at with the RUN date, not the bar
+#     date: `observed_at = time.mktime(as_of.timetuple())` with `as_of` defaulting
+#     to `date.today()` (agent/tools/instrument_universe.py:879, :907), written
+#     for instrument_return / instrument_volume / instrument_volatility. There is
+#     no trading-day guard in the file. The dedup key is
+#     (entity_id, source_tool, observation_type, observed_at, value_json)
+#     (agent/pipeline/store.py:1469-1479), so a new observed_at is always a new
+#     row — dedup cannot collapse it.
+#   - options_chain has the same shape: persist_options_snapshot falls back to
+#     time.time() (agent/tools/options_chain.py:129) and ingest_options_chains
+#     passes no observed_at (:210), while summary["fetched_at"] is set to today's
+#     date (:105), so value_json differs daily too.
+#
+# Read-only against the live DB, 2026-09-14..09-21: instrument_universe wrote 89
+# rows on each weekday run and exactly 2 on each weekend day (the crypto pairs,
+# which go through the bar-dated path and are genuinely weekend-traded). So a
+# weekend run adds ~87 rows per day carrying FRIDAY's close stamped Saturday or
+# Sunday, plus ~8-32 options_chain rows with the same defect. That is fabricated
+# provenance, and a Layer 2 consumer reading instrument_return will see Friday's
+# return repeated three times.
+#
+# It is still worth enabling, on an asymmetry: those fabricated rows are
+# identifiable and deletable (instrument_universe rows whose observed_at falls
+# on a Saturday or Sunday), while a missed AIS/CT/DNS window is gone at any
+# price. Fix the provenance at the collector — pass the quote date into
+# persist_options_snapshot, use the bar's own date instead of as_of=date.today()
+# — and the cost goes to zero. Until then the cost is real and stated, not
+# assumed away.
+#
+# CFTC is safe by contrast: agent/tools/cftc.py:640 derives observed_at from
+# report_date, and its rows land only on the days COT actually publishes.
+#
+# Why Sat,Sun rather than OnCalendar=*-*-* 18:00 (a literal daily timer):
+# the weekday slot is already collecting at 18:00 UTC, and a daily timer would
+# fire a second collection run into the middle of the weekday run — two
+# concurrent writers on .tirra_pipeline/pipeline.db, the single irreplaceable
+# asset in this deployment. Sat,Sun plus the existing Mon..Fri gives one
+# collection run per calendar day *in steady state*.
+#
+# "In steady state" is the honest limit of that claim, and NOTHING IN THIS REPO
+# ENFORCES IT. grep for flock/LOCK_EX/Conflicts= across scripts/run_collection.py,
+# scripts/run_chain.py, scripts/run_scheduled.sh and deploy/systemd/ returns
+# nothing; PipelineStore's only write guard is a threading.RLock (store.py:486),
+# in-process only, and store.py:1481-1486 says so outright — "does not make it
+# atomic across processes; only a UNIQUE index will" — while the live table has
+# no UNIQUE index. A second concurrent run also corrupts the executor's own
+# zero-rows guard: DagRun captures domain_rows_before at executor.py:225 and
+# diffs it afterwards (:133-140), so another run's inserts let a run that wrote
+# nothing report rows landed. That is the exact green-but-empty signature this
+# repo is trying to kill.
+#
+# Two follow-ups close it properly, and both live in files this timer does not
+# own: wrap the collect/chain branches of scripts/run_scheduled.sh in
+# `flock -n /opt/tirramind/.tirra_pipeline/.collect.lock`, and/or add
+# `Conflicts=tirra-chain.service` to tirra-collect.service.
+#
+# NO Persistent= HERE, deliberately, and this is the one thing in this file that
+# is a safety property rather than a preference. tirra-chain.timer carries
+# Persistent=true and triggers a DIFFERENT unit (tirra-chain.service), so after
+# downtime spanning a weekday slot and a weekend slot, systemd queues both
+# catch-up jobs in the same boot transaction. systemd serialises starts of the
+# same unit, not of two units — the collect-only deployment is safe only by
+# accident, because tirra-collect.timer and this timer share Unit=. With
+# Persistent=true here, a Monday boot after a Friday-through-Sunday outage would
+# put two daily_collection processes into the live WAL database simultaneously,
+# with no lock anywhere to stop them.
+#
+# The catch-up buys almost nothing to pay for that. The time-gated sources are
+# point-in-time probes: a catch-up run on Monday fetches MONDAY's vessel
+# position, CT log tail and DNS answer — the same window Monday's scheduled run
+# fetches. It does not recover Saturday. Once the flock above exists, restore
+# Persistent=true; until then the missed weekend run stays missed.
+#
+# Why 18:00 UTC, the same clock time as the weekday run: the time-gated sources
+# are point-in-time probes. Sampling them at an even 24h spacing keeps the
+# series comparable; an irregular interval resurfaces downstream as a spurious
+# regime change.
+#
+# NOTE, do not repeat the earlier version's claim that this cadence "keeps
+# COLLECTOR_SILENCE_DAYS=4 honest". It does the opposite. That constant's own
+# docstring in scripts/check_freshness.py derives 4.0 from weekday-only
+# collection — "a Friday run followed by a Monday run is 3 days apart; 4 allows
+# one missed run on top of a weekend" — and the CADENCE_DAYS floors carry the
+# same premise ("weekdays only, so any daily source must tolerate a weekend:
+# 3 days minimum, never 1"). Under 7-day collection, 4 days of silence
+# is four consecutive failed runs, where two would already be conclusive. The
+# retune belongs in check_freshness.py, not here.
+#
+# Unit= points at the existing tirra-collect.service rather than duplicating its
+# ExecStart, so "how collection runs" stays defined in exactly one file — and
+# this timer works whether you enabled tirra-chain.timer or tirra-collect.timer
+# for weekdays. On Sat/Sun only collection runs; no downstream DAG does. That is
+# deliberate: the weekend job exists to capture perishable rows, and Monday's
+# chain processes everything that accumulated.
+#
+# MEMORY: tirra-collect.service carries no MemoryMax/MemorySwapMax, while
+# tirra-chain.service:37-41 caps itself at 1200M/1500M with a measured rationale
+# (2026-08-27: 84% RSS, 1.24 GB swap on a 1 vCPU / 1.9 GB box; "a process
+# OOM-killed mid-DAG leaves a run stuck in 'running' with no error recorded").
+# A README-following deployment runs tirra-chain on weekdays, so
+# tirra-collect.service never ran before this timer existed and now runs twice a
+# week uncapped. Copy that pair onto tirra-collect.service — daily_collection is
+# a strict subset of the chain's workload, so the same ceiling is headroom, not
+# a constraint. That edit belongs to tirra-collect.service.
+OnCalendar=Sat,Sun 18:00 UTC
+Unit=tirra-collect.service
+
+[Install]
+WantedBy=timers.target

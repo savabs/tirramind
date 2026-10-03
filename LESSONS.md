@@ -665,3 +665,282 @@ job's real peak, measured — not assumed.
 - **Hurst Exponent Estimation:** The quadratic log-increment regression method (slope of $\log E[(\Delta\log\sigma)^2]$ vs $\log(\Delta t)$ equals $2H$) provides a robust, differentiable estimator suitable for feature engineering pipelines.
 
 **Test Results:** 3/3 pass. Cover rBergomi parameter clamping, Hurst exponent estimation on simulated rough paths, and ATM skew power-law signature validation.
+
+---
+
+### F-14 · A Correct Fix Nobody Called — `build_from_cached(until=None)`
+*Discovered: 2026-09-23, graph connectivity audit*
+
+**Symptom:** F-04 was recorded, fixed, and unit-tested. The test suite was green.
+Every historical training snapshot and every Phase-40 IC strategy was still
+receiving the **complete present-day link set** — including 2023 windows seeing
+2026 edges.
+
+**Root Cause:** The fix was real but unreachable. `_links_as_of()` was correct.
+`build()` passed `until` correctly. `build_from_cached()` — the path the
+*training loop* and *all IC strategies* actually use — also called
+`_links_as_of(links, until)` correctly. But `until` carried a default of `None`,
+which the function documents as "live/current, everything in scope", and **all
+13 production call sites omitted the argument.**
+
+The leak therefore lived in the *call*, not the filter. The existing regression
+tests (`TestLinkFutureBlindness`) exercised `_links_as_of` as a pure function,
+where it had always behaved correctly. No test asserted that any caller passed a
+real `until`. A green suite proved only that the unused half worked.
+
+**Fix:** `until` is now a **required keyword-only parameter** with no default —
+omitting it raises `TypeError` instead of silently leaking. All 13 call sites
+pass their window/fold end (`_t_end_snap`, `last_t_end`, `t_end`, `fold_ts`,
+`as_of_ts`). `until=None` remains legal but must now be written out explicitly.
+
+Two new test classes in `tests/test_graph_builder.py`:
+`TestBuildFromCachedIsTimeGated` (integration — a link created at t=9000 must be
+absent from a snapshot ending at t=2000, and present once the window reaches it)
+and `TestEveryCallSitePassesUntil` (an AST walk over `agent/` and `scripts/`
+that fails CI if any new call site omits `until`).
+
+**Prevention Rule:**
+- **A safety parameter must never have a permissive default.** If forgetting an
+  argument silently disables the guard, the guard is opt-in and will be off.
+  Make it required; let the `TypeError` do the enforcement.
+- **Unit-testing a guard function is not testing the guard.** For anything that
+  prevents leakage, at least one test must assert on the *integration* — the
+  real caller, the real build, the real absence of the future edge.
+- When a fuckup is recorded as fixed, verify a caller actually reaches the fix:
+  `grep` every call site before closing it out. F-04 sat "fixed" for four weeks
+  while fully open on the only path that mattered.
+- Never restore a default to `GraphBuilder.build_from_cached(until=...)`.
+
+---
+
+### F-15 · The Anti-Collapse Loss Was Causing the Collapse
+*Discovered: 2026-09-23, post-merge smoke run*
+
+**Symptom:** `[GRAD_FLOW]` reported `contrastive: 0.2291` **byte-identical across
+every epoch**, with `eff_rank=1.2` out of 64 embedding dimensions and
+`pred_std == raw_std` exactly — the GNN branch of the concat head contributing
+nothing. The F-01 diversity gate passed the whole time (`emb_std=1.86 > 0.1`).
+
+**Root Cause:** TWO defects in `_cross_sectional_ranking_contrastive` (CSRC) —
+the loss written specifically to PREVENT F-01 embedding collapse.
+
+1. **The deciles were not return deciles.**
+   ```python
+   sorted_tgt, _ = tgt.sort()          # permutation discarded into `_`
+   ...
+   decile_assignments[start:end] = d   # partitions the ORIGINAL row order
+   ```
+   `sorted_tgt` was computed and then never used anywhere in the function. The
+   deciles were assigned by *position in the observation list*, so "same return
+   decile" actually meant "arrived near each other in the batch". The loss was
+   training the backbone to cluster embeddings by arrival order — noise. This is
+   the F-01 condition (no true negatives) reintroduced by the very loss that
+   replaced the entity-identity contrastive to fix F-01.
+
+2. **The InfoNCE mask was applied before the exponential.**
+   ```python
+   pos_exp = (sim * pos_mask).exp()    # excluded cells -> exp(0) = 1
+   ```
+   Every excluded pair contributed a spurious `1.0` to both numerator and
+   denominator. Across a real cross-section (~89 instruments) that constant
+   dominated the genuine similarities, pinning the ratio — hence a loss that
+   never moved between epochs.
+
+**Fix:** scatter deciles through the sort permutation
+(`decile_assignments[sort_idx[start:end]] = d`), and mask after exponentiating
+(`(sim.exp() * mask).sum(...)`, with a row-max subtraction for stability that
+cancels in the ratio).
+
+**Prevention Rule:**
+- **A loss term whose value does not change between epochs is not converged, it
+  is disconnected.** Treat a constant loss as a P0 bug. Log every loss component
+  per epoch and diff them — identical to 4 decimal places is the tell.
+- **An unused sort result is a red flag.** `x, _ = t.sort()` followed by no use
+  of `x` means the ordering was computed and thrown away; whatever consumes the
+  "ranks" is almost certainly indexing the wrong axis. Lint for assigned-and-
+  never-read tensors in loss code.
+- **Mask after `exp`, never before.** `(x * mask).exp()` silently turns every
+  masked cell into 1. The correct form is `x.exp() * mask`.
+- **Judge collapse by effective rank, not by standard deviation.** `emb_std` is
+  a magnitude and passes happily at 6403 while `eff_rank` is 1.2 of 64. The
+  F-01 gate (`std > 0.1`) cannot detect directional collapse; it must be
+  replaced or supplemented with an `eff_rank` threshold.
+- **Every loss component needs a test that pins its semantics against an
+  independent reference implementation.** CSRC shipped with none, which is why
+  two defects survived in the one function most responsible for model quality.
+
+---
+
+### F-16 · A Transient 5xx Was Silently Truncating 72% of Every EDGAR Window
+
+**Symptom.** `form144` had 4,350 observations across 950 entities — 4 per
+entity — and looked like a low-volume source. It is not. EDGAR publishes
+roughly 110 Form 144 filings *per day*.
+
+**Discovery.** Attempting a historical backfill, a 3-day window
+(2026-03-18..2026-03-20) returned 99 rows. Queried directly, EDGAR reported
+**360 filings** for exactly that window. The collector had reported
+`success=True`.
+
+**Root cause — two independent defects stacked.**
+
+1. **`end_dt` was hardcoded to `date.today()`.** EDGAR full-text search returns
+   newest-first, so a larger `days_back` re-read the same recent page instead
+   of reaching further back. Backfill was not merely unused, it was
+   *inexpressible*: there was no parameter that could move the window. A
+   `_backfill=True` hatch existed and removed the day-count clamp, which made
+   the API look backfillable while the ceiling stayed put.
+
+2. **A transient 5xx ended pagination and returned the partial page as
+   success:**
+   ```python
+   if hasattr(exc, "response") and exc.response.status_code >= 500:
+       log.warning("SEC server error at offset %d, returning %d hits", ...)
+       break                      # <-- returns 100 of 360, success=True
+   ```
+   EDGAR answers 5xx intermittently under load. Re-requesting the same offset
+   seconds later succeeds — verified directly: `from=200` on the same window
+   returned a full page on retry.
+
+**Why it survived.** A truncated window and a quiet window are identical from
+the row count alone. Nothing compared collected hits against the `total` EDGAR
+itself reports in every response — the ground truth was in the payload the
+whole time and was never read.
+
+**Fix.** One shared paginator (`agent/tools/_sec_window.py`) for both SEC
+collectors: retry transient 5xx/429 at the *same* offset with backoff, and
+raise `EdgarTruncated` when collected < reported total. `end_date` is now an
+`execute()` parameter, clamped to today (a future end date is F-04's shape).
+Verified: the same window went 99 → 360.
+
+**Prevention Rule:**
+- **If an API tells you how many results exist, compare against it and fail
+  loudly on a shortfall.** `hits.total.value` was in every response. An
+  unverified page count is not data, it is a guess.
+- **Never `break` out of a retry loop on a transient status.** A retryable
+  error handled by returning early converts a 2-second delay into permanent
+  silent data loss. If you cannot retry, raise — never return partial as whole.
+- **A "backfill" flag that relaxes a clamp but not the ceiling is worse than no
+  flag**, because it advertises a capability that does not exist. Test that a
+  backfill path actually reaches data older than what you already hold.
+- **Suspiciously low volume from a high-volume public source is a bug report.**
+  4 filings per entity from SEC EDGAR should have been disbelieved on sight.
+  Sanity-check observed volume against the publisher's actual rate before
+  concluding a source is thin.
+
+---
+
+### F-17 · A Loss With No Target Was 99.3% of the Objective and Starved Everything Else
+
+**Symptom.** A from-scratch retrain on the freshly repaired graph collapsed:
+`eff_rank` 2.6–3.5 of 64 for all twenty epochs, never improving, while the loss
+curve looked like it was converging. The trainer's own collapse detector fired
+every epoch: *"The CSRC loss is not differentiating instruments."*
+
+**The tell.** One loss column reproduced **bit-for-bit across non-adjacent
+epochs** — `2896.2482` at 12, 13, 14 and 18. Pulled at full precision from the
+checkpoints, its relative spread across those epochs was `2.65e-08`, against
+`1.15e-02` for `time_delta`. The weights were demonstrably moving; that term
+was **433,488× less sensitive to them.**
+
+**Root cause — three defects compounding.**
+
+1. **The target was identically zero for 100% of training samples.**
+   `_compute_targets` only extracts a magnitude when an observation carries one
+   of `usd_amount / btc_amount / value / estimated_value / goldstein_scale /
+   num_articles`. Of the **122,806** observations inside the calendar train
+   range, **zero** carry any of them. The only source with real magnitudes
+   (`petroleum_inventory`, 652 rows holding 99.99% of all value mass) is dated
+   *entirely inside the test split*. So `huber_loss(pred, 0.0)` was never a
+   prediction task — it reduced to an L1 penalty on the head's own output.
+
+2. **~88% of it was clamp-saturated, where the gradient is exactly zero.**
+   With `emb_std` at 1e5–1e7 the head's pre-clamp output saturated
+   `.clamp(-1e4, 1e4)`; each saturated sample contributed a fixed `9999.5` and
+   **no gradient**. The loss was therefore a quantised `k/N × 9999.5` where `k`
+   is an integer sample count — which is why it landed on identical plateaus.
+   **Not detached. Clamp-saturated. Observationally identical, and F-15's rule
+   fires on it in a form nobody had logged.**
+
+3. **It drowned the anti-collapse loss.** Loss decomposition at epoch 12:
+   value 99.308%, time_delta 0.338%, return 0.323%, **contrastive 0.022%**,
+   obs_type 0.008%. Per-task gradient norms into the shared backbone measured
+   50,820–96,577 for `value` against 0.37–0.59 for CSRC — roughly **63,000:1**.
+   `clip_grad_norm_(1.0)` then rescaled the summed gradient (norm ≈1.5e4) down
+   to 1.0, leaving CSRC an effective norm of **~1.6e-5**. CSRC was not broken —
+   F-15 had fixed it. It was **starved**.
+
+**Fix.** `value_weight = 0.0`, plus `DeadTargetError` raised when every target
+in a window is exactly zero.
+
+**Prevention Rule:**
+- **A constant target is not a hard task, it is an absent one.** Before training
+  any supervised head, assert its target actually varies *within the training
+  split* — not merely within the database. Coverage concentrated in the test
+  split is worse than no coverage, because it passes a naive whole-DB check.
+- **Log every loss term's share of the total, and its gradient-norm share,
+  every epoch.** A term at 99% of the objective is a bug report regardless of
+  whether it is falling. Convergence of the sum tells you nothing about which
+  term owns it.
+- **A `clamp` inside a loss is a gradient cliff.** Track the fraction of samples
+  sitting at a clamp boundary; anything above a few percent means that share of
+  the batch contributes no gradient at all, and the loss becomes a step
+  function of a sample count.
+- **Gradient clipping converts a dominant term into a silencer.** `clip_grad_norm_`
+  rescales the *summed* gradient, so one oversized term does not merely
+  out-vote the others — it shrinks them toward zero. Check per-task gradient
+  norms before clipping, not just the total.
+- **Extend F-15: a loss constant to ~1e-8 relative across epochs is
+  disconnected in effect** — whether by detach, by constant target, or by
+  saturation. Diff loss history at full precision, never from the rounded table.
+
+---
+
+### F-18 · I Ranked a Frozen Model First For Having a Good Random Initialisation
+
+**Symptom.** A five-way parallel sweep to fix the eff_rank collapse. `E_combined`
+(vicreg + contranorm + log_loss) reported `eff_rank=10.6` against a control of
+`6.3` and was written up as the winner — *"+68% rank, 6× lower magnitude"* — and
+that recommendation reached a commit message.
+
+**It was not training.**
+
+```
+E_combined    in_sample_ic  -0.0149, -0.0149, -0.0149, -0.0149
+              eff_rank       10.6, 10.6, 10.6, 10.6
+              emb_std        206020.8750 × 4
+C_contranorm  in_sample_ic  -0.0601, -0.0308, -0.0583, -0.0482
+              eff_rank       11.4, 8.5, 11.5, 8.3
+```
+
+Identical to every decimal across all four epochs. The flag combination froze
+the gradient path; `10.6` was its random initialisation, not a result. The one
+config that genuinely helps is `C_contranorm` — and only to ~11.5 of 64, still
+far below the 25% threshold.
+
+**Root cause of the mistake, which is the point of this entry.** F-15 and F-17
+both already say it: *a value identical across epochs is not converged, it is
+disconnected.* F-17 was diagnosed **eight hours before this sweep**, by this same
+process, and recorded that rule. Then a favourable number appeared and nobody
+asked whether it had moved.
+
+The failure is not in the code. It is that **a good number ends the
+investigation and a bad number continues it.** Every instance in this log has
+the same shape — F-02 (GNN bypass), F-15 (constant contrastive loss), F-17
+(clamp-saturated value loss), and now this. Three of the four were caught only
+because something *else* looked wrong first.
+
+**Prevention Rule:**
+- **Before reporting any metric as an improvement, print its full per-epoch
+  series and confirm it varies.** A single favourable value is not a result. Two
+  identical values are a bug report. This costs one line and has now caught four
+  separate defects.
+- **A control arm is not optional.** Here the control was the only reason the
+  frozen arm was detectable at all — without `A_control` to compare epoch-wise
+  behaviour against, `10.6` would simply have looked good.
+- **Diff at full precision, never from a rounded table.** F-17's smoking gun was
+  `2.65e-08` relative movement that printed as an unchanging `2896.2482`.
+- **Suspicion must be symmetric.** Apply the same scrutiny to results that
+  confirm the hypothesis as to results that refute it. Every entry in this log
+  was found by doubting a *bad* number; the frozen arm survived because its
+  number was *good*.

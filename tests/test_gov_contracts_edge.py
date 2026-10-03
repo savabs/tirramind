@@ -157,7 +157,18 @@ class TestRecentMode:
         with patch.object(GovContractsTool, "_post_json", return_value=SAMPLE_AWARDS_RESPONSE) as mock:
             r = _tool().execute(mode="recent")
             call_payload = mock.call_args[0][1]
-            assert call_payload["sort"] == "Start Date"
+            # Was: assert sort == "Start Date". That was wrong, and it was the
+            # bug that produced the future-dated rows. "Start Date" is the
+            # period-of-performance start, so sorting it descending returns the
+            # awards whose work begins furthest in the FUTURE — the exact
+            # opposite of "most recent". "Base Obligation Date" is when the
+            # award action was obligated, i.e. when the award became a public
+            # fact, which is what "recent" means here and what observed_at is
+            # stamped from.
+            assert call_payload["sort"] == "Base Obligation Date"
+            assert call_payload["sort"] != "Start Date"
+            # USASpending rejects a sort field that is not also requested.
+            assert call_payload["sort"] in _FIELDS
             assert call_payload["order"] == "desc"
 
     def test_recent_default_dates(self):
@@ -393,7 +404,7 @@ class TestConstants:
         assert {"recent", "top", "agency", "search"} == VALID_MODES
 
     def test_contract_codes(self):
-        assert ["A", "B", "C", "D"] == _CONTRACT_CODES
+        assert _CONTRACT_CODES == ["A", "B", "C", "D"]
 
     def test_fields_nonempty(self):
         assert len(_FIELDS) >= 5

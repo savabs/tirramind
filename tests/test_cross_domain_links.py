@@ -11,7 +11,13 @@ import time
 
 import pytest
 
-from agent.models.gnn.graph_builder import ENTITY_TYPES, OBSERVATION_TYPES, GraphBuilder
+from agent.models.gnn.graph_builder import (
+    ENTITY_TYPES,
+    OBSERVATION_TYPES,
+    REVERSE_RELATION_PREFIX,
+    GraphBuilder,
+    reverse_relation,
+)
 from agent.pipeline.entity import entity_id_from_key
 from agent.pipeline.store import PipelineStore
 
@@ -298,11 +304,37 @@ class TestMultiDomainGraph:
         assert total == 7
 
     def test_total_edge_count(self, rich_store):
-        """Should have 3 explicit links."""
+        """3 explicit links, each mirrored by a rev_ inverse -> 6 edges."""
         builder = GraphBuilder(rich_store)
         data, _, _ = builder.build()
+
+        forward = [et for et in data.edge_types if not et[1].startswith(REVERSE_RELATION_PREFIX)]
+        reverse = [et for et in data.edge_types if et[1].startswith(REVERSE_RELATION_PREFIX)]
+
+        fwd_total = sum(data[et].edge_index.size(1) for et in forward)
+        rev_total = sum(data[et].edge_index.size(1) for et in reverse)
         total = sum(data[et].edge_index.size(1) for et in data.edge_types)
-        assert total == 3
+
+        # The three links written by the fixture, unchanged.
+        assert fwd_total == 3
+        # Was `assert total == 3`, written when the builder emitted forward
+        # edges only. That was wrong: HGT passes messages src -> dst, so a
+        # link pointing out of an instrument could never deliver gradient back
+        # to it, and whole entity types contributed nothing. _build_edge_data
+        # now emits a rev_<link_type> inverse per relation, so every explicit
+        # link is expected to appear exactly twice.
+        assert rev_total == 3
+        assert total == 6
+
+        # Each forward relation has exactly one inverse, flipped, same size.
+        for src_type, rel, dst_type in forward:
+            rev_et = (dst_type, reverse_relation(rel), src_type)
+            assert rev_et in data.edge_types, f"missing inverse for {rel}"
+            fwd_idx = data[(src_type, rel, dst_type)].edge_index
+            rev_idx = data[rev_et].edge_index
+            assert rev_idx.size(1) == fwd_idx.size(1)
+            assert rev_idx[0].tolist() == fwd_idx[1].tolist()
+            assert rev_idx[1].tolist() == fwd_idx[0].tolist()
 
     def test_event_count(self, rich_store):
         """Should have 5 observations total (2 instrument + 1 CFTC + 1 poly + 1 whale)."""

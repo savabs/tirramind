@@ -47,6 +47,55 @@ log = logging.getLogger(__name__)
 
 
 # ═══════════════════════════════════════════════════════════════
+# Event → entity-type resolution (memory update input contract)
+# ═══════════════════════════════════════════════════════════════
+#
+# Observation dicts produced by PipelineStore._entity_obs_row_to_dict carry
+# the `entity_observations` columns only — there is no `entity_type` key.
+# `update_memory_from_events` used to read `ev["entity_type"]` and `continue`
+# on every row, so HeteroMemory was never written in any checkpoint ever
+# produced.  The entity type is resolved from the IDMap instead, which already
+# knows the type of every node in the graph, so no caller has to supply it.
+
+_MEMORY_STAT_COUNTERS: tuple[str, ...] = (
+    "events_in",  # events handed to update_memory_from_events
+    "resolved",  # events whose entity_type could be resolved
+    "applied",  # events actually written into the memory buffer (GRU path)
+    "missing_entity_id",  # event carried no entity_id at all
+    "unknown_entity_id",  # entity_id is not in the IDMap
+    "ambiguous_entity_id",  # entity_id registered under >1 entity_type
+    "type_disagreement",  # event's own entity_type contradicted the IDMap
+    "type_not_in_embeddings",  # resolved type absent from the forward() output
+    "node_not_in_graph",  # no global/local id for (type, id)
+    "local_index_out_of_range",  # local index past the embedding tensor
+    "memory_row_out_of_range",  # global id past the allocated memory buffer
+)
+
+
+def _entity_type_index(id_map: IDMap) -> tuple[dict[str, str], set[str]]:
+    """Build ``entity_id → entity_type`` from an IDMap.
+
+    Entity IDs are globally unique in the store (6,110 entities, 6,110 distinct
+    IDs), but that is a property of the data, not an enforced constraint — so
+    any ID seen under two types is reported as ambiguous rather than resolved
+    to an arbitrary one.
+
+    Returns:
+        (index, ambiguous_ids).  IDs in *ambiguous_ids* are also present in
+        *index* (holding whichever type was seen first) but must not be used.
+    """
+    index: dict[str, str] = {}
+    ambiguous: set[str] = set()
+    for etype, eid in id_map.typed_to_global:
+        previous = index.get(eid)
+        if previous is None:
+            index[eid] = etype
+        elif previous != etype:
+            ambiguous.add(eid)
+    return index, ambiguous
+
+
+# ═══════════════════════════════════════════════════════════════
 # AttentionCapturingHGTConv
 # ═══════════════════════════════════════════════════════════════
 
@@ -90,9 +139,7 @@ class AttentionCapturingHGTConv(HGTConv):
     ) -> dict[str, torch.Tensor | None]:
         if self.capture_attention:
             self._fwd_edge_types = list(edge_index_dict.keys())
-            self._fwd_edge_counts = [
-                edge_index_dict[et].size(1) for et in self._fwd_edge_types
-            ]
+            self._fwd_edge_counts = [edge_index_dict[et].size(1) for et in self._fwd_edge_types]
             self._captured_alpha = None
         return super().forward(x_dict, edge_index_dict)
 
@@ -189,10 +236,7 @@ class ContraNorm(nn.Module):
             self.running_mean = batch_mean.detach().clone()
         else:
             with torch.no_grad():
-                self.running_mean = (
-                    self.momentum * self.running_mean
-                    + (1.0 - self.momentum) * batch_mean.detach()
-                )
+                self.running_mean = self.momentum * self.running_mean + (1.0 - self.momentum) * batch_mean.detach()
 
         # Contrastive uniformity term: push away from running mean
         # This implicitly shatters representations, preventing dimensional collapse
@@ -255,9 +299,7 @@ class HeteroMemory(nn.Module):
         """
         if new_num_nodes <= self.num_nodes:
             return
-        new_memory = torch.zeros(
-            new_num_nodes, self.memory_dim, device=self.memory.device
-        )
+        new_memory = torch.zeros(new_num_nodes, self.memory_dim, device=self.memory.device)
         new_memory[: self.num_nodes] = self.memory
         new_last = torch.zeros(new_num_nodes, device=self.last_update.device)
         new_last[: self.num_nodes] = self.last_update
@@ -301,9 +343,24 @@ class HeteroMemory(nn.Module):
             node_ids:   1-D int tensor of global node IDs, shape (B,).
             messages:   Tensor of shape (B, message_dim).
             timestamps: Tensor of shape (B,) — event times.
+
+        Raises:
+            ValueError: if any node ID is outside ``[0, num_nodes)``.  Writing
+                memory is the one place where an out-of-range ID must never be
+                quietly dropped — a silently skipped write is indistinguishable
+                from a working memory (see the audit finding that every
+                checkpoint carried an all-zero memory buffer).
         """
         if node_ids.numel() == 0:
             return
+
+        if int(node_ids.max().item()) >= self.num_nodes or int(node_ids.min().item()) < 0:
+            raise ValueError(
+                f"HeteroMemory.update_memory received node IDs outside "
+                f"[0, {self.num_nodes}): min={int(node_ids.min().item())}, "
+                f"max={int(node_ids.max().item())}. Resize the memory or filter "
+                f"the events before calling — do not drop them silently."
+            )
 
         # Time delta since previous update
         dt = timestamps - self.last_update[node_ids]
@@ -311,9 +368,7 @@ class HeteroMemory(nn.Module):
         time_feat = self.time_enc(dt)  # (B, time_dim)
 
         # GRU update
-        gru_input = torch.cat(
-            [messages, time_feat], dim=-1
-        )  # (B, message_dim + time_dim)
+        gru_input = torch.cat([messages, time_feat], dim=-1)  # (B, message_dim + time_dim)
         old_mem = self.memory[node_ids]
         new_mem = self.gru(gru_input, old_mem)
 
@@ -598,6 +653,12 @@ class HetTGN(nn.Module):
         # Score(u, v) = σ(u^T W v + b)  →  P(co-occurrence)
         self.supervised_head = SupervisedHead(hidden_dim)
 
+        # ── Memory update diagnostics ─────────────────────────
+        # Populated by every update_memory_from_events() call so a caller can
+        # assert that memory actually received events.  Plain dict: not a
+        # parameter, not a buffer, never enters the state_dict.
+        self.last_memory_stats: dict[str, Any] = self._new_memory_stats()
+
     def forward(
         self,
         data: HeteroData,
@@ -624,9 +685,7 @@ class HetTGN(nn.Module):
             local_map = id_map.type_local.get(ntype, {})
             if local_map:
                 # Build global IDs in local order
-                global_ids = torch.zeros(
-                    len(local_map), dtype=torch.long, device=self.memory.memory.device
-                )
+                global_ids = torch.zeros(len(local_map), dtype=torch.long, device=self.memory.memory.device)
                 for eid, local_idx in local_map.items():
                     gid = id_map.global_id(ntype, eid)
                     if gid is not None:
@@ -664,9 +723,7 @@ class HetTGN(nn.Module):
                 if self.contranorm_layers is not None:
                     for ntype in x_dict:
                         if x_dict[ntype] is not None:
-                            x_dict[ntype] = self.contranorm_layers[layer_idx](
-                                x_dict[ntype]
-                            )
+                            x_dict[ntype] = self.contranorm_layers[layer_idx](x_dict[ntype])
 
         return x_dict
 
@@ -751,6 +808,102 @@ class HetTGN(nn.Module):
         """
         return self.supervised_head(emb_src, emb_dst)
 
+    # ── Memory update input resolution ─────────────────────────
+    @staticmethod
+    def _new_memory_stats() -> dict[str, Any]:
+        stats: dict[str, Any] = {k: 0 for k in _MEMORY_STAT_COUNTERS}
+        stats["path"] = "none"
+        stats["memory_nonzero_rows"] = 0
+        return stats
+
+    def _resolve_event_types(
+        self,
+        events: list[dict[str, Any]],
+        id_map: IDMap,
+        stats: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        """Attach a resolved ``entity_type`` to every event that has one.
+
+        The type comes from the IDMap, not from the event dict — store
+        observation rows have no such column.  An event whose own
+        ``entity_type`` disagrees with the IDMap is counted and the IDMap
+        wins, because the IDMap is what the embedding and memory rows are
+        indexed by.
+
+        Events that cannot be resolved are dropped from the returned list and
+        counted in *stats*; they are never silently discarded.
+        """
+        index, ambiguous = _entity_type_index(id_map)
+        resolved: list[dict[str, Any]] = []
+
+        for ev in events:
+            eid = ev.get("entity_id")
+            if not eid:
+                stats["missing_entity_id"] += 1
+                continue
+            if eid in ambiguous:
+                stats["ambiguous_entity_id"] += 1
+                continue
+
+            etype = index.get(eid)
+            declared = ev.get("entity_type")
+            if etype is None:
+                # Entity is not in this window's graph at all — there is no
+                # memory row to write and no embedding to use as a message.
+                stats["unknown_entity_id"] += 1
+                continue
+            if declared is not None and declared != etype:
+                stats["type_disagreement"] += 1
+
+            stats["resolved"] += 1
+            resolved.append(ev if declared == etype else {**ev, "entity_type": etype})
+
+        return resolved
+
+    def _report_memory_stats(self, stats: dict[str, Any]) -> None:
+        """Surface the outcome of a memory update — loudly when it did nothing.
+
+        "memory received zero usable events" must never look the same as
+        "memory is working".
+        """
+        stats["memory_nonzero_rows"] = int((self.memory.memory.abs().sum(dim=1) > 0).sum().item())
+        dropped = stats["events_in"] - stats["resolved"]
+        breakdown = ", ".join(f"{k}={stats[k]}" for k in _MEMORY_STAT_COUNTERS if stats[k])
+
+        if stats["events_in"] == 0:
+            return
+
+        if stats["path"] == "gru" and stats["applied"] == 0:
+            log.error(
+                "HeteroMemory update applied NOTHING: %d events in, 0 written (%s). Memory nonzero rows: %d.",
+                stats["events_in"],
+                breakdown or "no counters set",
+                stats["memory_nonzero_rows"],
+            )
+        elif stats["resolved"] == 0:
+            log.error(
+                "HeteroMemory update resolved NO entity types: %d events in (%s). Memory nonzero rows: %d.",
+                stats["events_in"],
+                breakdown or "no counters set",
+                stats["memory_nonzero_rows"],
+            )
+        elif dropped or stats["type_disagreement"]:
+            log.warning(
+                "HeteroMemory update dropped %d/%d events (%s). Memory nonzero rows: %d.",
+                dropped,
+                stats["events_in"],
+                breakdown,
+                stats["memory_nonzero_rows"],
+            )
+        else:
+            log.debug(
+                "HeteroMemory update [%s]: %d/%d events applied, memory nonzero rows: %d.",
+                stats["path"],
+                stats["applied"],
+                stats["events_in"],
+                stats["memory_nonzero_rows"],
+            )
+
     def update_memory_from_events(
         self,
         events: list[dict[str, Any]],
@@ -758,7 +911,7 @@ class HetTGN(nn.Module):
         id_map: IDMap,
         t_start: float | None = None,
         t_end: float | None = None,
-    ) -> None:
+    ) -> dict[str, Any]:
         """Push event information into HeteroMemory.
 
         When ``use_cde=True`` and ``t_start``/``t_end`` are provided, delegates
@@ -769,66 +922,92 @@ class HetTGN(nn.Module):
         For each event, take the current embedding of the involved entity
         as the message and update its memory cell.
 
+        The ``entity_type`` of each event is resolved from *id_map*, not read
+        from the event dict — store observation rows have no such column, which
+        is why this method silently updated nothing in every checkpoint ever
+        written.  Events that cannot be resolved or applied are counted and
+        reported; none is dropped without a trace.
+
         Args:
-            events:     Observation dicts with entity_id, entity_type,
-                        observed_at, observation_type.
+            events:     Observation dicts with entity_id, observed_at,
+                        observation_type.  ``entity_type`` is optional and is
+                        overridden by the IDMap when the two disagree.
             embeddings: Current node embeddings from forward().
             id_map:     Entity → global ID mapping.
             t_start:    Window start timestamp (required for CDE mode).
             t_end:      Window end timestamp (required for CDE mode).
+
+        Returns:
+            Counters describing what happened, also stored on
+            ``self.last_memory_stats``.  ``applied`` is the number of events
+            written (GRU path); ``memory_nonzero_rows`` is the state of the
+            buffer afterwards.
         """
+        stats = self._new_memory_stats()
+        self.last_memory_stats = stats
         if not events:
-            return
+            return stats
+
+        stats["events_in"] = len(events)
+        resolved_events = self._resolve_event_types(events, id_map, stats)
 
         # ── Mamba path (Idea 4): selective SSM over event sequence ──────
         if self.use_mamba and self.mamba_encoder is not None:
+            stats["path"] = "mamba"
             self.mamba_encoder.update_memory_from_events(
-                events=events,
+                events=resolved_events,
                 embeddings=embeddings,
                 id_map=id_map,
                 memory=self.memory,
             )
-            return
+            self._report_memory_stats(stats)
+            return stats
 
         # ── CDE path: group events by node and integrate continuously ──
-        if (
-            self.use_cde
-            and self.cde_encoder is not None
-            and t_start is not None
-            and t_end is not None
-        ):
+        if self.use_cde and self.cde_encoder is not None and t_start is not None and t_end is not None:
+            stats["path"] = "cde"
             self.cde_encoder.update_memory_from_events(
-                events=events,
+                events=resolved_events,
                 embeddings=embeddings,
                 id_map=id_map,
                 memory=self.memory,
                 t_start=t_start,
                 t_end=t_end,
             )
-            return
+            self._report_memory_stats(stats)
+            return stats
 
         # ── GRU path (default): process events sequentially ────────────
+        stats["path"] = "gru"
         node_ids_list: list[int] = []
         messages_list: list[torch.Tensor] = []
         timestamps_list: list[float] = []
 
-        for ev in events:
-            etype = ev.get("entity_type")
-            eid = ev.get("entity_id")
+        for ev in resolved_events:
+            etype = ev["entity_type"]
+            eid = ev["entity_id"]
             t = ev.get("observed_at", 0.0)
 
-            if etype is None or eid is None:
+            if etype not in embeddings:
+                stats["type_not_in_embeddings"] += 1
                 continue
 
             gid = id_map.global_id(etype, eid)
             local_idx = id_map.local_id(etype, eid)
             if gid is None or local_idx is None:
-                continue
-            if etype not in embeddings:
+                stats["node_not_in_graph"] += 1
                 continue
 
             emb = embeddings[etype]
             if local_idx >= emb.size(0):
+                stats["local_index_out_of_range"] += 1
+                continue
+
+            if gid >= self.memory.num_nodes:
+                # The memory buffer was allocated for fewer nodes than the
+                # graph now holds.  Writing would raise; skipping is recorded
+                # so it cannot pass for a working update.
+                stats["memory_row_out_of_range"] += 1
                 continue
 
             # Use the node's current embedding as message
@@ -847,10 +1026,11 @@ class HetTGN(nn.Module):
 
             node_ids_list.append(gid)
             messages_list.append(msg.detach())
-            timestamps_list.append(t)
+            timestamps_list.append(float(t))
 
         if not node_ids_list:
-            return
+            self._report_memory_stats(stats)
+            return stats
 
         # Group events by global node ID and process sequentially step-by-step
         # to prevent parallel in-place write collisions on duplicates.
@@ -879,12 +1059,14 @@ class HetTGN(nn.Module):
                     step_ts.append(evs[k][1])
 
             if step_gids:
-                step_gids_t = torch.tensor(
-                    step_gids, dtype=torch.long, device=_msg_device
-                )
+                step_gids_t = torch.tensor(step_gids, dtype=torch.long, device=_msg_device)
                 step_msgs_t = torch.stack(step_msgs)
                 step_ts_t = torch.tensor(step_ts, dtype=torch.float, device=_msg_device)
                 self.memory.update_memory(step_gids_t, step_msgs_t, step_ts_t)
+                stats["applied"] += len(step_gids)
+
+        self._report_memory_stats(stats)
+        return stats
 
     def reset_memory(self) -> None:
         """Reset all temporal memory (e.g. between training episodes)."""

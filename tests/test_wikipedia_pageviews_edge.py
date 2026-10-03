@@ -173,16 +173,28 @@ class TestDetectSpike:
         assert result is not None
 
     def test_boundary_exact_threshold(self):
-        # z exactly at threshold — should be >= so should trigger
-        # Build a case where z = exactly 2.0
-        # mean=100, std=5 -> latest needs to be 110 for z=2.0
-        baseline = [95, 100, 105] * 10  # mean=100, std≈4.08
-        mean = sum(baseline) / len(baseline)
-        std = _std(baseline)
-        target = mean + 2.0 * std  # exactly at boundary
-        result = _detect_spike(baseline + [int(target)], 2.0)
-        # Due to int rounding, may or may not trigger — that's fine
-        # We're testing it doesn't crash
+        # The old version built the boundary from a baseline whose std is
+        # irrational (~4.08), truncated the target to an int, and then asserted
+        # nothing at all — "may or may not trigger, that's fine". It passed
+        # whether _detect_spike returned a spike, None, or a constant.
+        #
+        # [95, 105] * 15 has mean exactly 100.0 and population std exactly 5.0,
+        # both exactly representable in binary floating point, so latest=110
+        # gives z exactly 2.0. The comparison is `z >= z_threshold`, so 110 must
+        # trigger and 109 (z = 1.8) must not.
+        baseline = [95, 105] * 15
+        assert sum(baseline) / len(baseline) == 100.0
+        assert _std(baseline) == 5.0
+
+        at_boundary = _detect_spike(baseline + [110], 2.0)
+        assert at_boundary is not None
+        z, latest, mean, std = at_boundary
+        assert z == 2.0
+        assert latest == 110
+        assert (mean, std) == (100.0, 5.0)
+
+        # One count below the boundary must not trigger.
+        assert _detect_spike(baseline + [109], 2.0) is None
 
     def test_all_zeros(self):
         assert _detect_spike([0] * 30, 2.0) is None

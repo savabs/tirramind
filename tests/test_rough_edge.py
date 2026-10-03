@@ -3,19 +3,18 @@
 from __future__ import annotations
 
 import math
-import pytest
+
 import torch
+
+from agent.quant.options import implied_volatility
 from agent.quant.rough import RoughBergomiModel, estimate_hurst_exponent
-from agent.quant.options import implied_volatility, BlackScholes
 
 
 class TestRoughVolatility:
     def test_rough_bergomi_paths_and_clamping(self):
         """Verify rBergomi model clamps parameters and generates positive paths."""
         # Intentionally initialize with violating bounds
-        rbergomi = RoughBergomiModel(
-            H=-0.1, eta=-1.0, rho=1.5, xi_0=-0.05, learnable=False
-        )
+        rbergomi = RoughBergomiModel(H=-0.1, eta=-1.0, rho=1.5, xi_0=-0.05, learnable=False)
 
         assert abs(rbergomi.H.item() - 0.01) < 1e-6
         assert abs(rbergomi.eta.item() - 1e-4) < 1e-9
@@ -23,9 +22,7 @@ class TestRoughVolatility:
         assert abs(rbergomi.xi_0.item() - 1e-4) < 1e-9
 
         # Generate paths with normal bounds
-        rbergomi_normal = RoughBergomiModel(
-            H=0.07, eta=2.0, rho=-0.90, xi_0=0.04, learnable=False
-        )
+        rbergomi_normal = RoughBergomiModel(H=0.07, eta=2.0, rho=-0.90, xi_0=0.04, learnable=False)
         S, V = rbergomi_normal.generate_paths(n_paths=100, n_steps=50, T=1.0)
 
         assert S.shape == (51, 100)
@@ -38,9 +35,7 @@ class TestRoughVolatility:
 
     def test_hurst_exponent_estimation(self):
         """Verify Hurst exponent estimator correctly extracts H from simulated rough paths."""
-        rbergomi = RoughBergomiModel(
-            H=0.10, eta=1.5, rho=0.0, xi_0=0.04, learnable=False
-        )
+        rbergomi = RoughBergomiModel(H=0.10, eta=1.5, rho=0.0, xi_0=0.04, learnable=False)
 
         # Simulate log-variance paths (which behave like fractional Brownian motion of index H)
         S, V = rbergomi.generate_paths(n_paths=1, n_steps=200, T=1.0)
@@ -56,9 +51,7 @@ class TestRoughVolatility:
         """Verify the exploding ATM implied volatility skew signature (skew ~ T^{H-1/2})
         by pricing Monte Carlo options across short vs long maturities.
         """
-        rbergomi = RoughBergomiModel(
-            H=0.07, eta=2.5, rho=-0.90, xi_0=0.04, learnable=False
-        )
+        rbergomi = RoughBergomiModel(H=0.07, eta=2.5, rho=-0.90, xi_0=0.04, learnable=False)
 
         S0 = 100.0
         r = 0.05
@@ -90,12 +83,8 @@ class TestRoughVolatility:
             r_tensor = torch.tensor([r], dtype=torch.float32)
 
             # Use flat standard init as initial guess
-            iv_down = implied_volatility(
-                S_tensor, K_down, T_tensor, r_tensor, price_down.unsqueeze(0)
-            )
-            iv_up = implied_volatility(
-                S_tensor, K_up, T_tensor, r_tensor, price_up.unsqueeze(0)
-            )
+            iv_down = implied_volatility(S_tensor, K_down, T_tensor, r_tensor, price_down.unsqueeze(0))
+            iv_up = implied_volatility(S_tensor, K_up, T_tensor, r_tensor, price_up.unsqueeze(0))
 
             # Implied volatility slope (skew) near ATM: | d(sig)/dK |
             skew = abs(iv_up.item() - iv_down.item()) / (K_up.item() - K_down.item())

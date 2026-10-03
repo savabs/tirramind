@@ -16,6 +16,70 @@ commit: 2597e8b
 
 ---
 
+> ## Addendum, 2026-09-28: the numbers below have moved. The conclusion has not.
+>
+> Re-running `scripts/cftc_event_study.py` **unmodified** against the live
+> database today does not reproduce the figures in this paper:
+>
+> | | published (2026-08-29) | re-run (2026-09-28) |
+> |---|---|---|
+> | hypotheses testable | 51 | **54** |
+> | surviving BH at α=0.05 | **0** | **3** |
+> | best uncorrected p | 0.002 | 0.001 |
+> | that p, BH-adjusted | 0.102 | **0.018** |
+>
+> **Cause: data growth, not a code change.** The collector kept running. Every
+> one of the 54 cells gained baseline points (+42 to +58) and 51 gained events
+> (+1 to +30); `instrument_daily` now extends to 2026-09-22 against this paper's
+> 2026-06-09, and 1,455 close rows plus 34 COT rows arrived after publication.
+> No single `as_of` cut reconstructs the original panel, because the per-ticker
+> close series ended on different dates between 2026-04-17 and 2026-06-09. This
+> paper is therefore **not reproducible from the current database at any
+> timestamp**, and that is a property of the data, not of the method.
+>
+> **The three survivors are not a finding.** Stated plainly so nobody cites them
+> as one:
+>
+> | hypothesis | n | clusters | power |
+> |---|---:|---:|---:|
+> | `swap_net` \|z\|≥3, 20d | 16 | 12 | 5.4% |
+> | `pm_net` \|z\|≥3, 5d | **3** | 3 | 5.1% |
+> | `mm_net_pct_oi` \|z\|≥2, 20d | 129 | 70 | 7.6% |
+>
+> At 5–8% power, "significant" is closer to the false-positive rate than to
+> evidence. And an i.i.d. bootstrap over **3** observations can take at most 27
+> distinct values, so that p-value is a property of the resampler, not the
+> market.
+>
+> There is a deeper problem with the re-run itself: **this is the same 54
+> hypotheses tested a second time, on overlapping data.** Benjamini-Hochberg
+> corrects within one family; it does not correct for looking again later. A
+> second look at the same family needs its own accounting, and three survivors
+> from a repeated test at 5% power is what a garden of forking paths looks like
+> from the inside. We are not claiming an effect appeared.
+>
+> **One genuine defect was found in this paper's method,** and it is fixed in the
+> successor implementation (`agent/verify/study.py`) rather than here:
+> `block_bootstrap_ci` draws *contiguous* blocks to preserve autocorrelation, but
+> the event array is accumulated contract-by-contract and only ordered in time
+> *within* each contract. Blocks therefore straddle ticker boundaries, and
+> because the resampler draws **positions**, the p-value depends on the order
+> SQL returned the links in. Measured: 49 of 54 cells shift, max \|Δp\| = 0.059,
+> from row order alone. The fix is to sort the event sample by event time before
+> resampling, which changes no estimator and makes the result reproducible.
+>
+> **What stands.** The conclusion of this paper — no detectable forward-return
+> edge in COT positioning anomalies, at power far too low to call it absence —
+> is unchanged and if anything strengthened: a year more data and the honest
+> reading is still "not detectable", now with a demonstrated example of how
+> easily a repeated test manufactures survivors.
+>
+> Reproduction harness for this addendum: `scripts/verify_cftc_reproduction.py`,
+> which runs the original script and the successor side by side and reports every
+> divergence rather than reconciling them.
+
+---
+
 ## Summary
 
 We ran a forward-return event study on extreme weekly positioning readings in the

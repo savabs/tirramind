@@ -1,0 +1,43 @@
+[Unit]
+Description=Run tirra-freshness.service daily (21:00 UTC)
+
+[Timer]
+# Every day, weekends included — collection now runs every day too
+# (tirra-collect.timer Mon..Fri + tirra-collect-continuous.timer Sat,Sun). A
+# weekday-only watchdog could not see a Saturday failure until Monday evening,
+# which for a time-gated source is two days of permanently lost rows before the
+# first complaint.
+#
+# Why 21:00 UTC:
+#   - After collection has finished. The 18:00 UTC run can take ~90 minutes
+#     (the budget tirra-backup.timer's own comment works from), so it is done by
+#     ~19:30. 21:00 leaves 90 minutes of slack, which means the watchdog grades
+#     TODAY's run rather than yesterday's — the difference between catching a
+#     silent failure on the day it happens and catching it a day late.
+#   - Before tirra-backup.timer (22:00 UTC daily), so the two never contend for
+#     disk on a 1 vCPU box, and so the day's verdict is in the journal before
+#     the snapshot that will carry that day's state off the machine.
+#   - Clear of tirra-brief.timer (Mon 20:00 UTC, up to 180s).
+#
+# Persistent=true: after downtime systemd runs the missed check at boot. A
+# watchdog that quietly skips its catch-up run reproduces the failure it exists
+# to detect — the Aug–Sep 2026 outage was invisible precisely because nothing
+# ran and nothing complained about not running.
+#
+# Safe to catch up, unlike tirra-collect-continuous.timer, which deliberately
+# carries no Persistent=. This unit opens every database read-only and writes
+# only its own row-count baseline under /var/lib/tirramind, so a catch-up run
+# landing beside any other unit cannot produce a second writer on the pipeline
+# DB. Two runs close together simply degrade to the age-only check: the service
+# skips the row-growth comparison when its baseline is under 3 hours old, so a
+# catch-up cannot manufacture a NO_NEW_ROWS alarm either.
+#
+# One consequence worth knowing: because the baseline is written by the service
+# itself, a day when this unit does not run widens the next comparison window to
+# ~48h rather than blinding it. NO_NEW_ROWS then means "nothing written in two
+# days", which is stricter, not looser.
+OnCalendar=*-*-* 21:00:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target

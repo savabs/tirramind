@@ -25,6 +25,7 @@ def engine() -> int:
     """Run the unified engine (collect → brief → deliver). Default = just run it."""
     _at_repo_root()
     from scripts.tirra_engine import main
+
     return main()
 
 
@@ -48,6 +49,7 @@ def brief() -> int:
     """Build + deliver one Intelligence Brief."""
     _at_repo_root()
     from scripts.intelligence_brief import main as _brief_main
+
     return _brief_main()
 
 

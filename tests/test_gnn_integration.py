@@ -14,6 +14,7 @@ from __future__ import annotations
 import math
 
 import pytest
+from fixture_time import T
 
 from agent.models.gnn.integration import (
     AutoPatternDetector,
@@ -291,8 +292,8 @@ class TestRetrainAndDiscover:
 class TestIntegrationEdgeCases:
     def test_single_entity_store(self, store):
         eid = store.register_entity("company", "solo", entity_id_from_key("company", "solo"))
-        store.store_entity_observation(eid, "test", 100.0, "insider_trade", {"v": 1})
-        store.store_entity_observation(eid, "test", 200.0, "insider_trade", {"v": 2})
+        store.store_entity_observation(eid, "test", T(100.0), "insider_trade", {"v": 1})
+        store.store_entity_observation(eid, "test", T(200.0), "insider_trade", {"v": 2})
         cfg = TrainerConfig(
             hidden_dim=8,
             memory_dim=8,

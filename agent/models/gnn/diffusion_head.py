@@ -139,10 +139,10 @@ class DiagonalDiffusionHead(nn.Module):
                 noise: (..., hidden_dim) diffusion increment (zeros if not training).
                 sigma: (..., hidden_dim) per-dimension noise scale g_phi(z).
         """
-        sigma = self.forward(z)           # (..., hidden_dim)
+        sigma = self.forward(z)  # (..., hidden_dim)
         if training:
             eps = torch.randn_like(z)
-            noise = sigma * eps * (dt ** 0.5)
+            noise = sigma * eps * (dt**0.5)
         else:
             noise = torch.zeros_like(z)
         return noise, sigma
