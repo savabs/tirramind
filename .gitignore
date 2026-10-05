@@ -61,6 +61,19 @@ Thumbs.db
 *.pkl
 *.txt
 
+# ...but the static site's own data IS source. The blanket *.json above was
+# silently excluding products/site/data/lookthrough.json — the file the
+# holdings page cannot run without. A `wrangler pages deploy` uploads the
+# working directory rather than the git tree, so this would not have broken
+# the first deploy; it would have broken the first deploy from a fresh clone,
+# with the page loading and then reporting that it could not fetch its index
+# weights. Negated explicitly rather than by narrowing the blanket rule, so
+# the reason stays attached to the exception.
+!products/site/data/*.json
+!tests/fixtures/*.json
+!tests/fixtures/*.json.gz
+!products/site/predictions.csv
+
 # Kaggle-downloaded DB snapshot — exceeds GitHub's 100MB hard file-size limit
 # and isn't the live app's database anyway (that's the separate, already-
 # ignored .tirra_pipeline/pipeline.db). Removed from history in this commit.
