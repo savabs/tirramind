@@ -2,7 +2,19 @@
 
 import pytest
 import torch
-from agent.quant.sde import GBM, HestonSDE, SDEConfig, make_time_grid
+
+# agent.quant.sde imports torchsde at module scope, and torchsde lives in the
+# `ml` extra. CI installs `.[dev,quant]` and then hand-installs torch and
+# torch-geometric to avoid the 2 GB CUDA wheel, so `ml` is never present there
+# and this import raises during collection.
+#
+# pytest aborts the WHOLE run on a collection error, so one absent optional
+# dependency was taking all 10,943 tests down with it -- and it stayed hidden
+# because the CI account was billing-locked and no job had actually started
+# since 2026-09-02. Skipping keeps the other 10,942 honest.
+pytest.importorskip("torchsde", reason="install the [ml] extra to run these")
+
+from agent.quant.sde import GBM, HestonSDE, SDEConfig, make_time_grid  # noqa: E402
 
 
 class TestGBM:

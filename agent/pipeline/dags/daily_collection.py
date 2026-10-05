@@ -8,6 +8,7 @@ Schedule: weekdays at 18:00 UTC (after US market close, CFTC/FINRA publish windo
 
 Nodes:
     fetch_cftc          — CFTC Commitments of Traders, latest report
+    derive_cftc_features — CFTC positioning features derived from fetch_cftc's rows
     fetch_finra_scan    — FINRA Reg SHO short volume, all-ticker scan
     fetch_power_demand  — NYISO power grid actual demand by zone
     fetch_power_fuel    — NYISO generation by fuel type
@@ -28,12 +29,12 @@ disable the source.
 from __future__ import annotations
 
 import logging
+import time
 from datetime import UTC, datetime
-
-UTC = UTC
 from typing import TYPE_CHECKING, Any
 
 from agent.pipeline.dag import DAG
+from agent.pipeline.operators import DOMAIN_TABLES_PARAM_KEY
 
 if TYPE_CHECKING:
     from agent.learning.tool_router import ToolContext, ToolRoutingBandit
@@ -70,6 +71,21 @@ FINANCIAL_DOMAINS: list[str] = [
 ]
 
 
+def _count_cert_observations(store: Any) -> int:
+    """``COUNT(*)`` of cert_transparency rows in ``entity_observations``.
+
+    The guard below needs real rows, not the collector's own opinion of how
+    many certs it saw.  Counted through the store's existing connection —
+    read-only SQL, no write.
+    """
+    row = (
+        store._get_conn()
+        .execute("SELECT COUNT(*) AS n FROM entity_observations WHERE source_tool = 'cert_transparency'")
+        .fetchone()
+    )
+    return int(row["n"]) if row is not None else 0
+
+
 def run_cert_domain_collection(
     params: dict[str, Any],
     upstream_results: dict[str, Any],
@@ -79,10 +95,32 @@ def run_cert_domain_collection(
     Calls CertTransparencyTool(mode='recent') once per domain and persists
     domain entities + cert_issued observations via PipelineStore.
 
+    **This node used to be the textbook silent failure.** It read ``count`` off
+    each ToolResult, summed it, and returned a dict unconditionally — so when
+    crt.sh dropped ``entry_timestamp`` and the collector's recency filter began
+    discarding 100% of records, ``fetch_cert_domains`` reported
+    ``status=completed, error=null`` after 221 seconds of doing nothing (live
+    run 55233b8478c4, 2026-09-23). ``entity_observations`` sat at 19 rows with
+    a max ``ingested_at`` of 2026-08-27. cert_transparency is TIME-GATED: crt.sh
+    serves the log, but the *recency window* this node samples is gone the day
+    after. Those 26 days are not backfillable.
+
+    So this now measures a real ``COUNT(*)`` delta on ``entity_observations``
+    and **raises** when the run produced nothing, rather than returning a
+    payload that looks like a quiet day.  Three outcomes:
+
+    * every domain errored, or not one cert came back → raise (node goes red)
+    * certs came back but no new rows landed → ``status="skipped"`` with a
+      reason, which ``classify_payload_status`` records as a skip, not a check.
+      This is the honest reading of an idempotent re-run: crt.sh returns the
+      same certs and the store's unique key collapses them.
+    * new rows landed → ``status="completed"`` with the row count
+
     params:
-        db_path  : str  — PipelineStore database path (injected by DAG builder)
-        domains  : list — override FINANCIAL_DOMAINS (optional, for tests)
-        days_back: int  — lookback window in days (default 30)
+        db_path       : str   — PipelineStore database path (injected by DAG builder)
+        domains       : list  — override FINANCIAL_DOMAINS (optional, for tests)
+        days_back     : int   — lookback window in days (default 30)
+        request_delay : float — seconds to wait between domains (default 2.5)
     """
     from agent.pipeline.store import PipelineStore
     from agent.tools.cert_transparency import CertTransparencyTool
@@ -90,30 +128,133 @@ def run_cert_domain_collection(
     db_path = params.get("db_path", ".tirra_pipeline/pipeline.db")
     domains: list[str] = params.get("domains", FINANCIAL_DOMAINS)
     days_back: int = params.get("days_back", 30)
+    # crt.sh rate-limits by source address. Measured 2026-09-23: 40 back-to-back
+    # requests (2 per domain) got 1 of 4 domains through; a 2-3s gap got 4 of 4.
+    request_delay: float = float(params.get("request_delay", 2.5))
 
     store = PipelineStore(db_path)
     try:
+        rows_before = _count_cert_observations(store)
         tool = CertTransparencyTool(pipeline_store=store)
         per_domain: dict[str, dict[str, Any]] = {}
         total_certs = 0
-        for domain in domains:
+        successes = 0
+        for index, domain in enumerate(domains):
+            if index and request_delay > 0:
+                time.sleep(request_delay)
             result = tool.execute(
                 mode="recent",
                 domain=domain,
                 days_back=days_back,
                 limit=50,
             )
-            count = (result.data or {}).get("count", 0)
-            per_domain[domain] = {"success": result.success, "count": count}
+            data = result.data or {}
+            count = data.get("count", 0)
+            entry: dict[str, Any] = {
+                "success": result.success,
+                "count": count,
+                "rows_persisted": data.get("rows_persisted", 0),
+            }
+            if not result.success:
+                entry["error"] = (result.output or "")[:300]
+            if data.get("base_error"):
+                entry["base_error"] = str(data["base_error"])[:300]
+            per_domain[domain] = entry
             if result.success:
+                successes += 1
                 total_certs += count
-        return {
-            "domains_scanned": len(domains),
-            "total_certs": total_certs,
-            "per_domain": per_domain,
-        }
+        rows_written = _count_cert_observations(store) - rows_before
     finally:
         store.close()
+
+    failures = {d: e for d, e in per_domain.items() if not e["success"]}
+
+    if successes == 0 or total_certs == 0:
+        # Raise, do not return. A FunctionOperator that returns is a green
+        # check; the whole point of this node's history is that a green check
+        # for zero rows is indistinguishable from a quiet day.
+        detail = "; ".join(
+            f"{d}: " + (e.get("error") or e.get("base_error") or f"{e['count']} certs")
+            for d, e in sorted(per_domain.items())
+        )
+        raise RuntimeError(
+            f"fetch_cert_domains wrote nothing: {successes}/{len(domains)} domains "
+            f"succeeded, {total_certs} certs in the last {days_back}d, "
+            f"{rows_written} rows written to entity_observations. "
+            f"cert_transparency is time-gated — a zero-row day is unrecoverable, "
+            f"not a quiet day. Per-domain: {detail}"
+        )
+
+    payload: dict[str, Any] = {
+        "status": "completed" if rows_written > 0 else "skipped",
+        "domains_scanned": len(domains),
+        "domains_succeeded": successes,
+        "total_certs": total_certs,
+        "rows_written": rows_written,
+        "per_domain": per_domain,
+    }
+    if failures:
+        payload["failed_domains"] = sorted(failures)
+    if rows_written <= 0:
+        payload["reason"] = (
+            f"{total_certs} certs returned across {successes} domain(s) but every "
+            "observation was already stored — no new certificates since the last run"
+        )
+    return payload
+
+
+def run_cftc_feature_derivation(
+    params: dict[str, Any],
+    upstream_results: dict[str, Any],
+) -> dict[str, Any]:
+    """FunctionOperator callback: derive CFTC positioning features (Layer 2).
+
+    Re-derives ``futures_positioning_derived`` from the ``futures_positioning``
+    rows ``fetch_cftc`` just stored.  Pure re-derivation over data already in
+    the database — no network call — so it also refills any gap left by a
+    stopped collector on the first run after one.
+
+    Until this node existed the derivation only ever ran by hand: the math sat
+    in ``scripts/add_cftc_derived_features.py``, no DAG imported it, and
+    ``cftc_derived`` froze at 2026-04-14 while ``cftc`` kept collecting for
+    another 162 days with nothing red to show for it (audit P6.4).
+
+    The returned ``status`` is the point: a run that derives nothing says
+    ``"skipped"``, which ``classify_payload_status`` records as a skip instead
+    of a green check, and the node declares ``entity_observations`` as its
+    domain table so the executor's zero-rows guard measures real rows rather
+    than the per-node result envelope.
+
+    params:
+        db_path : str — PipelineStore database path (injected by DAG builder)
+    """
+    from agent.pipeline.store import PipelineStore
+    from agent.quant.cftc_features import derive_and_store
+
+    db_path = params.get("db_path", ".tirra_pipeline/pipeline.db")
+
+    store = PipelineStore(db_path)
+    try:
+        stats = derive_and_store(store)
+    finally:
+        store.close()
+
+    rows_written = int(stats.get("rows_written") or 0)
+    result: dict[str, Any] = {
+        "status": "completed" if rows_written else "skipped",
+        "rows_written": rows_written,
+        "rows_derived": stats.get("rows_derived", 0),
+        "entities": stats.get("entities", 0),
+        "max_observed_at": stats.get("max_observed_at"),
+        "deduplicated": stats.get("deduplicated", 0),
+    }
+    if not rows_written:
+        result["reason"] = (
+            "every derived row was already stored — no new futures_positioning observations"
+            if stats.get("rows_derived")
+            else "no futures_positioning observations in the database"
+        )
+    return result
 
 
 def run_evidence_ingest_from_gdelt(
@@ -301,6 +442,25 @@ def build_daily_collection_dag(
         params={"mode": "latest"},
         timeout=120,
         retries=2,
+    )
+
+    # ── CFTC derived positioning features (Layer 2) ────────
+    # The derivation existed only as a hand-run script, so it ran once, on
+    # 2026-05-03, and then never again (audit P6.4). Wiring it here is what
+    # makes it run daily — and what makes a zero-row run visible: the node
+    # declares the table it exists to populate, so the executor's guard
+    # counts real rows instead of the pipeline_data envelope.
+    dag.add(
+        "derive_cftc_features",
+        operator=run_cftc_feature_derivation,
+        depends_on=["fetch_cftc"],
+        params={
+            "db_path": db_path,
+            DOMAIN_TABLES_PARAM_KEY: ["entity_observations"],
+        },
+        timeout=120,
+        retries=1,
+        store_result=False,
     )
 
     # ── FINRA Short Volume (all-ticker scan) ───────────────
@@ -526,15 +686,41 @@ def build_daily_collection_dag(
     )
 
     # ── OFAC/UN sanctions designations (person + company entities) ──
-    # Recent 90-day window across OFAC SDN + UN consolidated lists.
-    # Persists person/company entities with sanctions_listing obs +
-    # located_in country links.
+    # Full-roster snapshot across OFAC SDN + UN consolidated lists.
+    #
+    # Was mode="recent", days_back=90, limit=100 until 2026-09-23. That
+    # discarded 95% of every fetch: the OFAC SDN CSV carries no per-entry
+    # dates, so the date filter dropped all 19,393 OFAC records and only the
+    # 11 dated UN rows inside the window could ever persist — which is
+    # exactly what the live DB held for this tool's entire life. Worse, those
+    # 11 never change, and observed_at came from the source listing date, so
+    # every subsequent run hit the store's idempotency key and updated rows
+    # instead of inserting: SUCCESS, zero rows, indistinguishable from "no
+    # new data". See the module docstring in agent/tools/sanctions_monitor.py.
+    #
+    # snapshot mode is first-seen gated (steady-state rows == new
+    # designations) and always writes one roster observation stamped with
+    # collection time, which cannot dedup away.
+    #
+    # __domain_tables__ makes the executor's zero-rows guard take a real
+    # COUNT(*) delta for this node instead of trusting its green checkmark.
+    # Only entity_observations is declared: the delta is measured DAG-wide,
+    # not per node, and `entities` legitimately gains nothing on a day when
+    # no new entity is designated anywhere — declaring it would fail the whole
+    # daily run on a normal day, which is how a guard gets ignored.
     dag.add(
         "fetch_sanctions_monitor",
         operator="sanctions_monitor",
         table_name="sanctions_monitor",
-        params={"mode": "recent", "days_back": 90, "limit": 100},
-        timeout=120,
+        params={
+            "mode": "snapshot",
+            "__domain_tables__": ["entity_observations"],
+        },
+        # Two downloads (5.7MB + 2.1MB) plus a first-seen lookup per record.
+        # Measured end-to-end on a throwaway store 2026-09-23: 22s for the
+        # full 20,404-record backfill, 41s for the steady-state re-run (same
+        # fetch, 20k first-seen lookups, 1 row written). 300 is headroom.
+        timeout=300,
         retries=2,
     )
 
@@ -701,11 +887,21 @@ def build_daily_collection_dag(
     # of the 20 FINANCIAL_DOMAINS. Persists domain entities + cert_issued
     # obs. Signals: cert surge = scaling, new subdomain = product launch,
     # issuer switch = security posture change.
+    #
+    # timeout was 300 while _TIMEOUT was 30 — 20 domains x 2 crt.sh requests
+    # cannot fit in either. crt.sh now gets 120s per request, up to 3 attempts,
+    # plus a 2.5s inter-domain gap (19 x 2.5 = 48s), so the node needs real
+    # headroom. It sits in the parallel layer; a slow node here blocks nothing.
     dag.add(
         "fetch_cert_domains",
         operator=run_cert_domain_collection,
-        params={"db_path": db_path, "domains": FINANCIAL_DOMAINS, "days_back": 30},
-        timeout=300,
+        params={
+            "db_path": db_path,
+            "domains": FINANCIAL_DOMAINS,
+            "days_back": 30,
+            "request_delay": 2.5,
+        },
+        timeout=1200,
         retries=1,
     )
 
@@ -824,7 +1020,12 @@ def build_daily_collection_dag(
         "fetch_electricity_monitor",
         operator="electricity_monitor",
         table_name="electricity_monitor",
-        params={"mode": "demand"},
+        # "region" is required — without it the tool returns success=False and
+        # ToolOperator turns that into a RuntimeError, which is why this node
+        # has never written a row. PJM is the largest US balancing authority
+        # (~65 GW peak, 13 states), so its hourly load is the single best
+        # macro-activity proxy of the set this tool can reach.
+        params={"mode": "demand", "region": "PJM"},
         timeout=60,
         retries=1,
     )
@@ -941,11 +1142,22 @@ def build_daily_collection_dag(
     )
 
     # ── Satellite activity — NASA FIRMS fire near infrastructure
+    # 'area' is REQUIRED: the tool hard-fails without it and the FIRMS area
+    # endpoint takes a bbox only ("west,south,east,north"), never a bare
+    # country code. This node registered params={"mode": "fire"} alone from
+    # the start and therefore never wrote a single row — the operator raised
+    # "Parameter 'area' required for fire mode" on every run. Keep the 'area'
+    # key here; tests/test_satellite_activity_edge.py asserts it is non-empty.
     dag.add(
         "fetch_satellite_activity",
         operator="satellite_activity",
         table_name="satellite_activity",
-        params={"mode": "fire"},
+        params={
+            "mode": "fire",
+            "area": "-125,24,-66,50",  # CONUS
+            "source": "VIIRS_NOAA20_NRT",
+            "days": 1,
+        },
         timeout=60,
         retries=2,
     )

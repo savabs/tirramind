@@ -27,10 +27,12 @@ from __future__ import annotations
 
 import json
 import logging
+import math
+import threading
 import time
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 from agent.features.protocol import EngineeredFeature, validate_feature
 from agent.models.belief import BeliefState, validate_belief
@@ -39,6 +41,68 @@ from agent.pipeline.storage_backend import SQLiteBackend, StorageBackend
 log = logging.getLogger(__name__)
 
 _DEFAULT_DB_PATH = ".tirra_pipeline/pipeline.db"
+
+# ── entity_observations write-path guards (audit 2026-09-23, P1.1 / P1.4) ──
+#
+# ``store_entity_observation`` is the single write boundary every collector
+# passes through.  Per-collector guards did not generalise — the same
+# out-of-range-timestamp class recurred three times — so the bound lives here.
+
+#: Lower bound for a plausible ``observed_at``: 1990-01-01T00:00:00Z.
+OBSERVED_AT_MIN_EPOCH = 631_152_000.0
+
+#: ``observed_at`` may lead wall-clock by at most this much (clock skew,
+#: timezone slop).  Anything further ahead is a data error, not an observation.
+OBSERVED_AT_MAX_AHEAD_SECONDS = 86_400.0
+
+#: The logical uniqueness key of ``entity_observations``.  There is no UNIQUE
+#: index backing it on the live database yet (see audit P2.2); until there is,
+#: ``store_entity_observation`` enforces it in the write path.
+#:
+#: ``value_json`` is part of the key *deliberately*, and this differs from the
+#: four-column key the 2026-09-23 audit proposes.  Measured on the live
+#: database: 198,181 rows collide on the four-column key, but only 121,597 are
+#: byte-identical.  The 76,584-row difference is almost entirely GDELT —
+#: ``gdelt/geopolitical_event`` has 74,750 four-column collisions of which just
+#: 1,822 are byte-identical, because GDELT timestamps are day-granular and a
+#: country legitimately has hundreds of distinct events per day (one sampled
+#: entity/day holds 255 rows with 255 distinct ``event_id`` values).  Keying
+#: without ``value_json`` would collapse ~72,900 real observations into one
+#: per entity-day — trading a duplicate-row bug for a data-loss bug.
+#:
+#: Including ``value_json`` reproduces the audit's 121,597 figure exactly, so
+#: it removes precisely the duplicates the audit identified and nothing else.
+#:
+#: Caveat: the match is on the serialised bytes, so a collector that builds the
+#: same payload with a different dict insertion order produces a different
+#: ``value_json`` and will not dedup.  ``json.dumps(..., sort_keys=True)`` would
+#: fix that, but it would also stop every *new* write matching the 384,285 rows
+#: already on disk — that normalisation belongs with the P2.2 migration, not
+#: here.
+OBSERVATION_UNIQUE_KEY = (
+    "entity_id",
+    "source_tool",
+    "observation_type",
+    "observed_at",
+    "value_json",
+)
+
+
+class ObservationRejected(ValueError):
+    """An entity observation was refused at the write boundary.
+
+    Raised by :meth:`PipelineStore.store_entity_observation` when
+    ``observed_at`` is not a finite number inside
+    ``[OBSERVED_AT_MIN_EPOCH, now + OBSERVED_AT_MAX_AHEAD_SECONDS]``.
+
+    This is deliberately an exception rather than a skip-and-continue: a
+    collector that mis-maps its date field must break loudly at the point of
+    the mistake.  Silently clamping the timestamp to ``now`` is what
+    ``gov_contracts`` already does, and it converts a visible data error into
+    an invisible one.
+    """
+
+
 _PIPELINE_SCHEMA_NAME = "pipeline_store"
 _PIPELINE_SCHEMA_VERSION = 1
 _PIPELINE_SCHEMA_DESCRIPTION = "Baseline portable schema: epoch timestamps, integer booleans, JSON text payloads"
@@ -411,6 +475,17 @@ class PipelineStore:
             self._backend = backend
         else:
             self._backend = SQLiteBackend(db_path)
+        # Write-boundary bookkeeping for entity_observations (audit P1.1/P1.4).
+        # Counted per "<source_tool>/<observation_type>" so a caller that trips
+        # a guard is identifiable without grepping the log.
+        self._observations_rejected: dict[str, int] = {}
+        self._observations_deduplicated: dict[str, int] = {}
+        # entity_observations still has no UNIQUE index (audit P2.2), so the
+        # idempotency check is read-then-write and needs to be atomic.  A
+        # single PipelineStore is shared across DAGExecutor's worker threads
+        # (see _LockingConnection), which locks per *statement*, not per
+        # check-then-write pair.
+        self._observation_write_lock = threading.RLock()
         self._init_schema()
 
     # ── backward-compat properties ────────────────────────────
@@ -1252,6 +1327,127 @@ class PipelineStore:
             return None
         return self._entity_row_to_dict(row)
 
+    # ── entity_observations write-path guards ──────────────────
+
+    def _reject_observation(
+        self,
+        *,
+        entity_id: str,
+        source_tool: str,
+        observation_type: str,
+        observed_at: Any,
+        reason: str,
+        cause: BaseException | None = None,
+    ) -> NoReturn:
+        """Count, log and raise.  Never returns."""
+        key = f"{source_tool}/{observation_type}"
+        self._observations_rejected[key] = self._observations_rejected.get(key, 0) + 1
+        message = (
+            f"Rejected entity observation: {key} entity={entity_id} "
+            f"observed_at={observed_at!r} — {reason}. "
+            f"Valid range is [{OBSERVED_AT_MIN_EPOCH:.0f}, now+{OBSERVED_AT_MAX_AHEAD_SECONDS:.0f}] "
+            f"epoch seconds (1990-01-01 .. tomorrow). "
+            f"{self._observations_rejected[key]} rejected from this source in this process."
+        )
+        log.error(message)
+        raise ObservationRejected(message) from cause
+
+    def _validate_observed_at(
+        self,
+        observed_at: Any,
+        *,
+        entity_id: str,
+        source_tool: str,
+        observation_type: str,
+    ) -> float:
+        """Return *observed_at* as a float, or raise :class:`ObservationRejected`.
+
+        Guards the single write boundary against the class of bug that put
+        rows dated 1920-01-01, 1972-03-24 and 2030-01-30 into the live
+        database (audit P1.1).  Those rows are not merely wrong in place —
+        ``trainer.py`` derives its train/val/test boundaries from
+        ``MIN``/``MAX(observed_at)``, so one future-dated row moves the whole
+        evaluation window.
+        """
+        try:
+            timestamp = float(observed_at)
+        except (TypeError, ValueError) as exc:
+            self._reject_observation(
+                entity_id=entity_id,
+                source_tool=source_tool,
+                observation_type=observation_type,
+                observed_at=observed_at,
+                reason=f"not a number ({type(observed_at).__name__})",
+                cause=exc,
+            )
+        # NaN fails every comparison, so it would slip through a bare range
+        # check; inf would poison MAX(observed_at) outright.
+        if not math.isfinite(timestamp):
+            self._reject_observation(
+                entity_id=entity_id,
+                source_tool=source_tool,
+                observation_type=observation_type,
+                observed_at=observed_at,
+                reason="not a finite number",
+            )
+        if timestamp < OBSERVED_AT_MIN_EPOCH:
+            self._reject_observation(
+                entity_id=entity_id,
+                source_tool=source_tool,
+                observation_type=observation_type,
+                observed_at=observed_at,
+                reason="implausibly old (before 1990-01-01)",
+            )
+        horizon = time.time() + OBSERVED_AT_MAX_AHEAD_SECONDS
+        if timestamp > horizon:
+            self._reject_observation(
+                entity_id=entity_id,
+                source_tool=source_tool,
+                observation_type=observation_type,
+                observed_at=observed_at,
+                reason=f"in the future (more than {OBSERVED_AT_MAX_AHEAD_SECONDS:.0f}s ahead of now)",
+            )
+        return timestamp
+
+    def _note_duplicate_observation(
+        self,
+        *,
+        entity_id: str,
+        source_tool: str,
+        observation_type: str,
+        observed_at: float,
+        row_id: int,
+    ) -> None:
+        key = f"{source_tool}/{observation_type}"
+        count = self._observations_deduplicated.get(key, 0) + 1
+        self._observations_deduplicated[key] = count
+        # Loud on the first hit per source, then every 1000th — a re-run of a
+        # backfill must be visible in the log, without 100k identical lines.
+        if count == 1 or count % 1000 == 0:
+            log.warning(
+                "Duplicate entity observation suppressed: %s entity=%s "
+                "observed_at=%.3f row_id=%d — %d suppressed from this source in this "
+                "process. Re-writing an identical observation is now idempotent; if "
+                "you did not expect a re-run, something is writing the same row twice.",
+                key,
+                entity_id,
+                observed_at,
+                row_id,
+                count,
+            )
+
+    def observation_write_stats(self) -> dict[str, dict[str, int]]:
+        """Rows this process refused or collapsed at the observation boundary.
+
+        Keys of both sub-dicts are ``"<source_tool>/<observation_type>"``.
+        Counters are per-process, not persisted — they exist so a collection
+        run can report what it threw away instead of reporting success.
+        """
+        return {
+            "rejected": dict(self._observations_rejected),
+            "deduplicated": dict(self._observations_deduplicated),
+        }
+
     def store_entity_observation(
         self,
         entity_id: str,
@@ -1262,26 +1458,101 @@ class PipelineStore:
         depth_level: int = 1,
         metadata: dict[str, Any] | None = None,
     ) -> int:
-        """Store a timestamped observation for an entity. Returns row ID."""
-        conn = self._get_conn()
-        cursor = conn.execute(
-            "INSERT INTO entity_observations "
-            "(entity_id, source_tool, observed_at, ingested_at, "
-            " observation_type, depth_level, value_json, metadata_json) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                entity_id,
-                source_tool,
-                observed_at,
-                time.time(),
-                observation_type,
-                depth_level,
-                json.dumps(value, default=str),
-                json.dumps(metadata, default=str) if metadata else None,
-            ),
+        """Store a timestamped observation for an entity. Returns row ID.
+
+        This is the single write boundary for ``entity_observations``; two
+        guards live here (audit 2026-09-23, P1.1 and P1.4).
+
+        **Range.** ``observed_at`` must be a finite epoch-seconds value inside
+        ``[1990-01-01, now + 1 day]``.  Anything else raises
+        :class:`ObservationRejected` — it is not clamped, not skipped, not
+        defaulted to ``now``.
+
+        **Idempotency.** :data:`OBSERVATION_UNIQUE_KEY` — ``(entity_id,
+        source_tool, observation_type, observed_at, value_json)`` — is treated
+        as unique.  Re-writing an observation that is already stored refreshes
+        that row (``ingested_at``, ``depth_level``, ``metadata_json``) and
+        returns its id instead of appending, so re-running a collector cannot
+        silently double-count.  The collapse is counted and logged; see
+        :meth:`observation_write_stats`.
+
+        Note that a same-timestamp observation carrying a *different* value is
+        a different observation and is still stored — see
+        :data:`OBSERVATION_UNIQUE_KEY` for why that matters (GDELT).
+
+        The uniqueness is enforced here in Python because the live table has
+        no UNIQUE index yet (121,597 pre-existing duplicates block creating
+        one — audit P2.2).  ``self._observation_write_lock`` makes the
+        check-then-write atomic within this process, which covers
+        ``DAGExecutor``'s worker threads.  It does **not** make it atomic
+        across processes; only a UNIQUE index will.
+
+        Raises
+        ------
+        ObservationRejected
+            If ``observed_at`` is out of range or not a finite number.
+        """
+        timestamp = self._validate_observed_at(
+            observed_at,
+            entity_id=entity_id,
+            source_tool=source_tool,
+            observation_type=observation_type,
         )
-        conn.commit()
-        row_id = cursor.lastrowid
+        value_json = json.dumps(value, default=str)
+        metadata_json = json.dumps(metadata, default=str) if metadata else None
+        ingested_at = time.time()
+        conn = self._get_conn()
+
+        with self._observation_write_lock:
+            # ORDER BY matches the keep-rule of the planned dedup migration
+            # (P2.2: newest ingested_at wins), so that on a live database that
+            # still holds duplicate groups we update the row the migration
+            # would keep.
+            existing = conn.execute(
+                "SELECT id FROM entity_observations "
+                "WHERE entity_id=? AND source_tool=? AND observation_type=? "
+                "AND observed_at=? AND value_json=? "
+                "ORDER BY ingested_at DESC, id DESC LIMIT 1",
+                (entity_id, source_tool, observation_type, timestamp, value_json),
+            ).fetchone()
+
+            if existing is not None:
+                row_id = int(existing["id"])
+                # value_json is part of the key, so only the non-key columns
+                # move; last write wins on those.
+                conn.execute(
+                    "UPDATE entity_observations SET ingested_at=?, depth_level=?, metadata_json=? WHERE id=?",
+                    (ingested_at, depth_level, metadata_json, row_id),
+                )
+                conn.commit()
+                self._note_duplicate_observation(
+                    entity_id=entity_id,
+                    source_tool=source_tool,
+                    observation_type=observation_type,
+                    observed_at=timestamp,
+                    row_id=row_id,
+                )
+                return row_id
+
+            cursor = conn.execute(
+                "INSERT INTO entity_observations "
+                "(entity_id, source_tool, observed_at, ingested_at, "
+                " observation_type, depth_level, value_json, metadata_json) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    entity_id,
+                    source_tool,
+                    timestamp,
+                    ingested_at,
+                    observation_type,
+                    depth_level,
+                    value_json,
+                    metadata_json,
+                ),
+            )
+            conn.commit()
+            row_id = cursor.lastrowid
+
         log.debug(
             "Stored entity observation: entity=%s tool=%s depth=%d row_id=%s",
             entity_id,

@@ -97,9 +97,9 @@ class TestSaveVersioned:
 
         archived = list(checkpoint_dir(stable).glob("archived_*"))
         assert archived, "pre-existing stable-path file was deleted, not archived"
-        assert any(
-            p.read_text() == "legacy-direct-save" for p in archived
-        ), "archived file does not contain the pre-existing checkpoint's content"
+        assert any(p.read_text() == "legacy-direct-save" for p in archived), (
+            "archived file does not contain the pre-existing checkpoint's content"
+        )
         # And the new save still won.
         assert stable.read_text() == "payload-A"
 

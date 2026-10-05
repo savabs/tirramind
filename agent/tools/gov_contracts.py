@@ -30,7 +30,7 @@ Modes:
 from __future__ import annotations
 
 import logging
-from datetime import timezone; UTC = timezone.utc
+from datetime import UTC
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -51,9 +51,7 @@ log = logging.getLogger(__name__)
 
 _AWARDS_URL = "https://api.usaspending.gov/api/v2/search/spending_by_award/"
 _AUTOCOMPLETE_URL = "https://api.usaspending.gov/api/v2/autocomplete/awarding_agency/"
-_UK_OCDS_URL = (
-    "https://www.contractsfinder.service.gov.uk/Published/Notices/OCDS/Search"
-)
+_UK_OCDS_URL = "https://www.contractsfinder.service.gov.uk/Published/Notices/OCDS/Search"
 _UA = "TirraMind/0.1"
 _TIMEOUT = 20
 
@@ -63,7 +61,11 @@ VALID_REGIONS = {"us", "uk"}
 # Contract type codes (A-D = contracts, other = grants/loans/etc.)
 _CONTRACT_CODES = ["A", "B", "C", "D"]
 
-# Standard fields to request
+# Standard fields to request.
+# "Base Obligation Date" is the date the award action was obligated — i.e. when
+# the award became a public fact. "Start Date" is the period-of-performance
+# start, which for an active contract is a *future* date and must never be used
+# as observed_at (see the observed_at block in _persist_entities_inner).
 _FIELDS = [
     "Award ID",
     "Recipient Name",
@@ -72,10 +74,32 @@ _FIELDS = [
     "Awarding Agency",
     "Awarding Sub Agency",
     "Award Type",
+    "Base Obligation Date",
     "Start Date",
     "End Date",
     "Description",
 ]
+
+# Award feeds publish dates without a time zone; allow a day of skew before
+# calling a date "in the future". Anything beyond that is a data error.
+_FUTURE_DATE_TOLERANCE_S = 86_400.0
+
+
+def _parse_award_date(raw: str) -> float | None:
+    """Parse an ISO date/datetime into a UTC Unix timestamp, or None.
+
+    None means "this string is not a usable date" — the caller must treat that
+    as an event to report, not as a reason to substitute the current time.
+    """
+    from datetime import datetime
+
+    try:
+        dt = datetime.fromisoformat(raw.strip().replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt.timestamp()
 
 
 class GovContractsTool(Tool):
@@ -94,9 +118,7 @@ class GovContractsTool(Tool):
     # Entity persistence (L2)
     # ------------------------------------------------------------------
 
-    def _persist_entities(
-        self, awards: list[dict[str, Any]], country_code: str
-    ) -> None:
+    def _persist_entities(self, awards: list[dict[str, Any]], country_code: str) -> None:
         """Register recipient + agency entities and create links."""
         if self._store is None or entity_id_from_key is None:
             return
@@ -107,9 +129,7 @@ class GovContractsTool(Tool):
         except Exception:
             log.exception("Entity persistence failed (non-fatal)")
 
-    def _persist_entities_inner(
-        self, awards: list[dict[str, Any]], country_code: str
-    ) -> None:
+    def _persist_entities_inner(self, awards: list[dict[str, Any]], country_code: str) -> None:
         assert self._store is not None  # noqa: S101
         store = self._store
 
@@ -124,6 +144,14 @@ class GovContractsTool(Tool):
         seen_companies: set[str] = set()
         seen_agencies: set[str] = set()
 
+        # observed_at bookkeeping — reported after the loop, never swallowed.
+        from datetime import datetime
+
+        now_ts = datetime.now(tz=UTC).timestamp()
+        n_no_award_date = 0
+        n_unparseable = 0
+        n_future = 0
+
         for award in awards:
             recipient = (award.get("recipient") or "").strip()
             agency = (award.get("agency") or "").strip()
@@ -132,11 +160,7 @@ class GovContractsTool(Tool):
 
             # ── Company (recipient) ──
             try:
-                company_canon = (
-                    normalize_company_name(recipient)
-                    if normalize_company_name
-                    else recipient
-                )
+                company_canon = normalize_company_name(recipient) if normalize_company_name else recipient
             except (ValueError, TypeError):
                 company_canon = recipient.strip().lower()
 
@@ -151,21 +175,41 @@ class GovContractsTool(Tool):
                     metadata={"source": "gov_contracts", "original_name": recipient},
                 )
 
-            # Observation on the company
-            from datetime import datetime
-
-            start_date = award.get("start_date") or ""
-            try:
-                if start_date:
-                    dt = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
-                    if dt.year > datetime.now(tz=UTC).year + 1:
-                        ts = datetime.now(tz=UTC).timestamp()
-                    else:
-                        ts = dt.timestamp()
-                else:
-                    ts = datetime.now(tz=UTC).timestamp()
-            except (ValueError, AttributeError):
-                ts = datetime.now(tz=UTC).timestamp()
+            # ── observed_at: when the award became KNOWN ──
+            # NOT `start_date`. `start_date` is the period-of-performance start,
+            # which for an active contract is in the future; stamping it here
+            # future-dated 86% of gov_contracts rows, 912 of them past today,
+            # and dragged the trainer's test window out to 2030
+            # (docs/research/full_audit_2026-09-23.md, findings 19 and 31).
+            # The period of performance is data, so it goes in `value` below.
+            raw_award_date = (award.get("award_date") or "").strip()
+            if not raw_award_date:
+                # The source gave no award date. The earliest moment we can
+                # honestly claim to know this fact is now. Never in the future.
+                n_no_award_date += 1
+                ts = now_ts
+            else:
+                parsed = _parse_award_date(raw_award_date)
+                if parsed is None:
+                    n_unparseable += 1
+                    log.warning(
+                        "gov_contracts: award %s has unparseable award_date %r — dropped",
+                        award.get("award_id"),
+                        raw_award_date,
+                    )
+                    continue
+                if parsed > now_ts + _FUTURE_DATE_TOLERANCE_S:
+                    # An obligation date cannot be in the future. Substituting
+                    # "now" here would turn a data error into a plausible-looking
+                    # recent observation, which is what the old guard did.
+                    n_future += 1
+                    log.warning(
+                        "gov_contracts: award %s has future award_date %r — dropped",
+                        award.get("award_id"),
+                        raw_award_date,
+                    )
+                    continue
+                ts = parsed
 
             store.store_entity_observation(
                 entity_id=company_eid,
@@ -179,6 +223,9 @@ class GovContractsTool(Tool):
                     "agency": agency,
                     "award_type": award.get("award_type"),
                     "country": country_code,
+                    "award_date": raw_award_date,
+                    "period_of_performance_start": award.get("start_date"),
+                    "period_of_performance_end": award.get("end_date"),
                 },
             )
 
@@ -198,9 +245,7 @@ class GovContractsTool(Tool):
                 continue
 
             try:
-                agency_canon = (
-                    normalize_company_name(agency) if normalize_company_name else agency
-                )
+                agency_canon = normalize_company_name(agency) if normalize_company_name else agency
             except (ValueError, TypeError):
                 agency_canon = agency.strip().lower()
 
@@ -228,6 +273,9 @@ class GovContractsTool(Tool):
                     "recipient": recipient,
                     "award_type": award.get("award_type"),
                     "country": country_code,
+                    "award_date": raw_award_date,
+                    "period_of_performance_start": award.get("start_date"),
+                    "period_of_performance_end": award.get("end_date"),
                 },
             )
 
@@ -244,6 +292,24 @@ class GovContractsTool(Tool):
                         "amount": award.get("amount_usd") or award.get("amount"),
                     },
                 )
+
+        if n_unparseable or n_future:
+            log.error(
+                "gov_contracts[%s]: dropped %d of %d awards with an unusable award date "
+                "(%d unparseable, %d future-dated). These are NOT in the store.",
+                country_code,
+                n_unparseable + n_future,
+                len(awards),
+                n_unparseable,
+                n_future,
+            )
+        if n_no_award_date:
+            log.warning(
+                "gov_contracts[%s]: %d of %d awards carried no award date; observed_at stamped with ingest time.",
+                country_code,
+                n_no_award_date,
+                len(awards),
+            )
 
     @property
     def name(self) -> str:
@@ -274,9 +340,7 @@ class GovContractsTool(Tool):
                 "region": {
                     "type": "string",
                     "enum": sorted(VALID_REGIONS),
-                    "description": (
-                        "Region: us (USASpending.gov, default), uk (UK Contracts Finder)."
-                    ),
+                    "description": ("Region: us (USASpending.gov, default), uk (UK Contracts Finder)."),
                 },
                 "agency": {
                     "type": "string",
@@ -324,9 +388,7 @@ class GovContractsTool(Tool):
 
         now = datetime.now(UTC)
         end_date = (kwargs.get("end_date") or "").strip() or now.strftime("%Y-%m-%d")
-        start_date = (kwargs.get("start_date") or "").strip() or (
-            now - timedelta(days=90)
-        ).strftime("%Y-%m-%d")
+        start_date = (kwargs.get("start_date") or "").strip() or (now - timedelta(days=90)).strftime("%Y-%m-%d")
 
         try:
             if region == "uk":
@@ -352,11 +414,14 @@ class GovContractsTool(Tool):
     ) -> ToolResult:
         """US dispatch — USASpending.gov."""
         if mode == "recent":
+            # Sort by obligation date, not "Start Date". Sorting by the
+            # period-of-performance start descending returns the contracts whose
+            # work begins furthest in the *future* — the opposite of "recent".
             return self._query_awards(
                 start_date,
                 end_date,
                 limit,
-                sort_field="Start Date",
+                sort_field="Base Obligation Date",
                 sort_order="desc",
             )
         elif mode == "top":
@@ -450,6 +515,10 @@ class GovContractsTool(Tool):
                     "agency": r.get("Awarding Agency"),
                     "sub_agency": r.get("Awarding Sub Agency"),
                     "award_type": r.get("Award Type"),
+                    # When the award became public (obligation date) — the
+                    # observation timestamp. Distinct from the period of
+                    # performance below, which is scheduled future work.
+                    "award_date": r.get("Base Obligation Date"),
                     "start_date": r.get("Start Date"),
                     "end_date": r.get("End Date"),
                     "description": (r.get("Description") or "")[:200],
@@ -510,9 +579,7 @@ class GovContractsTool(Tool):
 
         releases = self._fetch_uk_contracts(start_date, end_date)
         if releases is None:
-            return ToolResult(
-                success=False, output="Failed to fetch UK Contracts Finder data."
-            )
+            return ToolResult(success=False, output="Failed to fetch UK Contracts Finder data.")
 
         # Parse OCDS releases into normalized award records
         awards = self._parse_uk_releases(releases, query=query, buyer=buyer)
@@ -520,8 +587,8 @@ class GovContractsTool(Tool):
         # Sort based on mode
         if mode == "top":
             awards.sort(key=lambda a: a.get("amount") or 0, reverse=True)
-        else:  # recent (default), agency, search — sort by date descending
-            awards.sort(key=lambda a: a.get("start_date") or "", reverse=True)
+        else:  # recent (default), agency, search — most recently announced first
+            awards.sort(key=lambda a: a.get("award_date") or "", reverse=True)
 
         total = len(awards)
         awards = awards[:limit]
@@ -592,6 +659,7 @@ class GovContractsTool(Tool):
             amount = None
             currency = "GBP"
             supplier = None
+            award_date = ""
             for aw in raw_awards:
                 val = aw.get("value", {})
                 if val.get("amount") is not None:
@@ -600,6 +668,13 @@ class GovContractsTool(Tool):
                 suppliers = aw.get("suppliers", [])
                 if suppliers:
                     supplier = suppliers[0].get("name")
+                if not award_date and aw.get("date"):
+                    award_date = str(aw["date"])
+            # Preference order, both genuine announcement timestamps: the OCDS
+            # award date, else the release publication date. Never the contract
+            # period start — that is future work, not an observation time.
+            if not award_date:
+                award_date = str(release.get("date") or "")
 
             # Extract period
             period = tender.get("contractPeriod") or tender.get("tenderPeriod", {})
@@ -614,6 +689,7 @@ class GovContractsTool(Tool):
                     "currency": currency,
                     "agency": buyer_name,
                     "award_type": tender.get("procurementMethod", ""),
+                    "award_date": award_date,
                     "start_date": start,
                     "end_date": end,
                     "description": (title or description or "")[:200],

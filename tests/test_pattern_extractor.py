@@ -11,7 +11,11 @@ from __future__ import annotations
 import pytest
 import torch
 
-from agent.models.gnn.graph_builder import ENTITY_TYPES, OBSERVATION_TYPES
+from agent.models.gnn.graph_builder import (
+    ENTITY_TYPES,
+    OBSERVATION_TYPES,
+    REVERSE_RELATION_PREFIX,
+)
 from agent.models.gnn.het_tgn import HetTGN
 from agent.models.gnn.pattern_extractor import (
     CrystallizedPattern,
@@ -139,9 +143,26 @@ class TestPatternExtractor:
         for lnk in links:
             lt = lnk["link_type"]
             link_type_counts[lt] = link_type_counts.get(lt, 0) + 1
+        checked = 0
         for p in patterns:
-            if p.hops == 1:
-                assert p.frequency == link_type_counts.get(p.edge_type, 0)
+            if p.hops != 1:
+                continue
+            # graph_builder._build_edge_data synthesizes a `rev_<link_type>`
+            # relation for every stored relation, so a 1-hop pattern's
+            # edge_type may be an inverse that appears nowhere in the
+            # entity_links table. The old assertion compared the pattern's
+            # edge_type straight against the raw link_type tally, so
+            # `rev_domain_owned_by` (frequency 3) was checked against 0. That
+            # encoded the pre-reverse-edge world: it would have failed on ANY
+            # inverse, correct counts or not, and it checked nothing at all
+            # about whether the inverse carried the right number of edges.
+            # An inverse is the same edge list with src/dst flipped, so its
+            # frequency must equal its forward relation's count exactly.
+            base_type = p.edge_type.removeprefix(REVERSE_RELATION_PREFIX)
+            assert p.frequency == link_type_counts.get(base_type, 0)
+            checked += 1
+        # The loop must not be able to pass by iterating over nothing.
+        assert checked > 0
 
     def test_empty_store(self, store):
         cfg = TrainerConfig(hidden_dim=8, memory_dim=8, message_dim=8)
@@ -195,22 +216,56 @@ class TestTemporalLagExtraction:
         model, store = trained_model
         extractor = PatternExtractor(model, store)
         patterns = extractor.extract_metapath_importance()
-        result = extract_temporal_lags(patterns, store, top_k=5)
+        # _compute_lags_for_pattern resolves pattern.edge_type against the raw
+        # link_type column, so only forward 1-hop relations can be matched to
+        # entity pairs. The old test handed it the whole ranked list and took
+        # top_k=5, which used to be all forward 1-hop patterns; now that the
+        # builder synthesizes `rev_*` relations the top of the ranking is
+        # inverses and 2-hop composites, and every one of those scores
+        # mean_lag == 0.0. Reverse patterns never receiving a lag is a real
+        # extractor gap (reported for an owner decision) — it is NOT a reason
+        # to start tolerating zero lags here, so the assertion is pinned to
+        # the patterns lag extraction actually supports and made stricter.
+        forward_1hop = [p for p in patterns if p.hops == 1 and not p.edge_type.startswith(REVERSE_RELATION_PREFIX)]
+        assert forward_1hop, "fixture must yield forward 1-hop patterns to test lags on"
+        result = extract_temporal_lags(forward_1hop, store, top_k=5)
         assert len(result) > 0
-        # At least one pattern should have a non-zero mean_lag
-        has_lag = any(p.mean_lag > 0 for p in result)
-        assert has_lag
+        # Every forward relation in this fixture links entities that both carry
+        # observations, so ALL of them must get a lag — stronger than the old
+        # `any(...)`, which a single surviving lag could satisfy.
+        assert all(p.mean_lag > 0 for p in result)
 
     def test_lag_stats_make_sense(self, trained_model):
         model, store = trained_model
         extractor = PatternExtractor(model, store)
         patterns = extractor.extract_metapath_importance()
-        result = extract_temporal_lags(patterns, store, top_k=5)
+        # Filter to forward 1-hop BEFORE taking the top-5. Once reverse edges
+        # exist, the ranked head is entirely `rev_`/2-hop patterns, and
+        # _compute_lags_for_pattern matches edge_type against the raw
+        # entity_links.link_type column, which never holds a `rev_` or a
+        # composite `X_via_Y` name — so every one of them gets mean_lag == 0.0.
+        # Left unfiltered, the `if p.mean_lag > 0` guard below never fires and
+        # every assertion in this test is unreachable while it reports green.
+        forward_1hop = [p for p in patterns if p.hops == 1 and not p.edge_type.startswith("rev_")]
+        assert forward_1hop, "fixture must yield forward 1-hop patterns"
+        result = extract_temporal_lags(forward_1hop, store, top_k=5)
+        checked = 0
         for p in result:
             if p.mean_lag > 0:
+                checked += 1
                 assert p.lag_std >= 0
-                assert p.lag_p25 <= p.mean_lag or True  # p25 often < mean
+                # _compute_lags_for_pattern only records dst_time - src_time for
+                # dst events strictly after src, so every observed lag is > 0 and
+                # therefore so is every quantile of them. (p25 <= mean_lag is NOT
+                # an invariant: a left-skewed lag sample puts q25 above the mean,
+                # e.g. [0.1, 10, 10, 10, 10] → q25 = 10, mean = 8.02. The old
+                # `or True` hid that this assertion was never checked at all.)
+                assert p.lag_p25 > 0
                 assert p.lag_p75 >= p.lag_p25
+                assert p.lag_p75 > 0
+        # Without this the whole loop body can be skipped and the test still
+        # passes — which is exactly what happened when reverse edges landed.
+        assert checked > 0, "no pattern carried a lag, so nothing above was asserted"
 
     def test_injected_pattern_lag(self, pattern_store):
         """Injected pattern should produce lags near the known lag."""

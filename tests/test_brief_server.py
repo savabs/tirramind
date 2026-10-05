@@ -8,6 +8,7 @@ import urllib.request
 from http.server import ThreadingHTTPServer
 
 import pytest
+from fixture_time import T
 
 from agent.brief_server import _Handler
 from agent.delivery.brief_deliverer import BriefDeliverer
@@ -407,7 +408,7 @@ def test_entity_graph_endpoints_gated_and_scoped(tmp_path, monkeypatch):
     p.register_entity("company", "Acme Corp", "company:acme", metadata={"secret_note": "should never leak"})
     p.register_entity("country", "USA", "country:usa")
     p.link_entities("company:acme", "country:usa", "headquartered_in", "seed", confidence=0.9, metadata={"cik": "0001"})
-    p.store_entity_observation("company:acme", "some_tool", 1.0, "signal", {"alpha": 42})
+    p.store_entity_observation("company:acme", "some_tool", T(1.0), "signal", {"alpha": 42})
 
     store = SubscriberStore(str(tmp_path / "subs.json"))
     monkeypatch.setattr("agent.payments.handler.SubscriberStore", lambda: store)

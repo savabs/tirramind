@@ -13,9 +13,8 @@ cache interaction, tool metadata, output formatting, limit/bounds.
 
 from __future__ import annotations
 
+import hashlib
 from datetime import UTC
-
-UTC = UTC
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -187,7 +186,15 @@ def _mock_responses(ofac_text=MOCK_OFAC_CSV, un_text=MOCK_UN_XML, ofac_status=20
         resp = MagicMock(spec=httpx.Response)
         if "treasury.gov" in url:
             resp.status_code = ofac_status
+            # These mocks used to set only .text, leaving .content a bare MagicMock.
+            # The collector hashes the RAW BYTES of a roster (sha256(resp.content)) —
+            # that hash is the integrity record Layer 2 diffs against, so it must be
+            # taken over the wire bytes, not the decoded text. An incomplete mock made
+            # that hash unreachable ("object supporting the buffer API required"), which
+            # is a defect in the mock, not in the collector. .content is now the exact
+            # utf-8 encoding of .text so the two stay consistent.
             resp.text = ofac_text
+            resp.content = ofac_text.encode("utf-8")
             if ofac_status >= 400:
                 resp.raise_for_status.side_effect = httpx.HTTPStatusError("error", request=MagicMock(), response=resp)
             else:
@@ -195,12 +202,15 @@ def _mock_responses(ofac_text=MOCK_OFAC_CSV, un_text=MOCK_UN_XML, ofac_status=20
         elif "scsanctions.un.org" in url:
             resp.status_code = un_status
             resp.text = un_text
+            resp.content = un_text.encode("utf-8")
             if un_status >= 400:
                 resp.raise_for_status.side_effect = httpx.HTTPStatusError("error", request=MagicMock(), response=resp)
             else:
                 resp.raise_for_status.return_value = None
         else:
             resp.status_code = 404
+            resp.text = ""
+            resp.content = b""
             resp.raise_for_status.side_effect = httpx.HTTPStatusError("not found", request=MagicMock(), response=resp)
         return resp
 
@@ -1207,3 +1217,48 @@ class TestEdgeCases:
             ]:
                 result = tool.execute(**mode_args)
                 assert result.data is not None
+
+
+class TestBodyHashIsOverRawBytes:
+    """Pin the integrity hash to the raw wire bytes, not the decoded text.
+
+    ``_fetch_*`` hashes ``resp.content`` because ``body_sha256`` is the record
+    Layer 2 diffs a roster against; it has to describe what actually came over
+    the wire. Nothing previously asserted this, so hashing ``resp.text``
+    instead would have stayed green while silently changing the hash of every
+    roster ever recorded. These tests give the mock a ``.content`` that does
+    NOT equal ``.text.encode()`` (a UTF-8 BOM, which httpx strips when
+    decoding) so the two choices produce different digests.
+    """
+
+    @staticmethod
+    def _bom_response(text: str):
+        raw = b"\xef\xbb\xbf" + text.encode("utf-8")
+
+        def side_effect(url, **kwargs):
+            resp = MagicMock(spec=httpx.Response)
+            resp.status_code = 200
+            resp.text = text
+            resp.content = raw
+            resp.raise_for_status.return_value = None
+            return resp
+
+        return raw, side_effect
+
+    def test_ofac_hash_is_sha256_of_content_not_text(self, tool):
+        raw, side_effect = self._bom_response(MOCK_OFAC_CSV)
+        with patch("httpx.get", side_effect=side_effect):
+            records, body_hash, err = tool._fetch_ofac()
+        assert err is None
+        assert records, "fixture should still parse from .text"
+        assert body_hash == hashlib.sha256(raw).hexdigest()
+        assert body_hash != hashlib.sha256(MOCK_OFAC_CSV.encode("utf-8")).hexdigest()
+
+    def test_un_hash_is_sha256_of_content_not_text(self, tool):
+        raw, side_effect = self._bom_response(MOCK_UN_XML)
+        with patch("httpx.get", side_effect=side_effect):
+            records, body_hash, err = tool._fetch_un()
+        assert err is None
+        assert records, "fixture should still parse from .text"
+        assert body_hash == hashlib.sha256(raw).hexdigest()
+        assert body_hash != hashlib.sha256(MOCK_UN_XML.encode("utf-8")).hexdigest()

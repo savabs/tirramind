@@ -39,8 +39,6 @@ import logging
 import re
 import time
 from datetime import UTC, datetime, timedelta
-
-UTC = UTC
 from typing import TYPE_CHECKING, Any
 
 import httpx

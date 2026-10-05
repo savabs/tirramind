@@ -121,3 +121,94 @@ class TestValidatePreflight:
         errors = validate_preflight(tmp_path, ["../outside_file.py"])
         assert len(errors) == 1
         assert "outside repo root" in errors[0]
+
+
+# ---------------------------------------------------------------------------
+# Pre-completion gate (scripts/quality_gate.py)
+#
+# The gate is the back half of the same workflow this file's preflight tests
+# cover, so its selection rules live here rather than in a file of their own.
+#
+# Defect it pins: check_tests() used to shell out to a bare `pytest tests/`,
+# while CI runs `-m "not live and not slow"`. The gate therefore executed the
+# live-network tests CI deselects, and `make quality-gate` went red whenever an
+# upstream API had no data for the current date (NYISO: "No demand data
+# available for <today>") — a failure that says nothing about the change being
+# gated. These tests fail against that old behaviour.
+# ---------------------------------------------------------------------------
+
+import importlib.util
+import re as _re
+
+import pytest
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _load_quality_gate():
+    spec = importlib.util.spec_from_file_location("quality_gate_under_test", _REPO_ROOT / "scripts" / "quality_gate.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _ci_marker_expression() -> str:
+    """The -m expression the CI workflow actually runs pytest with."""
+    ci = (_REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    matches = _re.findall(r'pytest\s+tests/[^\n]*?-m\s+"([^"]+)"', ci)
+    assert matches, 'no `pytest tests/ ... -m "..."` step found in ci.yml'
+    assert len(set(matches)) == 1, f"ci.yml runs pytest with conflicting markers: {set(matches)}"
+    return matches[0]
+
+
+class TestQualityGateTestSelection:
+    @pytest.fixture
+    def gate(self):
+        return _load_quality_gate()
+
+    @pytest.fixture
+    def captured_cmd(self, gate, monkeypatch):
+        """Capture the argv check_tests() would have executed."""
+        seen: list[list[str]] = []
+
+        def fake_run(cmd, timeout=300):
+            seen.append(list(cmd))
+            return 0, "1 passed"
+
+        monkeypatch.setattr(gate, "_run", fake_run)
+        return seen
+
+    @staticmethod
+    def _marker_arg(cmd: list[str]) -> str | None:
+        """The pytest -m value, ignoring the `python -m pytest` prefix's own -m."""
+        after = cmd[cmd.index("pytest") + 1 :]
+        if "-m" not in after:
+            return None
+        return after[after.index("-m") + 1]
+
+    def test_default_run_deselects_live_and_slow(self, gate, captured_cmd):
+        gate.check_tests()
+        assert len(captured_cmd) == 1
+        cmd = captured_cmd[0]
+        assert self._marker_arg(cmd) == "not live and not slow", f"gate ran: {cmd}"
+
+    def test_gate_marker_matches_ci_exactly(self, gate):
+        """Drift guard: the gate and CI must select the same tests."""
+        assert _ci_marker_expression() == gate.CI_MARKER_EXPR
+
+    def test_include_live_opts_back_in(self, gate, captured_cmd):
+        gate.check_tests(include_live=True)
+        assert self._marker_arg(captured_cmd[0]) is None
+
+    def test_summary_records_the_selection(self, gate, captured_cmd):
+        passed, summary = gate.check_tests()
+        assert passed
+        # The gate must not report a filtered run as if it were the full suite.
+        assert "not live and not slow" in summary
+
+    def test_failure_is_still_reported(self, gate, monkeypatch):
+        """Filtering must not turn a real pytest failure into a pass."""
+        monkeypatch.setattr(gate, "_run", lambda cmd, timeout=300: (1, "1 failed, 2 passed"))
+        passed, summary = gate.check_tests()
+        assert passed is False
+        assert "1 failed" in summary

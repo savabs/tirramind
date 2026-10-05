@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from fixture_time import T
 
 from agent.models.gnn.graph_builder import (
     BASE_FEAT_DIM,
@@ -103,14 +104,14 @@ def test_graph_builder_instrument_dim_49_with_m15(tmp_path):
         store.store_entity_observation(
             entity_id=eid,
             source_tool="test",
-            observed_at=float(day * 86400),
+            observed_at=T(float(day * 86400)),
             observation_type="instrument_daily",
             value={"close": 100.0 + day, "log_return": 0.0, "volume": 5000},
         )
     store.store_entity_observation(
         entity_id=eid,
         source_tool="options_chain",
-        observed_at=40 * 86400.0,
+        observed_at=T(40 * 86400.0),
         observation_type="options_chain_eod",
         value={
             "atm_call_iv": 0.2,
@@ -127,7 +128,7 @@ def test_graph_builder_instrument_dim_49_with_m15(tmp_path):
     store.store_entity_observation(
         entity_id=us_eid,
         source_tool="sovereign_debt",
-        observed_at=40 * 86400.0,
+        observed_at=T(40 * 86400.0),
         observation_type="sovereign_yield",
         value={
             "source": "us_treasury",

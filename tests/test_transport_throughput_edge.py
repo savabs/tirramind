@@ -89,33 +89,92 @@ class TestInputValidation:
         assert not r.success
         assert "Unknown border" in r.output
 
+    # NOTE on the tests below: the clamps are `months_back = max(1, min(months_back, 60))`
+    # and `limit = max(1, min(limit, 200))`. Neither is observable in mode="recent" —
+    # that mode ignores months_back entirely and hardcodes "$limit": "50" on both of
+    # its queries. The previous versions of these tests all ran mode="recent", so they
+    # could not see the clamp at all; three had no assertion whatsoever and the fourth
+    # asserted `r.success or True`, which is a tautology. They are re-pointed at the
+    # modes that actually thread the parameter into the SoQL query, and assert on the
+    # query the tool built.
+
+    @staticmethod
+    def _months_back_in_where(mock_fetch) -> int:
+        """Recover the clamped months_back from the date floor in the trend query."""
+        from datetime import UTC, datetime
+
+        params = mock_fetch.call_args_list[0].args[0]
+        start = params["$where"].split("date>='")[1].split("'")[0]
+        delta_days = (datetime.now(UTC) - datetime.fromisoformat(start).replace(tzinfo=UTC)).days
+        # _execute_trend uses months_back * 31 days.
+        return round(delta_days / 31)
+
     def test_months_back_clamped_low(self):
         with patch.object(TransportThroughputTool, "_fetch_bts") as m:
-            m.return_value = ([{"max_date": "2025-06-01T00:00:00"}], None)
-            r = _tool().execute(mode="recent", months_back=0)
-        # months_back = max(1, ...) → clamped
-        assert r.success or True  # may fail due to second fetch, but first clamp works
+            m.return_value = ([], None)
+            r = _tool().execute(mode="trend", months_back=0)
+        assert r.success
+        # Clamped up to 1, not left at 0 (which would make the window empty).
+        assert self._months_back_in_where(m) == 1
+        assert "last 1 months" in r.output
 
     def test_months_back_clamped_high(self):
         with patch.object(TransportThroughputTool, "_fetch_bts") as m:
-            m.return_value = ([{"max_date": "2025-06-01T00:00:00"}], None)
-            r = _tool().execute(mode="recent", months_back=999)
-        # months_back = min(..., 60) → clamped
+            m.return_value = ([], None)
+            r = _tool().execute(mode="trend", months_back=999)
+        assert r.success
+        # Clamped down to 60, not passed through as 999.
+        assert self._months_back_in_where(m) == 60
+        assert "last 60 months" in r.output
+
+    def test_months_back_unclamped_in_range(self):
+        """A value inside the range must pass through untouched, not snap to a default."""
+        with patch.object(TransportThroughputTool, "_fetch_bts") as m:
+            m.return_value = ([], None)
+            r = _tool().execute(mode="trend", months_back=7)
+        assert r.success
+        assert self._months_back_in_where(m) == 7
+        assert "last 7 months" in r.output
 
     def test_limit_clamped_low(self):
         with patch.object(TransportThroughputTool, "_fetch_bts") as m:
-            m.return_value = ([{"max_date": "2025-06-01T00:00:00"}], None)
-            r = _tool().execute(mode="recent", limit=0)
+            # 1st call resolves max(date); 2nd is the port query carrying $limit.
+            m.side_effect = [([{"max_date": "2025-06-01T00:00:00"}], None), ([], None)]
+            r = _tool().execute(mode="port", limit=0)
+        assert r.success
+        assert m.call_count == 2
+        assert m.call_args_list[1].args[0]["$limit"] == "1"
 
     def test_limit_clamped_high(self):
         with patch.object(TransportThroughputTool, "_fetch_bts") as m:
-            m.return_value = ([{"max_date": "2025-06-01T00:00:00"}], None)
-            r = _tool().execute(mode="recent", limit=999)
+            m.side_effect = [([{"max_date": "2025-06-01T00:00:00"}], None), ([], None)]
+            r = _tool().execute(mode="port", limit=999)
+        assert r.success
+        assert m.call_count == 2
+        assert m.call_args_list[1].args[0]["$limit"] == "200"
+
+    def test_limit_unclamped_in_range(self):
+        with patch.object(TransportThroughputTool, "_fetch_bts") as m:
+            m.side_effect = [([{"max_date": "2025-06-01T00:00:00"}], None), ([], None)]
+            r = _tool().execute(mode="port", limit=17)
+        assert r.success
+        assert m.call_args_list[1].args[0]["$limit"] == "17"
 
     def test_extra_kwargs_ignored(self):
+        """An unknown kwarg is swallowed by **_ and changes nothing about the query."""
         with patch.object(TransportThroughputTool, "_fetch_bts") as m:
-            m.return_value = ([{"max_date": "2025-06-01T00:00:00"}], None)
+            m.side_effect = [([{"max_date": "2025-06-01T00:00:00"}], None), ([], None)]
+            baseline = _tool().execute(mode="recent")
+            baseline_calls = [c.args[0] for c in m.call_args_list]
+
+        with patch.object(TransportThroughputTool, "_fetch_bts") as m2:
+            m2.side_effect = [([{"max_date": "2025-06-01T00:00:00"}], None), ([], None)]
             r = _tool().execute(mode="recent", bogus="thing")
+            bogus_calls = [c.args[0] for c in m2.call_args_list]
+
+        assert r.success is baseline.success
+        assert r.output == baseline.output
+        assert bogus_calls == baseline_calls
 
 
 # ── 3. Measure Resolution ────────────────────────────────────

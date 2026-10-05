@@ -69,8 +69,8 @@ from typing import Any
 import numpy as np
 import scipy.cluster.hierarchy as sch
 import scipy.spatial.distance as ssd
-from scipy.sparse.csgraph import laplacian
 from scipy.sparse import csr_matrix
+from scipy.sparse.csgraph import laplacian
 
 log = logging.getLogger(__name__)
 
@@ -208,9 +208,7 @@ def _persistence_via_ripser(dist_matrix: np.ndarray, max_dim: int = 1) -> Regime
     result = _ripser(dist_matrix, maxdim=max_dim, distance_matrix=True)
     dgms = result["dgms"]
 
-    pairs_0 = [
-        PersistencePair(birth=float(b), death=float(d), dim=0) for b, d in dgms[0]
-    ]
+    pairs_0 = [PersistencePair(birth=float(b), death=float(d), dim=0) for b, d in dgms[0]]
     pairs_1 = []
     if max_dim >= 1 and len(dgms) > 1:
         pairs_1 = [
@@ -263,11 +261,7 @@ def _persistence_entropy(pairs: list[PersistencePair]) -> float:
     Per Chazal et al. 2014: a high-entropy diagram has many features of
     similar lifetime — complex, noisy topology (crisis signature).
     """
-    finite = [
-        p.persistence
-        for p in pairs
-        if not math.isinf(p.persistence) and p.persistence > 1e-12
-    ]
+    finite = [p.persistence for p in pairs if not math.isinf(p.persistence) and p.persistence > 1e-12]
     if not finite:
         return 0.0
     total = sum(finite)
@@ -290,12 +284,8 @@ def _bottleneck_distance(
     Both diagrams are represented by their sorted finite persistence values.
     Missing entries are padded with 0 (treating as a point on the diagonal).
     """
-    a = sorted(
-        [p.persistence for p in pairs_a if not math.isinf(p.persistence)], reverse=True
-    )
-    b = sorted(
-        [p.persistence for p in pairs_b if not math.isinf(p.persistence)], reverse=True
-    )
+    a = sorted([p.persistence for p in pairs_a if not math.isinf(p.persistence)], reverse=True)
+    b = sorted([p.persistence for p in pairs_b if not math.isinf(p.persistence)], reverse=True)
 
     n = max(len(a), len(b))
     if n == 0:
@@ -348,11 +338,7 @@ def _spectral_gap(condensed_dist: np.ndarray, n_points: int, epsilon: float) -> 
 def _n_components_at_threshold(pairs_0: list[PersistencePair], epsilon: float) -> int:
     """Count β₀ (connected components) at filtration value epsilon."""
     # A component that was born before epsilon and dies after epsilon is alive
-    return sum(
-        1
-        for p in pairs_0
-        if p.birth <= epsilon and (math.isinf(p.death) or p.death > epsilon)
-    )
+    return sum(1 for p in pairs_0 if p.birth <= epsilon and (math.isinf(p.death) or p.death > epsilon))
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -389,7 +375,7 @@ class TDARegimeDetector:
 
     # ── Public API ────────────────────────────────────────────────────────
 
-    def fit_baseline(self, returns: np.ndarray) -> "TDARegimeDetector":
+    def fit_baseline(self, returns: np.ndarray) -> TDARegimeDetector:
         """Store a baseline diagram from a calm/training period.
 
         Args:
@@ -434,14 +420,9 @@ class TDARegimeDetector:
         Returns:
             RegimeFeatures, or None if insufficient data.
         """
-        returns = _load_returns(
-            store, entity_ids, self.window_days, self.max_instruments, as_of
-        )
+        returns = _load_returns(store, entity_ids, self.window_days, self.max_instruments, as_of)
         if returns is None or returns.shape[0] < 5 or returns.shape[1] < 2:
-            log.warning(
-                "TDARegimeDetector: insufficient data "
-                "(need ≥5 days × ≥2 instruments)."
-            )
+            log.warning("TDARegimeDetector: insufficient data (need ≥5 days × ≥2 instruments).")
             return None
         return self.compute(returns)
 
@@ -545,9 +526,7 @@ class TDARegimeDetector:
             mean_persistence=mean_p,
         )
 
-    def _extract_features_full(
-        self, diagram: RegimeDiagram, condensed_dist: np.ndarray
-    ) -> RegimeFeatures:
+    def _extract_features_full(self, diagram: RegimeDiagram, condensed_dist: np.ndarray) -> RegimeFeatures:
         """Full feature extraction including spectral gap."""
         base = self._extract_features(diagram)
         deaths = [p.death for p in diagram.finite_0]

@@ -158,9 +158,7 @@ class LiveToolSynthesizer:
             return []
 
     # ── Internal helpers ────────────────────────────────────────────────────
-    def _synthesize(
-        self, operation: str, error: str, tool_purpose: str
-    ) -> SynthesizedTool | None:
+    def _synthesize(self, operation: str, error: str, tool_purpose: str) -> SynthesizedTool | None:
         tool_name = self._make_tool_name(tool_purpose)
         synth_prompt = (
             f"Write a Python script named {tool_name}.py that {tool_purpose}.\n"
@@ -232,9 +230,7 @@ class LiveToolSynthesizer:
             if tmp_path:
                 Path(tmp_path).unlink(missing_ok=True)
 
-    def _persist_tool(
-        self, name: str, code: str, purpose: str, trigger_pattern: str
-    ) -> SynthesizedTool | None:
+    def _persist_tool(self, name: str, code: str, purpose: str, trigger_pattern: str) -> SynthesizedTool | None:
         try:
             self._tools_dir.mkdir(parents=True, exist_ok=True)
             script_path = self._tools_dir / f"{name}.py"

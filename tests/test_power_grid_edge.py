@@ -1137,16 +1137,20 @@ class TestBanditIntegration:
 # ── 17. Live Network Tests ──────────────────────────────────
 
 
-@(
-    pytest.mark.skipif(
-        not _can_reach_nyiso(),  # noqa: F821  # defined below; if False short-circuits call
-        reason="NYISO MIS not reachable",
-    )
-    if False
-    else lambda f: f
-)  # Always attempt, skip decorator handled below
+@pytest.mark.live
 class TestLiveNetwork:
-    """Live tests against NYISO MIS. Auto-skip if network unavailable."""
+    """Live tests against NYISO MIS. Auto-skip if network unavailable.
+
+    Marked `live` so CI's `-m "not live and not slow"` deselects them. The
+    autouse fixture below is not sufficient on its own: it only checks that the
+    MIS directory listing responds, so on a CI runner -- which has internet --
+    it never skips, and the tests then fail on the actual data call instead.
+    Reachable and returning usable data are different questions.
+
+    The decorator this replaces was dead code: `... if False else lambda f: f`
+    is the identity function, so the skipif branch never evaluated, and its
+    `# noqa: F821` was suppressing a genuinely undefined name.
+    """
 
     @pytest.fixture(autouse=True)
     def check_network(self):

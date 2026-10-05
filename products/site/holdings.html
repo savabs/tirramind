@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>You own more of one company than you think</title>
+<meta name="description" content="Paste your Indian holdings. See what you really own once your index funds are unpacked — the company you hold twice without knowing, and the funds nobody can see into.">
+<meta property="og:title" content="You own more of one company than you think">
+<meta property="og:description" content="Your index fund holds the stock you already own. Paste your holdings and see the real number. Runs in your browser; nothing is sent anywhere.">
+<style>
+  :root{
+    --bg:#060608; --ink:#fafafa; --mut:#93939c; --dim:#5c5c66;
+    --a1:#8b5cf6; --a2:#ec4899; --a3:#22d3ee;
+    --line:#1a1a20; --card:#0d0d11;
+  }
+  @media (prefers-color-scheme: light){
+    :root{ --bg:#fbfbfd; --ink:#0a0a0a; --mut:#5a5a66; --dim:#9a9aa6;
+           --a1:#7c3aed; --a2:#db2777; --a3:#0891b2;
+           --line:#e8e8ee; --card:#fff; }
+  }
+  *{box-sizing:border-box;margin:0}
+  body{
+    background:var(--bg);color:var(--ink);line-height:1.6;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased;overflow-x:hidden;position:relative;
+  }
+  body::before{
+    content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+    background:
+      radial-gradient(58ch 40ch at 12% -8%, color-mix(in srgb,var(--a1) 22%,transparent), transparent 70%),
+      radial-gradient(50ch 36ch at 92% 4%, color-mix(in srgb,var(--a2) 16%,transparent), transparent 70%);
+  }
+  .wrap{max-width:860px;margin:0 auto;padding:0 28px;position:relative;z-index:1}
+
+  header{padding:13vh 0 0}
+  .eyebrow{
+    display:inline-flex;align-items:center;gap:10px;font-size:11.5px;
+    letter-spacing:.2em;text-transform:uppercase;color:var(--mut);
+    font-weight:700;margin-bottom:30px;
+  }
+  .pip{width:6px;height:6px;border-radius:50%;
+       background:linear-gradient(var(--a1),var(--a2));
+       box-shadow:0 0 14px var(--a1)}
+  h1{
+    font-size:clamp(38px,7.2vw,76px);line-height:1;font-weight:850;
+    letter-spacing:-.045em;margin-bottom:30px;
+  }
+  .grad{
+    background:linear-gradient(103deg,var(--a1) 0%,var(--a2) 52%,var(--a3) 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  .lede{font-size:clamp(17.5px,2.5vw,22px);color:var(--mut);max-width:58ch;line-height:1.6}
+  .lede strong{color:var(--ink);font-weight:650}
+  .fine{font-size:12.5px;color:var(--dim)}
+
+  section{padding:0 0 70px}
+  h2{font-size:11.5px;letter-spacing:.2em;text-transform:uppercase;
+     color:var(--mut);font-weight:700;margin-bottom:24px}
+  .body{font-size:16.5px;color:var(--mut);max-width:63ch}
+  .body strong{color:var(--ink);font-weight:600}
+  p+p{margin-top:17px}
+
+  .pull{
+    font-size:clamp(20px,3vw,27px);font-weight:650;line-height:1.35;
+    letter-spacing:-.02em;color:var(--ink);max-width:24ch;
+    margin:44px 0;padding-left:24px;
+    border-left:3px solid transparent;
+    border-image:linear-gradient(var(--a1),var(--a2)) 1;
+  }
+
+  .links{display:grid;gap:11px}
+  a.card{
+    display:flex;gap:16px;align-items:baseline;
+    background:var(--card);border:1px solid var(--line);border-radius:13px;
+    padding:20px 23px;text-decoration:none;color:inherit;
+    transition:border-color .2s,transform .2s;
+  }
+  a.card:hover{border-color:color-mix(in srgb,var(--a1) 60%,transparent);transform:translateY(-2px)}
+  a.card:focus-visible{outline:2px solid var(--a1);outline-offset:3px}
+  .t{font-weight:680;font-size:15.5px;letter-spacing:-.01em}
+  .d{font-size:13.5px;color:var(--mut);line-height:1.5}
+  .arw{margin-left:auto;color:var(--dim)}
+
+  footer{border-top:1px solid var(--line);padding:34px 0 70px;
+         color:var(--dim);font-size:13px}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.92em;color:var(--mut)}
+  @media (max-width:640px){header{padding:8vh 0 0}}
+
+  /* ---- the form ---- */
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:24px;margin:44px 0 18px}
+  label{display:block;font-size:11.5px;letter-spacing:.2em;text-transform:uppercase;
+        color:var(--mut);font-weight:700;margin-bottom:12px}
+  textarea{
+    width:100%;min-height:168px;resize:vertical;
+    background:var(--bg);color:var(--ink);
+    border:1px solid var(--line);border-radius:11px;padding:15px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14.5px;line-height:1.75;
+  }
+  textarea:focus-visible{outline:2px solid var(--a1);outline-offset:2px}
+  .row{display:flex;gap:11px;flex-wrap:wrap;align-items:center;margin-top:15px}
+  button{
+    font:inherit;font-weight:680;font-size:15px;cursor:pointer;
+    border-radius:11px;padding:13px 24px;border:1px solid transparent;
+    background:linear-gradient(103deg,var(--a1),var(--a2));color:#fff;
+  }
+  button:hover{filter:brightness(1.08)}
+  button:focus-visible{outline:2px solid var(--a1);outline-offset:3px}
+  button.ghost{background:none;border-color:var(--line);color:var(--mut)}
+  button.ghost:hover{border-color:var(--mut);filter:none}
+
+  /* ---- the answer ---- */
+  .hero{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:30px 26px;margin-bottom:14px}
+  .hero.lead{border-color:color-mix(in srgb,var(--a1) 45%,transparent)}
+  .big{
+    font-size:clamp(30px,5.4vw,52px);font-weight:850;letter-spacing:-.04em;
+    line-height:1.05;margin:4px 0 12px;font-variant-numeric:tabular-nums;
+  }
+  .hero h3{font-size:clamp(21px,3.2vw,30px);font-weight:750;letter-spacing:-.03em;line-height:1.2;margin:4px 0 12px}
+  .sub{font-size:16px;color:var(--mut);max-width:58ch}
+  .sub strong{color:var(--ink);font-weight:650}
+  .caveat{font-size:12.5px;color:var(--dim);margin-top:14px;max-width:70ch;line-height:1.55}
+  table{width:100%;border-collapse:collapse;margin-top:22px;font-size:14.5px}
+  th{
+    text-align:right;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--mut);font-weight:700;padding:0 0 9px;border-bottom:1px solid var(--line);
+  }
+  th:first-child,td:first-child{text-align:left}
+  th:last-child,td:last-child{text-align:left}
+  td{padding:9px 0;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums;text-align:right}
+  td.sym{font-weight:650;letter-spacing:-.01em}
+  td.co{color:var(--dim);font-size:12.5px;text-align:left;padding-left:12px}
+  td.hid{color:var(--a2);font-weight:680}
+  td.via{color:var(--mut);font-size:12.5px;padding-left:14px}
+  tr.op td.sym{font-weight:600;color:var(--mut)}
+  ul.lines{margin:12px 0 0;padding-left:20px;font-size:14px;color:var(--mut)}
+  ul.lines li{margin-bottom:7px;line-height:1.55}
+  .tag{
+    display:inline-block;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;
+    font-weight:700;color:var(--a2);border:1px solid color-mix(in srgb,var(--a2) 40%,transparent);
+    border-radius:999px;padding:2px 9px;margin-left:8px;vertical-align:middle;
+  }
+  .err{border-color:color-mix(in srgb,var(--a2) 45%,transparent)}
+  @media (max-width:640px){
+    td.co,th.co{display:none}
+    .hero{padding:22px 18px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+<div class="eyebrow"><span class="pip"></span>What you really own &middot; India</div>
+<h1>Your index fund owns<br><span class="grad">the stock you already own.</span></h1>
+<p class="lede">If you hold HDFC Bank and you hold a Nifty 50 fund, you hold HDFC Bank twice. Your broker shows you two line items. It does not add them up.</p>
+<p class="lede">Paste your holdings below and it adds them up. <strong>This runs in your browser</strong> &mdash; your holdings are not sent anywhere, because there is nowhere to send them to.</p>
+</header>
+
+<section>
+<div class="panel">
+  <label for="book">Your holdings, one per line, with a percentage</label>
+  <textarea id="book" spellcheck="false" placeholder="HDFCBANK 12%
+RELIANCE 10%
+NIFTYBEES 20%
+GOLDBEES 6%
+INFY 8%
+TCS 9%
+Parag Parikh Flexi Cap Fund 35%"></textarea>
+  <div class="row">
+    <button id="run" type="button">Look through it</button>
+    <button id="demo" class="ghost" type="button">Use the example</button>
+    <button id="clear" class="ghost" type="button">Clear</button>
+  </div>
+  <p class="caveat" id="status">Percentages, or amounts in one currency. Share counts need a price for every line, and a mutual fund has no price here &mdash; so this page asks for percentages rather than guessing one.</p>
+</div>
+<div id="out"></div>
+</section>
+
+<section id="about">
+<h2>What it does, and what it cannot</h2>
+<div class="body">
+<p>An index fund is a list of companies. If you know the list and the weights, you know what the fund holds, so you can add it to what you hold directly. That is the whole calculation:</p>
+<div class="pull">your direct weight, plus the fund&rsquo;s weight times the company&rsquo;s weight in the index</div>
+<p><strong>The membership is published by NSE. The weights are mine.</strong> NSE publishes which companies are in each index but not how much of each, so I compute the weights from free-float market capitalisation &mdash; the shares actually available to trade, times the price, which is the same basis NSE uses. That is an estimate, and I measured how wrong it is: against the published holdings of a real Nifty 50 tracker, the average error is <strong>0.37 percentage points</strong>. The number is shown on the page next to the figures it affects, not in a footnote.</p>
+<p><strong>An actively managed fund cannot be looked through, and I will not pretend otherwise.</strong> A manager picks its holdings. SEBI makes it publish them monthly, so they exist, but they are not knowable from the fund&rsquo;s name &mdash; and guessing them from its category would be inventing your portfolio. Those funds are listed by name, with the reason, and left alone. Same for gold, debt and anything else that holds no company shares.</p>
+<p>Seven indices are covered: Nifty 50, Next 50, 100, 500, Bank, IT and Midcap 150. A fund tracking anything else is named and left alone rather than mapped to a nearby index.</p>
+</div>
+</section>
+
+<section>
+<h2>Why this one and not a prettier chart</h2>
+<div class="body">
+<p>I tried six other things first and measured each one. Five died.</p>
+<p><em>&ldquo;You have 12 positions but only 3 real bets&rdquo;</em> &mdash; a good line, and it happened <strong>zero times in 200 real portfolios</strong>. <em>&ldquo;Picking your own stocks cost you 14%&rdquo;</em> &mdash; measured across every rolling one-year window, the same portfolio beat its index <strong>223 times out of 493</strong>, median gap &minus;0.2%. That is a coin flip, not a finding. A long chain of cause and effect reaching your holdings &mdash; <strong>371,368 candidates tested, zero survived</strong>, twice, and the reason turned out to be structural rather than fixable.</p>
+<p>This one survived because of what it is: <strong>addition you could check by hand</strong> against your fund&rsquo;s own factsheet, about something your broker genuinely does not show you. Everything else in a portfolio tool describes positions you chose, and facts about your own choices cannot surprise you. The company you hold twice is not a choice you made.</p>
+</div>
+</section>
+
+<footer>October 2026. <a href="/" style="color:inherit">The grid work is here</a>. The index weights and this page&rsquo;s arithmetic are <a href="https://github.com/savabs/tirramind" style="color:inherit">open source</a>; the browser calculation is checked against the Python one on every build, over 3,446 real fund names. <code>github.com/savabs</code></footer>
+
+</div>
+
+<script src="/lookthrough.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  var $ = function (id) { return document.getElementById(id); };
+  var out = $("out");
+  var engine = null;
+  var loadError = null;
+
+  var DEMO = "HDFCBANK 12%\nRELIANCE 10%\nNIFTYBEES 20%\nGOLDBEES 6%\nINFY 8%\nTCS 9%\nIDEA 3%\nParag Parikh Flexi Cap Fund 32%";
+
+  // --- formatting -------------------------------------------------------
+
+  function pct(x, places) {
+    if (x === null || x === undefined || !isFinite(x)) return "—";
+    return (x * 100).toFixed(places === undefined ? 1 : places) + "%";
+  }
+
+  /* A DIFFERENCE between two percentages is percentage POINTS. 12.0% listed
+     against 15.2% actual is +3.2pp, and writing "+3.2%" invites the reader to
+     read it as a 3.2% relative increase on 12.0% — a different, smaller
+     number. This is the figure the page expects to be screenshotted, so the
+     unit has to be right on it. */
+  function pp(x, places) {
+    if (x === null || x === undefined || !isFinite(x)) return "—";
+    var p = places === undefined ? 1 : places;
+    return (x >= 0 ? "+" : "−") + Math.abs(x * 100).toFixed(p) + "pp";
+  }
+
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined && text !== null) n.textContent = text;
+    return n;
+  }
+
+  // --- data loading -----------------------------------------------------
+
+  function load() {
+    if (engine || loadError) return Promise.resolve();
+    return fetch("/data/lookthrough.json", { cache: "default" })
+      .then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function (data) {
+        engine = new window.LookThrough.Engine(data);
+        $("status").textContent =
+          "Index weights as of " + (data.indices["NIFTY 50"] || {}).as_of +
+          ", for " + Object.keys(data.indices).length + " indices. Computed in this tab.";
+      })
+      .catch(function (e) {
+        loadError = e;
+      });
+  }
+
+  // --- rendering --------------------------------------------------------
+
+  function refusalCard(r) {
+    var card = el("div", "hero err");
+    card.appendChild(el("div", "eyebrow", "Not computed"));
+    card.appendChild(el("h3", null, "I did not put a number on this"));
+    card.appendChild(el("p", "sub", r.not_computed_reason || "The paste could not be read."));
+    /* Every refusal says what to change. A refusal with no instruction is a
+       dead end the reader cannot get out of, which is worse than a wrong
+       answer because at least a wrong answer can be argued with. */
+    card.appendChild(el("p", "caveat",
+      "Nothing was guessed, and nothing partial was shown: the weights are all " +
+      "shares of one total, so a paste with one unreadable line has no correct " +
+      "partial answer."));
+    return card;
+  }
+
+  function resultCards(r) {
+    var frag = document.createDocumentFragment();
+
+    var unpacked = (r.n_unpacked || 0) > 0;
+    var card = el("div", unpacked ? "hero lead" : "hero");
+    card.appendChild(el("div", "eyebrow", "What you really own"));
+
+    if (!unpacked) {
+      /* Nothing was unpacked, but the engine ran. Say so in one sentence and
+         stop. A table whose every row reads "30.0% / 30.0% / —" is four lines
+         of confirmed nothing, and printing it invites the reader to hunt for a
+         finding that is genuinely not there. */
+      var opaque0 = (r.funds || []).filter(function (f) { return !f.unpacked; });
+      if (opaque0.length) {
+        card.appendChild(el("h3", null, "Nothing here I could look through"));
+        var nDirect = Math.max(0, (r.n_listed || 0) - opaque0.length);
+        card.appendChild(el("p", "sub",
+          (nDirect === 1 ? "Your 1 direct holding is" : "Your " + nDirect + " direct holdings are") +
+          " exactly what you listed. " +
+          (opaque0.length === 1 ? "This one is not" : "These are not") +
+          ", and I will not guess what is inside:"));
+        var ul0 = el("ul", "lines");
+        opaque0.forEach(function (f) {
+          ul0.appendChild(el("li", null, f.label + " — " + pct(f.weight, 1) + " of your money — " + (f.reason || "could not be looked through")));
+        });
+        card.appendChild(ul0);
+      } else {
+        card.appendChild(el("h3", null, "You own exactly what you listed"));
+        card.appendChild(el("p", "sub",
+          "All " + (r.n_listed || 0) + " positions are direct holdings — no index " +
+          "fund or ETF, so nothing is hidden behind one."));
+      }
+      frag.appendChild(card);
+      return frag;
+    }
+
+    var big = r.biggest_surprise;
+    if (big && big.added > 0) {
+      card.appendChild(el("div", "big", "You own " + pct(big.actual, 1) + " of " + big.symbol));
+      /* The symbol is repeated on purpose. This line gets read on its own, out
+         of a screenshot and under a headline the reader has already skipped
+         past, and "You listed 12.0%" with no subject is a sentence about
+         nothing. */
+      var listedTxt = (big.listed === null || big.listed === undefined)
+        ? "You did not list " + big.symbol + " at all"
+        : "You listed " + big.symbol + " at " + pct(big.listed, 1);
+      var sub = el("p", "sub");
+      sub.appendChild(document.createTextNode(listedTxt + ". The other "));
+      sub.appendChild(el("strong", null, pp(big.added, 1).replace(/^\+/, "")));
+      sub.appendChild(document.createTextNode(" arrives through your funds."));
+      card.appendChild(sub);
+    }
+    card.appendChild(el("p", "sub", r.headline || ""));
+
+    // --- the table
+    var rows = (r.rows || []).filter(function (x) { return x.kind === "company"; });
+    var shown = rows.slice(0, 12);
+
+    var tbl = el("table");
+    var thead = el("thead"), hr = el("tr");
+    [["Holding", ""], ["", "co"], ["You listed", ""], ["You actually hold", ""], ["Hidden", ""], ["Arrives through", ""]]
+      .forEach(function (h) { hr.appendChild(el("th", h[1], h[0])); });
+    thead.appendChild(hr); tbl.appendChild(thead);
+
+    var tb = el("tbody");
+    shown.forEach(function (x) {
+      var tr = el("tr");
+      tr.appendChild(el("td", "sym", x.symbol));
+      tr.appendChild(el("td", "co", x.name || ""));
+      tr.appendChild(el("td", null, (x.listed === null || x.listed === undefined) ? "—" : pct(x.listed, 1)));
+      tr.appendChild(el("td", null, pct(x.actual, 1)));
+      tr.appendChild(el("td", "hid", x.added > 0 ? pp(x.added, 1) : "—"));
+      var via = (x.via || []).map(function (v) { return v.source; }).join(", ");
+      tr.appendChild(el("td", "via", via));
+      tb.appendChild(tr);
+    });
+    tbl.appendChild(tb);
+    card.appendChild(tbl);
+
+    /* Count COMPANIES, not rows. `rows` also carries the funds that could not
+       be unpacked, as pass-through lines, so using its length here printed
+       "53 companies" directly under a headline that said 51 — and two numbers
+       for the same thing on one card is how a reader decides the whole page is
+       unreliable. */
+    var nCompanies = (r.n_companies === undefined || r.n_companies === null) ? rows.length : r.n_companies;
+    if (rows.length > shown.length) {
+      card.appendChild(el("p", "caveat",
+        "Showing the " + shown.length + " where the gap is largest. You hold " +
+        nCompanies + " companies in total; none was dropped."));
+    }
+    if (r.top3_share) {
+      card.appendChild(el("p", "sub",
+        "Your three largest positions after looking through are " + pct(r.top3_share, 1) + " of the money."));
+    }
+    (r.notes || []).forEach(function (n) { card.appendChild(el("p", "caveat", n)); });
+    frag.appendChild(card);
+
+    // --- what could not be unpacked, by name
+    var opaque = (r.funds || []).filter(function (f) { return !f.unpacked; });
+    if (opaque.length) {
+      var oc = el("div", "hero");
+      oc.appendChild(el("div", "eyebrow", "Left alone"));
+      var h = el("h3", null, opaque.length + (opaque.length === 1 ? " holding I could not" : " holdings I could not") + " look through");
+      oc.appendChild(h);
+      var weight = opaque.reduce(function (a, f) { return a + f.weight; }, 0);
+      oc.appendChild(el("p", "sub",
+        "That is " + pct(weight, 1) + " of your money whose contents are not " +
+        "knowable from what you pasted. It is counted in your total and left " +
+        "unopened, never estimated."));
+      var ul = el("ul", "lines");
+      opaque.forEach(function (f) {
+        ul.appendChild(el("li", null, f.label + " — " + pct(f.weight, 1) + " — " + (f.reason || "could not be looked through")));
+      });
+      oc.appendChild(ul);
+      frag.appendChild(oc);
+    }
+
+    // --- the approximation, beside the numbers it qualifies
+    var notes = r.approximation_notes || [];
+    if (notes.length) {
+      var ac = el("div", "hero");
+      ac.appendChild(el("div", "eyebrow", "How wrong these weights are"));
+      ac.appendChild(el("h3", null, "Measured, not asserted"));
+      notes.forEach(function (n) { ac.appendChild(el("p", "caveat", n)); });
+      frag.appendChild(ac);
+    }
+
+    return frag;
+  }
+
+  // --- wiring -----------------------------------------------------------
+
+  function render(text) {
+    out.innerHTML = "";
+    if (loadError || !engine) {
+      var c = el("div", "hero err");
+      c.appendChild(el("div", "eyebrow", "Not computed"));
+      c.appendChild(el("h3", null, "The index data did not load"));
+      c.appendChild(el("p", "sub",
+        "This page needs one file of index weights and it could not be " +
+        "fetched (" + (loadError ? loadError.message : "not loaded") + "). " +
+        "Nothing is computed from a partial copy."));
+      out.appendChild(c);
+      return;
+    }
+    var r;
+    try {
+      r = engine.lookThrough(text);
+    } catch (e) {
+      r = { computed: false, not_computed_reason: "something went wrong reading that paste: " + (e && e.message ? e.message : String(e)) };
+    }
+    out.appendChild(r.computed ? resultCards(r) : refusalCard(r));
+    out.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  function run() {
+    var text = $("book").value;
+    load().then(function () { render(text); });
+  }
+
+  $("run").addEventListener("click", run);
+  $("demo").addEventListener("click", function () {
+    $("book").value = DEMO;
+    run();
+  });
+  $("clear").addEventListener("click", function () {
+    $("book").value = "";
+    out.innerHTML = "";
+    $("book").focus();
+  });
+  $("book").addEventListener("keydown", function (e) {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") run();
+  });
+
+  // Warm the data file so the first click is instant. A failure here is not
+  // reported: it is retried on click, where there is somewhere to show it.
+  load();
+})();
+</script>
+</body>
+</html>

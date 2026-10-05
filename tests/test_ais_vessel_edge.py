@@ -7,8 +7,6 @@ cache integration, HTTP errors, schema validation, registry integration.
 """
 
 from datetime import UTC, datetime, timedelta
-
-UTC = UTC
 from unittest.mock import MagicMock, patch
 
 import pytest

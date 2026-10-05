@@ -16,6 +16,7 @@ from __future__ import annotations
 import functools
 import logging
 import re
+import sqlite3
 import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
@@ -23,11 +24,31 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from agent.pipeline.dag import DAG
-from agent.pipeline.operators import resolve_operator
+from agent.pipeline.operators import (
+    DOMAIN_TABLES_PARAM_KEY,
+    RESERVED_PARAM_KEYS,
+    TOOL_PARAM_KEY,
+    classify_payload_status,
+    payload_reason,
+    resolve_operator,
+)
 from agent.pipeline.store import PipelineStore
 from agent.tools.base import ToolRegistry
 
 log = logging.getLogger(__name__)
+
+# Tables that may never be used as a node's declared domain table. The
+# generic blob table gets one row per successful node from
+# ``store_data``, so a DAG that populates nothing in its own domain still
+# moves this counter — the exact reason the original zero-rows guard was
+# unable to fire (docs/publications/thirteen_ways_a_pipeline_lies.md,
+# Way 2: "rows written was a count of nodes, not a count of rows").
+_DELTA_EXCLUDED_TABLES = frozenset({"pipeline_data"})
+
+# Declared table names are interpolated into COUNT(*) statements (SQLite
+# cannot parameterise an identifier), so they are restricted to plain
+# identifiers and validated at DAG-build time rather than sanitised later.
+_TABLE_NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 # LESSONS F-13: how often the orphan-thread watchdog re-logs while a
 # timed-out node's operator is still running. Loud and repeated on purpose —
@@ -102,8 +123,27 @@ class DagRun:
     status: str = "running"  # running | completed | failed
     trigger: str = "manual"
     node_results: dict[str, NodeResult] = field(default_factory=dict)
+    #: Count of *nodes* whose result envelope landed in ``pipeline_data``.
+    #: Named for rows, holds nodes — kept as-is because callers and tests
+    #: depend on it, but it is NOT a measure of useful output. The honest
+    #: number is ``domain_rows_written`` below.
     rows_written: int = 0
     error: str | None = None
+
+    # ── zero-rows guard bookkeeping ──────────────────────────────
+    #: {node_id: declared domain tables} from each node's
+    #: ``__domain_tables__`` param.
+    domain_tables: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    #: {table: COUNT(*) before the run}. ``None`` for a table that could
+    #: not be counted (missing table, unreadable DB) — never 0, so
+    #: "could not verify" can't masquerade as "verified empty".
+    domain_rows_before: dict[str, int | None] = field(default_factory=dict)
+    #: {table: rows gained during the run}, same ``None`` convention.
+    domain_rows_written: dict[str, int | None] = field(default_factory=dict)
+    #: Nodes that were eligible to persist something (not disabled, not
+    #: dependency-skipped). Retained so a late timeout reconciliation can
+    #: re-run the same guard.
+    eligible_store_nodes: int = 0
 
     @property
     def success(self) -> bool:
@@ -154,6 +194,12 @@ class DAGExecutor:
         # 1. Validate and topo sort
         layers = dag.topo_sort()  # Raises ValueError if invalid
 
+        # 1a. Resolve each node's declared domain tables *before* anything
+        # runs, so a malformed declaration is a build-time ValueError
+        # (like an invalid DAG) rather than a guard that quietly no-ops.
+        declared_tables = self._collect_domain_tables(dag)
+        watched_tables = sorted({t for tables in declared_tables.values() for t in tables})
+
         # 1b. Self-heal: reap any prior run of *any* DAG left stuck in
         # 'running' by a process that died mid-execution (killed, OOM,
         # reboot) before it ever called record_run_end. Done here so every
@@ -175,6 +221,8 @@ class DAGExecutor:
             dag_name=dag.name,
             started_at=time.time(),
             trigger=trigger,
+            domain_tables=declared_tables,
+            domain_rows_before=self._count_table_rows(watched_tables),
         )
 
         # Initialize all node results as pending
@@ -213,13 +261,20 @@ class DAGExecutor:
                     log.warning("heartbeat failed for run %s", run_id, exc_info=True)
 
         run.rows_written = sum(1 for nr in run.node_results.values() if nr.stored)
+        run.eligible_store_nodes = eligible_store_nodes
 
         # 4. Finalize
         run.finished_at = time.time()
         run.status = "failed" if any_failure else "completed"
 
         if self._store is not None:
-            self._apply_zero_rows_guard(run, eligible_store_nodes, any_failure)
+            run.domain_rows_written = self._measure_domain_rows_written(run)
+            self._apply_zero_rows_guard(
+                run,
+                eligible_store_nodes,
+                any_failure,
+                domain_row_deltas=run.domain_rows_written if run.domain_tables else None,
+            )
 
         if self._store:
             result_dicts = {nid: nr.to_dict() for nid, nr in run.node_results.items()}
@@ -237,17 +292,199 @@ class DAGExecutor:
         return run
 
     @staticmethod
-    def _apply_zero_rows_guard(run: DagRun, eligible_store_nodes: int, any_failure: bool) -> None:
+    def _collect_domain_tables(dag: DAG) -> dict[str, tuple[str, ...]]:
+        """Read every node's ``__domain_tables__`` declaration.
+
+        A node declares the table(s) it exists to populate; the zero-rows
+        guard then asserts on real ``COUNT(*)`` deltas for those tables
+        instead of on the executor's own bookkeeping. Raises ``ValueError``
+        on a malformed or excluded declaration — a broken guard must not be
+        discoverable only by it never firing.
+        """
+        declared: dict[str, tuple[str, ...]] = {}
+        for nid, node in dag.nodes.items():
+            raw = node.params.get(DOMAIN_TABLES_PARAM_KEY)
+            if raw is None:
+                continue
+            if isinstance(raw, str):
+                tables: list[Any] | None = [raw]
+            elif isinstance(raw, (list, tuple)):  # noqa: UP038
+                tables = list(raw)
+            else:
+                tables = None
+            if not tables or not all(isinstance(t, str) and t for t in tables):
+                raise ValueError(
+                    f"Node {nid!r} in DAG {dag.name!r} declares an invalid "
+                    f"{DOMAIN_TABLES_PARAM_KEY}: {raw!r}. Expected a non-empty "
+                    "table name or list of table names."
+                )
+            excluded = sorted(set(tables) & _DELTA_EXCLUDED_TABLES)
+            if excluded:
+                raise ValueError(
+                    f"Node {nid!r} in DAG {dag.name!r} declares {excluded} as a domain "
+                    "table. That table holds the generic per-node result envelope, "
+                    "written on every successful node, so counting it cannot "
+                    "distinguish a DAG that produced something from one that produced "
+                    "nothing — see thirteen_ways_a_pipeline_lies.md, Way 2. Declare "
+                    "the table this node actually exists to populate."
+                )
+            invalid = sorted(t for t in tables if not _TABLE_NAME_RE.fullmatch(t))
+            if invalid:
+                raise ValueError(
+                    f"Node {nid!r} in DAG {dag.name!r} declares non-identifier table "
+                    f"name(s) {invalid} in {DOMAIN_TABLES_PARAM_KEY}."
+                )
+            declared[nid] = tuple(dict.fromkeys(tables))
+        return declared
+
+    def _domain_count_connection(self) -> tuple[Any, bool]:
+        """Return ``(connection, must_close)`` for counting domain rows.
+
+        A file-backed store is counted through a *separate, read-only*
+        SQLite connection (``mode=ro``): the guard must be structurally
+        incapable of writing to the database it is auditing. An in-memory
+        store has no file to reopen, so its own connection is borrowed for
+        the SELECT. Returns ``(None, False)`` when neither is possible.
+        """
+        store = self._store
+        if store is None:
+            return None, False
+        db_path = getattr(store, "_db_path", None)
+        is_memory = bool(getattr(store, "_is_memory", False))
+        if db_path and not is_memory:
+            try:
+                return sqlite3.connect(f"file:{db_path}?mode=ro", uri=True), True
+            except sqlite3.Error:
+                log.error(
+                    "zero-rows guard: cannot open %s read-only to count domain rows",
+                    db_path,
+                    exc_info=True,
+                )
+                return None, False
+        get_conn = getattr(store, "_get_conn", None)
+        if callable(get_conn):
+            try:
+                return get_conn(), False
+            except Exception:
+                log.error("zero-rows guard: store connection unavailable", exc_info=True)
+        return None, False
+
+    def _count_table_rows(self, tables: list[str]) -> dict[str, int | None]:
+        """``COUNT(*)`` for each table. ``None`` means *could not count*.
+
+        A missing table or an unreadable DB is recorded as ``None`` and
+        logged at ERROR, never as ``0`` — "I could not check" and "I
+        checked and it was empty" are different facts and the guard treats
+        both as a failure, but only one of them is a data problem.
+        """
+        if not tables or self._store is None:
+            return {}
+        conn, must_close = self._domain_count_connection()
+        if conn is None:
+            log.error(
+                "zero-rows guard: no readable connection; cannot verify domain tables %s",
+                tables,
+            )
+            return dict.fromkeys(tables)
+        counts: dict[str, int | None] = {}
+        try:
+            for table in tables:
+                try:
+                    row = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()  # noqa: S608
+                    counts[table] = int(row[0])
+                except sqlite3.Error as exc:
+                    log.error(
+                        "zero-rows guard: cannot count rows in declared domain table %r: %s",
+                        table,
+                        exc,
+                    )
+                    counts[table] = None
+        finally:
+            if must_close:
+                conn.close()
+        return counts
+
+    def _measure_domain_rows_written(self, run: DagRun) -> dict[str, int | None]:
+        """Row deltas for the domain tables of every node that *completed*.
+
+        Tables declared by a node that skipped or failed are left out: that
+        node's own status already says what happened, and holding it to a
+        write it never attempted would just relabel one honest signal as
+        another.
+        """
+        if not run.domain_tables:
+            return {}
+        tables = sorted(
+            {
+                table
+                for nid, declared in run.domain_tables.items()
+                for table in declared
+                if (nr := run.node_results.get(nid)) is not None and nr.status == "completed"
+            }
+        )
+        after = self._count_table_rows(tables)
+        deltas: dict[str, int | None] = {}
+        for table in tables:
+            before = run.domain_rows_before.get(table)
+            now = after.get(table)
+            deltas[table] = None if before is None or now is None else now - before
+        return deltas
+
+    @staticmethod
+    def _apply_zero_rows_guard(
+        run: DagRun,
+        eligible_store_nodes: int,
+        any_failure: bool,
+        domain_row_deltas: dict[str, int | None] | None = None,
+    ) -> None:
         """Downgrade *run* to 'failed' if nothing was actually persisted.
 
-        A run that had at least one node eligible to store data, hit no
-        node-level failures, yet ``run.rows_written == 0`` is the exact
-        silent-success shape documented in LESSONS.md (F-01..F-04) applied to
-        collection: every node "completed" without raising, but nothing
-        landed in the store. Mutates ``run.status``/``run.error`` in place;
-        does not touch ``dag_runs`` itself (the caller persists afterward).
+        Two tiers, strongest first:
+
+        1. **Domain tables.** When nodes declared what they write
+           (``__domain_tables__``), the guard compares real ``COUNT(*)``
+           deltas on those tables. A declared table that gained no rows —
+           or that could not be counted — fails the run. This is the tier
+           that catches ``adversarial_scan`` reporting ``completed`` six
+           times while ``adversarial_flags`` held zero rows.
+        2. **Envelope backstop.** For DAGs that declare nothing, the older
+           check still applies: store-eligible nodes completed but not one
+           result envelope landed.
+
+        Mutates ``run.status``/``run.error`` in place; does not touch
+        ``dag_runs`` itself (the caller persists afterward).
         """
-        if any_failure or eligible_store_nodes == 0 or run.rows_written > 0:
+        if any_failure:
+            return
+
+        if domain_row_deltas:
+            barren = sorted(t for t, delta in domain_row_deltas.items() if delta is None or delta <= 0)
+            if barren:
+                unverifiable = sorted(t for t in barren if domain_row_deltas[t] is None)
+                run.status = "failed"
+                detail = ", ".join(
+                    f"{t}={'unverifiable' if domain_row_deltas[t] is None else domain_row_deltas[t]}" for t in barren
+                )
+                run.error = (
+                    f"Node(s) completed but their declared domain table(s) gained no rows: "
+                    f"{detail}. Treating as a failed run rather than reporting false "
+                    "success — a completed node that populates nothing in the table it "
+                    "exists to populate is the silent-success pattern, not a result."
+                    + (
+                        f" Tables {unverifiable} could not be counted at all, which is a "
+                        "separate problem from being empty."
+                        if unverifiable
+                        else ""
+                    )
+                )
+                log.error("DAG %s run %s: %s", run.dag_name, run.run_id, run.error)
+                return
+            # Every declared table gained rows: this run demonstrably
+            # produced domain output, which is a stronger statement than
+            # the envelope backstop could ever make.
+            return
+
+        if eligible_store_nodes == 0 or run.rows_written > 0:
             return
         run.status = "failed"
         run.error = (
@@ -559,7 +796,23 @@ class DAGExecutor:
                 any_failure = any(r.status == "failed" for r in run.node_results.values())
                 run.rows_written = sum(1 for r in run.node_results.values() if r.stored)
                 run.status = "failed" if any_failure else "completed"
+                # Clear the previous verdict before re-deriving it: a stale
+                # guard message on a now-passing run is its own small lie.
+                run.error = None
+                # Re-run the same guard. Without this, a node that finished
+                # late was corrected to "completed" and the run with it,
+                # bypassing the only check that asks whether anything was
+                # actually written.
+                run.domain_rows_written = self._measure_domain_rows_written(run)
+                self._apply_zero_rows_guard(
+                    run,
+                    run.eligible_store_nodes,
+                    any_failure,
+                    domain_row_deltas=run.domain_rows_written if run.domain_tables else None,
+                )
                 result_dicts = {n: r.to_dict() for n, r in run.node_results.items()}
+                if run.error:
+                    result_dicts["_run_error"] = run.error
                 self._store.record_run_end(run.run_id, run.status, result_dicts)
             except Exception:
                 log.warning(
@@ -586,12 +839,15 @@ class DAGExecutor:
         """
         nr = NodeResult(node_id=node.id, status="running", started_at=time.time())
 
-        # Build params for the operator
+        # Build params for the operator. Executor directives
+        # (``__domain_tables__``, ...) are stripped: they configure this
+        # executor, not the tool or function being called.
+        node_params = {k: v for k, v in node.params.items() if k not in RESERVED_PARAM_KEYS}
         if isinstance(node.operator, str):
             # Tool operator: inject __tool__ key
-            exec_params = {"__tool__": node.operator, **node.params}
+            exec_params = {TOOL_PARAM_KEY: node.operator, **node_params}
         else:
-            exec_params = dict(node.params)
+            exec_params = node_params
 
         # Resolve operator
         operator = resolve_operator(node.operator, tool_registry=self._registry)
@@ -604,10 +860,28 @@ class DAGExecutor:
                     upstream_results=upstream_outputs,
                     cancel_event=cancel_event,
                 )
-                nr.status = "completed"
+                # An operator that returns without raising is not
+                # automatically a success. Every layer 3-6 node is a
+                # FunctionOperator whose dict is passed straight through,
+                # and several of them report "I did nothing" *inside* that
+                # dict — e.g. {"status": "skipped", "reason":
+                # "no_sac_model"}. Recording those as "completed" is how a
+                # DAG that produced nothing showed up green for its entire
+                # existence (thirteen_ways_a_pipeline_lies.md, Way 1/2).
+                nr.status = classify_payload_status(result)
                 nr.output = result
                 nr.finished_at = time.time()
                 nr.retries_used = attempt
+                if nr.status != "completed":
+                    reason = payload_reason(result)
+                    nr.error = f"Operator reported status {nr.status!r}: {reason}"
+                    log.log(
+                        logging.ERROR if nr.status == "failed" else logging.WARNING,
+                        "Node %s returned a %s payload (not a success): %s",
+                        node.id,
+                        nr.status,
+                        reason,
+                    )
                 return nr
             except Exception as exc:
                 last_error = str(exc)

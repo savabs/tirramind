@@ -57,8 +57,6 @@ def test_evaluate_micro_alerts_flow_strong():
     snap = compute_micro_snapshot("instrument:CL=F", obs)
     assert snap is not None
     # Force strong flow threshold low for test
-    alerts = evaluate_micro_alerts(
-        snap, MicroThresholds(flow_z_watch=0.1, flow_z_strong=0.2)
-    )
+    alerts = evaluate_micro_alerts(snap, MicroThresholds(flow_z_watch=0.1, flow_z_strong=0.2))
     codes = {a.code for a in alerts}
     assert "FLOW_IMBALANCE" in codes

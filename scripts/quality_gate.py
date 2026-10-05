@@ -2,12 +2,13 @@
 """Quality gate: pre-completion checks before marking a task done.
 
 Checks:
-1. pytest passes for test files
+1. pytest passes for test files (same selection CI uses)
 2. obsidian_lint.py has no FM01/FM02/LK01 errors
 3. No unchecked steps remain in the specified task file
 
 Usage:
     python scripts/quality_gate.py [--task tasks/active/foo.md] [--skip-tests]
+                                   [--include-live]
 """
 
 import argparse
@@ -37,15 +38,26 @@ def _run(cmd: list[str], timeout: int = 300) -> tuple[int, str]:
         return 1, f"Command not found: {cmd[0]}"
 
 
-def check_tests() -> tuple[bool, str]:
-    """Run pytest and return (passed, message)."""
-    code, output = _run(
-        ["python", "-m", "pytest", "tests/", "--tb=short", "-q", "--no-header"]
-    )
+# Must stay identical to the marker expression in .github/workflows/ci.yml.
+# The gate used to run a bare `pytest tests/`, which selected the live-network
+# tests CI deselects. That made `make quality-gate` red whenever an upstream API
+# had no data for today (e.g. NYISO returning "No demand data available for
+# <today>") — a red gate that said nothing about the change being gated.
+CI_MARKER_EXPR = "not live and not slow"
+
+
+def check_tests(*, include_live: bool = False) -> tuple[bool, str]:
+    """Run pytest with CI's own selection and return (passed, message)."""
+    cmd = ["python", "-m", "pytest", "tests/", "--tb=short", "-q", "--no-header"]
+    if not include_live:
+        cmd += ["-m", CI_MARKER_EXPR]
+    code, output = _run(cmd)
     passed = code == 0
     # Extract summary line
     lines = output.strip().splitlines()
     summary = lines[-1] if lines else "no output"
+    if not include_live:
+        summary = f"{summary}  [-m '{CI_MARKER_EXPR}']"
     return passed, summary
 
 
@@ -60,9 +72,7 @@ def check_obsidian_lint() -> tuple[bool, str]:
     critical_pattern = re.compile(r"\b(FM01|FM02|LK01)\b")
     critical_lines = [l for l in output.splitlines() if critical_pattern.search(l)]
     if critical_lines:
-        return False, f"{len(critical_lines)} critical lint errors:\n" + "\n".join(
-            critical_lines[:10]
-        )
+        return False, f"{len(critical_lines)} critical lint errors:\n" + "\n".join(critical_lines[:10])
     return True, "No critical lint errors"
 
 
@@ -94,13 +104,21 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Quality gate checks.")
     parser.add_argument("--task", type=str, help="Specific task file to check.")
     parser.add_argument("--skip-tests", action="store_true", help="Skip pytest run.")
+    parser.add_argument(
+        "--include-live",
+        action="store_true",
+        help=(
+            "Also run tests marked 'live' or 'slow'. Off by default so the gate "
+            "matches CI; these assert on third-party endpoints, not on the change."
+        ),
+    )
     args = parser.parse_args()
 
     results: list[tuple[str, bool, str]] = []
 
     # Tests
     if not args.skip_tests:
-        passed, msg = check_tests()
+        passed, msg = check_tests(include_live=args.include_live)
         results.append(("Tests", passed, msg))
 
     # Obsidian lint

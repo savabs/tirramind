@@ -14,7 +14,7 @@ Usage:
 import argparse
 import bisect
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
@@ -22,9 +22,9 @@ import numpy as np
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-DB_PATH    = ROOT / ".tirra_pipeline" / "pipeline.db"
+DB_PATH = ROOT / ".tirra_pipeline" / "pipeline.db"
 MODEL_PATH = ROOT / ".tirra_pipeline" / "gnn_model.pt"
-GNN_LOOKBACK_DAYS = 90   # same as backtest
+GNN_LOOKBACK_DAYS = 90  # same as backtest
 
 
 def _load_returns(db_path: str, entity_ids: list[str]):
@@ -51,7 +51,7 @@ def _load_returns(db_path: str, entity_ids: list[str]):
         lr = val.get("log_return")
         if lr is None:
             continue
-        dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+        dt = datetime.fromtimestamp(ts, tz=UTC)
         day = dt.strftime("%Y-%m-%d")
         by_date[day][eid] = float(lr)
 
@@ -68,12 +68,9 @@ def _load_returns(db_path: str, entity_ids: list[str]):
 
 def main():
     parser = argparse.ArgumentParser(description="TirraMind consumer prediction view")
-    parser.add_argument("--top", type=int, default=15,
-                        help="Show top and bottom N instruments (default: 15)")
-    parser.add_argument("--asset-class", default=None,
-                        help="Filter by asset class (e.g. commodity, equity)")
-    parser.add_argument("--model", default=str(MODEL_PATH),
-                        help="Path to model .pt file")
+    parser.add_argument("--top", type=int, default=15, help="Show top and bottom N instruments (default: 15)")
+    parser.add_argument("--asset-class", default=None, help="Filter by asset class (e.g. commodity, equity)")
+    parser.add_argument("--model", default=str(MODEL_PATH), help="Path to model .pt file")
     args = parser.parse_args()
 
     model_path = Path(args.model)
@@ -85,6 +82,7 @@ def main():
         sys.exit(1)
 
     import torch
+
     from agent.models.gnn.trainer import Trainer
     from agent.pipeline.store import PipelineStore
 
@@ -114,19 +112,19 @@ def main():
     # ── Most recent date window ────────────────────────────────────────────────
     dates, _ = _load_returns(str(DB_PATH), entity_ids)
     as_of = dates[-1]
-    as_of_ts = datetime.fromisoformat(as_of).replace(tzinfo=timezone.utc).timestamp()
+    as_of_ts = datetime.fromisoformat(as_of).replace(tzinfo=UTC).timestamp()
     since_ts = as_of_ts - GNN_LOOKBACK_DAYS * 86400
 
     print(f"As of:    {as_of}  (lookback: {GNN_LOOKBACK_DAYS}d)")
-    print(f"Horizon:  ~21 trading days forward")
+    print("Horizon:  ~21 trading days forward")
     print()
 
     # ── Build graph and run model ─────────────────────────────────────────────
     id_map, _, links = trainer._graph_builder.prepare_static()
     all_obs = trainer._graph_builder.prefetch_observations()
-    obs_ts  = [o["observed_at"] for o in all_obs]
+    obs_ts = [o["observed_at"] for o in all_obs]
 
-    end_idx   = bisect.bisect_left(obs_ts, as_of_ts)
+    end_idx = bisect.bisect_left(obs_ts, as_of_ts)
     start_idx = bisect.bisect_left(obs_ts, since_ts)
     obs_window = all_obs[start_idx:end_idx]
 
@@ -135,7 +133,7 @@ def main():
         sys.exit(1)
 
     data, local_id_map, _ = trainer._graph_builder.build_from_cached(
-        id_map, links, observations=obs_window
+        id_map, links, until=as_of_ts, observations=obs_window
     )
 
     with torch.no_grad():
@@ -147,7 +145,7 @@ def main():
         sys.exit(1)
 
     ret_scores = trainer._model.return_pred_head(inst_emb).squeeze(-1)  # (n_inst,)
-    val_scores = trainer._model.value_pred_head(inst_emb).squeeze(-1)   # (n_inst,)
+    val_scores = trainer._model.value_pred_head(inst_emb).squeeze(-1)  # (n_inst,)
 
     # ── Collect scores per entity ─────────────────────────────────────────────
     rows = []
@@ -157,13 +155,15 @@ def main():
             continue
         rs = float(ret_scores[local_idx].item())
         vs = float(val_scores[local_idx].item())
-        rows.append({
-            "id":    eid,
-            "ticker": tickers[eid],
-            "ac":    asset_classes[eid],
-            "ret_score": rs,
-            "val_score": vs,
-        })
+        rows.append(
+            {
+                "id": eid,
+                "ticker": tickers[eid],
+                "ac": asset_classes[eid],
+                "ret_score": rs,
+                "val_score": vs,
+            }
+        )
 
     if not rows:
         print("ERROR: no scored instruments (none in graph window).")
@@ -184,7 +184,7 @@ def main():
     # ─────────────────────────────────────────────────────────────────────────
     print("=" * 70)
     print(f"  TirraMind — Predicted Rankings   ({as_of})")
-    print(f"  Scored by GNN ReturnHead  (ICIR=0.221, CFTC instruments ICIR=0.403)")
+    print("  Scored by GNN ReturnHead  (ICIR=0.221, CFTC instruments ICIR=0.403)")
     print("=" * 70)
     print(f"  {'Rank':<5} {'Ticker':<20} {'Asset Class':<14} {'Signal':<8} {'Pct'}")
     print("  " + "-" * 60)

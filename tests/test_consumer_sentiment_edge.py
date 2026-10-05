@@ -186,17 +186,32 @@ class TestParameterValidation:
             r = _tool().execute(mode="eu_confidence", months="abc")
             assert r.success  # gracefully defaults to 6
 
+    # `months = max(1, min(months, 24))` is only observable in the months value
+    # handed to _fetch_eurostat. These three tests used to call execute() and
+    # assert nothing at all, so they passed whether or not the clamp existed —
+    # and would still pass if execute() were replaced by `return None`.
+
     def test_months_clamped_min(self):
         with patch("agent.tools.consumer_sentiment._fetch_eurostat") as m:
             m.return_value = ({}, None)
             _tool().execute(mode="eu_confidence", months=-5)
-            # Should clamp to 1
+        m.assert_called_once()
+        assert m.call_args.args[1] == 1
 
     def test_months_clamped_max(self):
         with patch("agent.tools.consumer_sentiment._fetch_eurostat") as m:
             m.return_value = ({}, None)
             _tool().execute(mode="eu_confidence", months=100)
-            # Should clamp to 24
+        m.assert_called_once()
+        assert m.call_args.args[1] == 24
+
+    def test_months_in_range_passes_through(self):
+        """A value inside [1, 24] must reach the fetcher unchanged."""
+        with patch("agent.tools.consumer_sentiment._fetch_eurostat") as m:
+            m.return_value = ({}, None)
+            _tool().execute(mode="eu_confidence", months=13)
+        m.assert_called_once()
+        assert m.call_args.args[1] == 13
 
     def test_invalid_geo_codes(self):
         r = _tool().execute(mode="eu_confidence", countries="XX,YY,ZZ")

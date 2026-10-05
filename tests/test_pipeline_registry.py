@@ -13,6 +13,7 @@ import pytest
 
 from agent.pipeline.dag import DAG
 from agent.pipeline.dags.daily_collection import build_daily_collection_dag
+from agent.pipeline.operators import DOMAIN_TABLES_PARAM_KEY
 from agent.pipeline.registry import DAGRegistry
 
 # ── Helpers ───────────────────────────────────────────────────
@@ -177,7 +178,13 @@ class TestDailyCollectionStructure:
         # fetch_dividends (market-data-engineer, previously-unwired instrument
         # fetchers) + ingest_evidence_from_gdelt (feeds the Entity Graph from
         # this cycle's real GDELT events instead of static demo docs).
-        assert len(dag.nodes) == 56
+        # 56 -> 57 on 2026-09-24: derive_cftc_features. The old count of 56
+        # was right for a DAG in which CFTC positioning features were only
+        # ever derived by hand — the math lived in a script no DAG imported,
+        # so cftc_derived froze at 2026-04-14 while cftc kept collecting for
+        # another 162 days (audit P6.4). Wiring the derivation as a node is
+        # what makes it run daily, so 57 is the corrected count.
+        assert len(dag.nodes) == 57
 
     def test_expected_node_ids(self, dag):
         expected = {
@@ -243,18 +250,36 @@ class TestDailyCollectionStructure:
             "fetch_options_chains",
             "fetch_dividends",
             "ingest_evidence_from_gdelt",
+            # 2026-09-24 addition (see test_node_count)
+            "derive_cftc_features",
         }
         assert set(dag.nodes.keys()) == expected
 
     def test_all_nodes_independent(self, dag):
         """No dependencies between nodes — single parallel layer.
 
-        Exception: ingest_evidence_from_gdelt depends on fetch_gdelt by
-        design — it turns that cycle's fetched events into Entity Graph
-        documents, so it must run after fetch_gdelt, not alongside it.
+        Two documented exceptions, both of which must run *after* the node
+        whose rows they consume:
+
+        * ingest_evidence_from_gdelt depends on fetch_gdelt — it turns that
+          cycle's fetched events into Entity Graph documents.
+        * derive_cftc_features depends on fetch_cftc — it re-derives
+          futures_positioning_derived from the futures_positioning rows
+          fetch_cftc just stored.
         """
+        # 2026-09-24: derive_cftc_features added to the exception list. The
+        # old single-exception form encoded a DAG in which nothing derived
+        # from a collector's output in the same cycle; ordering the
+        # derivation after its source is the correction, not a regression.
+        dependent = {
+            "ingest_evidence_from_gdelt": ["fetch_gdelt"],
+            "derive_cftc_features": ["fetch_cftc"],
+        }
         for node in dag.nodes.values():
-            if node.id == "ingest_evidence_from_gdelt":
+            if node.id in dependent:
+                # Pin the edge rather than skipping the node: an exemption
+                # that asserts nothing is how a broken dependency hides.
+                assert node.depends_on == dependent[node.id], f"Node {node.id} has unexpected deps"
                 continue
             assert node.depends_on == [], f"Node {node.id} has deps: {node.depends_on}"
 
@@ -262,13 +287,20 @@ class TestDailyCollectionStructure:
         # 2026-08-26: no longer a single layer — ingest_evidence_from_gdelt
         # deliberately depends on fetch_gdelt (see test_all_nodes_independent's
         # documented exception), giving 55 roots + 1 dependent layer.
+        # 2026-09-24: derive_cftc_features joins that second layer, so it is
+        # 55 roots + 2 dependents. Layer count stays 2: both dependents hang
+        # off a root, so the DAG is still two deep.
         layers = dag.topo_sort()
         assert len(layers) == 2
         assert len(layers[0]) == 55
-        assert len(layers[1]) == 1
+        assert len(layers[1]) == 2
+        assert sorted(layers[1]) == ["derive_cftc_features", "ingest_evidence_from_gdelt"]
 
     def test_all_roots(self, dag):
-        # 55, not 56: ingest_evidence_from_gdelt is not a root (see above).
+        # 55, not 57: ingest_evidence_from_gdelt and (since 2026-09-24)
+        # derive_cftc_features are not roots (see above). The number is
+        # unchanged from when it read "55, not 56" only because the new node
+        # is itself a dependent — the comment, not the assertion, was stale.
         assert len(dag.roots()) == 55
 
     def test_whale_alert_node_config(self, dag):
@@ -372,10 +404,30 @@ class TestDailyCollectionStructure:
         n = dag.nodes["fetch_sanctions_monitor"]
         assert n.operator == "sanctions_monitor"
         assert n.table_name == "sanctions_monitor"
-        assert n.params["mode"] == "recent"
-        assert n.params["days_back"] == 90
-        assert n.params["limit"] == 100
-        assert n.timeout == 120
+        # 2026-09-24: mode "recent"/days_back=90/limit=100 -> "snapshot".
+        # The old params were the bug this test was pinning in place: the
+        # OFAC SDN CSV carries no per-entry dates, so the 90-day filter
+        # dropped all 19,393 OFAC records and only 11 dated UN rows could
+        # ever persist. Those 11 never change, and observed_at came from the
+        # source listing date, so every later run hit the store's idempotency
+        # key and updated instead of inserting — SUCCESS, zero rows, for the
+        # tool's entire life. snapshot mode is first-seen gated and always
+        # writes one collection-time roster observation.
+        assert n.params["mode"] == "snapshot"
+        # The date/size filters must stay gone: re-adding either reinstates
+        # the 95%-discard behaviour described above.
+        assert "days_back" not in n.params
+        assert "limit" not in n.params
+        # Declares the table it exists to populate so the executor's
+        # zero-rows guard takes a real COUNT(*) delta rather than trusting
+        # the node's green checkmark. NOTE: fetch_sanctions_monitor and
+        # derive_cftc_features currently declare the SAME table, which makes
+        # the delta ambiguous DAG-wide — flagged for the owner, not resolved
+        # here. If that is fixed, this assertion should change with it.
+        assert n.params[DOMAIN_TABLES_PARAM_KEY] == ["entity_observations"]
+        # 120 -> 300: snapshot downloads 5.7MB + 2.1MB and does a first-seen
+        # lookup per record; measured 22s backfill / 41s steady state.
+        assert n.timeout == 300
         assert n.retries == 2
 
     def test_patent_filings_node_config(self, dag):
@@ -442,11 +494,21 @@ class TestDailyCollectionNodes:
             assert isinstance(n.operator, str), f"{n.id} operator is not a str"
 
     def test_all_nodes_store_results(self, dag):
-        """Exception: ingest_evidence_from_gdelt's output is a summary dict
-        (doc/sentence counts), not raw source data — nothing meaningful to
-        persist to pipeline_data."""
+        """Exceptions are nodes whose return value is a summary, not data.
+
+        * ingest_evidence_from_gdelt returns doc/sentence counts.
+        * derive_cftc_features returns rows_written/entities counts; its
+          real output is written straight to the domain table by
+          derive_and_store, so an envelope in pipeline_data would only
+          inflate rows_written without representing anything.
+        """
+        # 2026-09-24: derive_cftc_features added. The exemptions are held in
+        # a set and asserted positively below so that a node silently losing
+        # store_result cannot slip in behind a bare `continue`.
+        summary_only = {"ingest_evidence_from_gdelt", "derive_cftc_features"}
         for node in dag.nodes.values():
-            if node.id == "ingest_evidence_from_gdelt":
+            if node.id in summary_only:
+                assert node.store_result is False, f"{node.id} unexpectedly stores results"
                 continue
             assert node.store_result is True, f"{node.id} should store results"
 
@@ -659,15 +721,17 @@ class TestPhase453Nodes:
             assert dag.nodes[node_id].depends_on == []
 
     def test_total_node_count_52(self, dag):
-        # 52 -> 56 on 2026-08-26 — see test_node_count in
-        # TestDailyCollectionStructure for what was added; kept this test's
+        # 52 -> 56 on 2026-08-26, 56 -> 57 on 2026-09-24 — see test_node_count
+        # in TestDailyCollectionStructure for what was added; kept this test's
         # name to avoid churning its history, the assertion is what matters.
-        assert len(dag.nodes) == 56
+        assert len(dag.nodes) == 57
 
     def test_all_nodes_single_parallel_layer(self, dag):
         # 2026-08-26: ingest_evidence_from_gdelt depends on fetch_gdelt by
         # design — see TestDailyCollectionStructure.test_single_parallel_layer.
+        # 2026-09-24: derive_cftc_features depends on fetch_cftc, so the
+        # second layer holds 2 nodes, not 1.
         layers = dag.topo_sort()
         assert len(layers) == 2
         assert len(layers[0]) == 55
-        assert len(layers[1]) == 1
+        assert len(layers[1]) == 2

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from agent.quant.microstructure_signals import (
     GNN_MICRO_DIM,
     compute_gnn_micro_features,

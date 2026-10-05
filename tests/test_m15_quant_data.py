@@ -48,9 +48,7 @@ def test_ingest_options_chains_mocked(tmp_path):
         "total_open_interest": 1000.0,
         "fetched_at": "2026-06-03",
     }
-    with patch(
-        "agent.tools.options_chain.fetch_chain_snapshot", return_value=summary
-    ):
+    with patch("agent.tools.options_chain.fetch_chain_snapshot", return_value=summary):
         out = ingest_options_chains(store, tickers=["SPY"], include_should=False)
     assert out["stored"] == 1
     assert store.store_entity_observation.called

@@ -33,10 +33,17 @@ from agent.models.propagator import BeliefPropagator
 from agent.models.state_filter import ContinuousStateFilter, RegimeConfig
 from agent.models.world_model import WorldModel
 from agent.pipeline.dag import DAG
+from agent.pipeline.operators import DOMAIN_TABLES_PARAM_KEY
 from agent.pipeline.regime_gate import get_current_regime, world_model_prior_decay
 from agent.pipeline.store import PipelineStore
 
 log = logging.getLogger(__name__)
+
+#: The table this DAG exists to populate. Declared on the node so the
+#: executor's zero-rows guard measures a real ``beliefs`` row delta rather
+#: than the generic ``pipeline_data`` envelope this node writes whenever it
+#: reports success (thirteen_ways_a_pipeline_lies.md, Way 2).
+DOMAIN_TABLE = "beliefs"
 
 # Feature names that the world model expects (from initial_graph NodeSpecs).
 _FEATURE_NAMES = [spec.feature_name for spec in ALL_NODES if spec.feature_name is not None]
@@ -989,6 +996,17 @@ def run_world_model_update(params: dict, upstream: dict) -> dict:
             len(features),
             len(_FEATURE_NAMES),
         )
+        if not features:
+            # Not a skip: wm.update([]) still emits beliefs, and they are
+            # real rows. But they are priors with no evidence behind them,
+            # and the run is otherwise indistinguishable in the log from one
+            # that saw the whole feature set — so say it at ERROR.
+            log.error(
+                "World model update: 0/%d features available — this run's beliefs are "
+                "priors carrying no evidence. Check that feature_generation ran and "
+                "wrote rows.",
+                len(_FEATURE_NAMES),
+            )
 
         # Load learned graph structure (if any previous refinement persisted one)
         learned_edges = _load_learned_edges(store)
@@ -1152,6 +1170,18 @@ def run_world_model_update(params: dict, upstream: dict) -> dict:
                             belief.variable_name,
                         )
 
+            if stored_count == 0:
+                # The individual fallback above can reject every belief one
+                # at a time, each with its own warning, and still fall
+                # through to a success payload reporting beliefs_count=23.
+                # That is "success over an empty result": the node's whole
+                # purpose is a row in `beliefs`.
+                raise RuntimeError(
+                    f"World model produced {len(beliefs)} belief(s) and persisted none "
+                    f"of them to {DOMAIN_TABLE}. Refusing to report a successful update "
+                    "over an unchanged table."
+                )
+
         # Save scheduler state
         if scheduler is not None:
             try:
@@ -1207,7 +1237,10 @@ def build_world_model_dag(
     dag.add(
         "update_beliefs",
         operator=run_world_model_update,
-        params={"db_path": db_path},
+        params={
+            "db_path": db_path,
+            DOMAIN_TABLES_PARAM_KEY: [DOMAIN_TABLE],
+        },
         timeout=180,
         retries=1,
         store_result=True,

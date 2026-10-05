@@ -15,10 +15,9 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import UTC
 from pathlib import Path
 from typing import Any
-
-import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -91,16 +90,15 @@ def audit_artifacts(
 def embedding_health(trainer: Any, dates: list, prefetched_obs: list, id_map: Any, links: list) -> dict[str, Any]:
     """Single-snapshot instrument embedding collapse metrics."""
     import bisect
+    from datetime import datetime
+
     import torch
-    from datetime import datetime, timezone
 
     from scripts.phase40_gnn_backtest import GNN_LOOKBACK_DAYS, _align_graph_features_to_model
 
     fold_date = dates[-1]
     obs_ts = [o["observed_at"] for o in prefetched_obs]
-    fold_ts = (
-        datetime.fromisoformat(fold_date).replace(tzinfo=timezone.utc).timestamp()
-    )
+    fold_ts = datetime.fromisoformat(fold_date).replace(tzinfo=UTC).timestamp()
     since_ts = fold_ts - GNN_LOOKBACK_DAYS * 86400
     end_idx = bisect.bisect_left(obs_ts, fold_ts)
     start_idx = bisect.bisect_left(obs_ts, since_ts)
@@ -108,9 +106,7 @@ def embedding_health(trainer: Any, dates: list, prefetched_obs: list, id_map: An
     if not obs_window:
         return {"error": "no observations in lookback window"}
 
-    data, local_map, _ = trainer._graph_builder.build_from_cached(
-        id_map, links, observations=obs_window
-    )
+    data, local_map, _ = trainer._graph_builder.build_from_cached(id_map, links, until=fold_ts, observations=obs_window)
 
     _align_graph_features_to_model(data, trainer.model)
     trainer.model.eval()
@@ -215,7 +211,9 @@ def print_recommendations(
     if audit.get("weights_warning") or audit.get("model_warning"):
         print("  1. FIX ARTIFACTS — checkpoint/model too small; re-download from Kaggle Output")
     if emb.get("collapse_frac_cos_gt_0.95", 0) > 0.25:
-        print("  2. EMBEDDING COLLAPSE — try: lower obs_type_weight, enable concat head ablation, or more raw sensor data")
+        print(
+            "  2. EMBEDDING COLLAPSE — try: lower obs_type_weight, enable concat head ablation, or more raw sensor data"
+        )
     if embedding_only and not concat:
         print("  3. N1 embedding-only path — if PurgedRanker IC < 0.03: run V56b ablation with --use-concat-head")
     heads = audit.get("heads") or {}
@@ -253,9 +251,7 @@ def main() -> None:
 
     store = PipelineStore(str(args.db_path))
     if args.weights_from_epoch:
-        trainer = Trainer.load_model_with_epoch_weights(
-            args.model_path, args.weights_from_epoch, store
-        )
+        trainer = Trainer.load_model_with_epoch_weights(args.model_path, args.weights_from_epoch, store)
     else:
         trainer = Trainer.load_model(args.model_path, store)
 

@@ -29,8 +29,26 @@ def state_dir(tmp_path):
 class TestErrorPatternStore:
     def test_save_retrieve_order(self, tmp_path):
         store = ErrorPatternStore(str(tmp_path / "ep.jsonl"))
-        store.save(ErrorPattern(task_id="t1", signal_name="gov_contracts", source_tool="gov_contracts", error_type="PARSE", error_msg="bad", critique="validate first"))
-        store.save(ErrorPattern(task_id="t1", signal_name="gov_contracts", source_tool="gov_contracts", error_type="TIMEOUT", error_msg="timeout", critique="retry"))
+        store.save(
+            ErrorPattern(
+                task_id="t1",
+                signal_name="gov_contracts",
+                source_tool="gov_contracts",
+                error_type="PARSE",
+                error_msg="bad",
+                critique="validate first",
+            )
+        )
+        store.save(
+            ErrorPattern(
+                task_id="t1",
+                signal_name="gov_contracts",
+                source_tool="gov_contracts",
+                error_type="TIMEOUT",
+                error_msg="timeout",
+                critique="retry",
+            )
+        )
         got = store.retrieve("t1", "gov_contracts", top_n=2)
         assert len(got) == 2
         assert got[0].error_type == "TIMEOUT"  # newest first (insertion tiebreak)
@@ -38,21 +56,31 @@ class TestErrorPatternStore:
 
     def test_filter_signal(self, tmp_path):
         store = ErrorPatternStore(str(tmp_path / "ep.jsonl"))
-        store.save(ErrorPattern(task_id="t1", signal_name="cftc", source_tool="cftc", error_type="X", error_msg="m", critique="c"))
+        store.save(
+            ErrorPattern(
+                task_id="t1", signal_name="cftc", source_tool="cftc", error_type="X", error_msg="m", critique="c"
+            )
+        )
         assert store.retrieve("t1", "gov_contracts") == []
         assert len(store.retrieve("t1", "cftc")) == 1
 
     def test_summary_counts(self, tmp_path):
         store = ErrorPatternStore(str(tmp_path / "ep.jsonl"))
-        store.save(ErrorPattern(task_id="a", signal_name="g", source_tool="s", error_type="E1", error_msg="m", critique="c"))
-        store.save(ErrorPattern(task_id="b", signal_name="g", source_tool="s", error_type="E1", error_msg="m", critique="c"))
+        store.save(
+            ErrorPattern(task_id="a", signal_name="g", source_tool="s", error_type="E1", error_msg="m", critique="c")
+        )
+        store.save(
+            ErrorPattern(task_id="b", signal_name="g", source_tool="s", error_type="E1", error_msg="m", critique="c")
+        )
         assert store.summary()["by_error_type"] == {"E1": 2}
 
 
 class TestSkillLibrary:
     def test_record_and_context(self, tmp_path):
         lib = SkillLibrary(tmp_path / "skills")
-        lib.record(signal_name="gov_contracts", source_tool="gov_contracts", strategy="zscore", operation="score tenders")
+        lib.record(
+            signal_name="gov_contracts", source_tool="gov_contracts", strategy="zscore", operation="score tenders"
+        )
         ctx = lib.get_context("gov_contracts", "gov_contracts")
         assert "zscore" in ctx
         assert lib.total_entries() == 1
@@ -86,7 +114,9 @@ class TestRewardStore:
         gate = ReplayGate()
         rs = RewardStore(tmp_path / "reward.jsonl")
         # a strong, novel episode (high reward, unseen action) admits
-        ep = rs.store({"task_id": "t1", "action": "score"}, action_id=0, features=[1.0] * 10, success=True, cost_usd=0.001)
+        ep = rs.store(
+            {"task_id": "t1", "action": "score"}, action_id=0, features=[1.0] * 10, success=True, cost_usd=0.001
+        )
         assert gate.admit(ep) is True
         assert gate.total_episodes if hasattr(gate, "total_episodes") else gate.admit_rate() == 1.0
 
@@ -95,11 +125,13 @@ class TestPromptEvolver:
     def test_evolve_from_evidence(self, tmp_path):
         d = tmp_path / "s"
         (d / "skills").mkdir(parents=True)
-        (d / "error_patterns.jsonl").write_text(
-            json.dumps({"error_type": "PARSE", "critique": "strip BOM"}) + "\n"
+        (d / "error_patterns.jsonl").write_text(json.dumps({"error_type": "PARSE", "critique": "strip BOM"}) + "\n")
+        (d / "skills" / "index.json").write_text(
+            json.dumps([{"approach": "scoring", "win_rate": 0.9, "keywords": ["z"], "strategy": "z"}])
         )
-        (d / "skills" / "index.json").write_text(json.dumps([{"approach": "scoring", "win_rate": 0.9, "keywords": ["z"], "strategy": "z"}]))
-        fake = lambda p: json.dumps({"guidelines": [{"section": "f", "guideline": "Strip BOM first", "reason": "PARSE", "confidence": 0.9}]})
+        fake = lambda p: json.dumps(
+            {"guidelines": [{"section": "f", "guideline": "Strip BOM first", "reason": "PARSE", "confidence": 0.9}]}
+        )
         pe = PromptEvolver(store_path=str(d), cheap_call=fake)
         g = pe.evolve()
         assert "STRIP BOM FIRST" in g.upper() or "Strip BOM" in g
@@ -153,8 +185,28 @@ class TestLinUCBRouter:
 class TestLearningCore:
     def test_integration_records_and_persists(self, state_dir):
         core = LearningCore(state_dir=state_dir)
-        core.record_outcome(task_id="t1", operation="score gov_contracts", action_id=2, success=True, cost_usd=0.01, signal_name="gov_contracts", source_tool="gov_contracts")
-        core.record_outcome(task_id="t2", operation="fetch gov_contracts", action_id=0, success=False, cost_usd=0.001, signal_name="gov_contracts", source_tool="gov_contracts", error_type="PARSE", error_msg="bad", critique="c", attempts=2)
+        core.record_outcome(
+            task_id="t1",
+            operation="score gov_contracts",
+            action_id=2,
+            success=True,
+            cost_usd=0.01,
+            signal_name="gov_contracts",
+            source_tool="gov_contracts",
+        )
+        core.record_outcome(
+            task_id="t2",
+            operation="fetch gov_contracts",
+            action_id=0,
+            success=False,
+            cost_usd=0.001,
+            signal_name="gov_contracts",
+            source_tool="gov_contracts",
+            error_type="PARSE",
+            error_msg="bad",
+            critique="c",
+            attempts=2,
+        )
         s = core.summary()
         assert s["total_episodes"] == 2
         assert s["errors"]["by_error_type"]["PARSE"] == 1
@@ -197,5 +249,6 @@ class TestLearningAction:
         assert res.ok, res.message
         # outcome persisted to state dir
         from agent.awos.learning.learning_core import LearningCore
+
         core = LearningCore(state_dir=str(tmp_path))
         assert core.rewards.total_episodes() == 1

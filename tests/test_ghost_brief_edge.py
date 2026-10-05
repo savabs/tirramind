@@ -8,7 +8,6 @@ from pathlib import Path
 import pytest
 
 from agent.quant.ghost_brief import (
-    DRAFT_BRIEFS_DIR,
     alert_to_brief_markdown,
     brief_path_for_alert,
     update_brief_outcome,

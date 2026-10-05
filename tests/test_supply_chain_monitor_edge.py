@@ -168,10 +168,29 @@ class TestParameterValidation:
             r = _tool().execute(mode="producer_prices", months="abc")
             assert r.success  # gracefully defaults
 
-    def test_months_clamped(self):
+    # As above: the clamp is only visible in the months argument passed on to
+    # _fetch_bls_multi. The original test asserted nothing whatsoever.
+
+    def test_months_clamped_min(self):
         with patch("agent.tools.supply_chain_monitor._fetch_bls_multi") as m:
             m.return_value = ({}, None)
             _tool().execute(mode="producer_prices", months=-5)
+        m.assert_called_once()
+        assert m.call_args.args[1] == 1
+
+    def test_months_clamped_max(self):
+        with patch("agent.tools.supply_chain_monitor._fetch_bls_multi") as m:
+            m.return_value = ({}, None)
+            _tool().execute(mode="producer_prices", months=100)
+        m.assert_called_once()
+        assert m.call_args.args[1] == 24
+
+    def test_months_in_range_passes_through(self):
+        with patch("agent.tools.supply_chain_monitor._fetch_bls_multi") as m:
+            m.return_value = ({}, None)
+            _tool().execute(mode="producer_prices", months=9)
+        m.assert_called_once()
+        assert m.call_args.args[1] == 9
 
     def test_invalid_sectors(self):
         r = _tool().execute(mode="producer_prices", sectors="bogus_sector")

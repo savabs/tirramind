@@ -70,8 +70,8 @@ from typing import TYPE_CHECKING, Any
 import torch
 
 if TYPE_CHECKING:
-    from agent.models.gnn.het_tgn import HetTGN
     from agent.models.gnn.graph_builder import IDMap
+    from agent.models.gnn.het_tgn import HetTGN
 
 log = logging.getLogger(__name__)
 
@@ -155,9 +155,9 @@ class BarraAttribution:
 
     def compute(
         self,
-        model: "HetTGN",
+        model: HetTGN,
         data: Any,
-        id_map: "IDMap",
+        id_map: IDMap,
         target_entity_ids: list[str] | None = None,
     ) -> dict[str, AttributionResult]:
         """Compute per-entity factor attribution via HGT attention capture.
@@ -191,9 +191,10 @@ class BarraAttribution:
         # CPU safety cap
         if len(candidates) > self.max_entities:
             log.warning(
-                "BarraAttribution: %d entities exceeds max_entities=%d; "
-                "truncating to first %d (alphabetical).",
-                len(candidates), self.max_entities, self.max_entities,
+                "BarraAttribution: %d entities exceeds max_entities=%d; truncating to first %d (alphabetical).",
+                len(candidates),
+                self.max_entities,
+                self.max_entities,
             )
             candidates = candidates[: self.max_entities]
 
@@ -249,7 +250,7 @@ class BarraAttribution:
     def store_results(
         self,
         store: Any,
-        results: dict[str, "AttributionResult"],
+        results: dict[str, AttributionResult],
     ) -> int:
         """Persist attribution signals to the pipeline store.
 
@@ -273,7 +274,8 @@ class BarraAttribution:
                     n_written += 1
                 except Exception:
                     log.warning(
-                        "BarraAttribution: failed to store %s", signal_name,
+                        "BarraAttribution: failed to store %s",
+                        signal_name,
                         exc_info=True,
                     )
         log.info("BarraAttribution: stored %d signals.", n_written)
@@ -283,9 +285,9 @@ class BarraAttribution:
 
     def _capture_attention(
         self,
-        model: "HetTGN",
+        model: HetTGN,
         data: Any,
-        id_map: "IDMap",
+        id_map: IDMap,
     ) -> list[dict[tuple[str, str, str], torch.Tensor]]:
         """Run one no_grad forward pass and collect per-layer attention.
 
@@ -311,9 +313,7 @@ class BarraAttribution:
             return layers_attention
 
         except Exception:
-            log.warning(
-                "BarraAttribution: attention capture failed.", exc_info=True
-            )
+            log.warning("BarraAttribution: attention capture failed.", exc_info=True)
             return []
 
         finally:

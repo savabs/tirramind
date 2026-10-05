@@ -31,7 +31,7 @@ _MIN_COST = 0.001
 _MAX_COST = 0.050
 _COST_SPREAD = _MAX_COST / _MIN_COST  # 50.0
 
-_ETA = 0.05    # opportunity-cost weight for successes
+_ETA = 0.05  # opportunity-cost weight for successes
 _KAPPA = 0.30  # max failure-penalty magnitude
 
 _TIER_DEFAULT_COST = {0: 0.001, 1: 0.001, 2: 0.003, 3: 0.017, 4: 0.050}
@@ -39,12 +39,12 @@ _TIER_DEFAULT_COST = {0: 0.001, 1: 0.001, 2: 0.003, 3: 0.017, 4: 0.050}
 # Action ids for the signal domain (mirrors AWOS escalation ladder)
 N_ACTIONS = 6
 ACTION_NAMES = [
-    "heuristic",   # 0 — rule-based, cheap (default)
-    "cheap_llm",   # 1 — cheap model assist
-    "rich_llm",    # 2 — richer reasoning
-    "statistical", # 3 — quant/stat method
-    "ml_model",    # 4 — learned model (GNN/router)
-    "ensemble",    # 5 — combination / escalation
+    "heuristic",  # 0 — rule-based, cheap (default)
+    "cheap_llm",  # 1 — cheap model assist
+    "rich_llm",  # 2 — richer reasoning
+    "statistical",  # 3 — quant/stat method
+    "ml_model",  # 4 — learned model (GNN/router)
+    "ensemble",  # 5 — combination / escalation
 ]
 
 
@@ -64,9 +64,7 @@ class Episode:
     source_tool: str = ""
     model_name: str = ""
     task_action_text: str = ""
-    timestamp: str = field(
-        default_factory=lambda: datetime.now(UTC).isoformat()
-    )
+    timestamp: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     reward_breakdown: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -154,7 +152,7 @@ class ReplayGate:
         if self._recent_features:
             dists = [
                 math.sqrt(sum((a - b) ** 2 for a, b in zip(episode.features, ref)))
-                for ref in self._recent_features[-self._novelty_window:]
+                for ref in self._recent_features[-self._novelty_window :]
             ]
             min_dist = min(dists)
             novelty = min(min_dist / 0.75, 1.0)
@@ -164,9 +162,7 @@ class ReplayGate:
         majority_frac = max(self._action_counts) / total_acts if total_acts > 0 else 0
         a = episode.action_id
         own_frac = (
-            self._action_counts[a] / total_acts
-            if (total_acts > 0 and 0 <= a < len(self._action_counts))
-            else 0.0
+            self._action_counts[a] / total_acts if (total_acts > 0 and 0 <= a < len(self._action_counts)) else 0.0
         )
         boundary = 1.0 - own_frac / max(majority_frac, 1e-6)
         boundary = max(0.0, min(boundary, 1.0))
@@ -176,7 +172,7 @@ class ReplayGate:
         s = self.score(episode)
         self._recent_features.append(list(episode.features))
         if len(self._recent_features) > self._novelty_window * 2:
-            self._recent_features = self._recent_features[-self._novelty_window:]
+            self._recent_features = self._recent_features[-self._novelty_window :]
         a = episode.action_id
         if 0 <= a < len(self._action_counts):
             self._action_counts[a] += 1

@@ -145,10 +145,7 @@ def _why_it_matters(alert: dict[str, Any], template: ChainTemplate | None) -> st
     n_domains = len({n["obs"].split("/", 1)[0] for n in alert.get("nodes", [])})
     readout = alert.get("readout_instrument", "CL=F")
     desc = (template.description if template else "").strip()
-    lead = (
-        f"This alert links **{n_domains} domains** on the Atlantic energy book "
-        f"with readout **{readout}**."
-    )
+    lead = f"This alert links **{n_domains} domains** on the Atlantic energy book with readout **{readout}**."
     if desc:
         lead = desc.split("\n")[0].strip()
     return (
@@ -180,14 +177,8 @@ def _outcome_footer(alert: dict[str, Any]) -> str:
         direction = outcome.get("direction", "?")
         ret = outcome.get("return_pct", 0)
         notes = outcome.get("notes", "")
-        return (
-            f"*Resolved: {alert.get('readout_instrument', 'CL=F')} "
-            f"**{ret:+.2f}%** ({direction}). {notes}*"
-        )
-    return (
-        "*Outcome: pending — run `python scripts/resolve_ghost_alert.py --all` "
-        "after 2–5 trading sessions.*"
-    )
+        return f"*Resolved: {alert.get('readout_instrument', 'CL=F')} **{ret:+.2f}%** ({direction}). {notes}*"
+    return "*Outcome: pending — run `python scripts/resolve_ghost_alert.py --all` after 2–5 trading sessions.*"
 
 
 def alert_to_brief_markdown(
@@ -217,14 +208,9 @@ def alert_to_brief_markdown(
         date_phrase = _format_obs_date(node.get("observed_at", ""))
         val_phrase = _format_value(node.get("obs", ""), node.get("value"))
         z_phrase = _z_phrase(node.get("z"))
-        happened.append(
-            f"**{layer}:** {entity} registered {val_phrase} "
-            f"({z_phrase}) as of **{date_phrase}**."
-        )
+        happened.append(f"**{layer}:** {entity} registered {val_phrase} ({z_phrase}) as of **{date_phrase}**.")
 
-    watch_lines = "\n".join(
-        f"{i}. {line}" for i, line in enumerate(_what_to_watch(alert.get("nodes", [])), 1)
-    )
+    watch_lines = "\n".join(f"{i}. {line}" for i, line in enumerate(_what_to_watch(alert.get("nodes", [])), 1))
 
     source_rows = []
     for node in alert.get("nodes", []):

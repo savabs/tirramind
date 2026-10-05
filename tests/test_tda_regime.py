@@ -84,7 +84,6 @@ def _make_returns(T: int = 30, N: int = 5, seed: int = 42) -> np.ndarray:
 
 
 class TestPersistencePair:
-
     def test_persistence_finite(self):
         p = PersistencePair(birth=0.1, death=0.5, dim=0)
         assert p.persistence == pytest.approx(0.4)
@@ -114,7 +113,6 @@ class TestPersistencePair:
 
 
 class TestHelpers:
-
     def test_build_point_cloud_unit_norms(self):
         x = np.array([[3.0, 4.0], [1.0, 0.0]])
         cloud = _build_point_cloud(x)
@@ -139,7 +137,6 @@ class TestHelpers:
 
 
 class TestPersistenceScipy:
-
     def test_n_minus_1_finite_plus_one_inf(self):
         cloud = np.random.default_rng(7).normal(0, 1, (8, 3))
         cond = _distance_matrix(_build_point_cloud(cloud))
@@ -156,7 +153,6 @@ class TestPersistenceScipy:
 
 
 class TestMetrics:
-
     def test_entropy_empty(self):
         assert _persistence_entropy([]) == 0.0
 
@@ -194,7 +190,6 @@ class TestMetrics:
 
 
 class TestTDARegimeDetector:
-
     def test_default_construction(self):
         d = TDARegimeDetector()
         assert d.window_days == 30
@@ -304,7 +299,6 @@ class TestTDARegimeDetector:
 
 
 class TestLoadReturns:
-
     def test_returns_none_no_data(self, tmp_path):
         store = _make_store(tmp_path, "nodata.db")
         result = _load_returns(store, None, 30, 50, None)
