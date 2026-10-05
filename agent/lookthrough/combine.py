@@ -279,8 +279,9 @@ _OPAQUE_PATTERNS: tuple[_Pattern, ...] = (
         r"(?:\bindex\b|\betf\b|\bbees\b|\bfof\b|\bfund\s*of\s*fund)",
         None,
         None,
-        "a passive fund tracking an index this module holds no published "
-        "constituent list for — its holdings are knowable, just not from here",
+        # "this module" was developer language on a page a stranger reads.
+        "a passive fund tracking an index we hold no published constituent "
+        "list for — its holdings are knowable, just not from here",
     ),
     _p(r"\bflexi\s*-?\s*cap\b", None, None, "an actively managed flexi-cap fund"),
     _p(r"\bmulti\s*-?\s*cap\b", None, None, "an actively managed multi-cap fund"),
