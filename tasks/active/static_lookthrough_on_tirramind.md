@@ -92,8 +92,11 @@ call beyond one 105 KB data file; the homepage leads with it; and `/queue`,
 - [x] LT.8 — `.gitignore`: a blanket `*.json` was excluding the page's own data
       file. Harmless for the first deploy (wrangler uploads the working
       directory) and fatal for the first deploy from a fresh clone
-- [ ] LT.9 — Deploy and verify `/holdings` serves the page rather than the
-      Pages 404 fallback
+- [x] LT.9 — Deployed. Preview `472e4ce7` verified first, then promoted to
+      `main`. `/holdings` serves the page (previously 200 only because the
+      Pages 404 fallback was returning the old homepage). Rollback point:
+      deployment `9d91dc2b` from commit `1521e3c`. A copy fix followed —
+      "this module" was developer language, caught by reading the live page
 - [ ] LT.10 — **The falsifier, deferred four times now:** show the output to
       five people and watch whether `You own 14.2% of HDFCBANK` actually
       surprises them. Six headlines died when measured; this one has only been
