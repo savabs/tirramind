@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark light">
-<title>355 gigawatts are queued. One in five gets built.</title>
-<meta name="description" content="355 GW of US power projects wait to plug in. About one in five gets built; above 1,000 MW, one in nineteen. Each waiting project gets a probability, published before the outcome exists.">
-<meta property="og:title" content="355 gigawatts are queued. One in five gets built.">
-<meta property="og:description" content="I put a probability on every power project still waiting to join four US grids, published before anyone knows the answer. And they do not fail independently.">
+<title>TirraMind — things I have measured, including the ones that failed</title>
+<meta name="description" content="A tool that shows what your Indian portfolio really holds once index funds are unpacked, and a public record of probabilities on 1,636 US power projects set before any outcome exists.">
+<meta property="og:title" content="TirraMind — things I have measured">
+<meta property="og:description" content="What your portfolio really holds once the index funds are unpacked. Plus 1,636 timestamped predictions on US power projects, and the measurements that killed my own earlier product.">
 <style>
   :root{
     --bg:#060608; --ink:#fafafa; --mut:#93939c; --dim:#5c5c66;
@@ -107,11 +107,21 @@
 <body>
 <div class="wrap">
 <header>
-<div class="eyebrow"><span class="pip"></span>The grid waiting list &middot; September 2026</div>
-<h1>355 gigawatts are queued.<br><span class="grad">One in five gets built.</span></h1>
-<p class="lede">Power plants must ask permission to plug into the grid. They then wait on a public list, often for years.</p>
-<p class="lede">Forecasts of the AI buildout quote that list as a construction schedule. Most of it never happens. I give each waiting application a percentage chance of being built, <strong>published before anyone knows the result</strong>.</p>
+<div class="eyebrow"><span class="pip"></span>TirraMind &middot; October 2026</div>
+<h1>Your index fund owns<br><span class="grad">the stock you already own.</span></h1>
+<p class="lede">If you hold HDFC Bank and you hold a Nifty 50 fund, you hold HDFC Bank twice. Your broker shows you two line items and never adds them up.</p>
+<p class="lede">Paste your holdings and it adds them up. <strong>It runs in your browser</strong> &mdash; your holdings are not sent anywhere, because there is nowhere to send them to.</p>
+<div class="links" style="margin-top:34px">
+<a class="card" href="/holdings"><span><span class="t">See what you really own &rarr;</span><br><span class="d">Seven NSE indices unpacked, 871 companies. The funds nobody can see into are named and left alone rather than guessed at</span></span><span class="arw">&rarr;</span></a>
+</div>
 </header>
+
+<section style="padding-top:64px">
+<h2>Also published &mdash; the grid waiting list</h2>
+<div class="body">
+<p><strong>355 gigawatts are queued. One in five gets built.</strong> Power plants must ask permission to plug into the grid, then wait on a public list, often for years. Forecasts of the AI buildout quote that list as a construction schedule; most of it never happens. I give each waiting application a percentage chance of being built, <strong>published before anyone knows the result</strong>.</p>
+</div>
+</section>
 <div class="stats">
 <div class="stat"><div class="n grad">355 GW</div><div class="k">of capacity waiting to plug in, across four grid operators</div></div>
 <div class="stat"><div class="n grad">1 in 19</div><div class="k">how often an application for 1,000 MW or more gets built. 1,000 MW is 1 GW</div></div>
@@ -130,7 +140,7 @@
 <figcaption>Both bars count applications, not gigawatts. The 1-in-5 rate is measured on requests filed long enough ago that nearly all of them have finished &mdash; count every request that has ended and it is 16.6%, because recent projects have not had time yet. Neither bar includes my 1,636 predictions. Those have no result.</figcaption>
 </figure>
 <section>
-<h2>The work</h2>
+<h2>The grid work in detail</h2>
 <div class="links">
 <a class="card" href="/queue"><span><span class="t">The AI power queue is mostly vapour</span><br><span class="d">Method, caveats and the raw source URL</span></span><span class="arw">&rarr;</span></a>
 <a class="card" href="/predictions"><span><span class="t">1,636 predictions, no results yet</span><br><span class="d">Each waiting application gets a percentage chance and a deadline, set before any result exists. New ones are added. Old ones never change</span></span><span class="arw">&rarr;</span></a>
@@ -138,9 +148,9 @@
 </div>
 </section>
 <section>
-<h2>What this actually is</h2>
+<h2>What the grid model actually is</h2>
 <div class="body">
-<p>This measures one thing: whether a power project gets built. Not prices, not who wins. <strong>When it says 20%, that should happen about 20% of the time.</strong> A single prediction cannot be judged that way. You can only judge the whole list, once the results come in. The list is public, so anyone can check whether I was right.</p>
+<p>It measures one thing: whether a power project gets built. Not prices, not who wins. <strong>When it says 20%, that should happen about 20% of the time.</strong> A single prediction cannot be judged that way. You can only judge the whole list, once the results come in. The list is public, so anyone can check whether I was right.</p>
 <p>Each prediction carries a deadline for its result. The grid operators replace the list with a new one and delete the old, so I save a copy every morning. Nobody can go back and buy the queue as it once stood.</p>
 </div>
 </section>
@@ -159,7 +169,7 @@
 <a class="card" href="https://savabs.github.io/"><span><span class="t">Everything else I have measured</span><br><span class="d">Including an AI system of mine that lost to just asking the model directly &mdash; the measurement that killed my own project</span></span><span class="arw">&rarr;</span></a>
 </div>
 </section>
-<footer>September 2026. The prediction list is <a href="/predictions.csv" style="color:inherit">downloadable</a>. The earlier signal product is withdrawn and not for sale &mdash; its <a href="https://github.com/savabs/tirramind" style="color:inherit">collector remains open source</a>. <code>github.com/savabs</code></footer>
+<footer>October 2026. The prediction list is <a href="/predictions.csv" style="color:inherit">downloadable</a>. The earlier signal product is withdrawn and not for sale &mdash; its <a href="https://github.com/savabs/tirramind" style="color:inherit">collector remains open source</a>. <code>github.com/savabs</code></footer>
 </div>
 </body>
 </html>
