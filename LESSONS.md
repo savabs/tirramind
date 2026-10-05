@@ -944,3 +944,144 @@ because something *else* looked wrong first.
   confirm the hypothesis as to results that refute it. Every entry in this log
   was found by doubting a *bad* number; the frozen arm survived because its
   number was *good*.
+
+---
+
+### F-19 · A Catch-All Regex Unpacked a Government-Bond Fund Into 50 Equities
+
+**Symptom.** Building the browser version of the look-through, a test paste of
+`Motilal Oswal Nifty Smallcap 250 Index Fund 50%` came back unpacked into the
+**NIFTY 50** — fifty large-cap companies, each with a confident weight, under
+the heading "arrives through: Motilal Oswal Nifty Smallcap 250 Index Fund".
+
+It was not a porting error. The shipped Python engine does the same thing, and
+not for one fund:
+
+```
+Nifty Smallcap 250 Index Fund          -> index_fund   NIFTY 50
+Nifty Alpha 50 ETF                     -> index_fund   NIFTY 50
+Nifty Midcap 100 Index Fund            -> index_fund   NIFTY 50
+Nifty 200 Momentum 30 Index Fund       -> index_fund   NIFTY 50
+HDFC Nifty G-Sec Dec 2026 Index Fund   -> index_fund   NIFTY 50
+```
+
+The last one is the one to look at twice. A **government-bond** index fund,
+which holds no company shares at all, was being expanded into HDFC Bank,
+Reliance and Infosys.
+
+**Root cause.** The last entry in `_INDEX_PATTERNS`:
+
+```python
+_p(r"\bnifty\b(?=.*\b(?:index|etf|fund)\b)", "NIFTY 50", None,
+   "the line says 'nifty' and 'index/etf/fund' but no index number, so we "
+   "read it as NIFTY 50 — if it tracks a different Nifty index this row is wrong")
+```
+
+It was written for `UTI Nifty Index Fund` — a name with no index number, where
+reading "Nifty" as the Nifty 50 is the Indian convention. But the lookahead only
+asks whether the words "index/etf/fund" appear *somewhere*. It never checks that
+no OTHER index-distinguishing word is present, so every `Nifty <something> <n>
+Index Fund` fell into it. The pattern sits last, so it only fires after the
+specific ones miss — which is exactly the set of funds we do **not** have a
+constituent list for.
+
+Two things made it survive:
+
+1. **The caveat was already written into the code.** `"if it tracks a different
+   Nifty index this row is wrong"` is the bug, described, in the line that
+   causes it. It was filed as a `why` note rendered into `assumptions`, not as a
+   refusal — so the engine stated the risk and then returned the number anyway.
+2. **`index_phrase` already did it correctly.** `"nifty smallcap 250"` matches
+   no alias and `"nifty"` maps to NIFTY 50, so the phrase path gets all five
+   right. The regex catch-all was redundant with a correct mechanism and
+   strictly more dangerous than it.
+
+**Fix.** Delete the catch-all and let the phrase path answer. `resolve_line` now
+reduces the name with `index_phrase` and accepts only an exact hit in
+`_ALIAS_TO_INDEX`; anything else becomes an **opaque** fund that is named, left
+alone, and counted.
+
+**Why this one is the worst class in this product.** Every other failure here is
+either a refusal or a number that looks wrong. This produced a *plausible* table
+of fifty real companies with real weights summing correctly to the fund's
+holding — nothing on the page looked off, and the total still reconciled to
+100%. A reader checking it against their fund's factsheet would have found fifty
+names that are not in it. The product's entire claim is "addition you can check
+by hand"; this was arithmetic that was internally consistent and about the wrong
+companies.
+
+**Three more defects in the same sweep, found by writing the near-miss tests
+the prevention rule asks for.** All four are one failure: *a fund quietly became
+something else, and the number still looked fine.*
+
+**(b) A variant index borrowed the base index's weights.** `\bnifty\s*50\b`
+matches `Nifty 50 Equal Weight Index Fund` — which holds the same fifty
+companies at 2% each, not at free-float weights where HDFCBANK is 10.8%. Right
+membership, materially wrong numbers, which is *harder* to spot than wrong
+membership because every name in the table is one the fund really holds. Fixed
+by vetoing a name-based pattern match whose reduced phrase is not an exact alias
+of the matched index; exact-ticker patterns are exempt, since their reduction is
+meaningless.
+
+**(c) `Nifty Financial Services` was mapped to `NIFTY BANK`.** A different
+index — it holds NBFCs and insurers that NIFTY BANK does not. Deleted from the
+pattern.
+
+**(d) Twenty of the twenty-six ETF tickers in this repo's own tables were
+classified as individual companies.** The worst of the four by reach, and it had
+two independent causes:
+
+* `_split_size` located the size with `_has_digit`, and Indian ETF tickers are
+  full of digits — `SETFNIF50`, `MID150BEES`, `NIFTY1`, `HDFCNIF100`. The
+  left-hand scan consumed *the ticker itself* as the size, leaving an empty
+  name that matched no fund pattern at all.
+* `_INDEX_PATTERNS` hand-listed **8** tickers while `agent.lookthrough.funds`
+  knew **25**, and `resolve_line` never consulted that table. The other
+  seventeen — `NIFTYIETF` and `BANKIETF` among them, both ordinary retail
+  holdings — matched nothing.
+
+Either path ended at `kind="direct"`. A reader pasting `NIFTYIETF 40%` had 40%
+of their money assigned to a company that does not exist, and **no index
+unpacked at all**. The totals still summed to 100%, so nothing on the page
+looked wrong. Fixed by requiring a size token to be a *number* rather than a
+token containing one, and by resolving tickers through `funds`' tables instead
+of a second hand-maintained list.
+
+**How all four were found.** Not by reading the code, and not by looking at the
+page — the page looked right in every case. They surfaced because the
+look-through was being reimplemented in JavaScript for a static site, and the
+parity harness compared the two engines over 3,446 real scheme names. Defect (a)
+appeared as a *disagreement*; (b), (c) and (d) appeared when that disagreement
+prompted writing out the near-miss cases. **The second implementation paid for
+itself before it shipped**, which is the opposite of what this log would
+normally predict about having two of something.
+
+**Prevention Rule:**
+- **A pattern whose own comment says "this row is wrong if …" must refuse, not
+  return.** A documented caveat attached to a returned number is a bug with a
+  comment on it. If the condition cannot be checked, the branch must not
+  produce a value.
+- **Never let a broad fallback pattern assign a specific identity.** A catch-all
+  may classify something as *unknown*; it must not name which index, table or
+  entity it is. The fallback fires precisely where the specific rules failed,
+  which is the worst possible place to guess.
+- **When two mechanisms can answer one question, delete one.** `index_phrase`
+  and `_INDEX_PATTERNS` both mapped names to indices. The redundancy is what
+  allowed the dangerous one to go unexamined for as long as the safe one
+  existed.
+- **Test the near-misses, not the hits.** The existing tests covered
+  `UTI Nifty 50`, `NIFTYBEES` and `Parag Parikh` — the clear yes and the clear
+  no. Every one of these five defects lives in the band between them, which is
+  also where most real Indian scheme names live.
+- **A classifier's safe default is "I cannot tell", and only the last rule may
+  use it.** Breadth is correct in a pattern that names nothing and fatal in one
+  that names an index. The opaque table's catch-all was *too narrow* — it
+  listed `fund|scheme` but not `etf` — while the index table's was too broad.
+  Both errors are the same mistake about which direction is safe.
+- **Iterate the table, never a copy of it.** The ticker tests walk
+  `TICKER_LISTED_NAMES` itself, so a ticker added to `funds` is covered the day
+  it is added. A hand-copied list of eight is what produced defect (d).
+- **"Contains a digit" is not "is a number".** Any identifier in this domain
+  may contain digits. Parsing that treats the two as equivalent will eventually
+  eat an identifier and leave an empty string, which then matches nothing and
+  fails silently rather than loudly.

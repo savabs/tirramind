@@ -27,6 +27,7 @@ import re
 import pytest
 
 from agent.lookthrough import combine as C
+from agent.lookthrough import funds as F
 
 # ---------------------------------------------------------------------------
 # A hand-computed index. Three names, weights chosen so every product is
@@ -592,3 +593,282 @@ def test_live_series_varies_rather_than_being_a_constant():
     assert len(set(round(v, 6) for v in series)) > 40, "weights look quantised/constant"
     assert max(series) / min(series) > 5, "a real cap-weighted index is not flat"
     assert sum(series) == pytest.approx(1.0, abs=C.WEIGHT_SUM_TOLERANCE)
+
+
+# ---------------------------------------------------------------------------
+# F-19 — the catch-all that named a specific index
+# ---------------------------------------------------------------------------
+#
+# A pattern meant for "UTI Nifty Index Fund" (no index number, so the Indian
+# convention reads it as the Nifty 50) matched ANY "Nifty <something> <n> Index
+# Fund" and unpacked it into the Nifty 50. Five fund families were affected,
+# including a GOVERNMENT BOND fund expanded into fifty equities.
+#
+# These test the band between the clear yes and the clear no, which is where
+# the defect lived and where most real Indian scheme names live.
+
+#: (name, expected index or None). None means "must be named and left alone".
+F19_CASES: tuple[tuple[str, str | None], ...] = (
+    # The name the catch-all was written for. Must still work.
+    ("UTI Nifty Index Fund", "NIFTY 50"),
+    ("UTI Nifty Index Fund - Direct Plan - Growth", "NIFTY 50"),
+    # Explicit and supported.
+    ("UTI Nifty 50 Index Fund", "NIFTY 50"),
+    ("Nippon India ETF Nifty 50 BeES", "NIFTY 50"),
+    ("Nifty Next 50 Index Fund", "NIFTY NEXT 50"),
+    ("ICICI Prudential Nifty Bank ETF", "NIFTY BANK"),
+    # Real Nifty indices we hold NO constituent list for. Each of these was
+    # silently unpacked into the Nifty 50.
+    ("Motilal Oswal Nifty Smallcap 250 Index Fund", None),
+    ("Nifty Smallcap 250 Index Fund", None),
+    ("Nifty Smallcap 250 ETF", None),
+    ("Nifty Alpha 50 ETF", None),
+    ("Nifty Midcap 100 Index Fund", None),
+    ("Nifty 200 Momentum 30 Index Fund", None),
+    ("Nifty Smallcap 100 Index Fund", None),
+    ("Nifty 50 Equal Weight Index Fund", None),
+    # Not equities at all. This is the one that matters most: it holds
+    # government bonds and was being expanded into HDFCBANK and RELIANCE.
+    ("HDFC Nifty G-Sec Dec 2026 Index Fund", None),
+    ("Nifty 5 yr Benchmark G-Sec ETF", None),
+    ("Nifty SDL Apr 2027 Index Fund", None),
+)
+
+
+@pytest.mark.parametrize("name, expected", F19_CASES)
+def test_f19_a_fund_is_never_unpacked_into_an_index_it_does_not_track(name, expected):
+    """The worst failure this product can produce, one case per row.
+
+    A refusal is recoverable — the reader sees the fund named and left alone.
+    Unpacking into the WRONG index produces a plausible table of fifty real
+    companies with real weights that still sum to 100%, about a fund that holds
+    none of them. Nothing on the page looks wrong.
+    """
+    kind, _rewritten = C.resolve_line(1, f"{name} 50%")
+    if expected is None:
+        assert kind.index is None, (
+            f"{name!r} was unpacked into {kind.index!r}, which it does not track — see LESSONS.md F-19"
+        )
+        assert kind.kind == "opaque_fund", f"{name!r} classified {kind.kind!r}, not opaque_fund"
+        assert kind.note.strip(), f"{name!r} was left un-unpacked without a reason for the reader"
+    else:
+        assert kind.index == expected, f"{name!r} resolved to {kind.index!r}, expected {expected!r}"
+        assert kind.kind == "index_fund"
+
+
+def test_f19_a_non_equity_index_fund_adds_no_companies():
+    """End to end: a G-Sec fund must not put equities in the book.
+
+    The unit test above pins the classification; this pins the consequence,
+    because the classification is only interesting for what it does to the
+    numbers.
+    """
+    r = lt("HDFC Nifty G-Sec Dec 2026 Index Fund 50%\nHDFCBANK 50%", provider=FakeProvider())
+    assert r.computed
+    companies = [ln for ln in r.lines if ln.kind == "company"]
+    assert {ln.symbol for ln in companies} == {"HDFCBANK"}, (
+        f"a government-bond fund contributed equity positions: {sorted(ln.symbol for ln in companies)}"
+    )
+    gsec = [f for f in r.funds if "G-Sec" in f.label or "g-sec" in f.label.lower()]
+    assert gsec and not gsec[0].unpacked
+    assert gsec[0].weight == pytest.approx(0.5)
+
+
+def test_f19_no_broad_pattern_may_name_a_specific_index():
+    """The structural rule, so a new row cannot reintroduce the defect.
+
+    The distinction is NOT "does the pattern contain the index's words" — an
+    exact ETF ticker like ``niftybees`` names NIFTY 50 precisely and contains
+    none of it. The distinction is **breadth**: a pattern that can match
+    arbitrary text between its anchors is deciding an identity on evidence it
+    has not inspected.
+
+    So a pattern that assigns an index may not contain ``.*``, ``.+`` or a
+    lookahead. F-19's pattern was ``\\bnifty\\b(?=.*\\b(?:index|etf|fund)\\b)``
+    — a lookahead across the whole rest of the name, which in India always
+    contains one of those three words. It therefore matched every Nifty fund
+    in existence, and sat last, so it only ever fired on the funds the
+    specific rules had already declined.
+    """
+    offenders = []
+    for pat in C._INDEX_PATTERNS:
+        if pat.index is None:
+            continue  # a pattern that names nothing cannot name the wrong thing
+        src = pat.rx.pattern
+        for bad in (".*", ".+", "(?=", "(?!", "(?<=", "(?<!"):
+            if bad in src:
+                offenders.append((src, pat.index, bad))
+                break
+    assert not offenders, (
+        "these patterns assign a SPECIFIC index on an UNBOUNDED match, which is "
+        "how F-19 unpacked a government-bond fund into fifty equities:\n"
+        + "\n".join(f"  {src!r} -> {idx}  (contains {bad!r})" for src, idx, bad in offenders)
+    )
+
+
+def test_f19_the_phrase_path_is_the_one_that_resolves_a_bare_nifty():
+    """ "UTI Nifty Index Fund" must still work, and via the safe mechanism.
+
+    The fix deletes the catch-all rather than narrowing it, which is only
+    correct because ``index_phrase`` already reduces this name to ``"nifty"``
+    and the alias table already maps that to NIFTY 50. If that stops being
+    true, the deletion silently costs real coverage instead of removing a bug.
+    """
+    assert F.index_phrase("UTI Nifty Index Fund") == "nifty"
+    assert F._ALIAS_TO_INDEX["nifty"] == "NIFTY 50"
+    # And the same reduction must NOT rescue a name that carries another index.
+    assert F._ALIAS_TO_INDEX.get(F.index_phrase("Nifty Smallcap 250 Index Fund")) is None
+
+
+def test_f19_every_known_etf_ticker_resolves_to_its_index():
+    """All 20 index-ETF tickers must unpack. Twenty of twenty-six did not.
+
+    Two causes, both silent:
+
+    * ``_split_size`` used "contains a digit" to find the size, and Indian ETF
+      tickers are full of digits — SETFNIF50, MID150BEES, NIFTY1, HDFCNIF100.
+      The scan ate the ticker itself, leaving an empty name that matched no
+      fund pattern.
+    * ``_INDEX_PATTERNS`` hand-listed 8 tickers while ``funds`` knew 25. The
+      other 17 — NIFTYIETF and BANKIETF among them, both ordinary retail
+      holdings — matched nothing.
+
+    Either way the line was classified ``direct``: the reader's money was
+    assigned to a company that does not exist and no index was unpacked. This
+    iterates the TABLE rather than a copied list, so a ticker added to
+    ``funds`` is covered here the day it is added.
+    """
+    failures = []
+    for ticker in F.TICKER_LISTED_NAMES:
+        kind, _ = C.resolve_line(1, f"{ticker} 50%")
+        if kind.kind != "index_fund" or kind.index is None:
+            failures.append((ticker, kind.kind, kind.index))
+    assert not failures, "ETF tickers not unpacked:\n" + "\n".join(
+        f"  {t} -> kind={k!r} index={i!r}" for t, k, i in failures
+    )
+
+
+def test_f19_an_opaque_ticker_is_named_not_treated_as_a_company():
+    """A traded ETF we cannot map must be a FUND left alone, never a stock."""
+    failures = []
+    for ticker in list(F.OPAQUE_TICKERS) + ["GOLDBEES"]:
+        kind, _ = C.resolve_line(1, f"{ticker} 50%")
+        if kind.kind != "opaque_fund":
+            failures.append((ticker, kind.kind))
+    assert not failures, "opaque tickers misclassified:\n" + "\n".join(f"  {t} -> {k!r}" for t, k in failures)
+
+
+@pytest.mark.parametrize(
+    "line, want_name",
+    [
+        # The regression: a digit-bearing ticker must survive size-stripping.
+        ("MID150BEES 50%", "MID150BEES"),
+        ("SETFNIF50 20%", "SETFNIF50"),
+        ("NIFTY1 5%", "NIFTY1"),
+        ("HDFCNIF100 12.5%", "HDFCNIF100"),
+        # A leading size is still stripped — that is what the left scan is for.
+        ("50% HDFCBANK", "HDFCBANK"),
+        ("Rs 50,000 NIFTYBEES", "NIFTYBEES"),
+        # Multi-word fund names keep their own numbers.
+        ("UTI Nifty 50 Index Fund 5%", "UTI Nifty 50 Index Fund"),
+        ("Nifty Smallcap 250 Index Fund 8%", "Nifty Smallcap 250 Index Fund"),
+        # Units and currency still come off.
+        ("NIFTYBEES 200 units", "NIFTYBEES"),
+        ("HDFCBANK Rs 50,000", "HDFCBANK"),
+    ],
+)
+def test_f19_split_size_keeps_the_name_it_was_given(line, want_name):
+    """A size is a NUMBER, not any token that happens to contain one."""
+    name, _size = C._split_size(line)
+    assert name == want_name, f"{line!r} split to name={name!r}, expected {want_name!r}"
+
+
+def test_f19_a_misread_ticker_cannot_silently_become_a_company():
+    """The consequence, end to end, for the most ordinary possible paste.
+
+    "NIFTYIETF 40%" is ICICI's Nifty 50 ETF — an unremarkable retail holding.
+    It used to contribute 40% to a company called NIFTYIETF and unpack nothing.
+    """
+    r = lt("NIFTYIETF 40%\nHDFCBANK 60%", provider=FakeProvider())
+    assert r.computed
+    assert r.n_unpacked == 1, "the ETF was not looked through"
+    syms = {ln.symbol for ln in r.lines}
+    assert "NIFTYIETF" not in syms, "the ETF ticker is being reported as a company"
+    # HDFCBANK is 60% direct plus 40% x its 0.5 weight in the fake index.
+    hdfc = next(ln for ln in r.lines if ln.symbol == "HDFCBANK")
+    assert hdfc.actual == pytest.approx(0.60 + 0.40 * 0.5)
+
+
+def test_f19_every_non_equity_ticker_is_a_fund_left_alone():
+    """Gold, silver and bond ETFs hold no company shares.
+
+    Iterates the TABLE, so a ticker added to ``funds`` is covered the day it
+    is added. These were previously matched by spelling, which failed both
+    ways: ``\\bgold\\b`` misses ``GOLDBEES`` (no word boundary before BEES),
+    and ``\\bgold`` without the boundary matches ``GOLDIAM`` — a real listed
+    company.
+    """
+    failures = []
+    for ticker in F.NON_EQUITY_TICKERS:
+        kind, _ = C.resolve_line(1, f"{ticker} 50%")
+        if kind.kind != "opaque_fund":
+            failures.append((ticker, kind.kind))
+        elif not kind.note.strip():
+            failures.append((ticker, "no reason given"))
+    assert not failures, "non-equity ETFs misclassified:\n" + "\n".join(f"  {t} -> {k}" for t, k in failures)
+
+
+@pytest.mark.parametrize(
+    "symbol",
+    [
+        # Listed companies whose names begin with, or contain, a word used by
+        # the fund patterns. Each one is a stock and must stay a stock.
+        "GOLDIAM",
+        "HDFCBANK",
+        "RELIANCE",
+        "ITC",
+        "IDEA",
+        "M&M",
+        "TATAMOTORS",
+        "INFY",
+        "SBIN",
+        "LT",
+        "TRENT",
+        "DMART",
+        "BAJAJ-AUTO",
+    ],
+)
+def test_f19_a_company_is_never_reclassified_as_a_fund(symbol):
+    """The opposite error from F-19, and the one broad patterns cause.
+
+    Widening a fund pattern to catch a glued ticker is the obvious fix and the
+    wrong one: it converts stocks into funds, which drops them out of the
+    equity total instead of adding wrong companies to it. Both directions are
+    silent, so both are pinned.
+    """
+    kind, _ = C.resolve_line(1, f"{symbol} 50%")
+    assert kind.kind == "direct", f"{symbol} was classified {kind.kind!r} ({kind.note[:60]!r})"
+
+
+def test_f19_a_passive_index_fund_is_not_called_actively_managed():
+    """The reason is a factual claim about the reader's money.
+
+    "Motilal Oswal Nifty Smallcap 250 Index Fund" contains "small cap" and was
+    reported as "an actively managed small-cap fund". It is passive. A reader
+    who catches one false statement is right to stop believing the numbers
+    above it, so the ordering that produces the reason is pinned here.
+    """
+    passive_but_unsupported = [
+        "Motilal Oswal Nifty Smallcap 250 Index Fund",
+        "Nifty 50 Equal Weight Index Fund",
+        "Nifty Financial Services ETF",
+        "Nifty Midcap 100 Index Fund",
+        "Nifty 200 Momentum 30 Index Fund",
+    ]
+    for name in passive_but_unsupported:
+        kind, _ = C.resolve_line(1, f"{name} 50%")
+        assert kind.kind == "opaque_fund", name
+        assert "actively managed" not in kind.note, (
+            f"{name!r} is a passive index fund but was described as {kind.note!r}"
+        )
+        assert "passive" in kind.note, f"{name!r} reason does not say it is passive: {kind.note!r}"

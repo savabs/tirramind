@@ -229,6 +229,49 @@ OPAQUE_TICKERS: dict[str, str] = {
     "MIDCAPETF": "MIRAEAMC - MAM150ETF",
 }
 
+#: NSE tickers for ETFs that hold NO EQUITIES — gold, silver, debt. Listed
+#: rather than inferred from the spelling, because inference on glued ticker
+#: names is unreliable in both directions and the two failure modes are not
+#: symmetric:
+#:
+#: * ``\bgold\b`` does not match ``GOLDBEES`` (no word boundary before BEES),
+#:   so the strict form misses the real ticker and a gold ETF is counted among
+#:   the reader's equity holdings — the F-19 failure, silently wrong.
+#: * dropping the boundary to ``\bgold`` matches ``GOLDIAM`` — Goldiam
+#:   International, a real NSE-listed company — turning a stock into a fund.
+#:
+#: There is no regex that reliably separates "a ticker that starts with the
+#: name of a metal" from "a ticker for a fund that holds that metal", so this
+#: is a list. It is short, it is checkable against NSE, and a ticker missing
+#: from it fails safe: the free-text patterns in ``combine`` still catch any
+#: name containing a separate "gold"/"silver"/"debt" word.
+NON_EQUITY_TICKERS: dict[str, str] = {
+    "GOLDBEES": "a gold ETF, which holds metal rather than company shares",
+    "GOLDSHARE": "a gold ETF, which holds metal rather than company shares",
+    "GOLDETF": "a gold ETF, which holds metal rather than company shares",
+    "GOLDIETF": "a gold ETF, which holds metal rather than company shares",
+    "GOLD1": "a gold ETF, which holds metal rather than company shares",
+    "GOLDCASE": "a gold ETF, which holds metal rather than company shares",
+    "AXISGOLD": "a gold ETF, which holds metal rather than company shares",
+    "HDFCGOLD": "a gold ETF, which holds metal rather than company shares",
+    "SETFGOLD": "a gold ETF, which holds metal rather than company shares",
+    "IVZINGOLD": "a gold ETF, which holds metal rather than company shares",
+    "LICMFGOLD": "a gold ETF, which holds metal rather than company shares",
+    "QGOLDHALF": "a gold ETF, which holds metal rather than company shares",
+    "SILVERBEES": "a silver ETF, which holds metal rather than company shares",
+    "SILVERETF": "a silver ETF, which holds metal rather than company shares",
+    "SILVERIETF": "a silver ETF, which holds metal rather than company shares",
+    "HDFCSILVER": "a silver ETF, which holds metal rather than company shares",
+    "AXISILVER": "a silver ETF, which holds metal rather than company shares",
+    "LIQUIDBEES": "a liquid-debt ETF, which holds no company shares",
+    "LIQUIDETF": "a liquid-debt ETF, which holds no company shares",
+    "LIQUIDCASE": "a liquid-debt ETF, which holds no company shares",
+    "GILT5YBEES": "a government-bond ETF, which holds no company shares",
+    "EBBETF0430": "a bond ETF (Bharat Bond), which holds no company shares",
+    "EBBETF0431": "a bond ETF (Bharat Bond), which holds no company shares",
+    "EBBETF0433": "a bond ETF (Bharat Bond), which holds no company shares",
+}
+
 #: Fund-house prefixes, longest first at use. Taken from the 55 AMC names in
 #: the live AMFI file (with "Mutual Fund" removed) plus former names and
 #: sub-brands that appear in scheme names but not in the AMC list ("Parag

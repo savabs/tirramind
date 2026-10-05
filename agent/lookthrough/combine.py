@@ -87,6 +87,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from agent.lookthrough import funds as _funds
 from agent.portfolio.holdings import Holdings, parse_holdings
 
 log = logging.getLogger(__name__)
@@ -205,23 +206,82 @@ _INDEX_PATTERNS: tuple[_Pattern, ...] = (
     _p(r"\butiniftetf\b", "NIFTY 50", "UTINIFTETF"),
     _p(r"\bnifty\s*next\s*50\b", "NIFTY NEXT 50"),
     _p(r"\bnifty\s*midcap\s*150\b", "NIFTY MIDCAP 150"),
-    _p(r"\bnifty\s*(?:bank|financial\s*services)\b|\bbank\s*nifty\b", "NIFTY BANK"),
+    # F-19 (same sweep): "financial services" was mapped to NIFTY BANK and is
+    # a DIFFERENT index — NIFTY FINANCIAL SERVICES includes NBFCs and insurers
+    # that NIFTY BANK does not hold. Same failure as the catch-all: a plausible
+    # list of real companies, several of which the fund does not own.
+    _p(r"\bnifty\s*bank\b|\bbank\s*nifty\b", "NIFTY BANK"),
     _p(r"\bnifty\s*it\b", "NIFTY IT"),
     _p(r"\bnifty\s*100\b", "NIFTY 100"),
     _p(r"\bnifty\s*500\b", "NIFTY 500"),
     _p(r"\bnifty\s*50\b", "NIFTY 50"),
-    _p(
-        r"\bnifty\b(?=.*\b(?:index|etf|fund)\b)",
-        "NIFTY 50",
-        None,
-        "the line says 'nifty' and 'index/etf/fund' but no index number, so we "
-        "read it as NIFTY 50 — if it tracks a different Nifty index this row is wrong",
-    ),
+    # F-19: a catch-all `\bnifty\b(?=.*\b(?:index|etf|fund)\b)` used to sit
+    # here, mapping anything Nifty-ish to NIFTY 50. It was written for "UTI
+    # Nifty Index Fund", where reading a bare "Nifty" as the Nifty 50 is the
+    # Indian convention — but the lookahead only asked whether the words
+    # "index/etf/fund" appeared SOMEWHERE, and every Indian scheme name
+    # contains one. So it also swallowed "Nifty Smallcap 250 Index Fund",
+    # "Nifty Alpha 50 ETF" and "HDFC Nifty G-Sec Dec 2026 Index Fund" — the
+    # last of which holds government bonds and was being expanded into fifty
+    # equities. Sitting last made it worse, not safer: it fired only on the
+    # funds the specific patterns had already declined.
+    #
+    # It is DELETED rather than narrowed, because `index_phrase` already does
+    # this correctly and safely: it reduces "UTI Nifty Index Fund" to "nifty",
+    # which the alias table maps to NIFTY 50, while "Nifty Smallcap 250 Index
+    # Fund" reduces to "nifty smallcap 250" and matches no alias at all. Two
+    # mechanisms answering one question is what let the dangerous one go
+    # unexamined. See `resolve_line`, which now consults the phrase path.
 )
 
 #: Things we can name but cannot unpack. The ``why`` is shown to the user and
 #: has to be something they could act on.
 _OPAQUE_PATTERNS: tuple[_Pattern, ...] = (
+    # Order within this table decides which REASON the reader is given, and
+    # the reason is a factual claim about their money, so it is ordered most
+    # specific first:
+    #
+    #   1. holds no equities at all (gold, debt) — the most informative answer
+    #   2. passive, but tracking an index we hold no list for
+    #   3. a named active category
+    #   4. "a fund", the catch-all
+    #
+    # (2) has to precede (3) because the category words overlap: "Motilal
+    # Oswal Nifty Smallcap 250 INDEX FUND" contains "small cap" and was being
+    # reported as "an actively managed small-cap fund". It is passive. Telling
+    # a reader their index fund is actively managed is a false statement about
+    # their portfolio, and a reader who catches one is right to stop believing
+    # the numbers above it.
+    _p(
+        # `\bgold\b` alone does NOT match "GOLDBEES" — there is no word
+        # boundary between GOLD and BEES — so the glued issuer forms are
+        # spelled out. Dropping the trailing \b entirely would be shorter and
+        # wrong: "Goldiam International" is a real NSE-listed company, and a
+        # prefix match would turn that stock into a fund.
+        r"\bgold\b|\bgold\s*(?:etf|bees|fund|savings)\b"
+        r"|\bsilver\b|\bsilver\s*(?:etf|bees|fund)\b|\bsgb\b",
+        None,
+        None,
+        "a precious-metal instrument, which holds no equities to look through to",
+    ),
+    _p(
+        r"\bgilt\b|\bdebt\s*fund\b|\bliquid\s*fund\b|\bcorporate\s*bond\b"
+        r"|\bg[\s-]?sec\b|\bgsec\b|\bsdl\b|\btreasury\b|\bbharat\s*bond\b"
+        r"|\b1d\s*rate\b|\bmoney\s*market\b",
+        None,
+        None,
+        "a debt or government-bond instrument, which holds no equities to look through to",
+    ),
+    _p(
+        # Passive, and naming an index. Reaching this row means the index
+        # patterns and the phrase path both declined it, so it is an index we
+        # hold no published constituent list for.
+        r"(?:\bindex\b|\betf\b|\bbees\b|\bfof\b|\bfund\s*of\s*fund)",
+        None,
+        None,
+        "a passive fund tracking an index this module holds no published "
+        "constituent list for — its holdings are knowable, just not from here",
+    ),
     _p(r"\bflexi\s*-?\s*cap\b", None, None, "an actively managed flexi-cap fund"),
     _p(r"\bmulti\s*-?\s*cap\b", None, None, "an actively managed multi-cap fund"),
     _p(r"\bsmall\s*-?\s*cap\b", None, None, "an actively managed small-cap fund"),
@@ -233,20 +293,23 @@ _OPAQUE_PATTERNS: tuple[_Pattern, ...] = (
     _p(r"\bfocus(?:ed|sed)\b", None, None, "an actively managed focused fund"),
     _p(r"\belss\b|\btax\s*saver\b", None, None, "an actively managed ELSS fund"),
     _p(r"\bbalanced\s*advantage\b|\bhybrid\b|\bbaf\b", None, None, "a hybrid fund that also holds debt"),
-    _p(
-        r"\bgilt\b|\bdebt\s*fund\b|\bliquid\s*fund\b|\bcorporate\s*bond\b",
-        None,
-        None,
-        "a debt fund, which holds no equities to look through to",
-    ),
-    _p(
-        r"\bgold\s*(?:etf|bees|fund)\b|\bsgb\b",
-        None,
-        None,
-        "a gold instrument, which holds no equities to look through to",
-    ),
     _p(r"\bsmall\s*case\b|\bsmallcase\b", None, None, "a smallcase basket"),
-    _p(r"\bmutual\s*fund\b|\bfund\b|\bscheme\b", None, None, "a fund we have no constituent list for"),
+    # The last resort, and it must catch EVERY pooled vehicle. F-19: this
+    # listed only fund/scheme, so "Nifty Alpha 50 ETF" matched nothing and was
+    # classified `direct` — an ETF counted as though it were a single company's
+    # shares, with its whole weight landing on a ticker that does not exist.
+    #
+    # A broad pattern is safe HERE and nowhere above it, because every row in
+    # this table names no index. Breadth that says "I cannot see into this" is
+    # the correct default for a thing we failed to identify; breadth that
+    # assigns an identity is F-19.
+    _p(
+        r"\bmutual\s*fund\b|\bfund\b|\bscheme\b|\betf\b|\bbees\b|\bindex\b"
+        r"|\bfof\b|\bexchange\s*traded\b",
+        None,
+        None,
+        "a fund we have no constituent list for",
+    ),
 )
 
 _OPAQUE_FALLBACK_WHY = (
@@ -279,6 +342,27 @@ def _has_digit(tok: str) -> bool:
     return any(ch.isdigit() for ch in tok)
 
 
+#: A token that is a SIZE: a number, with optional currency sign, grouping,
+#: decimal and a trailing percent or unit. NOT merely a token containing a
+#: digit.
+#:
+#: F-19 sweep: ``_has_digit`` was used for this, and Indian ETF tickers are
+#: full of digits — SETFNIF50, MID150BEES, NIFTY1, HDFCNIF100. The left-hand
+#: scan consumed the ticker itself as the "size", leaving an empty name that
+#: matched no fund pattern, so **20 of the 26 ETF tickers in this repo's own
+#: tables were classified as individual companies** and never looked through.
+#: A reader pasting "NIFTYIETF 40%" had 40% of their money assigned to a
+#: company that does not exist, and no index unpacked.
+_NUMERIC_SIZE_RE = re.compile(
+    r"^(?:rs\.?|inr|₹|\$|usd)?\s*[\d][\d,]*(?:\.\d+)?\s*(?:%|pct|percent|units?|shares?|shs?|nos?)?$",
+    re.IGNORECASE,
+)
+
+
+def _is_numeric_size(tok: str) -> bool:
+    return bool(_NUMERIC_SIZE_RE.match(tok.strip(".,:;")))
+
+
 def _split_size(text: str) -> tuple[str, str]:
     """Split one line into ``(name, size)``. Nothing is discarded.
 
@@ -302,7 +386,7 @@ def _split_size(text: str) -> tuple[str, str]:
         t = toks[j - 1]
         if _is_unit_word(t):
             j -= 1
-        elif _has_digit(t) and not seen_num:
+        elif _is_numeric_size(t) and not seen_num:
             j -= 1
             seen_num = True
         else:
@@ -312,7 +396,7 @@ def _split_size(text: str) -> tuple[str, str]:
         t = toks[i]
         if _is_unit_word(t):
             i += 1
-        elif _has_digit(t) and not seen_num:
+        elif _is_numeric_size(t) and not seen_num:
             i += 1
             seen_num = True
         else:
@@ -337,16 +421,117 @@ def resolve_line(line_no: int, raw: str) -> tuple[LineKind, str]:
     """
     text = " ".join(raw.split()).strip(" ,;\t-\u2022*")
     name, size = _split_size(text)
-    for pat in (*_INDEX_PATTERNS, *_OPAQUE_PATTERNS):
+    token = f"FUNDLINE{line_no}"
+    label = name or text
+
+    # 0. The TICKER tables in `funds`, which are the authoritative list: each
+    #    entry records the name the issuer lists the ETF under, read live and
+    #    quoted verbatim, and the index is derived from that name by the same
+    #    reduction a pasted scheme name goes through.
+    #
+    #    Consulted here because `_INDEX_PATTERNS` only ever listed 8 tickers by
+    #    hand while `funds` knows 25. The other 17 \u2014 NIFTYIETF, BANKIETF,
+    #    ITETF, HDFCNIF100 among them \u2014 matched no pattern and were classified
+    #    as individual COMPANIES. Two tables for one question, with different
+    #    coverage, is the same redundancy that hid F-19.
+    bare = name.strip().upper()
+    if bare and " " not in bare:
+        # Non-equity ETFs first: knowing it holds metal or bonds is a better
+        # answer for the reader than "a fund we cannot see into", and it is the
+        # one case where we can say something definite about the contents.
+        if bare in _funds.NON_EQUITY_TICKERS:
+            return (
+                LineKind(line_no, text, label, "opaque_fund", None, _funds.NON_EQUITY_TICKERS[bare]),
+                f"{token} {size}".strip(),
+            )
+        if bare in _funds.OPAQUE_TICKERS:
+            return (
+                LineKind(
+                    line_no,
+                    text,
+                    label,
+                    "opaque_fund",
+                    None,
+                    f"{bare} is a traded ETF, but the name it is listed under is "
+                    f'"{_funds.OPAQUE_TICKERS[bare]}", which names no index. Its issuer '
+                    f"code hints at one; a hint is not a holdings list, so it was left "
+                    f"un-unpacked rather than mapped to a guess.",
+                ),
+                f"{token} {size}".strip(),
+            )
+        listed = _funds.TICKER_LISTED_NAMES.get(bare)
+        if listed:
+            ticker_index = _funds._ALIAS_TO_INDEX.get(_funds.index_phrase(listed))
+            if ticker_index is not None:
+                return (
+                    LineKind(
+                        line_no,
+                        text,
+                        label,
+                        "index_fund",
+                        ticker_index,
+                        f'{bare} is listed as "{listed}", which tracks {ticker_index}',
+                    ),
+                    f"{token} {size}".strip(),
+                )
+
+    # 1. The specific patterns \u2014 exact tickers and named indices.
+    #
+    #    A NAME-based pattern is additionally vetoed by the reduced phrase. The
+    #    pattern asks "does this name contain my index's name"; the phrase asks
+    #    "and nothing else that would make it a different index". F-19:
+    #    `\bnifty\s*50\b` matches "Nifty 50 Equal Weight Index Fund", which
+    #    holds the same fifty companies at 2% each rather than the free-float
+    #    weights this module would apply \u2014 the same membership and materially
+    #    wrong numbers, which is harder to spot than wrong membership.
+    #
+    #    A TICKER pattern is exempt: "SETFNIFBK" is an exact identity whose
+    #    reduction is meaningless, and vetoing it would lose real coverage.
+    for pat in _INDEX_PATTERNS:
         if not pat.rx.search(name):
             continue
-        label = name or text
-        token = f"FUNDLINE{line_no}"
-        if pat.index is not None:
-            kind = LineKind(line_no, text, label, "index_fund", pat.index, pat.why)
-        else:
-            kind = LineKind(line_no, text, label, "opaque_fund", None, pat.why or _OPAQUE_FALLBACK_WHY)
-        return kind, f"{token} {size}".strip()
+        if pat.ticker is None:
+            reduced = _funds.index_phrase(name or text)
+            if _funds._ALIAS_TO_INDEX.get(reduced) != pat.index:
+                # The name carries extra index-distinguishing words. Fall
+                # through to the opaque patterns, which will name it and leave
+                # it alone.
+                continue
+        return (
+            LineKind(line_no, text, label, "index_fund", pat.index, pat.why),
+            f"{token} {size}".strip(),
+        )
+
+    # 2. The PHRASE path, for a name that identifies its index without matching
+    #    a pattern \u2014 "UTI Nifty Index Fund" reduces to "nifty", an alias of
+    #    NIFTY 50. Only an EXACT alias hit counts. This is what replaced the
+    #    F-19 catch-all, and the difference is that the reduction examines the
+    #    whole name: "Nifty Smallcap 250 Index Fund" reduces to "nifty smallcap
+    #    250", which is in no alias table, so it falls through to be named and
+    #    left alone rather than mapped to a nearby index.
+    phrase = _funds.index_phrase(name or text)
+    phrase_index = _funds._ALIAS_TO_INDEX.get(phrase)
+    if phrase_index is not None:
+        why = ""
+        if phrase in {"nifty", "cnx nifty", "s p cnx nifty"}:
+            why = (
+                'the name carries no index number, and an unqualified "Nifty" is '
+                "read here as the NIFTY 50 \u2014 which is the Indian convention, not "
+                "a certainty"
+            )
+        return (
+            LineKind(line_no, text, label, "index_fund", phrase_index, why),
+            f"{token} {size}".strip(),
+        )
+
+    # 3. Things we can name but cannot see into.
+    for pat in _OPAQUE_PATTERNS:
+        if pat.rx.search(name):
+            return (
+                LineKind(line_no, text, label, "opaque_fund", None, pat.why or _OPAQUE_FALLBACK_WHY),
+                f"{token} {size}".strip(),
+            )
+
     return LineKind(line_no, text, name or text, "direct"), text
 
 
