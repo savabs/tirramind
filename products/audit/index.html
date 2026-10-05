@@ -512,6 +512,17 @@
     if (v === null) return "—";
     return (v * 100).toFixed(places === undefined ? 1 : places) + "%";
   }
+  // A DIFFERENCE between two percentages is percentage points, not percent.
+  // 12.0% listed vs 15.2% actual is +3.2pp. Writing "+3.2%" invites the
+  // reader to read it as a 3.2% relative increase on 12.0% — a different
+  // and smaller number — and this is the one figure the product expects
+  // them to screenshot, so the unit has to be right on it.
+  function pp(x, places) {
+    var v = frac(x);
+    if (v === null) return "—";
+    var p = places === undefined ? 1 : places;
+    return (v >= 0 ? "+" : "−") + Math.abs(v * 100).toFixed(p) + "pp";
+  }
   // Signed, for a gap or a return. Sign is a direction, not a verdict, so
   // it is never colour-coded.
   function spct(x, places) {
@@ -985,8 +996,21 @@
     if (typeof bench !== "string") bench = String(get(bench, "ticker") || "");
     var benchWhy = get(d, "benchmark.why", "benchmark_why") || "";
 
-    state.appendChild(heroCard(d, bench, benchWhy, missing));
+    /* Look-through leads — but only when it FOUND something. The picking-cost
+       hero is demoted below the honesty card: it answers "am I good at this",
+       which is identity-threatening and the job people do not return for.
+
+       A book of only direct stocks has nothing hidden, so the look-through
+       card has no finding to lead with. Leading with it anyway would put a
+       content-free block at the top of the page and push the real findings
+       below the fold — so in that case it still renders (the answer "nothing
+       is hidden" is worth stating) but it goes last of the three. */
+    var ltc = lookThroughCard(d);
+    var ltLeads = ltc && lookThroughFound(d);
+    if (ltLeads) state.appendChild(ltc);
     state.appendChild(honestyCard(d));
+    state.appendChild(heroCard(d, bench, benchWhy, missing));
+    if (ltc && !ltLeads) state.appendChild(ltc);
     structureCards(d, missing).forEach(function (c) { state.appendChild(c); });
     var bc = basisCard(d);
     if (bc) state.appendChild(bc);
@@ -1029,6 +1053,182 @@
   }
 
   /* --- the frame a person would screenshot ------------------------- */
+
+  /* ---- LOOK-THROUGH: the lead card ------------------------------------
+     This goes first because it is the only finding that is both simple and
+     surprising. Every other block describes positions the reader CHOSE, so
+     it cannot surprise them; this one tells them about exposure they did
+     not choose and cannot see in a broker app.
+
+     Measured: six earlier candidate headlines were discarded for being
+     unsurprising ("12 positions, 3 bets" occurred 0 times in 200 real
+     books) or unknowable. This one is addition, so there is nothing to
+     teach the reader before they understand it. */
+  /* Did the look-through actually find anything? `computed: true` only means
+     the engine ran — a book of four direct stocks computes fine and unpacks
+     nothing. The finding is a fund that WAS unpacked; without one there is no
+     gap between listed and actual on any row. Decides whether this card leads
+     the page. */
+  function lookThroughFound(d) {
+    var lt = get(d, "look_through");
+    return !!(lt && lt.computed === true && (lt.n_unpacked || 0) > 0);
+  }
+
+  function lookThroughCard(d) {
+    var lt = get(d, "look_through");
+    if (!lt) return null;
+
+    var card = el("div", "hero");
+    card.appendChild(el("div", "eyebrow", "What you really own"));
+
+    /* Nothing was unpacked, but the engine ran. State the answer in one
+       sentence and stop: a table whose every row reads "30.0% / 30.0% / — / —"
+       is four lines of confirmed nothing, and printing it invites the reader
+       to hunt for a finding that is genuinely not there. Name the opaque
+       funds, because THAT is the actionable part of this case. */
+    if (lt.computed === true && (lt.n_unpacked || 0) === 0) {
+      var opaqueOnly = (lt.funds || []).filter(function (f) { return !f.unpacked; });
+      if (opaqueOnly.length) {
+        /* n_listed counts the funds too, so it is NOT the direct-holding
+           count — saying "your 3 direct holdings" about a paste of two stocks
+           and a gold ETF miscounts in the same sentence that lists the ETF
+           separately, which the reader can see. */
+        var nDirect = Math.max(0, (lt.n_listed || 0) - opaqueOnly.length);
+        card.appendChild(el("h2", null, "Nothing we could look through"));
+        card.appendChild(el("p", null,
+          (nDirect === 1 ? "Your 1 direct holding is" : "Your " + nDirect + " direct holdings are") +
+          " exactly what you listed. " +
+          (opaqueOnly.length === 1 ? "This one is not" : "These are not") +
+          ", and we will not guess what is inside:"));
+        var oul = el("ul", "lines");
+        opaqueOnly.forEach(function (f) {
+          oul.appendChild(el("li", null,
+            f.label + " — " + pct(f.weight, 1) + " of your money — " +
+            (f.reason || "could not be looked through")));
+        });
+        card.appendChild(oul);
+      } else {
+        card.appendChild(el("h2", null, "You own exactly what you listed"));
+        card.appendChild(el("p", null,
+          "All " + (lt.n_listed || 0) + " positions are direct holdings — no " +
+          "index fund or ETF, so nothing is hidden behind one. Most books that " +
+          "paste in here have something hidden; yours does not."));
+      }
+      return card;
+    }
+
+    if (lt.computed !== true) {
+      /* Not an error, and must not read like one: a book of only direct
+         stocks has nothing to unpack, and a share-count paste that
+         includes a fund genuinely cannot be weighted without its NAV. Say
+         which, rather than showing an empty card. */
+      card.appendChild(el("h2", null, "Nothing to look through here"));
+      card.appendChild(el("p", "caveat", lt.reason || "No index fund or ETF in this paste."));
+      return card;
+    }
+
+    var big = lt.biggest_surprise;
+    if (big && big.added > 0) {
+      /* The second line repeats the symbol on purpose. It is read on its
+         own — out of a screenshot, under a headline the reader has already
+         skipped past — and "You listed 12.0%" with no subject is a
+         sentence about nothing. */
+      var listedTxt = (big.listed === null || big.listed === undefined)
+        ? "You did not list " + big.symbol + " at all"
+        : "You listed " + big.symbol + " at " + pct(big.listed, 1);
+      card.appendChild(el("div", "big", "You own " + pct(big.actual, 1) + " of " + big.symbol));
+      card.appendChild(el("p", null,
+        listedTxt + ". The other " + pp(big.added, 1).replace(/^\+/, "") +
+        " arrives through your funds."));
+    } else {
+      card.appendChild(el("h2", null, lt.headline || "Looked through"));
+    }
+
+    /* Only when the headline is not already the h2 above — otherwise the
+       same sentence renders twice, which reads as a rendering bug and
+       costs the card the credibility the whole page depends on. */
+    if (big && big.added > 0 && lt.headline) {
+      card.appendChild(el("p", null, lt.headline));
+    }
+
+    var tbl = el("table");
+    var thead = el("thead"), hr = el("tr");
+    ["Holding", "You listed", "You actually hold", "Hidden", "Arrives through"].forEach(function (h) {
+      hr.appendChild(el("th", null, h));
+    });
+    thead.appendChild(hr); tbl.appendChild(thead);
+
+    var tb = el("tbody");
+    var rows = lt.rows || [];
+    /* Already ranked by SURPRISE server-side — how much of the holding the
+       reader did not list — not by size. A 2.7% position they never listed
+       is more interesting than a big one that moved 0.1pp. */
+    var shown = rows.slice(0, 12);
+    shown.forEach(function (r) {
+      var tr = el("tr");
+      tr.appendChild(el("td", "sym", r.symbol));
+      tr.appendChild(el("td", "n", (r.listed === null || r.listed === undefined) ? "—" : pct(r.listed, 1)));
+      tr.appendChild(el("td", "n strong", pct(r.actual, 1)));
+      tr.appendChild(el("td", "n", r.added > 0 ? pp(r.added, 1) : "—"));
+      var via = (r.via || []).map(function (v) { return v.source; }).join(", ");
+      tr.appendChild(el("td", "via", via));
+      tb.appendChild(tr);
+    });
+    tbl.appendChild(tb);
+    card.appendChild(tbl);
+
+    /* Count companies, not rows. `rows` also carries the funds that could
+       NOT be looked through, as pass-through lines — so rows.length was
+       reporting 53 "companies" directly under a headline that said 51, and
+       two numbers for the same thing on one card is how a reader decides
+       the whole page is unreliable. Server's n_companies is the authority;
+       the local filter is the fallback, never rows.length. */
+    var companyRows = rows.filter(function (r) { return r.kind === "company"; });
+    var nCompanies = absent(lt.n_companies) ? companyRows.length : lt.n_companies;
+    if (rows.length > shown.length) {
+      card.appendChild(el("p", "caveat",
+        "Showing the " + shown.length + " where the gap is largest. You hold " +
+        nCompanies + " companies in total; none was dropped."));
+    }
+
+    if (lt.top3_share) {
+      /* "after looking through", not "real" — two of these positions may be
+         funds we could not unpack, and calling those "real positions" on a
+         card whose whole claim is that it unpacked them is a contradiction. */
+      card.appendChild(el("p", null,
+        "Your three largest positions after looking through are " +
+        pct(lt.top3_share, 1) + " of the money."));
+    }
+
+    /* What could NOT be unpacked, by name. An active fund's holdings are
+       not knowable from its category, and guessing them would be invented
+       data — the worst failure available to this product. So the count of
+       un-unpacked lines is stated beside the headline, never hidden. */
+    var funds = lt.funds || [];
+    var opaque = funds.filter(function (f) { return !f.unpacked; });
+    if (opaque.length) {
+      var ul = el("ul", "lines");
+      opaque.forEach(function (f) {
+        ul.appendChild(el("li", null,
+          f.label + " — " + pct(f.weight, 1) + " of your money — " +
+          (f.reason || "could not be looked through")));
+      });
+      card.appendChild(el("h3", null, opaque.length + " of these could not be looked through"));
+      card.appendChild(ul);
+    }
+
+    /* The approximation, shown where the number is shown. Index weights are
+       computed from free-float market cap, not published by NSE. Measured
+       against a published Nifty tracker: mean 0.37pp, max 0.64pp. A reader
+       who later discovers this in a footer would be right to distrust the
+       rest. */
+    (lt.approximation_notes || []).forEach(function (n) {
+      card.appendChild(el("p", "caveat", n));
+    });
+
+    return card;
+  }
+
   function heroCard(d, bench, benchWhy, missing) {
     var card = el("div", "hero");
 

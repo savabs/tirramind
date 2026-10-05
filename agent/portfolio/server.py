@@ -711,7 +711,7 @@ def _section(s: Any) -> dict[str, Any]:
     }
 
 
-def audit_payload(a: Any, *, include_text: bool = False) -> dict[str, Any]:
+def audit_payload(a: Any, *, include_text: bool = False, holdings_text: str = "") -> dict[str, Any]:
     """The whole ``Audit`` as JSON-safe structured data.
 
     Field order here is render order: what was read, the window, the
@@ -776,6 +776,11 @@ def audit_payload(a: Any, *, include_text: bool = False) -> dict[str, Any]:
         "notes": list(a.notes),
         "fx": list(getattr(panel, "fx_report", ())),
         "panel_assumptions": list(getattr(panel, "assumptions", ())),
+        "look_through": (
+            _look_through(holdings_text)
+            if holdings_text
+            else {"computed": False, "reason": "caller did not pass the original paste"}
+        ),
         "headline": _headline(a),
         "rolling_record": [_rolling(r) for r in a.usable_records],
         "rolling_record_reason": a.records_reason,
@@ -789,6 +794,105 @@ def audit_payload(a: Any, *, include_text: bool = False) -> dict[str, Any]:
     if include_text:
         payload["report_text"] = render_text(a)
     return payload
+
+
+def _look_through(holdings_text: str) -> dict:
+    """The look-through block: what the book really holds once index funds unpack.
+
+    Leads the response because it is the only finding that is both simple and
+    surprising. Everything else in this payload describes positions the user
+    chose; this one tells them about exposure they did not.
+
+    Never raises into the response. A look-through failure must not take the
+    rest of the audit down with it — the section reports ``computed: false``
+    with a reason, which is also what it does for a book of only direct stocks.
+    """
+    try:
+        from agent.lookthrough.combine import look_through
+    except Exception as exc:  # noqa: BLE001
+        return {"computed": False, "reason": f"look-through unavailable: {type(exc).__name__}"}
+    try:
+        lt = look_through(holdings_text)
+    except Exception as exc:  # noqa: BLE001
+        log.exception("look_through failed")
+        return {"computed": False, "reason": f"could not look through this book: {type(exc).__name__}"}
+    if not getattr(lt, "computed", False):
+        return {"computed": False, "reason": getattr(lt, "not_computed_reason", "") or "nothing to unpack"}
+
+    # Rank by SURPRISE — how much of the holding the user did not list — rather
+    # than by size. A 2.1% position they never listed is more interesting than a
+    # large one that moved 0.1pp.
+    def surprise(line) -> float:
+        listed = line.listed if line.listed is not None else 0.0
+        return float(line.actual) - float(listed)
+
+    ranked = sorted(lt.lines, key=surprise, reverse=True)
+    rows = [
+        {
+            "symbol": ln.symbol,
+            "name": ln.name,
+            "listed": _num(ln.listed) if ln.listed is not None else None,
+            "actual": _num(ln.actual),
+            "added": _num(surprise(ln)),
+            "via": [
+                {
+                    "source": c.source,
+                    "index": c.index,
+                    "fund_weight": _num(c.fund_weight),
+                    "constituent_weight": _num(c.constituent_weight),
+                    "weight": _num(c.weight),
+                }
+                for c in (ln.via or ())
+            ],
+            "kind": ln.kind,
+            "note": ln.note,
+        }
+        for ln in ranked
+    ]
+    top3 = sum(float(ln.actual) for ln in sorted(lt.lines, key=lambda x: -float(x.actual))[:3])
+    biggest = ranked[0] if ranked else None
+    return {
+        "computed": True,
+        "n_listed": lt.n_listed,
+        "n_unpacked": lt.n_unpacked,
+        "n_companies": lt.n_companies,
+        "headline": (
+            f"You listed {lt.n_listed} positions. Looking through {lt.n_unpacked} of them, "
+            f"you hold {lt.n_companies} companies."
+        ),
+        "biggest_surprise": (
+            {
+                "symbol": biggest.symbol,
+                "listed": _num(biggest.listed) if biggest.listed is not None else None,
+                "actual": _num(biggest.actual),
+                "added": _num(surprise(biggest)),
+            }
+            if biggest is not None and surprise(biggest) > 0
+            else None
+        ),
+        "top3_share": _num(top3),
+        "rows": rows,
+        "funds": [
+            {
+                "label": f.label,
+                "weight": _num(f.weight),
+                "index": f.index,
+                "unpacked": f.unpacked,
+                "reason": f.reason,
+                "n_constituents": f.n_constituents,
+            }
+            for f in (lt.funds or ())
+        ],
+        "residual": _num(lt.residual),
+        "weight_basis": lt.weight_basis,
+        "weight_source": lt.weight_source,
+        # Carried to the surface on purpose: index weights are computed from
+        # free-float market cap, not published, and the user sees that where
+        # they see the number rather than in a footer.
+        "approximation_notes": list(lt.approximation_notes or ()),
+        "assumptions": list(lt.assumptions or ()),
+        "exclusions": [{"symbol": sym, "reason": why} for sym, why in (lt.exclusions or ())],
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -1227,7 +1331,11 @@ class AuditHandler(BaseHTTPRequestHandler):
     def _compute(self, text: str, benchmark: str | None, include_text: bool) -> dict[str, Any]:
         """The audit, on a worker thread. The only place holdings text is used."""
         result = run_audit(text, benchmark=benchmark)
-        return audit_payload(result, include_text=include_text)
+        # `text` is passed on so look-through can re-parse it: it needs the raw
+        # paste to tell an index fund from a direct holding, which the finished
+        # Audit no longer distinguishes. It stays on this thread and is not
+        # retained anywhere — see the privacy note on every response.
+        return audit_payload(result, include_text=include_text, holdings_text=text)
 
     def _internal(self) -> None:
         """A 500 with an id and no traceback.

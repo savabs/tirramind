@@ -956,6 +956,178 @@ def test_socket_close_mid_body_does_not_wedge_the_server(server):
 
 
 # ==========================================================================
+# The look-through block — the lead finding, and the page's contract with it
+# ==========================================================================
+#
+# These test the SERVER's mapping, not the arithmetic (that is
+# tests/test_lookthrough_combine.py). The mapping is where the page's
+# assumptions live, and one of them was already wrong in the HTML: it counted
+# ``len(rows)`` and called the result "companies", printing "53 companies"
+# directly below a headline that said 51. Two numbers for the same thing on one
+# card is how a reader decides the whole page is unreliable, so the invariant
+# that separates them is pinned here rather than left to the next reader.
+#
+# No network: ``combine._default_provider`` is replaced, which keeps the real
+# combine logic and the real server mapping and only fakes the index weights.
+
+
+@pytest.fixture
+def fake_index(monkeypatch):
+    """Index weights with no NSE and no Yahoo behind them."""
+    from agent.lookthrough import combine as C
+
+    class _Prov:
+        describe = "a test provider; these weights are made up"
+
+        def index_weights(self, index: str) -> C.IndexWeights:
+            if index != "NIFTY 50":
+                raise C.LookThroughError(f"test provider has no {index}")
+            return C.IndexWeights(
+                index=index,
+                weights={"HDFCBANK": 0.5, "RELIANCE": 0.25, "ICICIBANK": 0.25},
+                names={k: f"{k} Ltd." for k in ("HDFCBANK", "RELIANCE", "ICICIBANK")},
+                note="TEST NOTE: made up",
+                asof="2026-10-02",
+            )
+
+    prov = _Prov()
+    monkeypatch.setattr(C, "_default_provider", lambda: (prov, prov.describe))
+    return prov
+
+
+# NIFTYBEES at 40% over the fake index: HDFCBANK gets 0.40 x 0.5 = 0.20 added
+# to the 10% listed, so actual is 30%. Numbers checkable by eye on purpose.
+FUND_BOOK = "HDFCBANK 10%\nRELIANCE 20%\nNIFTYBEES 40%\nGOLDBEES 30%"
+
+
+def test_n_companies_is_not_the_row_count(fake_index):
+    """``rows`` carries the funds we could NOT unpack; ``n_companies`` must not.
+
+    The page prints ``n_companies`` under the table and ``len(rows)`` is the
+    wrong number for it. If this ever becomes an equality, the HTML's fallback
+    (filter on ``kind == "company"``) and the server disagree silently.
+    """
+    lt = S._look_through(FUND_BOOK)
+    assert lt["computed"] is True
+
+    companies = [r for r in lt["rows"] if r["kind"] == "company"]
+    opaque = [r for r in lt["rows"] if r["kind"] != "company"]
+
+    assert lt["n_companies"] == len(companies)
+    assert opaque, "GOLDBEES should be carried as a non-company row, not dropped"
+    assert len(lt["rows"]) > lt["n_companies"]
+
+
+def test_every_row_kind_is_one_the_page_knows(fake_index):
+    """The page branches on ``kind``; a new value would render as a company.
+
+    ``lookThroughCard`` filters ``kind === "company"`` to count companies, so a
+    third kind added upstream would be counted as one and inflate the figure
+    under the table without failing anything.
+    """
+    lt = S._look_through(FUND_BOOK)
+    kinds = {r["kind"] for r in lt["rows"]}
+    assert kinds <= {"company", "opaque_fund"}, kinds
+
+
+def test_added_is_actual_minus_listed_so_it_is_percentage_points(fake_index):
+    """The headline number. It is a DIFFERENCE, which is why the page says pp.
+
+    Pinned because the page renders this field with a ``pp`` suffix: were it
+    ever to become a ratio (actual/listed) the label would be wrong and the
+    number would still look plausible.
+    """
+    lt = S._look_through(FUND_BOOK)
+    by_sym = {r["symbol"]: r for r in lt["rows"]}
+
+    hdfc = by_sym["HDFCBANK"]
+    assert hdfc["listed"] == pytest.approx(0.10)
+    assert hdfc["actual"] == pytest.approx(0.30)
+    assert hdfc["added"] == pytest.approx(0.20)
+
+    for r in lt["rows"]:
+        listed = r["listed"] or 0.0
+        assert r["added"] == pytest.approx(r["actual"] - listed, abs=1e-9)
+
+
+def test_rows_are_ranked_by_surprise_not_by_size(fake_index):
+    """A small position they never listed beats a large one that barely moved.
+
+    This is the whole reason the table is worth reading, and sorting by
+    ``actual`` instead would still produce a sensible-looking table.
+    """
+    lt = S._look_through(FUND_BOOK)
+    added = [r["added"] for r in lt["rows"]]
+    assert added == sorted(added, reverse=True)
+
+
+def test_a_book_of_only_direct_stocks_computes_but_unpacks_nothing(fake_index):
+    """``computed`` means the engine RAN, not that it found anything.
+
+    The page gates on ``n_unpacked > 0`` to decide whether this card leads,
+    because a four-stock book computes perfectly well and has nothing hidden.
+    Leading with it produced a table whose every row read "30.0% / 30.0% / —".
+    """
+    lt = S._look_through("HDFCBANK 30%\nRELIANCE 30%\nINFY 20%\nTCS 20%")
+    assert lt["computed"] is True
+    assert lt["n_unpacked"] == 0
+    assert all(r["added"] == pytest.approx(0.0) for r in lt["rows"])
+
+
+def test_n_listed_counts_funds_too_so_it_is_not_the_direct_count(fake_index):
+    """Pinned because the page subtracts the opaque funds from it.
+
+    The empty-state card says "your N direct holdings are exactly what you
+    listed", and N is ``n_listed`` minus the funds it could not unpack. If
+    ``n_listed`` ever stops counting funds, that subtraction double-counts.
+    """
+    lt = S._look_through("HDFCBANK 40%\nRELIANCE 30%\nGOLDBEES 30%")
+    assert lt["n_listed"] == 3
+    opaque = [f for f in lt["funds"] if not f["unpacked"]]
+    assert len(opaque) == 1
+    assert lt["n_listed"] - len(opaque) == 2
+
+
+def test_an_unpackable_fund_is_named_and_never_guessed(fake_index):
+    """The refusal is the trustworthy part, so it must carry a reason."""
+    lt = S._look_through(FUND_BOOK)
+    opaque = [f for f in lt["funds"] if not f["unpacked"]]
+    assert opaque, "GOLDBEES holds no equities and must not be unpacked"
+    for f in opaque:
+        assert f["reason"].strip(), f"{f['label']} refused without saying why"
+        assert f["n_constituents"] == 0
+
+
+def test_the_approximation_note_travels_with_the_numbers(fake_index):
+    """A reader who finds this in a footer later would be right to distrust us."""
+    lt = S._look_through(FUND_BOOK)
+    assert lt["approximation_notes"], "unpacked an index and said nothing about how"
+
+
+def test_look_through_failure_does_not_take_the_audit_down(monkeypatch):
+    """The rest of the payload is worth more than this block."""
+    from agent.lookthrough import combine as C
+
+    def _boom(*a, **k):
+        raise RuntimeError("provider exploded")
+
+    monkeypatch.setattr(C, "look_through", _boom)
+    lt = S._look_through(FUND_BOOK)
+    assert lt["computed"] is False
+    assert lt["reason"]
+    # The reason is for a stranger on the internet: a type name, not a trace.
+    assert "Traceback" not in lt["reason"]
+    assert "provider exploded" not in lt["reason"]
+
+
+def test_no_paste_means_no_claim(fake_index):
+    """Absent input must not render as a book with nothing hidden."""
+    lt = S._look_through("")
+    assert lt["computed"] is False
+    assert lt["reason"]
+
+
+# ==========================================================================
 # MUTATIONS CAUGHT
 # ==========================================================================
 #
@@ -978,3 +1150,11 @@ def test_socket_close_mid_body_does_not_wedge_the_server(server):
 # the slot released on timeout instead of on done -> test_a_timed_out_audit_keeps_its_slot_until_the_work_ends
 # _AUDIT_SLOTS.acquire(blocking=True)             -> test_no_free_slot_is_503_not_a_queue
 # _page joins the request path onto a directory   -> test_only_the_configured_file_is_reachable
+# n_companies set to len(rows)                    -> test_n_companies_is_not_the_row_count
+# rows sorted by actual instead of by added       -> test_rows_are_ranked_by_surprise_not_by_size
+# added computed as actual/listed                 -> test_added_is_actual_minus_listed_so_it_is_percentage_points
+# an opaque fund dropped from rows                -> test_n_companies_is_not_the_row_count
+# a refusal reason left empty                     -> test_an_unpackable_fund_is_named_and_never_guessed
+# approximation_notes dropped from the block      -> test_the_approximation_note_travels_with_the_numbers
+# _look_through re-raising instead of reporting   -> test_look_through_failure_does_not_take_the_audit_down
+# str(exc) used as the look-through reason        -> test_look_through_failure_does_not_take_the_audit_down
